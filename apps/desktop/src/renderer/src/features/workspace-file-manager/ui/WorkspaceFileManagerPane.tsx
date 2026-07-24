@@ -25,6 +25,12 @@ import { createDesktopWorkspaceFileManagerContextMenu } from "./createDesktopWor
 
 interface WorkspaceFileManagerPaneProps {
   className?: string;
+  locationSidebarLayout?: {
+    contentMinWidth?: number;
+    defaultWidth?: number;
+    maxWidth?: number;
+    persistWidth?: boolean;
+  };
   revealIntent?: {
     mode?: "select" | "open";
     path: string;
@@ -38,6 +44,7 @@ interface WorkspaceFileManagerPaneProps {
 
 export function WorkspaceFileManagerPane({
   className,
+  locationSidebarLayout,
   revealIntent = null,
   restoredState = null,
   showInternalOpenWithActions = true,
@@ -175,6 +182,7 @@ export function WorkspaceFileManagerPane({
       className={className}
       dateLocale={locale}
       i18n={i18n}
+      locationSidebarLayout={locationSidebarLayout}
       onDirectoryExpanded={(path) => {
         void new FileManagerDirectoryExpandedReporter(
           {

@@ -20,10 +20,7 @@ export function WorkspaceFileManagerPreviewActionBar({
   return (
     <div
       aria-label={label}
-      className={cn(
-        "flex flex-none items-center gap-1 border-t border-[var(--border-1)] pt-2.5",
-        className
-      )}
+      className={cn("flex flex-none items-center gap-1", className)}
       role="group"
     >
       {actions.map((action) => (

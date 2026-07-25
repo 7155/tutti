@@ -299,6 +299,18 @@ describe("WorkspaceFileManagerPanels", () => {
 
         expect(actionButton).not.toBeNull();
 
+        // The row sits directly under the preview surface, not pinned to the
+        // bottom of the pane, so the metadata block follows it.
+        const actionRow = container.querySelector(
+          '[role="group"][aria-label="File actions"]'
+        );
+        expect(actionRow?.previousElementSibling).toBe(
+          container.querySelector("aside")?.firstElementChild
+        );
+        expect(actionRow?.nextElementSibling?.textContent).toContain(
+          entry.name
+        );
+
         await act(async () => {
           actionButton?.click();
         });

@@ -1573,6 +1573,10 @@ function PreviewPane({
   return (
     <>
       <PreviewSurface copy={copy} previewState={previewState} />
+      <WorkspaceFileManagerPreviewActionBar
+        actions={previewActions ?? []}
+        label={copy.t("previewActionsLabel")}
+      />
       <div className="flex min-w-0 flex-col gap-[14px]">
         <div className="flex min-w-0 flex-col gap-[3px]">
           <strong className="min-w-0 truncate text-[15px] font-semibold text-[var(--text-primary)]">
@@ -1597,11 +1601,6 @@ function PreviewPane({
           />
         </dl>
       </div>
-      <WorkspaceFileManagerPreviewActionBar
-        actions={previewActions ?? []}
-        className="mt-auto"
-        label={copy.t("previewActionsLabel")}
-      />
     </>
   );
 }

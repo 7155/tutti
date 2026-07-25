@@ -128,12 +128,16 @@
   }
 }
 
-.tsh-zoom-dialog [data-rmiz-btn-unzoom] {
+.tsh-zoom-dialog__toolbar-actions {
   position: fixed;
   top: max(20px, calc(var(--cove-titlebar-reserve, 0px) + 10px));
   right: 20px;
   inset-inline-end: 20px;
   z-index: 100301;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  -webkit-app-region: no-drag;
 }
 
 .tsh-zoom-dialog__image {
@@ -146,11 +150,8 @@
 }
 
 .tsh-zoom-dialog__image-actions {
-  position: fixed;
-  top: max(20px, calc(var(--cove-titlebar-reserve, 0px) + 10px));
-  right: 58px;
-  z-index: 100301;
   display: flex;
+  align-items: center;
   gap: 6px;
 }
 

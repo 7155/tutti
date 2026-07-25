@@ -1054,6 +1054,25 @@ describe("AgentMessageMarkdown", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Zoom image/ }));
     const dialog = await screen.findByRole("dialog");
+    const toolbarActions = dialog.querySelector(
+      ".tsh-zoom-dialog__toolbar-actions"
+    );
+    expect(toolbarActions).toBeInstanceOf(HTMLElement);
+    expect(
+      screen
+        .getByRole("button", { name: "Copy image" })
+        .closest(".tsh-zoom-dialog__toolbar-actions")
+    ).toBe(toolbarActions);
+    expect(
+      screen
+        .getByRole("button", { name: "Download image" })
+        .closest(".tsh-zoom-dialog__toolbar-actions")
+    ).toBe(toolbarActions);
+    expect(
+      screen
+        .getByRole("button", { name: /Minimize image/ })
+        .closest(".tsh-zoom-dialog__toolbar-actions")
+    ).toBe(toolbarActions);
     fireEvent.click(screen.getByRole("button", { name: "Copy image" }));
     await waitFor(() => {
       expect(screen.getByRole("status")).toHaveTextContent("Copied");

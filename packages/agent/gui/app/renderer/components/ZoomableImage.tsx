@@ -367,11 +367,28 @@ export function ZoomableImage({
                 onZoomOut={zoomOutPreviewImage}
                 onWheel={handlePreviewImageWheel}
               />
-              {actionButtons ? (
-                <div className="tsh-zoom-dialog__image-actions nodrag tsh-desktop-no-drag">
-                  {actionButtons}
-                </div>
-              ) : null}
+              <div className="tsh-zoom-dialog__toolbar-actions nodrag tsh-desktop-no-drag">
+                {actionButtons ? (
+                  <div className="tsh-zoom-dialog__image-actions">
+                    {actionButtons}
+                  </div>
+                ) : null}
+                <Button
+                  asChild
+                  className="tsh-zoom-dialog__icon-button nodrag tsh-desktop-no-drag"
+                  size="icon"
+                  variant="chrome"
+                >
+                  <button
+                    type="button"
+                    aria-label={t("common.minimizeImage")}
+                    data-rmiz-btn-unzoom=""
+                    onClick={closePreviewImage}
+                  >
+                    <RestoreIcon aria-hidden="true" className="size-4" />
+                  </button>
+                </Button>
+              </div>
               {contextMenuPosition?.inZoomDialog && actionButtons ? (
                 <div
                   className="tsh-image-context-menu nodrag tsh-desktop-no-drag"
@@ -403,21 +420,6 @@ export function ZoomableImage({
                   }}
                 />
               ) : null}
-              <Button
-                asChild
-                className="tsh-zoom-dialog__icon-button nodrag tsh-desktop-no-drag"
-                size="icon"
-                variant="chrome"
-              >
-                <button
-                  type="button"
-                  aria-label={t("common.minimizeImage")}
-                  data-rmiz-btn-unzoom=""
-                  onClick={closePreviewImage}
-                >
-                  <RestoreIcon aria-hidden="true" className="size-4" />
-                </button>
-              </Button>
             </div>,
             document.body
           )

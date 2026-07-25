@@ -423,11 +423,7 @@ function groupContainsBlockingMessage(
 }
 
 function isExplicitWorkRow(row: AgentTurnWorkSectionRow["row"]): boolean {
-  return (
-    row.kind === "tool-group" ||
-    row.kind === "turn-summary" ||
-    row.kind === "processing"
-  );
+  return row.kind === "tool-group" || row.kind === "processing";
 }
 
 function isExplicitWorkMessage(message: AgentMessageContentVM): boolean {

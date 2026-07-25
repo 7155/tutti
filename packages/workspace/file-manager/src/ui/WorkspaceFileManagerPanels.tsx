@@ -11,6 +11,8 @@ import type { TuttiDateLocale } from "@tutti-os/ui-system/date-format";
 import { resolveWorkspaceFileVisualKind } from "@tutti-os/workspace-file-preview";
 import { WorkspaceFilePreviewSurface as SharedWorkspaceFilePreviewSurface } from "@tutti-os/workspace-file-preview/react";
 import type { WorkspaceFileManagerI18nRuntime } from "../i18n/workspaceFileManagerI18n.ts";
+import { WorkspaceFileManagerPreviewActionBar } from "./WorkspaceFileManagerPreviewActionBar.tsx";
+import type { WorkspaceFileManagerPreviewAction } from "./workspaceFileManagerPreviewActionTypes.ts";
 import type {
   CSSProperties,
   DragEvent as ReactDragEvent,
@@ -100,6 +102,7 @@ export function WorkspaceFileManagerPanels({
   isRenaming,
   layoutMode,
   pendingDirectoryPath,
+  previewActions,
   previewState,
   onEntryIconViewportLeave,
   onEntryIconViewportEnter,
@@ -133,6 +136,7 @@ export function WorkspaceFileManagerPanels({
   isRenaming: boolean;
   layoutMode: WorkspaceFileManagerLayoutMode;
   pendingDirectoryPath: string | null;
+  previewActions?: readonly WorkspaceFileManagerPreviewAction[];
   previewState: WorkspaceFilePreviewState;
   onEntryIconViewportLeave?: (entry: WorkspaceFileEntry) => void;
   onEntryIconViewportEnter?: (entry: WorkspaceFileEntry) => void;
@@ -741,6 +745,7 @@ export function WorkspaceFileManagerPanels({
         copy={copy}
         dateLocale={dateLocale}
         entry={selectedEntry}
+        previewActions={previewActions}
         previewState={previewState}
       />
     </aside>
@@ -1547,11 +1552,13 @@ function PreviewPane({
   copy,
   dateLocale,
   entry,
+  previewActions,
   previewState
 }: {
   copy: WorkspaceFileManagerI18nRuntime;
   dateLocale?: TuttiDateLocale;
   entry: WorkspaceFileEntry | null;
+  previewActions?: readonly WorkspaceFileManagerPreviewAction[];
   previewState: WorkspaceFilePreviewState;
 }): ReactElement {
   if (!entry || previewState.status === "empty") {
@@ -1567,6 +1574,10 @@ function PreviewPane({
   return (
     <>
       <PreviewSurface copy={copy} previewState={previewState} />
+      <WorkspaceFileManagerPreviewActionBar
+        actions={previewActions ?? []}
+        label={copy.t("previewActionsLabel")}
+      />
       <div className="flex min-w-0 flex-col gap-[14px]">
         <div className="flex min-w-0 flex-col gap-[3px]">
           <strong className="min-w-0 truncate text-[15px] font-semibold text-[var(--text-primary)]">

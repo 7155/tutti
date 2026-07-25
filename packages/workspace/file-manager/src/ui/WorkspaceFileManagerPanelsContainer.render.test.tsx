@@ -11,13 +11,30 @@ import type { WorkspaceFileManagerSession } from "../services/workspaceFileManag
 const panelProps = vi.hoisted(() => [] as Record<string, unknown>[]);
 const iconViewportEnter = vi.hoisted(() => vi.fn());
 const iconViewportLeave = vi.hoisted(() => vi.fn());
+const selectedEntry = vi.hoisted(
+  () =>
+    ({
+      kind: "file",
+      mtimeMs: null,
+      name: "notes.md",
+      path: "/workspace/notes.md",
+      sizeBytes: 128
+    }) as const
+);
 const panelsSnapshot = vi.hoisted(() => ({
   state: {
+    busyAction: null,
+    capabilities: {
+      canCopy: true
+    },
     directoryExpansionByPath: {},
-    entries: [],
+    entries: [selectedEntry],
     error: null,
     expandedDirectoryPaths: {},
-    isLoading: false
+    isLoading: false,
+    isMutating: false,
+    locationSections: [],
+    selectedLocationId: null
   },
   view: {
     canMove: true,
@@ -31,8 +48,8 @@ const panelsSnapshot = vi.hoisted(() => ({
     previewState: { status: "empty" },
     searchEntries: [],
     searchError: null,
-    selectedEntry: null,
-    selectedPath: null
+    selectedEntry,
+    selectedPath: selectedEntry.path
   }
 }));
 
@@ -79,6 +96,7 @@ describe("WorkspaceFileManagerPanelsContainer", () => {
       })
     );
     const onOpenContextMenu = vi.fn();
+    const previewActions = { open: true } as const;
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
@@ -94,6 +112,7 @@ describe("WorkspaceFileManagerPanelsContainer", () => {
         i18n={i18n}
         layoutMode="list"
         onOpenContextMenu={onOpenContextMenu}
+        previewActions={previewActions}
         session={session}
         showPreviewPanel={false}
       />
@@ -108,6 +127,7 @@ describe("WorkspaceFileManagerPanelsContainer", () => {
       });
 
       expect(panelProps).toHaveLength(2);
+      expect(panelProps[0]?.previewActions).toMatchObject([{ id: "open" }]);
       for (const key of [
         "onBlankContextMenu",
         "onCancelInlineRename",
@@ -117,6 +137,7 @@ describe("WorkspaceFileManagerPanelsContainer", () => {
         "onOpenEntry",
         "onSelect",
         "onToggleDirectoryExpanded",
+        "previewActions",
         "state"
       ]) {
         expect(panelProps[1]?.[key]).toBe(panelProps[0]?.[key]);

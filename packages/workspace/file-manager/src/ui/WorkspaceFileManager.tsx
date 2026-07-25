@@ -32,6 +32,7 @@ import { WorkspaceFileManagerPanelsContainer } from "./WorkspaceFileManagerPanel
 import type { ResolveWorkspaceFileManagerContextMenu } from "./workspaceFileManagerContextMenuTypes.ts";
 import { WorkspaceFileManagerToolbar } from "./WorkspaceFileManagerToolbar.tsx";
 import type { RenderWorkspaceFileManagerToolbarTrailingActions } from "./workspaceFileManagerToolbarTypes.ts";
+import type { WorkspaceFileManagerPreviewActionsConfig } from "./workspaceFileManagerPreviewActionTypes.ts";
 import { WorkspaceFileManagerSidebar } from "./WorkspaceFileManagerSidebar.tsx";
 import {
   clampWorkspaceFileManagerSidebarWidth,
@@ -68,6 +69,10 @@ export type {
   RenderWorkspaceFileManagerToolbarTrailingActions,
   WorkspaceFileManagerToolbarTrailingActionsContext
 } from "./workspaceFileManagerToolbarTypes.ts";
+export type {
+  WorkspaceFileManagerPreviewActionId,
+  WorkspaceFileManagerPreviewActionsConfig
+} from "./workspaceFileManagerPreviewActionTypes.ts";
 
 export interface WorkspaceFileManagerProps {
   className?: string;
@@ -86,6 +91,13 @@ export interface WorkspaceFileManagerProps {
   renderExternalLocationContent?: (
     location: Extract<WorkspaceFileLocation, { kind: "external" }>
   ) => ReactElement | null;
+  /**
+   * Declares the action row rendered at the bottom of the preview panel. Copy
+   * and open opt in with a boolean and reuse the package's session commands;
+   * download and share are enabled by passing a host handler. Omit the prop to
+   * keep the preview panel action-free.
+   */
+  previewActions?: WorkspaceFileManagerPreviewActionsConfig;
   /**
    * Optional host actions rendered in the toolbar trailing cluster, after
    * Refresh and before Search. Use for product-owned primary affordances such
@@ -112,6 +124,7 @@ export function WorkspaceFileManager({
   onCopyEntry,
   onDirectoryExpanded,
   onEntryDragStart,
+  previewActions,
   resolveContextMenu,
   resolveEntryIconUrl,
   renderExternalLocationContent,
@@ -322,8 +335,9 @@ export function WorkspaceFileManager({
 
       event.preventDefault();
       void (async () => {
-        await session.copyToClipboard(entry);
-        await onCopyEntry?.();
+        if (await session.copyToClipboard(entry)) {
+          await onCopyEntry?.();
+        }
       })();
     }
 
@@ -496,9 +510,11 @@ export function WorkspaceFileManager({
                 arrangeMode={arrangeMode}
                 i18n={i18n}
                 layoutMode={layoutMode}
+                onCopyEntry={onCopyEntry}
                 onDirectoryExpanded={onDirectoryExpanded}
                 onEntryDragStart={onEntryDragStart}
                 onOpenContextMenu={openContextMenu}
+                previewActions={previewActions}
                 resolveEntryIconUrl={resolveEntryIconUrl}
                 session={session}
                 showPreviewPanel={showPreviewPanel}

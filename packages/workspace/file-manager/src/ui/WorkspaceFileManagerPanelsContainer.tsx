@@ -19,11 +19,13 @@ import {
 } from "./workspaceFileManagerArrangeMode.ts";
 import type { WorkspaceFileManagerLayoutMode } from "./workspaceFileManagerLayoutMode.ts";
 import { useWorkspaceFileEntryIconUrls } from "./useWorkspaceFileEntryIconUrls.ts";
+import { useWorkspaceFileManagerPreviewActions } from "./useWorkspaceFileManagerPreviewActions.tsx";
 import {
   buildWorkspaceFileManagerVisibleTreeRows,
   collectWorkspaceFileManagerVisibleTreeEntries,
   type WorkspaceFileManagerVisibleTreeRow
 } from "./workspaceFileManagerVisibleTree.ts";
+import type { WorkspaceFileManagerPreviewActionsConfig } from "./workspaceFileManagerPreviewActionTypes.ts";
 import { useWorkspaceFileManagerPanelsView } from "./useWorkspaceFileManagerService.ts";
 
 export function WorkspaceFileManagerPanelsContainer({
@@ -32,9 +34,11 @@ export function WorkspaceFileManagerPanelsContainer({
   entryDragMode,
   i18n,
   layoutMode,
+  onCopyEntry,
   onDirectoryExpanded,
   onEntryDragStart,
   onOpenContextMenu,
+  previewActions,
   resolveEntryIconUrl,
   session,
   showPreviewPanel
@@ -44,6 +48,7 @@ export function WorkspaceFileManagerPanelsContainer({
   entryDragMode?: WorkspaceFileManagerEntryDragMode;
   i18n: WorkspaceFileManagerI18nRuntime;
   layoutMode: WorkspaceFileManagerLayoutMode;
+  onCopyEntry?: () => Promise<void> | void;
   onDirectoryExpanded?: (path: string) => void;
   onEntryDragStart?: (
     entry: WorkspaceFileEntry,
@@ -53,6 +58,7 @@ export function WorkspaceFileManagerPanelsContainer({
     event: ReactMouseEvent<HTMLElement>,
     entry: WorkspaceFileEntry | null
   ) => void;
+  previewActions?: WorkspaceFileManagerPreviewActionsConfig;
   resolveEntryIconUrl?: (
     entry: WorkspaceFileEntry
   ) => Promise<string | null | undefined>;
@@ -133,6 +139,14 @@ export function WorkspaceFileManagerPanelsContainer({
     includeImageThumbnails: true,
     resolveEntryIconUrl
   });
+  const resolvedPreviewActions = useWorkspaceFileManagerPreviewActions({
+    config: previewActions,
+    copy: i18n,
+    entry: view.selectedEntry,
+    onCopyEntry,
+    session,
+    state
+  });
   const handleBlankContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLElement>) => {
       onOpenContextMenu(event, null);
@@ -195,6 +209,7 @@ export function WorkspaceFileManagerPanelsContainer({
       isRenaming={view.isRenaming}
       layoutMode={layoutMode}
       pendingDirectoryPath={view.pendingDirectoryPath}
+      previewActions={resolvedPreviewActions}
       previewState={view.previewState}
       selectedEntry={view.selectedEntry}
       selectedPath={view.selectedPath}

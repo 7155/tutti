@@ -2714,6 +2714,20 @@
       "iconVariant": "lined"
     },
     {
+      "id": "share-lined-icon",
+      "layer": "base",
+      "name": "ShareLinedIcon",
+      "export": "ShareLinedIcon",
+      "from": "@tutti-os/ui-system/icons",
+      "category": "icon",
+      "status": "stable",
+      "source": "src/icons/system-icons.tsx",
+      "description": "System icon for sharing a resource with other people or sessions.",
+      "useCases": ["Share buttons", "Share menu items"],
+      "migrationHints": [],
+      "iconVariant": "lined"
+    },
+    {
       "id": "upgrade-arrow-lined-icon",
       "layer": "base",
       "name": "UpgradeArrowIcon",

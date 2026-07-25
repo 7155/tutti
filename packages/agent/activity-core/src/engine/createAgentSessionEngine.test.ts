@@ -9,6 +9,8 @@ import type {
   EngineExternalCommand,
   EngineScheduler
 } from "./types.ts";
+import type { AgentActivityTurn } from "../types.ts";
+import type { AgentActivitySessionInput } from "../sessionNormalization.ts";
 
 // Event-interleaving tests over synthetic entities: the engine loop is driven
 // by a manual clock/scheduler so every timing case is an explicit, enumerable
@@ -628,6 +630,69 @@ test("unsubscribed listeners stop receiving notifications", () => {
   assert.equal(callCount, 1);
 });
 
+test("an authoritative Session detail snapshot notifies subscribers once", () => {
+  const { engine, notifiedStates } = createHarness({
+    workspaceId: "workspace-1"
+  });
+  const rootSession = activitySession("session-root");
+  const childSession = activitySession("session-child", {
+    kind: "child",
+    parentAgentSessionId: "session-root",
+    rootAgentSessionId: "session-root"
+  });
+  const turn = activityTurn("session-root", "turn-1");
+
+  engine.dispatch({
+    childSessions: [childSession],
+    live: true,
+    messages: [
+      {
+        agentSessionId: "session-root",
+        kind: "text",
+        messageId: "message-1",
+        occurredAtUnixMs: 3,
+        payload: { text: "hello" },
+        role: "assistant",
+        turnId: "turn-1",
+        version: 1,
+        workspaceId: "workspace-1"
+      }
+    ],
+    session: { ...rootSession, latestTurn: turn },
+    sessionMessageWindows: [
+      {
+        agentSessionId: "session-root",
+        hasOlderMessages: false,
+        oldestLoadedVersion: 1
+      }
+    ],
+    turns: [turn],
+    type: "session/detailSnapshotReceived",
+    workspaceId: "workspace-1"
+  });
+
+  assert.equal(notifiedStates.length, 1);
+  const snapshot = engine.getSnapshot();
+  assert.ok(snapshot.sessionLifecycle.sessionsById["session-root"]);
+  assert.ok(snapshot.sessionLifecycle.sessionsById["session-child"]);
+  assert.equal(
+    Object.values(snapshot.sessionLifecycle.turnsById)[0]?.turnId,
+    "turn-1"
+  );
+  assert.equal(
+    snapshot.sessionMessages.messagesBySessionId["session-root"]?.[0]
+      ?.messageId,
+    "message-1"
+  );
+  assert.deepEqual(
+    snapshot.sessionMessages.windowsBySessionId["session-root"],
+    {
+      hasOlderMessages: false,
+      oldestLoadedVersion: 1
+    }
+  );
+});
+
 test("a throwing listener is reported and does not block other listeners", () => {
   const { diagnosticEvents, engine } = createHarness();
   const listenerError = new Error("listener exploded");
@@ -659,3 +724,35 @@ test("intents dispatched from a listener are reduced in a follow-up drain", () =
   // Two drains happened: the original intent and the reentrant one.
   assert.equal(notifiedStates.length, 2);
 });
+
+function activityTurn(
+  agentSessionId: string,
+  turnId: string
+): AgentActivityTurn {
+  return {
+    agentSessionId,
+    origin: "user_prompt",
+    phase: "settled",
+    settledAtUnixMs: 3,
+    startedAtUnixMs: 2,
+    turnId,
+    updatedAtUnixMs: 3
+  };
+}
+
+function activitySession(
+  agentSessionId: string,
+  overrides: Partial<AgentActivitySessionInput> = {}
+): AgentActivitySessionInput {
+  return {
+    activeTurnId: null,
+    agentSessionId,
+    cwd: "/workspace",
+    latestTurnInteractions: [],
+    pendingInteractions: [],
+    provider: "codex",
+    title: "Session",
+    workspaceId: "workspace-1",
+    ...overrides
+  };
+}

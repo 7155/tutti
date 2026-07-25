@@ -6,7 +6,7 @@ import {
   waitFor
 } from "@testing-library/react";
 import { createRef } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeAgentActivitySession } from "@tutti-os/agent-activity-core";
 import type { AgentConversationVM } from "../contracts/agentConversationVM";
 import type { AgentTranscriptRowVM } from "../contracts/agentTranscriptRowVM";
@@ -17,6 +17,9 @@ const virtualizerMockState = vi.hoisted(() => ({
   scrollOffset: 1_000,
   scrollRect: { height: 480, width: 800 },
   virtualIndexes: [100, 101, 102, 103, 104],
+  containerRef: vi.fn(),
+  isAtEnd: vi.fn(() => true),
+  scrollToEnd: vi.fn(),
   scrollToIndex: vi.fn(),
   instance: {
     shouldAdjustScrollPositionOnItemSizeChange: undefined as
@@ -46,8 +49,11 @@ vi.mock("@tanstack/react-virtual", () => ({
         })),
       getVirtualItemForOffset: virtualizerMockState.getVirtualItemForOffset,
       measureElement: vi.fn(),
+      containerRef: virtualizerMockState.containerRef,
+      isAtEnd: virtualizerMockState.isAtEnd,
       scrollOffset: virtualizerMockState.scrollOffset,
       scrollRect: virtualizerMockState.scrollRect,
+      scrollToEnd: virtualizerMockState.scrollToEnd,
       scrollToIndex: virtualizerMockState.scrollToIndex
     })
   )
@@ -55,7 +61,25 @@ vi.mock("@tanstack/react-virtual", () => ({
 
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { AgentTranscriptView } from "./AgentTranscriptView";
-import type { AgentTranscriptAttachmentLocator } from "./AgentTranscriptView";
+import type {
+  AgentTranscriptAttachmentLocator,
+  AgentTranscriptVirtualScrollController
+} from "./AgentTranscriptView";
+
+const TRANSCRIPT_LABELS = {
+  thinkingLabel: "Thought process",
+  toolCallsLabel: (count: number) => `Tool calls (${count})`,
+  processing: "Planning next moves",
+  turnSummary: "Changed files"
+};
+const TRANSCRIPT_LABELS_WITH_LOCATOR = {
+  ...TRANSCRIPT_LABELS,
+  userMessageLocator: "User messages"
+};
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("AgentTranscriptView virtual rendering", () => {
   beforeEach(() => {
@@ -71,6 +95,10 @@ describe("AgentTranscriptView virtual rendering", () => {
     }));
     virtualizerMockState.scrollOffset = 1_000;
     virtualizerMockState.scrollRect = { height: 480, width: 800 };
+    virtualizerMockState.containerRef.mockClear();
+    virtualizerMockState.isAtEnd.mockReset();
+    virtualizerMockState.isAtEnd.mockReturnValue(true);
+    virtualizerMockState.scrollToEnd.mockClear();
     virtualizerMockState.scrollToIndex.mockClear();
     virtualizerMockState.instance.shouldAdjustScrollPositionOnItemSizeChange =
       undefined;
@@ -86,12 +114,7 @@ describe("AgentTranscriptView virtual rendering", () => {
       >
         <AgentTranscriptView
           conversation={conversationWithRows(12)}
-          labels={{
-            thinkingLabel: "Thought process",
-            toolCallsLabel: (count) => `Tool calls (${count})`,
-            processing: "Planning next moves",
-            turnSummary: "Changed files"
-          }}
+          labels={TRANSCRIPT_LABELS}
         />
       </div>
     );
@@ -113,12 +136,7 @@ describe("AgentTranscriptView virtual rendering", () => {
       >
         <AgentTranscriptView
           conversation={conversationWithMultiRowTurns(40)}
-          labels={{
-            thinkingLabel: "Thought process",
-            toolCallsLabel: (count) => `Tool calls (${count})`,
-            processing: "Planning next moves",
-            turnSummary: "Changed files"
-          }}
+          labels={TRANSCRIPT_LABELS}
         />
       </div>
     );
@@ -127,9 +145,15 @@ describe("AgentTranscriptView virtual rendering", () => {
       expect.objectContaining({
         anchorTo: "end",
         count: 40,
+        directDomUpdates: true,
+        directDomUpdatesMode: "transform",
+        followOnAppend: true,
+        scrollMargin: 0,
         scrollEndThreshold: 24
       })
     );
+    const virtualizerOptions = vi.mocked(useVirtualizer).mock.calls.at(-1)?.[0];
+    expect(virtualizerOptions?.getItemKey?.(10)).toBe("session-1\u0000turn-10");
     await waitFor(() => {
       expect(screen.getByText("turn 10 user row")).toBeTruthy();
       expect(screen.getByText("turn 10 assistant row")).toBeTruthy();
@@ -137,7 +161,15 @@ describe("AgentTranscriptView virtual rendering", () => {
     const virtualTurn = document.querySelector<HTMLElement>(
       "[data-agent-transcript-virtual-turn='turn-10']"
     );
+    const virtualContainer = document.querySelector<HTMLElement>(
+      "[data-agent-transcript-virtualized='true']"
+    );
+    expect(virtualContainer?.style.height).toBe("");
+    expect(virtualizerMockState.containerRef).toHaveBeenCalledWith(
+      virtualContainer
+    );
     expect(virtualTurn?.style.paddingBottom).toBe("12px");
+    expect(virtualTurn?.style.transform).toBe("");
     expect(
       virtualTurn?.querySelectorAll(":scope > .agent-gui-transcript-row")
     ).toHaveLength(2);
@@ -146,6 +178,101 @@ describe("AgentTranscriptView virtual rendering", () => {
     ).toBeNull();
     expect(screen.queryByText("turn 9 user row")).toBeNull();
     expect(screen.queryByText("turn 11 assistant row")).toBeNull();
+  });
+
+  it("positions fallback turns when no scroll parent is available", () => {
+    render(
+      <AgentTranscriptView
+        conversation={conversationWithMultiRowTurns(40)}
+        labels={TRANSCRIPT_LABELS}
+      />
+    );
+
+    const fallbackTurns = [
+      ...document.querySelectorAll<HTMLElement>(
+        "[data-agent-transcript-virtual-turn]"
+      )
+    ];
+    expect(fallbackTurns).toHaveLength(3);
+    expect(fallbackTurns.map((turn) => turn.style.transform)).toEqual([
+      "translateY(10360px)",
+      "translateY(10640px)",
+      "translateY(10920px)"
+    ]);
+  });
+
+  it("exposes only the matching Session virtual scroll controller", () => {
+    virtualizerMockState.virtualIndexes = [10];
+    const virtualScrollController =
+      createRef<AgentTranscriptVirtualScrollController>();
+
+    render(
+      <div
+        data-testid="agent-gui-timeline"
+        style={{ height: "480px", overflow: "auto" }}
+      >
+        <AgentTranscriptView
+          conversation={conversationWithMultiRowTurns(40)}
+          virtualScrollControllerRef={virtualScrollController}
+          labels={TRANSCRIPT_LABELS}
+        />
+      </div>
+    );
+
+    expect(virtualScrollController.current?.agentSessionId).toBe("session-1");
+    expect(virtualScrollController.current?.enabled).toBe(true);
+    expect(virtualScrollController.current?.isAtEnd()).toBe(true);
+    virtualScrollController.current?.scrollToEnd({ behavior: "smooth" });
+    expect(virtualizerMockState.scrollToEnd).toHaveBeenCalledWith({
+      behavior: "smooth"
+    });
+  });
+
+  it("remeasures scrollMargin when outer timeline layout changes", async () => {
+    virtualizerMockState.virtualIndexes = [10];
+    let virtualListTop = 120;
+    const timeline = document.createElement("div");
+    timeline.dataset.testid = "agent-gui-timeline";
+    timeline.style.overflow = "auto";
+    timeline.scrollTop = 40;
+    document.body.appendChild(timeline);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: HTMLElement) {
+        return {
+          top: this === timeline ? 20 : virtualListTop
+        } as DOMRect;
+      }
+    );
+    const rendered = render(
+      <AgentTranscriptView
+        conversation={conversationWithMultiRowTurns(40)}
+        labels={TRANSCRIPT_LABELS}
+        virtualListLayoutRevision={0}
+      />,
+      { container: timeline }
+    );
+
+    await waitFor(() => {
+      expect(
+        vi.mocked(useVirtualizer).mock.calls.at(-1)?.[0].scrollMargin
+      ).toBe(140);
+    });
+
+    virtualListTop = 152;
+    rendered.rerender(
+      <AgentTranscriptView
+        conversation={conversationWithMultiRowTurns(40)}
+        labels={TRANSCRIPT_LABELS}
+        virtualListLayoutRevision={1}
+      />
+    );
+
+    await waitFor(() => {
+      expect(
+        vi.mocked(useVirtualizer).mock.calls.at(-1)?.[0].scrollMargin
+      ).toBe(172);
+    });
+    timeline.remove();
   });
 
   it("keeps completed turn disclosure interactive inside the virtual window", async () => {
@@ -158,12 +285,7 @@ describe("AgentTranscriptView virtual rendering", () => {
       >
         <AgentTranscriptView
           conversation={conversationWithCollapsibleTurns(40)}
-          labels={{
-            thinkingLabel: "Thought process",
-            toolCallsLabel: (count) => `Tool calls (${count})`,
-            processing: "Planning next moves",
-            turnSummary: "Changed files"
-          }}
+          labels={TRANSCRIPT_LABELS}
         />
       </div>
     );
@@ -190,7 +312,10 @@ describe("AgentTranscriptView virtual rendering", () => {
     );
 
     expect(vi.mocked(useVirtualizer).mock.calls.at(-1)?.[0]).toEqual(
-      expect.objectContaining({ anchorTo: "start" })
+      expect.objectContaining({
+        anchorTo: "start",
+        followOnAppend: false
+      })
     );
     expect(
       virtualizerMockState.instance.shouldAdjustScrollPositionOnItemSizeChange?.()
@@ -238,12 +363,7 @@ describe("AgentTranscriptView virtual rendering", () => {
       >
         <AgentTranscriptView
           conversation={conversationWithCollapsibleTurns(2)}
-          labels={{
-            thinkingLabel: "Thought process",
-            toolCallsLabel: (count) => `Tool calls (${count})`,
-            processing: "Planning next moves",
-            turnSummary: "Changed files"
-          }}
+          labels={TRANSCRIPT_LABELS}
         />
       </div>
     );
@@ -277,12 +397,7 @@ describe("AgentTranscriptView virtual rendering", () => {
       >
         <AgentTranscriptView
           conversation={conversationWithRows(30)}
-          labels={{
-            thinkingLabel: "Thought process",
-            toolCallsLabel: (count) => `Tool calls (${count})`,
-            processing: "Planning next moves",
-            turnSummary: "Changed files"
-          }}
+          labels={TRANSCRIPT_LABELS}
         />
       </div>
     );
@@ -315,12 +430,7 @@ describe("AgentTranscriptView virtual rendering", () => {
               "![Preview](preview.png)"
             ].join("\n")
           })}
-          labels={{
-            thinkingLabel: "Thought process",
-            toolCallsLabel: (count) => `Tool calls (${count})`,
-            processing: "Planning next moves",
-            turnSummary: "Changed files"
-          }}
+          labels={TRANSCRIPT_LABELS}
         />
       </div>
     );
@@ -343,12 +453,7 @@ describe("AgentTranscriptView virtual rendering", () => {
       >
         <AgentTranscriptView
           conversation={conversationWithRows(200)}
-          labels={{
-            thinkingLabel: "Thought process",
-            toolCallsLabel: (count) => `Tool calls (${count})`,
-            processing: "Planning next moves",
-            turnSummary: "Changed files"
-          }}
+          labels={TRANSCRIPT_LABELS}
         />
       </div>
     );
@@ -373,13 +478,7 @@ describe("AgentTranscriptView virtual rendering", () => {
         <div data-slot="scroll-area-content">
           <AgentTranscriptView
             conversation={conversationWithMultiRowTurns(40)}
-            labels={{
-              thinkingLabel: "Thought process",
-              toolCallsLabel: (count) => `Tool calls (${count})`,
-              processing: "Planning next moves",
-              turnSummary: "Changed files",
-              userMessageLocator: "User messages"
-            }}
+            labels={TRANSCRIPT_LABELS_WITH_LOCATOR}
           />
         </div>
       </div>
@@ -416,13 +515,7 @@ describe("AgentTranscriptView virtual rendering", () => {
       >
         <AgentTranscriptView
           conversation={conversationWithMultiRowTurns(40)}
-          labels={{
-            thinkingLabel: "Thought process",
-            toolCallsLabel: (count) => `Tool calls (${count})`,
-            processing: "Planning next moves",
-            turnSummary: "Changed files",
-            userMessageLocator: "User messages"
-          }}
+          labels={TRANSCRIPT_LABELS_WITH_LOCATOR}
         />
       </div>
     );
@@ -450,6 +543,64 @@ describe("AgentTranscriptView virtual rendering", () => {
     ).toBe(false);
   });
 
+  it("ignores transient locator reversals but accepts a sustained direction change", async () => {
+    virtualizerMockState.centerIndex = 10;
+    virtualizerMockState.virtualIndexes = [10];
+    const timeline = document.createElement("div");
+    timeline.dataset.testid = "agent-gui-timeline";
+    timeline.style.overflow = "auto";
+    timeline.scrollTop = 1_000;
+    document.body.appendChild(timeline);
+    render(
+      <AgentTranscriptView
+        conversation={conversationWithMultiRowTurns(40)}
+        labels={TRANSCRIPT_LABELS_WITH_LOCATOR}
+      />,
+      { container: timeline }
+    );
+    const selectedIndex = () =>
+      [
+        ...timeline.querySelectorAll(".agent-gui-message-locator__tick")
+      ].findIndex((tick) => tick.getAttribute("data-selected") === "true");
+    await waitFor(() => expect(selectedIndex()).toBe(10));
+
+    virtualizerMockState.centerIndex = 5;
+    timeline.scrollTop = 500;
+    fireEvent.scroll(timeline);
+    await waitFor(() => expect(selectedIndex()).toBe(5));
+
+    virtualizerMockState.centerIndex = 6;
+    fireEvent.scroll(timeline);
+    await waitFor(() => expect(selectedIndex()).toBe(5));
+
+    virtualizerMockState.centerIndex = 4;
+    for (const scrollTop of [400, 300, 200]) {
+      timeline.scrollTop = scrollTop;
+      fireEvent.scroll(timeline);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+    await waitFor(() => expect(selectedIndex()).toBe(4));
+
+    virtualizerMockState.centerIndex = 5;
+    for (const scrollTop of [300, 400]) {
+      timeline.scrollTop = scrollTop;
+      fireEvent.scroll(timeline);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+    expect(selectedIndex()).toBe(4);
+    timeline.scrollTop = 500;
+    fireEvent.scroll(timeline);
+    await waitFor(() => expect(selectedIndex()).toBe(5));
+
+    fireEvent.wheel(timeline, { deltaY: -100 });
+    virtualizerMockState.centerIndex = 6;
+    timeline.scrollTop = 600;
+    fireEvent.scroll(timeline);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(selectedIndex()).toBe(5);
+    timeline.remove();
+  });
+
   it("selects the preceding user message when the centered turn has no user row", async () => {
     virtualizerMockState.centerIndex = 18;
     virtualizerMockState.virtualIndexes = [18];
@@ -472,13 +623,7 @@ describe("AgentTranscriptView virtual rendering", () => {
       >
         <AgentTranscriptView
           conversation={sparseUserConversation}
-          labels={{
-            thinkingLabel: "Thought process",
-            toolCallsLabel: (count) => `Tool calls (${count})`,
-            processing: "Planning next moves",
-            turnSummary: "Changed files",
-            userMessageLocator: "User messages"
-          }}
+          labels={TRANSCRIPT_LABELS_WITH_LOCATOR}
         />
       </div>
     );
@@ -516,12 +661,7 @@ describe("AgentTranscriptView virtual rendering", () => {
               }
             ]}
             turnAttachmentLocatorRef={locateAttachment}
-            labels={{
-              thinkingLabel: "Thought process",
-              toolCallsLabel: (count) => `Tool calls (${count})`,
-              processing: "Planning next moves",
-              turnSummary: "Changed files"
-            }}
+            labels={TRANSCRIPT_LABELS}
           />
         </div>
       </div>
@@ -536,12 +676,6 @@ describe("AgentTranscriptView virtual rendering", () => {
 
   it("keeps the timeline viewport bound across long-short-long switches", async () => {
     virtualizerMockState.virtualIndexes = [10];
-    const labels = {
-      thinkingLabel: "Thought process",
-      toolCallsLabel: (count: number) => `Tool calls (${count})`,
-      processing: "Planning next moves",
-      turnSummary: "Changed files"
-    };
     const { rerender } = render(
       <div
         data-testid="agent-gui-timeline"
@@ -549,7 +683,7 @@ describe("AgentTranscriptView virtual rendering", () => {
       >
         <AgentTranscriptView
           conversation={conversationWithMultiRowTurns(40)}
-          labels={labels}
+          labels={TRANSCRIPT_LABELS}
         />
       </div>
     );
@@ -568,7 +702,7 @@ describe("AgentTranscriptView virtual rendering", () => {
       >
         <AgentTranscriptView
           conversation={conversationWithRows(2)}
-          labels={labels}
+          labels={TRANSCRIPT_LABELS}
         />
       </div>
     );
@@ -586,7 +720,7 @@ describe("AgentTranscriptView virtual rendering", () => {
       >
         <AgentTranscriptView
           conversation={conversationWithMultiRowTurns(40)}
-          labels={labels}
+          labels={TRANSCRIPT_LABELS}
         />
       </div>
     );
@@ -594,6 +728,47 @@ describe("AgentTranscriptView virtual rendering", () => {
     expect(
       vi.mocked(useVirtualizer).mock.calls.at(-1)?.[0].getScrollElement()
     ).toBe(timeline);
+  });
+
+  it("does not reuse measurement keys across Sessions", () => {
+    virtualizerMockState.virtualIndexes = [10];
+    const firstConversation = conversationWithMultiRowTurns(40);
+    const secondConversation = {
+      ...firstConversation,
+      sourceDetail: {
+        ...firstConversation.sourceDetail,
+        session: {
+          ...firstConversation.sourceDetail.session,
+          agentSessionId: "session-2"
+        }
+      }
+    };
+    const rendered = render(
+      <div data-testid="agent-gui-timeline">
+        <AgentTranscriptView
+          conversation={firstConversation}
+          labels={TRANSCRIPT_LABELS}
+        />
+      </div>
+    );
+    const firstGetItemKey = vi
+      .mocked(useVirtualizer)
+      .mock.calls.at(-1)?.[0].getItemKey;
+
+    rendered.rerender(
+      <div data-testid="agent-gui-timeline">
+        <AgentTranscriptView
+          conversation={secondConversation}
+          labels={TRANSCRIPT_LABELS}
+        />
+      </div>
+    );
+    const secondGetItemKey = vi
+      .mocked(useVirtualizer)
+      .mock.calls.at(-1)?.[0].getItemKey;
+
+    expect(firstGetItemKey?.(10)).toBe("session-1\u0000turn-10");
+    expect(secondGetItemKey?.(10)).toBe("session-2\u0000turn-10");
   });
 });
 

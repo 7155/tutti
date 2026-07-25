@@ -6,8 +6,10 @@ import type { AgentGUIProviderSkillOption } from "../model/agentGuiNodeTypes";
 import type { AgentMessageMarkdownWorkspaceAppIcon } from "../../../shared/AgentMessageMarkdown";
 import type {
   AgentTranscriptAttachmentLocator,
-  AgentTranscriptTurnAttachment
+  AgentTranscriptTurnAttachment,
+  AgentTranscriptVirtualScrollController
 } from "../../../shared/agentConversation/components/AgentTranscriptView";
+import { userScrollBehavior } from "./agentGUIDetailScrollHelpers";
 
 const EMPTY_WORKSPACE_APP_ICONS: readonly AgentMessageMarkdownWorkspaceAppIcon[] =
   [];
@@ -22,6 +24,7 @@ interface AgentGUIConversationTimelinePaneProps {
   ) => void;
   isLoading: boolean;
   isLoadingOlderMessages: boolean;
+  virtualScrollControllerRef: Ref<AgentTranscriptVirtualScrollController>;
   loadingLabel: string;
   empty: React.JSX.Element;
   onLinkAction?: (action: WorkspaceLinkAction) => void;
@@ -45,6 +48,7 @@ export const AgentGUIConversationTimelinePane = memo(
     onTurnAttachmentVisibilityChange,
     isLoading,
     isLoadingOlderMessages,
+    virtualScrollControllerRef,
     loadingLabel,
     empty,
     onLinkAction,
@@ -79,6 +83,8 @@ export const AgentGUIConversationTimelinePane = memo(
           availableSkills={availableSkills}
           workspaceAppIcons={workspaceAppIcons}
           labels={labels}
+          virtualListLayoutRevision={isLoadingOlderMessages ? 1 : 0}
+          virtualScrollControllerRef={virtualScrollControllerRef}
         />
       </>
     );
@@ -98,13 +104,10 @@ export function setTimelineScrollTopWithUserTransition(
   element: HTMLElement,
   top: number
 ): void {
-  const reducedMotion =
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (typeof element.scrollTo === "function") {
     element.scrollTo({
       top,
-      behavior: reducedMotion ? "auto" : "smooth"
+      behavior: userScrollBehavior()
     });
     return;
   }

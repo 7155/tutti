@@ -13,6 +13,8 @@ const styles = {
   interactiveOptionDisplay:
     "agent-gui-conversation__interactive-option-display",
   interactiveOptionButton: "agent-gui-conversation__interactive-option-button",
+  interactiveOptionContent:
+    "agent-gui-conversation__interactive-option-content",
   interactiveOptionTitle: "agent-gui-conversation__interactive-option-title",
   interactiveOptionDescription:
     "agent-gui-conversation__interactive-option-description",

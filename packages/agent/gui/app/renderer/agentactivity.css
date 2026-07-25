@@ -128,12 +128,16 @@
   }
 }
 
-.tsh-zoom-dialog [data-rmiz-btn-unzoom] {
+.tsh-zoom-dialog__toolbar-actions {
   position: fixed;
   top: max(20px, calc(var(--cove-titlebar-reserve, 0px) + 10px));
   right: 20px;
   inset-inline-end: 20px;
   z-index: 100301;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  -webkit-app-region: no-drag;
 }
 
 .tsh-zoom-dialog__image {
@@ -143,15 +147,6 @@
   object-fit: contain;
   transform-origin: center center;
   cursor: zoom-out;
-}
-
-.tsh-zoom-dialog__image-actions {
-  position: fixed;
-  top: max(20px, calc(var(--cove-titlebar-reserve, 0px) + 10px));
-  right: 58px;
-  z-index: 100301;
-  display: flex;
-  gap: 6px;
 }
 
 .tsh-zoom-dialog__zoom-controls {
@@ -173,7 +168,7 @@
   -webkit-app-region: no-drag;
 }
 
-.tsh-zoom-dialog:not(:has(.tsh-zoom-dialog__image-actions))
+.tsh-zoom-dialog:not([data-tsh-image-actions="true"])
   .tsh-zoom-dialog__zoom-controls {
   right: 72px;
 }
@@ -192,7 +187,6 @@
   -webkit-app-region: no-drag;
 }
 
-.tsh-zoom-dialog__image-actions button,
 .tsh-zoom-dialog__zoom-controls button,
 .tsh-image-context-menu button {
   display: flex;
@@ -231,8 +225,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.tsh-zoom-dialog__icon-button,
-.tsh-zoom-dialog__image-actions button {
+.tsh-zoom-dialog__icon-button {
   justify-content: center;
   width: 32px;
   height: 32px;
@@ -249,8 +242,7 @@
   padding: 7px 10px;
 }
 
-.tsh-zoom-dialog__icon-button:hover,
-.tsh-zoom-dialog__image-actions button:hover {
+.tsh-zoom-dialog__icon-button:hover {
   background: color-mix(in srgb, var(--background-panel) 82%, white 12%);
 }
 
@@ -3456,11 +3448,12 @@ aside.workspace-agents-status-panel
 }
 
 .agent-gui-conversation__interactive-option-button {
-  position: relative;
-  display: grid;
-  gap: 3px;
-  justify-items: start;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  gap: 12px;
   width: 100%;
+  min-width: 0;
   border: 0;
   border-radius: 8px;
   background: var(--transparency-block);
@@ -3469,6 +3462,7 @@ aside.workspace-agents-status-panel
   font-size: 13px;
   font-weight: 500;
   line-height: 1.3;
+  outline: none;
   padding: 8px 8px 8px 12px;
   text-align: left;
   transition:
@@ -3487,8 +3481,12 @@ aside.workspace-agents-status-panel
     color-mix(in srgb, var(--text-primary) 24%, transparent);
 }
 
+.agent-gui-conversation__interactive-option-button:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
 .agent-gui-conversation__interactive-option-display {
-  position: relative;
   display: grid;
   gap: 3px;
   justify-items: start;
@@ -3541,31 +3539,22 @@ aside.workspace-agents-status-panel
   -webkit-line-clamp: 2;
 }
 
-.agent-gui-conversation__interactive-option-button:has(
-  .agent-gui-conversation__interactive-option-shortcut,
-  .agent-gui-conversation__interactive-option-spinner
-) {
-  padding-right: 8px;
-}
-
-.agent-gui-conversation__interactive-option-button:has(
-    .agent-gui-conversation__interactive-option-shortcut,
-    .agent-gui-conversation__interactive-option-spinner
-  )
-  .agent-gui-conversation__interactive-option-title,
-.agent-gui-conversation__interactive-option-button:has(
-    .agent-gui-conversation__interactive-option-shortcut,
-    .agent-gui-conversation__interactive-option-spinner
-  )
-  .agent-gui-conversation__interactive-option-description {
-  max-width: calc(100% - 112px);
+.agent-gui-conversation__interactive-option-content {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 3px;
+  justify-items: start;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .agent-gui-conversation__interactive-option-description {
+  max-width: 100%;
   color: var(--text-tertiary);
   font-size: 11px;
   font-weight: 400;
   line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .agent-gui-conversation__interactive-option-command-description {
@@ -3587,28 +3576,14 @@ aside.workspace-agents-status-panel
 }
 
 .agent-gui-conversation__interactive-option-shortcut {
-  position: absolute;
-  top: 50%;
-  right: 8px;
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--transparency-block) 72%, transparent);
-  color: var(--text-tertiary);
-  font-size: 11px;
+  flex: none;
+  margin-inline-start: auto;
   font-weight: 500;
-  line-height: 1;
-  padding: 4px 6px;
-  transform: translateY(-50%);
 }
 
 .agent-gui-conversation__interactive-option-spinner {
-  position: absolute;
-  top: 50%;
-  right: 8px;
+  flex: none;
   color: currentColor;
-  transform: translateY(-50%);
 }
 
 .agent-gui-conversation__interactive-feedback-composer {
@@ -3699,14 +3674,6 @@ aside.workspace-agents-status-panel
   height: 22px;
 }
 
-.agent-gui-conversation__interactive-feedback-send-button
-  .agent-gui-conversation__interactive-option-spinner {
-  position: static;
-  top: auto;
-  right: auto;
-  transform: none;
-}
-
 .agent-gui-conversation__interactive-prompt-footer {
   display: grid;
   gap: 10px;
@@ -3717,27 +3684,6 @@ aside.workspace-agents-status-panel
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
-}
-
-.agent-gui-conversation__interactive-prompt-actions
-  button:not([data-slot="button"]) {
-  min-height: 30px;
-  border: 1px solid var(--line-2);
-  border-radius: 999px;
-  background: var(--background-fronted);
-  color: var(--text-primary);
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 560;
-  padding: 6px 12px;
-}
-
-.agent-gui-conversation__interactive-prompt-actions
-  button:not([data-slot="button"]):disabled {
-  cursor: not-allowed;
-  background: var(--transparency-block);
-  color: var(--text-disabled);
-  opacity: 0.58;
 }
 
 .agent-gui-conversation__user-message-flow,

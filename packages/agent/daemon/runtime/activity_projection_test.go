@@ -222,22 +222,67 @@ func TestExplicitToolOutputDeltaPersistsSnapshotAndProjectsOffsetAppend(t *testi
 	if len(report.MessageUpdates) != 1 {
 		t.Fatalf("report = %#v, want one cumulative tool snapshot", report)
 	}
+	startReport := reportActivityInput(session, started)
+	if len(startReport.MessageUpdates) != 1 {
+		t.Fatalf("start report = %#v, want one canonical tool anchor", startReport)
+	}
+	if firstDelta.MessageID != startReport.MessageUpdates[0].MessageID ||
+		secondDelta.MessageID != startReport.MessageUpdates[0].MessageID ||
+		report.MessageUpdates[0].MessageID != startReport.MessageUpdates[0].MessageID {
+		t.Fatalf(
+			"tool message identity = start:%q first:%q second:%q snapshot:%q, want one canonical anchor",
+			startReport.MessageUpdates[0].MessageID,
+			firstDelta.MessageID,
+			secondDelta.MessageID,
+			report.MessageUpdates[0].MessageID,
+		)
+	}
 	output, _ := report.MessageUpdates[0].Payload["output"].(map[string]any)
 	if output["text"] != "你好\n" {
 		t.Fatalf("persisted output = %#v", output)
 	}
 }
 
-func TestToolOutputDeltaRequiresKnownStartAnchor(t *testing.T) {
+func TestToolOutputDeltaWaitsForKnownStartAnchor(t *testing.T) {
 	t.Parallel()
+	session := reportTestSession()
 	normalizer := newACPTurnNormalizer()
 	if events := normalizer.AppendToolOutputDelta(
-		reportTestSession(),
+		session,
 		"turn-1",
 		"missing-command",
-		"unsafe",
+		"first",
 	); len(events) != 0 {
-		t.Fatalf("orphan output events = %#v", events)
+		t.Fatalf("pre-anchor output events = %#v, want no invented anchor", events)
+	}
+	started, ok := normalizer.ToolCallEvents(session, "turn-1", map[string]any{
+		"sessionUpdate": "tool_call",
+		"toolCallId":    "missing-command",
+		"title":         "printf",
+		"kind":          "execute",
+		"status":        "in_progress",
+	})
+	if !ok || len(started) != 2 {
+		t.Fatalf("started = %#v, ok = %v, want anchor followed by buffered output", started, ok)
+	}
+	if started[0].Type != activityshared.EventCallStarted ||
+		started[1].Type != activityshared.EventCallStarted {
+		t.Fatalf("started events = %#v", started)
+	}
+	stream := ProjectActivityEventsToStreamEvents(session, started)
+	if len(stream) != 2 ||
+		stream[0].EventType != StreamEventMessageUpdate ||
+		stream[1].EventType != StreamEventMessageDelta {
+		t.Fatalf("stream = %#v, want canonical anchor then live output", stream)
+	}
+	var delta liveprotocol.MessageDeltaData
+	if err := json.Unmarshal(stream[1].Data.(liveprotocol.Event).Data, &delta); err != nil {
+		t.Fatal(err)
+	}
+	if delta.ToolOutput == nil ||
+		delta.ToolOutput.Operation != "set" ||
+		delta.ToolOutput.Text != "first" {
+		t.Fatalf("buffered tool output = %#v", delta.ToolOutput)
 	}
 }
 

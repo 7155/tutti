@@ -401,6 +401,12 @@ When runtime sections are enabled, projection unions IDs from the current sectio
 
 Scroll, section collapse, visible limits, and search query belong to mounted view scope. Non-search state is isolated by `workspaceId + agentTargetId/all`; search creates a temporary navigation scope. `activeConversationId` expresses selection only. Scrolling requires an explicit reveal intent.
 
+On the Home composer, a single-Agent Rail filter follows the effective composer
+Agent Target whether the change originates inside AgentGUI or from host-owned
+node data. The `all` filter remains broad, an open Session keeps its current
+Rail filter, and unresolved/loading targets neither rewrite presentation state
+nor expose placeholder target labels in Home chrome.
+
 Rail scroll memory is captured by scroll events and explicit navigation. Effect cleanup must not synchronously read `scrollTop`: React may already have dirtied the document, turning that read into a full layout inside the interaction task.
 
 An empty bounded Rail result must not unactivate an active or persisted Session.
@@ -686,6 +692,14 @@ header; message footer, speaker, thinking-edge, and row-kind state are projected
 onto the owning message flow or transcript row. Small, self-contained controls
 may still use local relational selectors when their subject and mutation scope
 are bounded.
+
+Composer mention providers own entity presentation metadata, including an
+optional `iconUrl`, through their insertion result. AgentGUI mention
+projections must preserve that metadata for every supported entity kind, and
+the shared mention row renders the icon only when supplied. A provider-level
+icon assertion is not sufficient coverage: presentation changes require both a
+projection assertion and a consuming-row DOM assertion so an intermediate
+view-model cannot silently discard the icon.
 
 External OS file paste and drop enter one host-injected classification boundary before draft attachment creation. The synchronous `resolveExternalPromptEntries` port classifies each source index as a live `WorkspaceFileReference` or a snapshot requiring preparation. AgentGUI owns ordered mention insertion and draft reconciliation: references become ordinary file/folder mentions and never consume prompt-asset slots, while only `prepare` entries create pending attachment state and enter `prepareExternalPromptFiles`. A host without the resolver prepares every external entry. The preparer owns native-path or byte lookup, size enforcement, persistence, and remote transport; each prepared input has one `sourceIndex` result, one failure must not fail siblings, successful results include a provider-readable `path` or `url`, and failures carry typed error codes. Hosts that classify path-backed entries as references must reject any such entry that unexpectedly reaches preparation, so classification failure cannot silently create a duplicate snapshot.
 

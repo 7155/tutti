@@ -1058,21 +1058,19 @@ describe("AgentMessageMarkdown", () => {
       ".tsh-zoom-dialog__toolbar-actions"
     );
     expect(toolbarActions).toBeInstanceOf(HTMLElement);
-    expect(
-      screen
-        .getByRole("button", { name: "Copy image" })
-        .closest(".tsh-zoom-dialog__toolbar-actions")
-    ).toBe(toolbarActions);
-    expect(
-      screen
-        .getByRole("button", { name: "Download image" })
-        .closest(".tsh-zoom-dialog__toolbar-actions")
-    ).toBe(toolbarActions);
-    expect(
-      screen
-        .getByRole("button", { name: /Minimize image/ })
-        .closest(".tsh-zoom-dialog__toolbar-actions")
-    ).toBe(toolbarActions);
+    const previewActionButtons = [
+      screen.getByRole("button", { name: "Copy image" }),
+      screen.getByRole("button", { name: "Download image" }),
+      screen.getByRole("button", { name: /Minimize image/ })
+    ];
+    expect(Array.from(toolbarActions?.children ?? [])).toEqual(
+      previewActionButtons
+    );
+    for (const button of previewActionButtons) {
+      expect(button).toHaveAttribute("data-size", "icon");
+      expect(button).toHaveAttribute("data-variant", "chrome");
+    }
+    expect(previewActionButtons[2]).not.toHaveAttribute("data-rmiz-btn-unzoom");
     fireEvent.click(screen.getByRole("button", { name: "Copy image" }));
     await waitFor(() => {
       expect(screen.getByRole("status")).toHaveTextContent("Copied");

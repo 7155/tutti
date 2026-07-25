@@ -149,12 +149,6 @@
   cursor: zoom-out;
 }
 
-.tsh-zoom-dialog__image-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
 .tsh-zoom-dialog__zoom-controls {
   position: fixed;
   top: max(20px, calc(var(--cove-titlebar-reserve, 0px) + 10px));
@@ -174,7 +168,7 @@
   -webkit-app-region: no-drag;
 }
 
-.tsh-zoom-dialog:not(:has(.tsh-zoom-dialog__image-actions))
+.tsh-zoom-dialog:not([data-tsh-image-actions="true"])
   .tsh-zoom-dialog__zoom-controls {
   right: 72px;
 }
@@ -193,7 +187,6 @@
   -webkit-app-region: no-drag;
 }
 
-.tsh-zoom-dialog__image-actions button,
 .tsh-zoom-dialog__zoom-controls button,
 .tsh-image-context-menu button {
   display: flex;
@@ -232,8 +225,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.tsh-zoom-dialog__icon-button,
-.tsh-zoom-dialog__image-actions button {
+.tsh-zoom-dialog__icon-button {
   justify-content: center;
   width: 32px;
   height: 32px;
@@ -250,8 +242,7 @@
   padding: 7px 10px;
 }
 
-.tsh-zoom-dialog__icon-button:hover,
-.tsh-zoom-dialog__image-actions button:hover {
+.tsh-zoom-dialog__icon-button:hover {
   background: color-mix(in srgb, var(--background-panel) 82%, white 12%);
 }
 

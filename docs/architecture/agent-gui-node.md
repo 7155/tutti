@@ -440,6 +440,12 @@ by the canonical user-message payload, not at provider runtime start. Historical
 activity without that timestamp falls back to the leading user-message
 timestamp.
 
+Completed Turn disclosure collapses only process-oriented rows such as thinking,
+tool groups, progress, turn-boundary messages, and transient processing.
+Ordinary assistant content, user messages, and the response-tail file summary
+remain visible. The file summary owns the diff panel and stays at the end of its
+canonical Turn after the final assistant reply.
+
 High-frequency transcript updates must not pair DOM mutation with unconditional synchronous reads of the timeline's full scroll geometry. Conversation switches, explicit submit-to-bottom requests, skeleton transitions, and older-page prepend restoration may perform pre-paint scroll correction; ordinary content growth preserves bottom lock and user scroll-away state from observed content and viewport geometry after layout.
 
 Virtualizer- or layout-driven scroll events do not release the bottom lock or

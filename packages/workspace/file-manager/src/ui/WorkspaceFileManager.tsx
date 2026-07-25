@@ -335,8 +335,9 @@ export function WorkspaceFileManager({
 
       event.preventDefault();
       void (async () => {
-        await session.copyToClipboard(entry);
-        await onCopyEntry?.();
+        if (await session.copyToClipboard(entry)) {
+          await onCopyEntry?.();
+        }
       })();
     }
 

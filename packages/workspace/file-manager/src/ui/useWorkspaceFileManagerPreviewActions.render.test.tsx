@@ -241,10 +241,26 @@ describe("useWorkspaceFileManagerPreviewActions", () => {
     expect(actions.every((action) => action.disabled)).toBe(true);
   });
 
+  it("does not notify the host when the copy did not reach the clipboard", async () => {
+    const onCopyEntry = vi.fn();
+    const actions = await resolveActions({
+      config: { copy: true },
+      onCopyEntry,
+      session: { copyToClipboard: vi.fn(async () => false) }
+    });
+
+    await act(async () => {
+      actions[0]?.onSelect();
+    });
+
+    expect(onCopyEntry).not.toHaveBeenCalled();
+  });
+
   it("dispatches copy through the session and then notifies the host", async () => {
     const calls: string[] = [];
     const copyToClipboard = vi.fn(async () => {
       calls.push("session");
+      return true;
     });
     const onCopyEntry = vi.fn(async () => {
       calls.push("host");

@@ -491,6 +491,100 @@ test("mutations refresh the current directory after success", async () => {
   session.dispose();
 });
 
+test("copyToClipboard reports success and leaves no error behind", async () => {
+  const copyCalls: Array<{ paths: string[]; workspaceID: string }> = [];
+  const session = createSession({
+    host: {
+      async copyEntriesToClipboard(input) {
+        copyCalls.push(input);
+      }
+    }
+  });
+
+  await session.initialize();
+  const copied = await session.copyToClipboard(
+    createEntry("/Users/demo/project/deck.pptx")
+  );
+
+  assert.equal(copied, true);
+  assert.deepEqual(copyCalls, [
+    { paths: ["/Users/demo/project/deck.pptx"], workspaceID }
+  ]);
+  assert.equal(session.store.error, null);
+
+  session.dispose();
+});
+
+test("copyToClipboard surfaces host failures through the mutation error channel", async () => {
+  const failure = new Error("Clipboard is unavailable");
+  const messages: Array<{ actionKind: string; message: string }> = [];
+  const session = createSession({
+    host: {
+      async copyEntriesToClipboard() {
+        throw failure;
+      }
+    },
+    onMutationErrorMessage: (message) => {
+      messages.push({
+        actionKind: message.actionKind,
+        message: message.message
+      });
+      assert.equal(message.error, failure);
+      return true;
+    }
+  });
+
+  await session.initialize();
+  const copied = await session.copyToClipboard(
+    createEntry("/Users/demo/project/deck.pptx")
+  );
+
+  assert.equal(copied, false);
+  // Raw host errors stay internal; the package hands over its localized copy
+  // unless the host supplies resolveErrorMessage.
+  assert.deepEqual(messages, [
+    { actionKind: "copy", message: "Something went wrong. Please try again." }
+  ]);
+  // The host handled it, so the listing must not be replaced by an error state.
+  assert.equal(session.store.error, null);
+
+  session.dispose();
+});
+
+test("copyToClipboard falls back to the inline error when the host does not handle it", async () => {
+  const session = createSession({
+    host: {
+      async copyEntriesToClipboard() {
+        throw new Error("Clipboard is unavailable");
+      }
+    }
+  });
+
+  await session.initialize();
+  const copied = await session.copyToClipboard(
+    createEntry("/Users/demo/project/deck.pptx")
+  );
+
+  assert.equal(copied, false);
+  assert.equal(session.store.error, "Something went wrong. Please try again.");
+
+  session.dispose();
+});
+
+test("copyToClipboard reports false when the host cannot copy", async () => {
+  const session = createSession();
+
+  await session.initialize();
+  const copied = await session.copyToClipboard(
+    createEntry("/Users/demo/project/deck.pptx")
+  );
+
+  assert.equal(copied, false);
+  assert.equal(session.store.error, null);
+
+  session.dispose();
+});
+
 test("stale search results do not overwrite newer query results", async () => {
   const firstSearch = createDeferred<WorkspaceFileSearchResult>();
   const secondSearch = createDeferred<WorkspaceFileSearchResult>();

@@ -295,6 +295,12 @@ The engine owns:
 
 The engine does not own daemon persistence, provider transport, DOM, or permanent UI layout.
 
+When a model change invalidates canonical context-window usage, AgentGUI keeps
+the last rendered usage for that exact Session visible until a fresh canonical
+usage value arrives. This retained value is presentation-only: it is keyed by
+Session, never crosses into another conversation, and is never written back to
+the workspace engine.
+
 Runtime command availability is session-scoped whenever one workspace engine
 can contain Sessions backed by different transports. The host projects
 `available`, `transport_reconnecting`, or `transport_unavailable`; the engine

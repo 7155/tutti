@@ -3580,19 +3580,10 @@ aside.workspace-agents-status-panel
 
 .agent-gui-conversation__interactive-option-shortcut {
   position: absolute;
-  top: 50%;
+  inset-block: 0;
   right: 8px;
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--transparency-block) 72%, transparent);
-  color: var(--text-tertiary);
-  font-size: 11px;
+  margin-block: auto;
   font-weight: 500;
-  line-height: 1;
-  padding: 4px 6px;
-  transform: translateY(-50%);
 }
 
 .agent-gui-conversation__interactive-option-spinner {

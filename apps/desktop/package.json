@@ -14,6 +14,10 @@
     "executableName": "Tutti",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "generateUpdatesFilesForAllChannels": true,
+    "files": [
+      "out/**",
+      "package.json"
+    ],
     "afterPack": "scripts/copy-vendored-node-resources-after-pack.mjs",
     "afterAllArtifactBuild": "scripts/notarize-mac-dmg-artifacts.mjs",
     "extraResources": [
@@ -52,6 +56,7 @@
         "dmg",
         "zip"
       ],
+      "minimumSystemVersion": "12.0.0",
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.inherit.plist",
       "hardenedRuntime": true,
@@ -110,6 +115,7 @@
     "@tutti-os/ui-rich-text": "workspace:*",
     "@tutti-os/ui-react-hooks": "workspace:*",
     "@tutti-os/ui-system": "workspace:*",
+    "@tutti-os/workbench-electron": "workspace:*",
     "@tutti-os/workbench-host": "workspace:*",
     "@tutti-os/workbench-launchpad": "workspace:*",
     "@tutti-os/workbench-snapshot": "workspace:*",
@@ -132,7 +138,7 @@
     "@tutti-os/rrt-plugin-vite": "0.0.6",
     "babel-plugin-react-compiler": "^1.0.0",
     "dmg-builder": "^26.8.1",
-    "electron": "^35.7.5",
+    "electron": "^43.2.0",
     "electron-builder": "^26.8.1",
     "electron-builder-squirrel-windows": "^26.8.1",
     "electron-vite": "^3.1.0",

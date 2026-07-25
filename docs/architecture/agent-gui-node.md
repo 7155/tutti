@@ -65,8 +65,9 @@ Realtime events reduce latency but are not automatically complete truth:
   `/v1/events/ws` business-event WebSocket
 - continuous, version-complete `message_update` events may merge inline
 - terminal `message_update` is the durable confirmation; message version gaps,
-  invalid/unanchored deltas, reconnects, Turn, Interaction, and state changes
-  trigger authoritative reconciliation
+  invalid/unanchored deltas, nonterminal deltas after known terminal message
+  truth, reconnects, Turn, Interaction, and state changes trigger authoritative
+  reconciliation
 - event publication or observer failure cannot roll back a committed canonical transaction
 
 ### 1.6 Identity and correlation are explicit
@@ -279,6 +280,14 @@ authoritative window. It must not infer older history from a non-one minimum
 version, a version gap, `sequence`, timestamps, or transcript shape; streaming
 updates can raise a message version without creating any older row.
 
+The same rule applies to imported transcripts. When the provider transcript
+contains trustworthy user-message boundaries, the import adapter persists
+stable settled Turn identities before the data reaches AgentGUI. A page that
+starts midway through a long imported Turn must therefore retain that Turn id;
+AgentGUI must not depend on the leading user message being present in the
+currently loaded window. Imported content before the first trustworthy
+boundary remains explicitly session-scoped.
+
 ## 4. Workspace frontend engine
 
 One `(workspaceId, runtime origin)` maps to one `AgentSessionEngine`. Panel unmount, Workbench node reconstruction, and standalone window switching must not change its lifecycle.
@@ -376,6 +385,14 @@ The busy-session prompt queue is ephemeral durable-intent coordination in the wo
 ### 4.5 Rail query and presentation state
 
 The Rail query cache stores section metadata, ordered Session IDs, cursors, and totals only. Session entities always come from the engine.
+
+Cross-platform hosts may reuse the DOM-free canonical Rail summary projection
+from `@tutti-os/agent-gui/conversation-rail-projection`. They must still obtain
+ordered membership, project labels, totals, and cursors from the authoritative
+section query and join those IDs to canonical engine Sessions. Native hosts own
+their renderer and interaction layout; they must not import Desktop or Web
+components, infer project membership from `cwd`, or create a second Session
+lifecycle store.
 
 Hosts install the complete query/mutation cohort from
 `@tutti-os/agent-gui/conversation-rail-runtime`; the shared factory owns the
@@ -784,11 +801,45 @@ AgentGUI, Message Center, dock/header, workspace window, and standalone Agent wi
 
 Opening a panel/window creates presentation state only. It does not clone a Session, copy engine entities, or start another event stream. Standalone tools are Desktop chrome, not AgentGUI lifecycle.
 
-Workbench previews must not mount a second AgentGUI tree. Genie capture clones the
-visible node DOM into a texture, while Dock popup cards and minimized slots use
-the captured image and its cache. If no captured image exists, those Dock
-surfaces show their placeholder; they do not mount AgentGUI as a fallback.
-AgentGUI therefore has no preview-mode rendering contract.
+Workbench previews must not mount a second AgentGUI tree. Genie capture prefers
+the host-provided native image and clones the visible node DOM into a texture
+only after native capture fails or exceeds its bounded wait. Electron hosts
+capture the node region once, retain the full crop for Genie, and resize a copy
+for the Dock. The Genie path must not reuse an undersized Dock image. Dock popup
+cards and minimized slots use the bounded image and its cache. If no captured
+image exists, those Dock surfaces show their placeholder; they do not mount
+AgentGUI as a fallback. AgentGUI therefore has no preview-mode rendering
+contract.
+When a minimized node has a cached Genie texture, Workbench completes the
+restore animation before launching the host node, then replaces the final
+texture frame only after launch settles. The expensive AgentGUI reconstruction
+therefore stays outside the animation. Workbench also prepares the Genie canvas
+during browser idle time with representative scanline, scaling, and glow
+operations, and commits the final minimize state in a later task instead of
+extending the last animation frame. A later minimize may start from that
+retained texture while the host refreshes its native capture asynchronously;
+a native image replaces the retained Genie texture only when it can cover the
+current window without upscaling. Low-resolution thumbnails update only the
+Dock preview cache. A late native result updates that Dock cache immediately,
+but Workbench decodes its full-size image only after the active Genie animation
+settles and the browser is idle. Without a reusable full-resolution texture,
+Workbench falls back to the visible DOM capture. The retained Canvas cache is bounded by
+both entry count and estimated RGBA bytes. Restored nodes keep their texture for
+the next minimize; controller state changes remove textures only after their
+nodes are closed. Eviction leaves the separate Dock image cache intact.
+
+Genie node hiding uses a per-node operation token. A newer operation for the
+same node may supersede an older reveal, but another node's animation may not
+leave the first node hidden. The global animation generation controls only the
+shared Genie Canvas.
+
+The empty AgentGUI Hero renders its existing DOM player before initializing the
+optional WebGL carousel. A host projects whether the normal window presentation
+is currently visible; the carousel waits for that visibility and then browser
+idle time before creating its WebGL renderer. This keeps Genie restore work out
+of the WebGL creation task without exposing Genie state to AgentGUI. WebGL scene
+readiness remains local presentation state; it must not enter
+`AgentActivityRuntime`, the workspace engine, or Workbench node state.
 
 The shared Workbench Header owns conversation-identity visibility. When no
 Conversation exists, it ignores conversation titles, Agent titles, primary

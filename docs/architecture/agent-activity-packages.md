@@ -629,10 +629,18 @@ authoritative read is explicitly named `session_reconcile_required` and must
 never be applied as a partial Session entity. The old public `state_patch` and
 storage message row id are removed.
 
-Message `turnId` is explicitly nullable. Runtime execution messages should use
-the exact durable Turn id, while historical imports without trustworthy
-provider turn boundaries stay session-scoped (`turnId = null`); import must not
-manufacture one live synthetic Turn per transcript message.
+Message `turnId` is explicitly nullable. Runtime execution messages use the
+exact durable Turn id. An external transcript importer may reconstruct stable
+historical Turn ids only from trustworthy provider evidence: each retained real
+user message starts one Turn and the following assistant/tool messages keep
+that identity until the next retained user message. Persistence creates those
+Turns as settled backfills in the same transaction as their messages. A
+forward-only store migration repairs legacy imported turnless rows from the
+same retained-user boundary; re-import applies the same stable identity.
+Content before the first trustworthy boundary stays session-scoped
+(`turnId = null`). AgentGUI never reconstructs canonical Turn ownership from
+the currently loaded page, and import must not manufacture one Turn per
+transcript message.
 
 It should not know how a host connects to `tuttid`, subscribes to the
 business-event WebSocket, resolves workspace paths, or talks to Electron.
@@ -853,6 +861,14 @@ over the configured safe limit is replaced with a `delivery_too_large`
 discontinuity carrying reconcile keys, and the caller falls back to canonical
 data. This avoids maintaining a second chunk assembly protocol while ensuring
 that the final oversized event is not silently lost.
+
+The publisher also keeps a bounded FIFO of the most recent settled Turn ids.
+Those fences convert late text or tool deltas into scoped discontinuities
+without allowing a long-lived stream to accumulate one permanent map entry per
+historical Turn. The retention bound is independent of canonical history:
+evicted Turns remain durable, and the activity-core overlay independently
+rejects a nonterminal delta against known terminal message truth so any later
+uncertainty still converges through authoritative reconciliation.
 
 A host materializes accepted deltas in the activity-core optimistic overlay and
 projects that overlay over its latest canonical message base. The Tutti desktop

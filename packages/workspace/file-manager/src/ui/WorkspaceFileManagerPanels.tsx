@@ -23,6 +23,7 @@ import type {
   RefObject
 } from "react";
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -855,7 +856,7 @@ function resolveWorkspaceFileManagerDateColumnLabel(
   }
 }
 
-function EntryRow({
+const EntryRow = memo(function EntryRow({
   arrangeMode,
   canMove,
   contextMenuActive,
@@ -1074,7 +1075,7 @@ function EntryRow({
       {sizeCell}
     </div>
   );
-}
+});
 
 function MoveDragPreview({
   iconUrlByCacheKey,

@@ -40,6 +40,12 @@ const desktopBuildIconPath = new URL(
   import.meta.url
 );
 
+test("desktop package includes runtime outputs without repository source", async () => {
+  const packageJson = JSON.parse(await readFile(desktopPackagePath, "utf8"));
+
+  assert.deepEqual(packageJson.build.files, ["out/**", "package.json"]);
+});
+
 test("desktop release workflow uses the published desktop package name", async () => {
   const packageJson = JSON.parse(await readFile(desktopPackagePath, "utf8"));
   const workflow = await readFile(workflowPath, "utf8");
@@ -700,6 +706,19 @@ test("desktop package declares the workspace package manager for electron-builde
   const packageJson = JSON.parse(await readFile(desktopPackagePath, "utf8"));
 
   assert.equal(packageJson.packageManager, "pnpm@10.11.0");
+});
+
+test("desktop release pins the supported Electron platform contract", async () => {
+  const packageJson = JSON.parse(await readFile(desktopPackagePath, "utf8"));
+  const workflow = await readFile(workflowPath, "utf8");
+
+  assert.equal(packageJson.devDependencies.electron, "^43.2.0");
+  assert.equal(packageJson.build.mac.minimumSystemVersion, "12.0.0");
+  assert.match(workflow, /name:\s+Install Electron runtime/);
+  assert.match(
+    workflow,
+    /run:\s+pnpm --filter @tutti-os\/desktop exec install-electron/
+  );
 });
 
 test("desktop package verifies channel-specific prerelease updater metadata", async () => {

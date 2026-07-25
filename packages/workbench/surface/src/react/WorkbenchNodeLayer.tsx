@@ -20,10 +20,11 @@ import type {
   WorkbenchWindowChromeMode
 } from "./types.ts";
 import type { WorkbenchGenieController } from "./useWorkbenchGenieAnimation.tsx";
+import type { WorkbenchGenieNodeVisibility } from "./genieNodeVisibility.ts";
 import { useWorkbenchController } from "./WorkbenchProvider.tsx";
 import { WorkbenchWindowFrame } from "./WorkbenchWindowFrame.tsx";
 import { useWorkbenchSelector } from "./hooks/useWorkbenchSelector.ts";
-import { createRenderedWorkbenchNodeIDsSelector } from "./renderedNodeIds.ts";
+import { createWorkbenchNodeLayerNodeIDsSelector } from "./renderedNodeIds.ts";
 import type { WorkbenchWindowChromeI18nRuntime } from "./workbenchWindowI18n.ts";
 import { resolveWorkbenchWindowChromeMode } from "./windowHeader.ts";
 
@@ -62,49 +63,22 @@ export function WorkbenchNodeLayer<TData>({
   windowChromeMode,
   windowChromeI18n
 }: WorkbenchNodeLayerProps<TData>) {
-  const selectRenderedNodeIDs = useMemo(
+  const selectNodeLayerNodeIDs = useMemo(
     () =>
-      createRenderedWorkbenchNodeIDsSelector(shouldKeepMinimizedNodeMounted),
-    [shouldKeepMinimizedNodeMounted]
+      createWorkbenchNodeLayerNodeIDsSelector({
+        missionControl: presentation?.mode === "mission-control",
+        resolveWindowSurfaceLayer,
+        shouldKeepMinimizedNodeMounted
+      }),
+    [
+      presentation?.mode,
+      resolveWindowSurfaceLayer,
+      shouldKeepMinimizedNodeMounted
+    ]
   );
-  const nodeIDs = useWorkbenchSelector<TData, readonly string[]>(
-    selectRenderedNodeIDs
+  const { defaultNodeIDs, dialogPopoverNodeIDs } = useWorkbenchSelector(
+    selectNodeLayerNodeIDs
   );
-  const { defaultNodeIDs, dialogPopoverNodeIDs } = useWorkbenchSelector<
-    TData,
-    {
-      defaultNodeIDs: readonly string[];
-      dialogPopoverNodeIDs: readonly string[];
-    }
-  >((state) => {
-    if (
-      !resolveWindowSurfaceLayer ||
-      presentation?.mode === "mission-control"
-    ) {
-      return {
-        defaultNodeIDs: nodeIDs,
-        dialogPopoverNodeIDs: [] as string[]
-      };
-    }
-
-    const nodeByID = new Map(state.nodes.map((node) => [node.id, node]));
-    const nextDefaultNodeIDs: string[] = [];
-    const nextDialogPopoverNodeIDs: string[] = [];
-
-    for (const nodeID of nodeIDs) {
-      const node = nodeByID.get(nodeID);
-      if (node && resolveWindowSurfaceLayer({ node }) === "dialog-popover") {
-        nextDialogPopoverNodeIDs.push(nodeID);
-      } else {
-        nextDefaultNodeIDs.push(nodeID);
-      }
-    }
-
-    return {
-      defaultNodeIDs: nextDefaultNodeIDs,
-      dialogPopoverNodeIDs: nextDialogPopoverNodeIDs
-    };
-  });
   const snapPreviewRect = useWorkbenchSelector(selectWorkbenchSnapPreviewRect);
   const presentationInteraction =
     interactive && presentation?.mode === "mission-control"
@@ -112,12 +86,13 @@ export function WorkbenchNodeLayer<TData>({
       : null;
   const dialogPopoverLayer =
     dialogPopoverNodeIDs.length > 0 ? (
-      <WorkbenchNodeLayerGroup
+      <MemoizedWorkbenchNodeLayerGroup
         className="workbench-node-layer workbench-node-layer--dialog-popover"
         edgeSnapEnabled={edgeSnapEnabled}
         fullscreenHeaderMode={resolveFullscreenHeaderMode}
-        genie={genie}
+        genieNodeVisibility={genie.nodeVisibility}
         interactive={interactive}
+        minimizeNodeToAnchor={genie.minimizeNodeToAnchor}
         nodeIDs={dialogPopoverNodeIDs}
         presentation={presentation}
         renderNode={renderNode}
@@ -132,12 +107,13 @@ export function WorkbenchNodeLayer<TData>({
 
   return (
     <Fragment>
-      <WorkbenchNodeLayerGroup
+      <MemoizedWorkbenchNodeLayerGroup
         className="workbench-node-layer"
         edgeSnapEnabled={edgeSnapEnabled}
         fullscreenHeaderMode={resolveFullscreenHeaderMode}
-        genie={genie}
+        genieNodeVisibility={genie.nodeVisibility}
         interactive={interactive}
+        minimizeNodeToAnchor={genie.minimizeNodeToAnchor}
         nodeIDs={defaultNodeIDs}
         onBackdropPress={presentationInteraction?.onBackdropPress}
         presentation={presentation}
@@ -163,8 +139,9 @@ interface WorkbenchNodeLayerGroupProps<TData = unknown> {
   className: string;
   edgeSnapEnabled: boolean;
   fullscreenHeaderMode?: WorkbenchResolveFullscreenHeaderMode<TData>;
-  genie: WorkbenchGenieController<TData>;
+  genieNodeVisibility: WorkbenchGenieNodeVisibility;
   interactive: boolean;
+  minimizeNodeToAnchor: WorkbenchGenieController<TData>["minimizeNodeToAnchor"];
   nodeIDs: readonly string[];
   onBackdropPress?: () => void;
   presentation?: WorkbenchSurfacePresentation | null;
@@ -184,8 +161,9 @@ function WorkbenchNodeLayerGroup<TData>({
   className,
   edgeSnapEnabled,
   fullscreenHeaderMode,
-  genie,
+  genieNodeVisibility,
   interactive,
+  minimizeNodeToAnchor,
   nodeIDs,
   onBackdropPress,
   presentation,
@@ -228,9 +206,10 @@ function WorkbenchNodeLayerGroup<TData>({
         <MemoizedWorkbenchNodeLayerItem
           key={nodeID}
           fullscreenHeaderMode={fullscreenHeaderMode}
-          genie={genie}
+          genieNodeVisibility={genieNodeVisibility}
           edgeSnapEnabled={edgeSnapEnabled}
           interactive={interactive}
+          minimizeNodeToAnchor={minimizeNodeToAnchor}
           nodeID={nodeID}
           presentation={presentation}
           renderNode={renderNode}
@@ -246,11 +225,16 @@ function WorkbenchNodeLayerGroup<TData>({
   );
 }
 
+const MemoizedWorkbenchNodeLayerGroup = memo(
+  WorkbenchNodeLayerGroup
+) as typeof WorkbenchNodeLayerGroup;
+
 interface WorkbenchNodeLayerItemProps<TData = unknown> {
   fullscreenHeaderMode?: WorkbenchResolveFullscreenHeaderMode<TData>;
-  genie: WorkbenchGenieController<TData>;
+  genieNodeVisibility: WorkbenchGenieNodeVisibility;
   edgeSnapEnabled: boolean;
   interactive: boolean;
+  minimizeNodeToAnchor: WorkbenchGenieController<TData>["minimizeNodeToAnchor"];
   nodeID: string;
   presentation?: WorkbenchSurfacePresentation | null;
   renderNode: WorkbenchRenderNode<TData>;
@@ -266,9 +250,10 @@ interface WorkbenchNodeLayerItemProps<TData = unknown> {
 
 function WorkbenchNodeLayerItem<TData>({
   fullscreenHeaderMode,
-  genie,
+  genieNodeVisibility,
   edgeSnapEnabled,
   interactive,
+  minimizeNodeToAnchor,
   nodeID,
   presentation,
   renderNode,
@@ -307,7 +292,8 @@ function WorkbenchNodeLayerItem<TData>({
       interactive={interactive}
       presentation={presentation}
       node={node}
-      genie={genie}
+      genieNodeVisibility={genieNodeVisibility}
+      minimizeNodeToAnchor={minimizeNodeToAnchor}
       resolveWindowZIndex={resolveWindowZIndex}
       fullscreenHeaderMode={fullscreenHeaderMode?.({
         controller,

@@ -691,6 +691,7 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       </>
     ) : (
       <AgentGUIEmptyHomePane
+        isActive={isActive}
         isVisible={isVisible}
         provider={emptyHeroProvider}
         providerReadinessGate={emptyProviderReadinessGate}

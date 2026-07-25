@@ -1,3 +1,4 @@
+import { DownloadIcon } from "@tutti-os/ui-system/icons";
 import { createI18nRuntime } from "@tutti-os/ui-i18n-runtime";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -179,4 +180,138 @@ describe("WorkspaceFileManagerPanels", () => {
       ).IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
     }
   });
+
+  it.each([
+    ["renders", true],
+    ["omits", false]
+  ] as const)(
+    "%s the preview action row when the host supplies actions",
+    async (_label, withActions) => {
+      const entry: WorkspaceFileEntry = {
+        hasChildren: false,
+        kind: "file",
+        mtimeMs: null,
+        name: "notes.txt",
+        path: "/Users/demo/notes.txt",
+        sizeBytes: 12
+      };
+      const onSelectDownload = vi.fn();
+      const container = document.createElement("div");
+      document.body.append(container);
+      // jsdom does not implement scrollIntoView, which the selected row calls.
+      Object.defineProperty(Element.prototype, "scrollIntoView", {
+        configurable: true,
+        value: () => {}
+      });
+      Object.defineProperty(window, "localStorage", {
+        configurable: true,
+        value: {
+          getItem: () => null,
+          setItem: () => {}
+        }
+      });
+      const root = createRoot(container);
+      const previousActEnvironment = (
+        globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+      ).IS_REACT_ACT_ENVIRONMENT;
+      (
+        globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+      ).IS_REACT_ACT_ENVIRONMENT = true;
+
+      try {
+        await act(async () => {
+          root.render(
+            <WorkspaceFileManagerPanels
+              arrangeMode="none"
+              canMove={false}
+              contextMenuEntryPath={null}
+              copy={createWorkspaceFileManagerI18nRuntime(
+                createI18nRuntime({
+                  dictionaries: [workspaceFileManagerI18nResources.en]
+                })
+              )}
+              inlineRenameEntryPath={null}
+              inlineRenameValidation={null}
+              isRenaming={false}
+              layoutMode="list"
+              pendingDirectoryPath={null}
+              previewActions={
+                withActions
+                  ? [
+                      {
+                        disabled: false,
+                        icon: <DownloadIcon className="size-4" />,
+                        id: "download",
+                        label: "Download",
+                        onSelect: onSelectDownload
+                      }
+                    ]
+                  : []
+              }
+              previewState={{
+                entry,
+                message: "Preview unavailable",
+                status: "unsupported"
+              }}
+              selectedEntry={entry}
+              selectedPath={entry.path}
+              showPreviewPanel
+              state={{
+                entries: [entry],
+                error: null,
+                isLoading: false,
+                isSearchMode: false
+              }}
+              treeRows={[
+                {
+                  depth: 0,
+                  entry,
+                  expanded: false,
+                  expandable: false,
+                  kind: "entry",
+                  loadingChildren: false
+                }
+              ]}
+              onBlankContextMenu={() => {}}
+              onCancelInlineRename={() => {}}
+              onClearInlineRenameValidation={() => {}}
+              onConfirmInlineRename={async () => true}
+              onEntryContextMenu={() => {}}
+              onMoveEntry={() => {}}
+              onOpenEntry={() => {}}
+              onSelect={() => {}}
+              onToggleDirectoryExpanded={() => {}}
+            />
+          );
+        });
+
+        const actionButton = container.querySelector<HTMLButtonElement>(
+          '[data-testid="workspace-file-manager-preview-action-download"]'
+        );
+
+        if (!withActions) {
+          expect(actionButton).toBeNull();
+          expect(
+            container.querySelector('[role="group"][aria-label="File actions"]')
+          ).toBeNull();
+          return;
+        }
+
+        expect(actionButton).not.toBeNull();
+
+        await act(async () => {
+          actionButton?.click();
+        });
+        expect(onSelectDownload).toHaveBeenCalledOnce();
+      } finally {
+        await act(async () => {
+          root.unmount();
+        });
+        container.remove();
+        (
+          globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+        ).IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
+      }
+    }
+  );
 });

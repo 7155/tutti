@@ -1,6 +1,7 @@
 import {
   createWorkspaceFileManagerI18nRuntime,
   type WorkspaceFileManagerPersistedState,
+  type WorkspaceFileManagerPreviewActionsConfig,
   WorkspaceFileManager
 } from "@tutti-os/workspace-file-manager";
 import { ReferenceSourceContentPane } from "@tutti-os/workspace-file-reference/ui";
@@ -22,6 +23,16 @@ import { useTranslation } from "@renderer/i18n";
 import { Toast } from "@renderer/lib/toast";
 import { useWorkspaceFileManagerService } from "./useWorkspaceFileManagerService";
 import { createDesktopWorkspaceFileManagerContextMenu } from "./createDesktopWorkspaceFileManagerContextMenu";
+
+/**
+ * Desktop only exposes the actions the package already implements. Download and
+ * share stay product-owned and are not part of this host.
+ */
+const desktopWorkspaceFilePreviewActions: WorkspaceFileManagerPreviewActionsConfig =
+  {
+    copy: true,
+    open: true
+  };
 
 interface WorkspaceFileManagerPaneProps {
   className?: string;
@@ -96,15 +107,16 @@ export function WorkspaceFileManagerPane({
     },
     []
   );
+  const notifyEntryCopied = useCallback(() => {
+    Toast.Success(appI18n.t("workspaceFileManager.copySuccessTitle"));
+  }, [appI18n]);
   const resolveContextMenu = useMemo(
     () =>
       createDesktopWorkspaceFileManagerContextMenu({
         appI18n,
         hostOs: featureService.hostOs,
         i18n,
-        onCopyEntry: () => {
-          Toast.Success(appI18n.t("workspaceFileManager.copySuccessTitle"));
-        },
+        onCopyEntry: notifyEntryCopied,
         onCopyPath: async (path) => {
           await navigator.clipboard.writeText(path);
           void new FileManagerPathCopiedReporter(
@@ -162,6 +174,7 @@ export function WorkspaceFileManagerPane({
     [
       featureService.hostOs,
       i18n,
+      notifyEntryCopied,
       referenceCopy,
       referenceSourceAggregator,
       resolveOpenWithApplicationIcon,
@@ -175,6 +188,7 @@ export function WorkspaceFileManagerPane({
       className={className}
       dateLocale={locale}
       i18n={i18n}
+      onCopyEntry={notifyEntryCopied}
       onDirectoryExpanded={(path) => {
         void new FileManagerDirectoryExpandedReporter(
           {
@@ -185,6 +199,7 @@ export function WorkspaceFileManagerPane({
           }
         ).report();
       }}
+      previewActions={desktopWorkspaceFilePreviewActions}
       resolveContextMenu={resolveContextMenu}
       resolveEntryIconUrl={resolveEntryIconUrl}
       renderExternalLocationContent={renderExternalLocationContent}

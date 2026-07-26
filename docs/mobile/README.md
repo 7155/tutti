@@ -78,7 +78,8 @@ ICE/QUIC 问题进入 Go。
 - **Xcode project/workspace**：`TuttiMobile.xcodeproj` 是源码工程；执行 CocoaPods
   后生成的 `TuttiMobile.xcworkspace` 是日常构建入口。
 - **CocoaPods**：React Native iOS 原生依赖管理器。Pods 和 workspace 是本机构建
-  产物，不提交仓库。
+  产物，不提交仓库。Podfile 会加载仓库内的 pnpm 路径兼容处理，避免 CocoaPods
+  解析本地 Pod 符号链接时偶发 `pathname contains null byte`。
 - **XCFramework**：同时封装 iOS device arm64 与 iOS Simulator 架构的 Apple
   framework。本项目用 gomobile 生成 `TuttiMobileGo.xcframework`。
 - **Keychain / CryptoKit**：iOS 设备身份、Ed25519 私钥和账号 session 的安全存储
@@ -203,7 +204,9 @@ pnpm --filter @tutti-os/mobile ios:pods
 `apps/mobile/ios/Frameworks/TuttiMobileGo.xcframework`；`ios:pods` 随后生成
 忽略的 `Pods/` 和 `TuttiMobile.xcworkspace`。iOS build 仍保持 DeviceLink
 transport、Agent live Subscriber 和产品 adapter 的现有所有权，不把 framing 或
-账号策略移入共享 transport。
+账号策略移入共享 transport。不要移除 Podfile 加载的
+`cocoapods_pathname_workaround.rb`；GitHub macOS runner 和本机 pnpm workspace
+都可能在 CocoaPods 生成工程时触发该符号链接解析缺陷。
 
 ## 5. 正式 App 的日常开发循环
 
@@ -280,10 +283,19 @@ screen composition and product-specific interaction.
   generic allow/deny commands.
 
 需要在没有本机开发环境的真机上测试时，可从 GitHub Actions 手动运行
-`Android Internal Build`。它只上传保留 14 天的内部 artifact
+`Mobile Internal Build` 并选择 `android`。它只上传保留 14 天的内部 artifact
 `tutti-mobile-internal-<commit>`，其中的 `tutti-mobile-internal.apk` 已嵌入
 JavaScript bundle，可直接侧载；不会创建 GitHub Release 或公开下载链接。每次
 运行使用新的临时签名 key，安装新构建前可能需要先卸载手机上的旧内部构建。
+
+在 iOS 真机上测试时，运行同一工作流并选择 `ios`。它使用仓库已有的 App Store
+Connect API Key 和 `IOS_DEVELOPMENT_TEAM` 仓库变量，让 Xcode 自动管理云签名并
+使用 `IOS_TEST_DEVICE_UDID` secret 幂等登记内部测试设备，再导出 development
+IPA。工作流上传保留 14 天的内部 artifact
+`tutti-mobile-ios-internal-<commit>`，其中包含 `tutti-mobile-internal.ipa` 和
+SHA-256 校验文件；不会创建 GitHub Release 或公开下载链接。IPA 只能安装到 Apple
+Developer 后台由该 secret 配置并包含在自动生成描述文件中的设备。选择 `all` 可
+同时构建两个平台。
 
 ## 6. 调试时先判断问题属于哪一层
 

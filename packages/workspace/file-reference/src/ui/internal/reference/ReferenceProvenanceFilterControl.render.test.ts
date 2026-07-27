@@ -270,6 +270,7 @@ function buildFilterControlRenderModule(tempDir: string): string {
           side,
           sideOffset,
           size,
+          segments,
           tabs,
           value,
           variant,
@@ -318,6 +319,20 @@ function buildFilterControlRenderModule(tempDir: string): string {
           }, tab.label)
         ));
       }
+      export function Checkbox(props = {}) {
+        return h("span", cleanProps(props));
+      }
+      export function SegmentBar(props = {}) {
+        return h("div", { role: "tablist" }, props.segments.map((segment) =>
+          h("button", {
+            key: segment.value,
+            "aria-selected": props.value === segment.value,
+            role: "tab",
+            type: "button",
+            onClick: () => props.onValueChange(segment.value)
+          }, segment.label)
+        ));
+      }
     `
   );
   const coreUrl = writeMock(
@@ -353,13 +368,14 @@ function buildFilterControlRenderModule(tempDir: string): string {
       /import \{\s*Button,[\s\S]*?\} from "@tutti-os\/ui-system";/,
       `import {
         Button,
+        Checkbox,
         ChevronDownIcon,
         DropdownMenu,
         DropdownMenuCheckboxItem,
         DropdownMenuContent,
         DropdownMenuGroup,
         DropdownMenuTrigger,
-        UnderlineTabs,
+        SegmentBar,
         cn
       } from "${uiSystemUrl}";`
     )

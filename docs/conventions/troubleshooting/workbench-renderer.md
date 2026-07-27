@@ -927,6 +927,43 @@
   [StandaloneAgentToolSidebar.tsx](../../../apps/desktop/src/renderer/src/features/workspace-workbench/ui/StandaloneAgentToolSidebar.tsx)
   [standaloneAgentWindowBounds.ts](../../../apps/desktop/src/main/windows/standaloneAgentWindowBounds.ts)
 
+### Header divider drifts from a resizable sidebar
+
+- Symptom:
+  A Workbench node's custom header divides its chrome at the sidebar boundary,
+  but that divider moves ahead of or behind the body sidebar while the resize
+  handle is dragged.
+- Quick checks:
+  Identify where the header and body read their widths. If the body owns a
+  descendant CSS variable while an effect copies the value to a Workbench
+  ancestor for the header, there are two update paths. Also check whether
+  `grid-template-columns`, `width`, or the resize handle's position keeps a
+  transition active during pointer movement.
+- Root cause:
+  A CSS variable declared inside the body cannot inherit upward into a sibling
+  header. Copying React state to an ancestor in a passive effect makes the
+  header update in a different phase, while a persistent layout transition
+  makes one boundary chase each pointer position. Rapid pointer movement
+  exposes the divergence even when both paths eventually settle on the same
+  number.
+- Fix:
+  Put the live width variable on the lowest DOM scope shared by header and body,
+  and update that single variable directly from `pointermove`. Keep the
+  in-progress width in the interaction ref, update ARIA imperatively, and
+  commit React state when the resize ends. Mark the resize lifecycle explicitly
+  and disable layout and handle-position transitions until `pointerup`,
+  `pointercancel`, or lost pointer capture. A standalone surface without a
+  shared Workbench ancestor can own the same variable on its layout root.
+- Validation:
+  Unit-test that the layout publisher selects the shared Workbench scope,
+  updates it in place, and cleans it up. Run the owning package tests,
+  typecheck, and renderer/UI boundary checks, then visually drag in both
+  directions and confirm the header and body dividers remain coincident.
+- References:
+  [IssueManagerSidebarLayout.ts](../../../packages/workspace/issue-manager/src/ui/internal/shell/IssueManagerSidebarLayout.ts)
+  [useIssueManagerShellView.ts](../../../packages/workspace/issue-manager/src/ui/internal/shell/useIssueManagerShellView.ts)
+  [useAgentGUIConversationRailResizePointerMove.ts](../../../packages/agent/gui/agent-gui/agentGuiNode/view/useAgentGUIConversationRailResizePointerMove.ts)
+
 ### Renderer services initialize twice and consume one event twice
 
 - Symptom:

@@ -63,6 +63,7 @@ React rendering, Workbench state, external stores, input composition, and UI per
 - [Dock entry is open but its state indicator is missing](./workbench-renderer.md#dock-entry-is-open-but-its-state-indicator-is-missing)
 - [Dense list panel stutters when mounted or resized](./workbench-renderer.md#dense-list-panel-stutters-when-mounted-or-resized)
 - [Adjacent sidebar animation repeatedly reflows its content and message flow](./workbench-renderer.md#adjacent-sidebar-animation-repeatedly-reflows-its-content-and-message-flow)
+- [Header divider drifts from a resizable sidebar](./workbench-renderer.md#header-divider-drifts-from-a-resizable-sidebar)
 - [Effect cleanup leaves mounted refs false in React development](./workbench-renderer.md#effect-cleanup-leaves-mounted-refs-false-in-react-development)
 - [AgentGUI crashes while unmounting a Monaco diff](./workbench-renderer.md#agentgui-crashes-while-unmounting-a-monaco-diff)
 - [Workbench node body warns about updating WorkbenchNodeLayer during render](./workbench-renderer.md#workbench-node-body-warns-about-updating-workbenchnodelayer-during-render)

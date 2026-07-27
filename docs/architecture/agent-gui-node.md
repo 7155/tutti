@@ -372,6 +372,18 @@ the existing recovery, approval, or prompt chrome visible until the connection
 notice replaces it. Recovery removes the notice without a success banner. The
 notice does not offer a manual retry because transport recovery is host-owned.
 
+Session presentation derives one canonical Composer gate from target
+connection, Session runtime availability, provider readiness, ownership,
+activation, Interaction, and busy/queue facts. The gate is one atomic
+projection with separate editor, submission, and runtime-command decisions;
+AgentGUI must not place `canSubmit`, target-connection blocking, or
+Session-runtime blocking in independent memoized view slices and recombine them
+later. The editor, send action, keyboard submit paths, Stop availability, and
+Interaction submission consume that same gate snapshot. Busy work may project
+queue submission while keeping the editor editable. Draft emptiness, upload
+progress/failure, project existence, and other draft-local conditions may
+disable submission, but must not change editor editability.
+
 ### 4.1 Read/write rules
 
 - reads use exported selectors or memoized `AgentActivitySnapshot`
@@ -776,6 +788,12 @@ Code uses stable horizontal layers and behavior-oriented vertical modules:
 A controller may compose flows but cannot become a second lifecycle state machine. Extract complete behavior first; do not scatter it into a pile of domainless helpers.
 
 Activation and existing-Session submit share a canonical prompt envelope. Submit eligibility includes text and renderable structured content; an individual composer does not redefine it.
+
+The canonical Composer gate belongs to the Session-presentation projection and
+travels through the Composer view-model slice as one object. View-local
+transition or workflow locks may layer on top as explicit presentation locks;
+they do not copy or reinterpret runtime, connection, provider, ownership, or
+queue readiness.
 
 The conversation composer area is a stable `AgentComposerRegion` with explicit
 floating-control, lifted-interaction, accessory, and primary-composer slots.

@@ -2280,6 +2280,42 @@ Turn state, loading, cancel, restore, file-change undo, rail projection, event u
   [workspaceAgentActivityReconcileBridge.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/internal/workspaceAgentActivityReconcileBridge.ts)
   [workspaceAgentActivityService.test.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/internal/workspaceAgentActivityService.test.ts)
 
+### Shared Agent composer stays disabled after the target connects
+
+- Symptom:
+  A shared Agent target reaches `connected`, and diagnostics show submission
+  readiness has recovered, but the entire composer remains disabled and cannot
+  receive focus or input. This differs from an empty draft disabling only the
+  send button.
+- Quick checks:
+  Inspect one rendered Composer gate snapshot. Its runtime, editor, and
+  submission branches must agree: a ready submission cannot coexist with a
+  target-connection runtime block. If logs instead compare fields from separate
+  Composer and readiness projections, inspect view-model memoization before
+  debugging P2P transport.
+- Root cause:
+  Connection and submission facts were projected into independent memoized
+  slices. A missing dependency could retain the old target-connection block
+  while publishing the new submission-ready value, and a downstream detail
+  model then recombined those two render-time generations into a torn
+  `composerDisabled` decision.
+- Fix:
+  Derive the canonical Composer gate once at the Session-presentation boundary.
+  Keep editor editability, submission readiness/queue/blocking, and
+  runtime-command availability in that one object, then pass it through one
+  view-model slice to the editor, send button, shortcuts, Stop control, and
+  Interaction paths. Keep draft-empty and upload conditions submission-local.
+- Validation:
+  Drive an exact shared target from `connecting` to `connected` and assert the
+  same resulting snapshot reports runtime ready, editor editable, and
+  submission ready. Also cover busy queue behavior, collaborator read-only
+  behavior, and the invariant that submission ready never retains a runtime
+  connection block.
+- References:
+  [agentGuiComposerGate.ts](../../../packages/agent/gui/agent-gui/agentGuiNode/model/agentGuiComposerGate.ts)
+  [useAgentGUISessionPresentation.ts](../../../packages/agent/gui/agent-gui/agentGuiNode/controller/useAgentGUISessionPresentation.ts)
+  [useAgentGUIViewModel.ts](../../../packages/agent/gui/agent-gui/agentGuiNode/model/useAgentGUIViewModel.ts)
+
 ### AgentGUI submit clears the composer but creates no session or turn
 
 - Symptom:

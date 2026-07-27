@@ -14,6 +14,7 @@ import {
   AgentTargetPresentationProvider,
   type AgentMessageMarkdownAgentTarget
 } from "../../shared/AgentTargetPresentationContext";
+import { AgentConversationClockProvider } from "../../shared/agentConversation/components/AgentConversationClock";
 import type { AgentGUINodeViewModel } from "./model/agentGuiNodeTypes";
 import {
   agentTargetPresentationKey,
@@ -79,6 +80,7 @@ import { useAgentGUIExternalRequests } from "./view/useAgentGUIExternalRequests"
 export function AgentGUINodeView({
   viewModel,
   referenceProvenanceFilters = null,
+  sessionInputHistoryEnabled = false,
   renderProjectDirectoryPickerHeaderActions,
   renderSidebarFooter,
   renderProviderRailEmpty,
@@ -634,14 +636,16 @@ export function AgentGUINodeView({
             aria-hidden={conversationRailCollapsed ? "true" : undefined}
             inert={conversationRailCollapsed ? true : undefined}
           >
-            <AgentGUIConversationRailController
-              {...conversationRailStoreState}
-              conversations={viewModel.rail.conversations}
-              nodeId={viewModel.shell.nodeId}
-              registerInteractionLockProbe={registerRailInteractionLockProbe}
-              userProjects={viewModel.rail.userProjects}
-              workspaceId={viewModel.shell.workspaceId}
-            />
+            <AgentConversationClockProvider isVisible={isVisible}>
+              <AgentGUIConversationRailController
+                {...conversationRailStoreState}
+                conversations={viewModel.rail.conversations}
+                nodeId={viewModel.shell.nodeId}
+                registerInteractionLockProbe={registerRailInteractionLockProbe}
+                userProjects={viewModel.rail.userProjects}
+                workspaceId={viewModel.shell.workspaceId}
+              />
+            </AgentConversationClockProvider>
           </aside>
           <div
             id="agent-gui-conversation-rail-resize"
@@ -673,48 +677,53 @@ export function AgentGUINodeView({
             onPointerUp={endConversationRailResize}
           />
           <section id="agent-gui-detail" className={styles.detailPanel}>
-            <AgentGUIDetailPane
-              shell={viewModel.shell}
-              rail={viewModel.rail}
-              detail={viewModel.detail}
-              composer={viewModel.composer}
-              interaction={viewModel.interaction}
-              readiness={viewModel.readiness}
-              operations={viewModel.operations}
-              homeTargetProjection={homeTargetProjection}
-              referenceProvenanceFilters={referenceProvenanceFilters}
-              composerEngagement={composerEngagement}
-              actions={actions}
-              labels={labels}
-              uiLanguage={uiLanguage}
-              isActive={isActive}
-              isVisible={isVisible}
-              workspaceReferencePickerOpen={workspaceReferencePickerOpen}
-              composerFocusRequestSequence={detailComposerFocusRequestSequence}
-              slashStatusLimits={slashStatusLimits}
-              slashStatusLimitsLoading={slashStatusLimitsLoading}
-              slashStatusLimitsUnavailable={slashStatusLimitsUnavailable}
-              slashStatusOverride={slashStatusOverride}
-              onSlashStatusOpen={onSlashStatusOpen}
-              onSlashStatusClose={onSlashStatusClose}
-              onSlashStatusRefresh={onSlashStatusRefresh}
-              onLinkAction={onLinkAction}
-              onHandoffConversation={onHandoffConversation}
-              capabilityMenuState={capabilityMenuState}
-              capabilityControlsReadOnly={capabilityControlsReadOnly}
-              onCapabilitySettingsRequest={onCapabilitySettingsRequest}
-              onAgentProviderLogin={onAgentProviderLogin}
-              onRequestWorkspaceReferences={requestWorkspaceReferences}
-              resolveExternalPromptEntries={resolveExternalPromptEntries}
-              prepareExternalPromptFiles={prepareExternalPromptFiles}
-              promptAssetLimit={promptAssetLimit}
-              selectProjectDirectory={effectiveSelectProjectDirectory}
-              onRequestGitBranches={onRequestGitBranches}
-              onRequestComposerFocus={requestComposerFocus}
-              workspaceAppIcons={effectiveWorkspaceAppIcons}
-              workspaceUserProjectI18n={workspaceUserProjectI18n}
-              renderProviderUnavailableState={renderProviderUnavailableState}
-            />
+            <AgentConversationClockProvider isVisible={isVisible}>
+              <AgentGUIDetailPane
+                shell={viewModel.shell}
+                rail={viewModel.rail}
+                detail={viewModel.detail}
+                composer={viewModel.composer}
+                interaction={viewModel.interaction}
+                readiness={viewModel.readiness}
+                operations={viewModel.operations}
+                homeTargetProjection={homeTargetProjection}
+                referenceProvenanceFilters={referenceProvenanceFilters}
+                sessionInputHistoryEnabled={sessionInputHistoryEnabled}
+                composerEngagement={composerEngagement}
+                actions={actions}
+                labels={labels}
+                uiLanguage={uiLanguage}
+                isActive={isActive}
+                isVisible={isVisible}
+                workspaceReferencePickerOpen={workspaceReferencePickerOpen}
+                composerFocusRequestSequence={
+                  detailComposerFocusRequestSequence
+                }
+                slashStatusLimits={slashStatusLimits}
+                slashStatusLimitsLoading={slashStatusLimitsLoading}
+                slashStatusLimitsUnavailable={slashStatusLimitsUnavailable}
+                slashStatusOverride={slashStatusOverride}
+                onSlashStatusOpen={onSlashStatusOpen}
+                onSlashStatusClose={onSlashStatusClose}
+                onSlashStatusRefresh={onSlashStatusRefresh}
+                onLinkAction={onLinkAction}
+                onHandoffConversation={onHandoffConversation}
+                capabilityMenuState={capabilityMenuState}
+                capabilityControlsReadOnly={capabilityControlsReadOnly}
+                onCapabilitySettingsRequest={onCapabilitySettingsRequest}
+                onAgentProviderLogin={onAgentProviderLogin}
+                onRequestWorkspaceReferences={requestWorkspaceReferences}
+                resolveExternalPromptEntries={resolveExternalPromptEntries}
+                prepareExternalPromptFiles={prepareExternalPromptFiles}
+                promptAssetLimit={promptAssetLimit}
+                selectProjectDirectory={effectiveSelectProjectDirectory}
+                onRequestGitBranches={onRequestGitBranches}
+                onRequestComposerFocus={requestComposerFocus}
+                workspaceAppIcons={effectiveWorkspaceAppIcons}
+                workspaceUserProjectI18n={workspaceUserProjectI18n}
+                renderProviderUnavailableState={renderProviderUnavailableState}
+              />
+            </AgentConversationClockProvider>
           </section>
         </div>
         <AgentGUIReferencePickerSurface

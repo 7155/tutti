@@ -493,7 +493,11 @@ Contain selection and presentation identity at the Rail boundary. Each section r
 
 Keep section header/action chrome independent from changing item collections. A memoized header receives scalar presentation fields and stable event-time actions; it must not receive the section object or rebuild project/session semantics. Split the header into narrow render islands. Frequently changing derived booleans such as project drag disabled, project action locked, and batch deletion disabled may cross the Section presentation boundary through separate primitive Context projections. The Rail pane owns those providers outside the memoized Section so a projection-only update does not execute item projection; only the frame, forwarded-ref button leaf, or open menu content that renders the value may consume it. Do not combine those values into one Context object or copy them into persistent state. Menu disclosure is view-local state. A conversation row keeps its context-menu root mounted so right-click remains immediate, but may defer its normally hidden direct actions and dropdown root until the row is first hovered, focused, or opened by context menu. Once activated, those controls stay mounted for stable focus and keyboard behavior. Portaled menu content exists only while that menu is open, and a closed menu has no availability-state consumer. The project header remains the native drag source, each project section updates the insertion position across its full area, and the Rail scroll viewport owns the final drop so section gaps cannot discard an already visible insertion target. This is a presentation boundary, not a second Rail or lifecycle store; stable event-time guards remain authoritative for action delivery.
 
-Relative time uses one renderer-realm minute clock. Timestamp leaves subscribe directly; do not thread a tick prop through Rail pane/section/row and rerender the interactive subtree every minute.
+Relative time uses one renderer-realm minute clock. Timestamp leaves subscribe
+directly; do not thread a tick prop through Rail pane/section/row and rerender
+the interactive subtree every minute. Fully occluded AgentGUI surfaces do not
+subscribe to that minute cadence. They retain the last clock snapshot while
+hidden and refresh from current time when visual exposure resumes.
 
 ### 4.6 Detail and transcript
 
@@ -532,11 +536,21 @@ Ordinary assistant content, user messages, and the response-tail file summary
 remain visible. The file summary owns the diff panel and stays at the end of its
 canonical Turn after the final assistant reply.
 
-High-frequency transcript updates must not pair DOM mutation with unconditional synchronous reads of the timeline's full scroll geometry. Conversation switches, explicit submit-to-bottom requests, skeleton transitions, and older-page prepend restoration may perform pre-paint scroll correction; ordinary content growth preserves bottom lock and user scroll-away state from observed content and viewport geometry after layout.
+High-frequency transcript updates must not pair DOM mutation with unconditional synchronous reads of the timeline's full scroll geometry. Conversation switches, explicit submit-to-bottom requests, skeleton transitions, and older-page prepend restoration may perform pre-paint scroll correction.
+
+Transcript end-following is one UI-local state machine shared by DOM, TanStack
+Virtual, and React Native adapters. It has only `following` and `detached`
+modes. User scroll-away intent detaches synchronously, before the first scroll
+frame. Conversation selection, prompt submission, an explicit scroll-to-end
+request, or the user actually reaching the end may reattach. Content growth,
+layout effects, observers, virtualizer geometry, and near-end thresholds are
+sensors or executors only; they must not transition the mode.
 
 Turn-level virtualization has one geometry owner. When the transcript is
-virtualized, TanStack Virtual owns append following, streaming size
-adjustments, prepend anchoring, end detection, list height, and item transforms.
+virtualized and the state machine is `following`, TanStack Virtual owns append
+following, streaming size adjustments, prepend anchoring, end detection, list
+height, and item transforms. While `detached`, AgentGUI disables end anchoring
+and append following so TanStack cannot bypass the shared intent owner.
 AgentGUI retains Session selection, explicit user intent, top-page loading,
 bottom-dock safe-area measurement, and the non-virtualized short-transcript
 branch. It must not apply native `scrollHeight`-delta prepend compensation or a
@@ -552,9 +566,10 @@ caused by the older-page loading indicator. Direct DOM transform mode owns the
 virtual sizer height and item transforms; React keeps only row content,
 measurement refs, cross-axis sizing, and disclosure spacing.
 
-Virtualizer- or layout-driven scroll events do not release the bottom lock or
-trigger older-page loading without explicit user scroll-away intent. A settled
-timeline that is too short to fill its viewport may still request older pages.
+Virtualizer- or layout-driven scroll events do not change the end-following
+mode or trigger older-page loading without explicit user scroll-away intent. A
+settled timeline that is too short to fill its viewport may still request older
+pages.
 
 Composer draft updates cross the view boundary through the stable `shell`,
 `rail`, `detail`, `composer`, `interaction`, `readiness`, and `operations`
@@ -567,6 +582,22 @@ replacement may rebuild the document.
 A virtualized transcript derives message-locator selection from the virtualizer's measured turn positions and explicit transcript identity. The currently mounted DOM window is rendering output, not a selection source; range changes must not make the locator temporarily select a neighboring message. Recent wheel and keyboard direction fences locator selection from reversing because of estimate-to-measurement scroll compensation or an item-list identity shift; the previous stable locator index is reconciled in a layout effect before paint. A genuine opposite input replaces that intent.
 
 Historical rich text renders from the canonical Tiptap document through a static schema renderer. Only interactive composer surfaces own a Tiptap Editor/ProseMirror EditorView; read-only transcript surfaces reuse the same mention/token presentation without mounting editor lifecycle. Settled transcript messages reuse a bounded cache of pure Markdown ASTs and Tiptap JSON documents keyed by message identity and exact parser input; rendered React elements are never cached, and streaming Markdown bypasses this cache. Conversation titles are a separate plain-text projection: Markdown mention links are normalized to their `@label` text and never render mention SVGs or interactive rich-text tokens.
+
+Fenced Markdown blocks whose exact language is `mermaid` use the bundled
+Mermaid renderer only in non-inline transcript surfaces. While the owning
+message is streaming, AgentGUI renders a stable diagram frame and placeholder;
+it does not expose the growing source or repeatedly lay out the diagram. Once
+the message settles, AgentGUI renders with Mermaid's strict security mode and
+bounded text and edge limits. Active Turn lifecycle is authoritative over an
+individual message or tool status: a completed tool must not settle a Mermaid
+block while the owning Turn is still active. Oversized, invalid, or failed
+diagrams render a compact failure state with an explicit source-copy action;
+they do not automatically expose the source in the transcript. A rendered
+diagram may open a presentation-local viewer with zoom,
+reset, wheel input, and Space-modified pointer panning. Viewer transform,
+disclosure, and theme-refresh state are UI-only and must not enter Message,
+Turn, Session, activity-runtime, or workspace-engine state. The renderer is
+packaged with AgentGUI and performs no runtime network fetch.
 
 Attachment-only fallback labels such as `[Image]` may provide title or summary
 text, but they are not an additional transcript text block when the canonical
@@ -648,6 +679,11 @@ Harness target by exact target ID, then use the provider/icon catalog fallback.
 Host projections preserve these roles independently and do not create
 provider-specific renderer catalogs.
 
+Agent presentation images decoded for a canvas-backed texture must use
+anonymous CORS loading before assigning `src`. Any host-owned custom protocol
+that serves those images must return an `Access-Control-Allow-Origin` response
+header so the decoded image cannot taint the texture canvas.
+
 When the Desktop host projects built-in Agent mentions into a workspace app,
 it replaces host-local file URLs with bounded 64px WebP data URLs. The external
 bridge is the serialization owner: workspace apps must not read host paths,
@@ -664,6 +700,9 @@ observe the portaled menu DOM, or infer target identity from provider or
 visible text. The current conversation's composer input availability is
 independent from this launch surface: a target connection may disable input
 while Handoff remains available when the host supplies the launch callback.
+AgentGUI DOM surfaces render the target's owner badge through the shared UI
+System Avatar primitive. A failed owner image falls back to the supplied owner
+label initial instead of exposing a browser broken-image glyph.
 
 For a signed Agent Extension, package `icon` is the primary identity and
 optional package `maskIcon` is the conversation-row glyph. All assets remain
@@ -774,6 +813,22 @@ The editor recognizes stale controlled echoes from that transition so an older
 projection cannot overwrite newer local input; a value not emitted locally
 remains an authoritative external replacement.
 
+The mounted Agent GUI owns one in-memory composer input history store. The host
+must opt in explicitly; Desktop maps the default-off `lab.agentInputHistory`
+Lab preference to that capability. Every non-empty structured draft submitted
+while the GUI is open is appended, including equivalent consecutive inputs.
+The store is shared by the Home and Session composer presentations and is
+discarded when the Agent GUI closes.
+
+Bare Up/Down recalls older/newer structured drafts regardless of whether the
+composer currently has content, but only when the collapsed caret is at a
+whole-document boundary. Palette handling and IME composition take precedence.
+On first recall, the current structured draft is captured as the newest
+navigation entry, so moving past the newest submitted input restores the text
+and attachments that were being edited. Editing a recalled draft makes that
+edit the new current entry on the next recall. The history cursor is UI-local
+and resets when the draft Session scope changes.
+
 The dock observes geometry through one coalesced animation-frame measurement
 entry point. Editor document updates, attachment membership or intrinsic
 attachment size changes, and changes to the stable input-shell width may
@@ -810,6 +865,12 @@ the shared mention row renders the icon only when supplied. A provider-level
 icon assertion is not sufficient coverage: presentation changes require both a
 projection assertion and a consuming-row DOM assertion so an intermediate
 view-model cannot silently discard the icon.
+
+Composer copy and cut write both the canonical prompt Markdown as
+`text/plain` and schema-serialized mention markup as `text/html`. Pasting that
+markup reparses it through the AgentGUI editor schema, so built-in and
+currently registered custom mentions retain their canonical href and chip
+identity without a host DOM event interceptor.
 
 External OS file paste and drop enter one host-injected classification boundary before draft attachment creation. The synchronous `resolveExternalPromptEntries` port classifies each source index as a live `WorkspaceFileReference` or a snapshot requiring preparation. AgentGUI owns ordered mention insertion and draft reconciliation: references become ordinary file/folder mentions and never consume prompt-asset slots, while only `prepare` entries create pending attachment state and enter `prepareExternalPromptFiles`. A host without the resolver prepares every external entry. The preparer owns native-path or byte lookup, size enforcement, persistence, and remote transport; each prepared input has one `sourceIndex` result, one failure must not fail siblings, successful results include a provider-readable `path` or `url`, and failures carry typed error codes. Hosts that classify path-backed entries as references must reject any such entry that unexpectedly reaches preparation, so classification failure cannot silently create a duplicate snapshot.
 
@@ -900,10 +961,15 @@ only after native capture fails or exceeds its bounded wait. Electron hosts
 pass the sanitized node region directly to `webContents.capturePage`, retain
 the returned region for Genie, and resize a copy for the Dock. The Genie path
 must not reuse an undersized Dock image. Dock popup
-cards and minimized slots use the bounded image and its cache. If no captured
-image exists, those Dock surfaces show their placeholder; they do not mount
-AgentGUI as a fallback. AgentGUI therefore has no preview-mode rendering
-contract.
+cards and minimized slots use the bounded image and its cache. A background or
+minimized popup node must not request a fresh DOM snapshot: AgentGUI may be
+unhydrated, and `surface.isVisible=false` deactivates imperative resources such
+as the hero Canvas. Those nodes reuse only a previously successful image. If no
+captured image exists, the Dock shows a static terminal placeholder rather than
+an in-flight skeleton; it does not mount AgentGUI or render a conversation
+summary as a fallback. Capture failure is not cached across popup lifetimes, so
+a later foreground attempt may still populate the image. AgentGUI therefore
+has no preview-mode rendering contract.
 When a minimized node has a cached Genie texture, Workbench completes the
 restore animation before launching the host node, then replaces the final
 texture frame only after launch settles. The expensive AgentGUI reconstruction
@@ -946,12 +1012,28 @@ its appearance transition. Background Workbench AgentGUI bodies remain mounted
 so drafts and local conversation presentation survive focus changes. Focus does
 not determine visibility. Workbench frame geometry and z-order classify bodies
 as fully occluded or visually exposed; partial exposure counts as visible.
+While Genie replaces a real node with Canvas output, or scale minimize marks
+the node as pending, Workbench excludes that departing node from geometric
+occlusion. Covered windows therefore resume presentation during minimize; a
+restoring Genie node stays non-occluding until its real node is revealed.
+Scale restore, shell frame transitions, and onboarding entry keep the moving
+node's own presentation visible while temporarily excluding it as an occluder;
+DOM transition and animation completion release that state. Portal-backed
+`dialog-popover` nodes sort above default-layer nodes before Workbench applies
+normal stack order.
 Only fully occluded bodies pause descendant animations and use
 `content-visibility: hidden`. Visible Empty-Hero surfaces may own carousel
 images, alignment observers, wheel input, and a Three.js/WebGL scene.
 Occlusion releases those resources; exposure restores the DOM presentation
 immediately and defers WebGL reconstruction until after the reveal interaction
-settles.
+settles. Detail timelines follow the same geometric boundary: fully occluded
+surfaces disconnect dock/timeline resize observation and scroll listeners,
+while exposure reattaches them and resynchronizes the retained bottom lock.
+Elapsed Turn, compaction, subagent, and Goal labels subscribe to one shared
+renderer-realm second clock only while their containing presentation is
+visible; exposure catches the displayed value up from canonical timestamps.
+Focus alone must not stop either behavior because multiple exposed AgentGUI
+windows remain live at the same time.
 On workspace restore, Desktop mounts the focused AgentGUI body immediately and
 hydrates inactive bodies sequentially after browser idle, one animation frame
 at a time. Window shells and persisted geometry remain synchronous; this

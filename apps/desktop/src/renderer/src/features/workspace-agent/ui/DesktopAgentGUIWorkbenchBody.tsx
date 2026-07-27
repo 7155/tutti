@@ -20,6 +20,7 @@ import { registerWorkspaceAgentGuiOpenSession } from "../../workspace-workbench/
 import {
   selectWorkbenchNodeIsVisuallyExposed,
   useWorkbenchSelector,
+  useWorkbenchVisualOcclusionPresentation,
   workbenchFocusInputActivationType
 } from "@tutti-os/workbench-surface";
 import { useTranslation } from "@renderer/i18n";
@@ -81,6 +82,7 @@ import { DESKTOP_AGENT_GUI_CURRENT_USER_ID } from "../services/desktopAgentGuiId
 import {
   AGENT_REFERENCE_PROVENANCE_FILTER_FLAG,
   isFeatureEnabled,
+  LAB_AGENT_INPUT_HISTORY_FLAG,
   LAB_TUTTI_MODE_FLAG
 } from "../../../../../shared/featureFlags/catalog.ts";
 
@@ -570,6 +572,10 @@ function DesktopAgentGUISurfaceImpl({
     desktopPreferencesState.featureFlags,
     AGENT_REFERENCE_PROVENANCE_FILTER_FLAG
   );
+  const sessionInputHistoryEnabled = isFeatureEnabled(
+    desktopPreferencesState.featureFlags,
+    LAB_AGENT_INPUT_HISTORY_FLAG
+  );
   const providerAuthAccountLabels = useMemo(() => {
     const labels: Partial<Record<WorkspaceAgentProvider, string>> = {};
     for (const status of providerStatusSnapshot.statuses) {
@@ -628,6 +634,7 @@ function DesktopAgentGUISurfaceImpl({
     },
     hostCapabilities: {
       referenceProvenanceFilterEnabled,
+      sessionInputHistoryEnabled,
       capabilityMenuState,
       visibleErrorPresentationOverrides,
       comingSoonProviders: comingSoonAgentProviders,
@@ -705,8 +712,13 @@ function DesktopAgentGUIWorkbenchBodyAdapter({
   context,
   ...props
 }: DesktopAgentGUIWorkbenchBodyProps): JSX.Element {
+  const visualOcclusionPresentation = useWorkbenchVisualOcclusionPresentation();
   const isVisuallyExposed = useWorkbenchSelector((state) =>
-    selectWorkbenchNodeIsVisuallyExposed(state, context.node.id)
+    selectWorkbenchNodeIsVisuallyExposed(
+      state,
+      context.node.id,
+      visualOcclusionPresentation
+    )
   );
   const isBodyVisible = context.isVisible && isVisuallyExposed;
   const [bodyHydrated, setBodyHydrated] = useState(

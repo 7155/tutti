@@ -204,6 +204,93 @@ describe("useAgentGUIDetailScroll", () => {
     expect(harness.timeline.scrollTop).toBe(2_000);
   });
 
+  it("releases virtualized bottom lock after one upward mouse-wheel step", () => {
+    const resizeObservers = installResizeObserverMock();
+    const harness = createHarness({ scrollHeight: 5_000 });
+    const controller = virtualScrollController("conversation-wheel-step");
+    harness.virtualScrollControllerRef.current = controller;
+    const { result, rerender } = renderHook(
+      ({ conversation }) =>
+        useAgentGUIDetailScroll(
+          harness.input({
+            activeConversationId: "conversation-wheel-step",
+            conversation,
+            showTimelineSkeleton: false
+          })
+        ),
+      { initialProps: { conversation: conversationVM("first") } }
+    );
+    controller.scrollToEnd.mockClear();
+    const timelineObserver = resizeObservers.find((observer) =>
+      observer.observed.has(harness.timelineContent)
+    );
+
+    act(() => {
+      harness.timeline.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));
+      harness.timeline.scrollTop = 4_899;
+      harness.timeline.dispatchEvent(new Event("scroll"));
+      timelineObserver?.callback([], timelineObserver);
+    });
+
+    expect(controller.scrollToEnd).not.toHaveBeenCalled();
+    expect(harness.timeline.scrollTop).toBe(4_899);
+    expect(result.current.isTimelineScrolledToBottom).toBe(false);
+
+    rerender({ conversation: conversationVM("second") });
+    act(() => timelineObserver?.callback([], timelineObserver));
+
+    expect(controller.scrollToEnd).not.toHaveBeenCalled();
+    expect(harness.timeline.scrollTop).toBe(4_899);
+    expect(result.current.isTimelineScrolledToBottom).toBe(false);
+  });
+
+  it("releases and restores the DOM bottom lock around a mouse-wheel step", () => {
+    const resizeObservers = installResizeObserverMock();
+    const harness = createHarness({ scrollHeight: 5_000 });
+    const { result, rerender } = renderHook(
+      ({ conversation }) =>
+        useAgentGUIDetailScroll(
+          harness.input({
+            activeConversationId: "conversation-dom-wheel-step",
+            conversation,
+            showTimelineSkeleton: false
+          })
+        ),
+      { initialProps: { conversation: conversationVM("first") } }
+    );
+    const timelineObserver = resizeObservers.find((observer) =>
+      observer.observed.has(harness.timelineContent)
+    );
+    harness.resetScrollTopWriteCount();
+
+    act(() => {
+      harness.timeline.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));
+      timelineObserver?.callback([], timelineObserver);
+      harness.timeline.scrollTop = 4_899;
+      harness.timeline.dispatchEvent(new Event("scroll"));
+    });
+
+    expect(harness.scrollTopWriteCount()).toBe(1);
+    expect(harness.timeline.scrollTop).toBe(4_899);
+    expect(result.current.isTimelineScrolledToBottom).toBe(false);
+
+    harness.setScrollHeight(5_100);
+    rerender({ conversation: conversationVM("second") });
+    act(() => timelineObserver?.callback([], timelineObserver));
+
+    expect(harness.scrollTopWriteCount()).toBe(1);
+    expect(harness.timeline.scrollTop).toBe(4_899);
+    expect(result.current.isTimelineScrolledToBottom).toBe(false);
+
+    act(() => {
+      harness.timeline.dispatchEvent(new WheelEvent("wheel", { deltaY: 1 }));
+      harness.timeline.scrollTop = 5_000;
+      harness.timeline.dispatchEvent(new Event("scroll"));
+    });
+
+    expect(result.current.isTimelineScrolledToBottom).toBe(true);
+  });
+
   it("does not scroll the retained previous timeline when selection changes", () => {
     const harness = createHarness({ scrollHeight: 5_000 });
     const { rerender } = renderHook(
@@ -899,6 +986,104 @@ describe("useAgentGUIDetailScroll", () => {
     ).toBe(false);
   });
 
+  it("disconnects layout observation while fully occluded and catches up when exposed", () => {
+    const resizeObservers = installResizeObserverMock();
+    const harness = createHarness({ scrollHeight: 5_000 });
+    const { rerender } = renderHook(
+      ({ conversation, isVisible }) =>
+        useAgentGUIDetailScroll(
+          harness.input({
+            activeConversationId: "conversation-visibility",
+            conversation,
+            isVisible,
+            showTimelineSkeleton: false
+          })
+        ),
+      {
+        initialProps: {
+          conversation: conversationVM("initial"),
+          isVisible: true
+        }
+      }
+    );
+    const visibleDockObserver = resizeObservers.find((observer) =>
+      observer.observed.has(harness.bottomDock)
+    );
+    const visibleTimelineObserver = resizeObservers.find((observer) =>
+      observer.observed.has(harness.timelineContent)
+    );
+    expect(visibleDockObserver).toBeDefined();
+    expect(visibleTimelineObserver).toBeDefined();
+
+    rerender({ conversation: conversationVM("hidden"), isVisible: false });
+
+    expect(visibleDockObserver?.observed.size).toBe(0);
+    expect(visibleTimelineObserver?.observed.size).toBe(0);
+    harness.resetGeometryReadCounts();
+    harness.resetScrollTopWriteCount();
+    harness.setScrollHeight(8_000);
+    rerender({ conversation: conversationVM("streaming"), isVisible: false });
+    expect(harness.geometryReadCounts()).toEqual({
+      clientHeight: 0,
+      scrollHeight: 0,
+      scrollTop: 0
+    });
+    expect(harness.scrollTopWriteCount()).toBe(0);
+
+    rerender({ conversation: conversationVM("streaming"), isVisible: true });
+
+    const resumedTimelineObserver = resizeObservers.find(
+      (observer) =>
+        observer !== visibleTimelineObserver &&
+        observer.observed.has(harness.timelineContent)
+    );
+    expect(resumedTimelineObserver).toBeDefined();
+    act(() => {
+      resumedTimelineObserver?.callback([], resumedTimelineObserver);
+    });
+    expect(harness.timeline.scrollTop).toBe(7_900);
+    expect(harness.geometryReadCounts()).toEqual({
+      clientHeight: 1,
+      scrollHeight: 1,
+      scrollTop: 2
+    });
+    expect(harness.scrollTopWriteCount()).toBe(1);
+  });
+
+  it("restores a following virtualized conversation after exposure", () => {
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    const harness = createHarness({ scrollHeight: 5_000 });
+    const controller = virtualScrollController("conversation-exposure");
+    harness.virtualScrollControllerRef.current = controller;
+    const hiddenConversation = conversationVM("hidden-update");
+    const { rerender } = renderHook(
+      ({ conversation, isVisible }) =>
+        useAgentGUIDetailScroll(
+          harness.input({
+            activeConversationId: "conversation-exposure",
+            conversation,
+            isVisible,
+            showTimelineSkeleton: false
+          })
+        ),
+      {
+        initialProps: {
+          conversation: conversationVM("initial"),
+          isVisible: true
+        }
+      }
+    );
+    controller.scrollToEnd.mockClear();
+
+    rerender({ conversation: hiddenConversation, isVisible: false });
+    rerender({ conversation: hiddenConversation, isVisible: true });
+
+    expect(controller.scrollToEnd).toHaveBeenCalledWith({ behavior: "auto" });
+  });
+
   it("remeasures dock safe-area after store and ResizeObserver invalidation", () => {
     const resizeObservers = installResizeObserverMock();
     const harness = createHarness({ scrollHeight: 5_000 });
@@ -1077,6 +1262,7 @@ function createHarness(input: { scrollHeight: number }) {
       conversation?: AgentConversationVM;
       hasOlderMessages?: boolean;
       isLoadingOlderMessages?: boolean;
+      isVisible?: boolean;
       showTimelineSkeleton: boolean;
       timelineConversationId?: string | null;
     }) {
@@ -1085,6 +1271,7 @@ function createHarness(input: { scrollHeight: number }) {
         bottomDockRef: ref(bottomDock),
         bottomDockStoreRevision: options.bottomDockStoreRevision ?? "stable",
         conversation: options.conversation ?? null,
+        isVisible: options.isVisible ?? true,
         pendingPrependScrollAnchorRef,
         showTimelineSkeleton: options.showTimelineSkeleton,
         submittedPromptScrollConversationRef,

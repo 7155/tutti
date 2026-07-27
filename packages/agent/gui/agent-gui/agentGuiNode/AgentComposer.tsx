@@ -51,6 +51,7 @@ import {
   groupAgentExternalPromptEntryInsertions,
   resolveAgentExternalPromptEntries
 } from "./model/agentExternalPromptEntries";
+import { useComposerInputHistory } from "./composer/useComposerInputHistory";
 
 export { formatSlashStatusTokenCount };
 
@@ -87,6 +88,7 @@ export function AgentComposer(props: AgentComposerProps): React.JSX.Element {
     draftContent,
     engagement,
     draftScopeKey = "current",
+    inputHistoryStore,
     availableCommands,
     hasCompactableContext = true,
     compactSupported = null,
@@ -177,34 +179,6 @@ export function AgentComposer(props: AgentComposerProps): React.JSX.Element {
   };
   const [isPaletteOpen, setIsPaletteOpen] = useState(true);
   const [isReviewPickerOpen, setIsReviewPickerOpen] = useState(false);
-  const submitWithComposerModifiers: AgentComposerProps["onSubmit"] = (
-    content,
-    displayPrompt,
-    options
-  ) => {
-    onSubmit(
-      content,
-      displayPrompt,
-      withAgentComposerTuttiModeSnapshot({
-        options,
-        active: tuttiModeActive,
-        orchestrationIntensity: tuttiModeOrchestrationIntensity
-      })
-    );
-  };
-  const submitGuidanceWithComposerModifiers: NonNullable<
-    AgentComposerProps["onSubmitGuidance"]
-  > = (content, displayPrompt) => {
-    onSubmitGuidance?.(
-      content,
-      displayPrompt,
-      tuttiModeActive
-        ? {
-            capabilityRefs: [{ capability: "tutti", source: "slash_command" }]
-          }
-        : undefined
-    );
-  };
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [mentionHighlightedKey, setMentionHighlightedKey] = useState<
     string | null
@@ -245,6 +219,52 @@ export function AgentComposer(props: AgentComposerProps): React.JSX.Element {
     [draftScopeKey]: draftContent
   });
   draftByScopeKeyRef.current[draftScopeKey] = draftContent;
+  const { onHistoryNavigation, recordSubmittedDraft } = useComposerInputHistory(
+    {
+      currentDraft: draftContent,
+      draftByScopeKeyRef,
+      draftScopeKey,
+      inputHistoryStore,
+      onDraftContentChange
+    }
+  );
+  const submitWithComposerModifiers: AgentComposerProps["onSubmit"] = (
+    content,
+    displayPrompt,
+    options
+  ) => {
+    recordSubmittedDraft(
+      draftByScopeKeyRef.current[draftScopeKey] ?? draftContent
+    );
+    onSubmit(
+      content,
+      displayPrompt,
+      withAgentComposerTuttiModeSnapshot({
+        options,
+        active: tuttiModeActive,
+        orchestrationIntensity: tuttiModeOrchestrationIntensity
+      })
+    );
+  };
+  const submitGuidanceWithComposerModifiers: NonNullable<
+    AgentComposerProps["onSubmitGuidance"]
+  > = (content, displayPrompt) => {
+    if (!onSubmitGuidance) {
+      return;
+    }
+    recordSubmittedDraft(
+      draftByScopeKeyRef.current[draftScopeKey] ?? draftContent
+    );
+    onSubmitGuidance(
+      content,
+      displayPrompt,
+      tuttiModeActive
+        ? {
+            capabilityRefs: [{ capability: "tutti", source: "slash_command" }]
+          }
+        : undefined
+    );
+  };
   const promptTipRef = useRef<HTMLSpanElement | null>(null);
   const { mentionControllerRef, mentionSearchState } =
     useAgentMentionSearchController(referenceProvenanceFilters);
@@ -377,7 +397,7 @@ export function AgentComposer(props: AgentComposerProps): React.JSX.Element {
     }
     previousSlashStatusAgentSessionIdRef.current = slashStatusAgentSessionId;
     setIsSlashStatusPanelOpen(false);
-  }, [slashStatusAgentSessionId]);
+  }, [draftScopeKey, slashStatusAgentSessionId]);
 
   const slashActions = useComposerSlashActions({
     workspaceId,
@@ -676,6 +696,7 @@ export function AgentComposer(props: AgentComposerProps): React.JSX.Element {
         onTuttiModeOrchestrationIntensityChange
       }
       isPromptTipOverflowing={isPromptTipOverflowing}
+      onHistoryNavigation={onHistoryNavigation}
     />
   );
 }

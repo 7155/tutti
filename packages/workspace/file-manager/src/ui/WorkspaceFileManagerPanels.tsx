@@ -1457,6 +1457,9 @@ function EntryNameCell({
               }
             }}
             onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing || event.keyCode === 229) {
+                return;
+              }
               if (event.key === "Enter") {
                 event.preventDefault();
                 void handleConfirm();

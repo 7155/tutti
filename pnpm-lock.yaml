@@ -1124,6 +1124,9 @@ importers:
       "@tutti-os/ui-i18n-runtime":
         specifier: workspace:*
         version: link:../../ui/i18n-runtime
+      "@tutti-os/ui-react-hooks":
+        specifier: workspace:*
+        version: link:../../ui/react-hooks
       "@tutti-os/ui-system":
         specifier: workspace:*
         version: link:../../ui/system

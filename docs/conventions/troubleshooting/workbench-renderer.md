@@ -327,33 +327,39 @@
 ### IME composition breaks fuzzy search or controlled search inputs
 
 - Symptom:
-  Chinese, Japanese, or Korean input cannot be committed in a fuzzy search or
-  mention picker. Pressing Enter to accept an IME candidate may select a
-  highlighted result, submit a search, or clear/replace the partially composed
-  text.
+  Chinese, Japanese, or Korean input cannot be committed in a fuzzy search,
+  mention picker, or a controlled name dialog (for example Files → New folder /
+  New file). Pressing Enter to accept an IME candidate may select a highlighted
+  result, submit a search or create dialog, or clear/replace the partially
+  composed text.
 - Quick checks:
   Inspect any `keydown` handler that consumes `Enter` or `Tab` while a menu is
-  open. Also inspect controlled `input[type="search"]` fields whose `value`
-  comes from async search/controller state.
+  open. Also inspect controlled text/`input[type="search"]` fields whose
+  `value` comes from async search/controller or dialog store state and whose
+  `onChange` commits on every keystroke without composition handlers.
 - Root cause:
   IME candidate confirmation is delivered through composition-aware keyboard
   events. If menu shortcuts do not check `isComposing` or the `keyCode/which`
   `229` fallback, the app treats candidate confirmation as a command. If a
-  controlled search input pushes every composition update through async search
-  state, stale parent values can overwrite the local composing buffer.
+  controlled search or name input pushes every composition update through async
+  search/controller/dialog state, stale parent values can overwrite the local
+  composing buffer.
 - Fix:
   In fuzzy/menu key handlers, return before command handling when
   `event.isComposing`, `event.nativeEvent.isComposing`, `keyCode === 229`, or
-  `which === 229`. For controlled search inputs, keep a local value during
-  `compositionstart`/`compositionend`, commit to the controller on
-  `compositionend`, and ignore stale parent values until the parent catches up.
+  `which === 229`. For controlled search or name inputs, keep a local value
+  during `compositionstart`/`compositionend` (prefer
+  `useComposedInputValue`), commit to the controller on `compositionend`, and
+  ignore stale parent values until the parent catches up. Guard form submit
+  while composition is active.
 - Validation:
   Add a unit test for the IME guard or input sync state, then manually type a
-  Chinese query and confirm Enter accepts the candidate instead of selecting a
-  result or submitting the field.
+  Chinese query/name and confirm Enter accepts the candidate instead of
+  selecting a result or submitting the field.
 - References:
   [richTextIme.ts](../../../packages/ui/rich-text/src/editor/richTextIme.ts)
   [useComposedInputValue.ts](../../../packages/ui/react-hooks/src/useComposedInputValue.ts)
+  [WorkspaceFileManagerMenus.tsx](../../../packages/workspace/file-manager/src/ui/WorkspaceFileManagerMenus.tsx)
   [WorkspaceFileReferencePickerTree.tsx](../../../packages/workspace/file-reference/src/ui/internal/reference/WorkspaceFileReferencePickerTree.tsx)
   [IssueManagerSidebarSections.tsx](../../../packages/workspace/issue-manager/src/ui/internal/shell/IssueManagerSidebarSections.tsx)
 

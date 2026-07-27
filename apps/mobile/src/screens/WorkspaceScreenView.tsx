@@ -1,6 +1,7 @@
-import type {
-  AgentActivityInteraction,
-  AgentActivitySessionSettings
+import {
+  canonicalInteractionKey,
+  type AgentActivityInteraction,
+  type AgentActivitySessionSettings
 } from "@tutti-os/agent-activity-core";
 import { resolveAgentConversationNavigationAction } from "@tutti-os/agent-gui/conversation-projection";
 import { createAgentConversationFollowEndController } from "@tutti-os/agent-gui/agent-conversation/follow-end";
@@ -138,7 +139,7 @@ export function ConversationWorkspaceView({
   onRefreshQuickPrompts(): Promise<void>;
   onRespond(
     interaction: AgentActivityInteraction,
-    input: {
+    input?: {
       action?: string;
       optionId?: string;
       payload?: Readonly<Record<string, unknown>>;
@@ -322,13 +323,29 @@ export function ConversationWorkspaceView({
                 onLinkPress={openConversationLink}
               />
             )}
-            {model.selectedSession.pendingInteractions.map((interaction) => (
-              <MobileInteractionCard
-                interaction={interaction}
-                key={`${interaction.agentSessionId}:${interaction.turnId}:${interaction.requestId}`}
-                onSubmit={async (input) => onRespond(interaction, input)}
-              />
-            ))}
+            {model.pendingInteractions.map((interaction) => {
+              const interactionKey = canonicalInteractionKey(
+                interaction.agentSessionId,
+                interaction.turnId,
+                interaction.requestId
+              );
+              const state = model.interactionStates[interactionKey] ?? {
+                failed: false,
+                runtimeAvailable: false,
+                submitting: false
+              };
+              return (
+                <MobileInteractionCard
+                  failed={state.failed}
+                  interaction={interaction}
+                  key={interactionKey}
+                  onRetry={() => onRespond(interaction)}
+                  onSubmit={(input) => onRespond(interaction, input)}
+                  runtimeAvailable={state.runtimeAvailable}
+                  submitting={state.submitting}
+                />
+              );
+            })}
           </ScrollView>
           {showScrollToBottom ? (
             <NativeButton

@@ -6,8 +6,10 @@ import {
 } from "@tutti-os/agent-activity-core";
 import {
   agentActivityMessageFromTuttidMessage,
+  agentActivitySessionDetailFromTuttid as mapAgentActivitySessionDetailFromTuttid,
   agentActivitySessionFromTuttidSession as mapAgentActivitySessionFromTuttidSession,
-  agentActivityTuttiModeActivationFromTuttid
+  agentActivityTuttiModeActivationFromTuttid,
+  type AgentActivitySessionDetailSnapshot
 } from "@tutti-os/agent-activity-tuttid-adapter";
 export {
   agentActivityMessageFromTuttidMessage,
@@ -20,6 +22,7 @@ import type {
   CreateWorkspaceAgentSessionRequest,
   SendWorkspaceAgentSessionInputRequest,
   WorkspaceAgentSession,
+  WorkspaceAgentSessionDetailResponse,
   WorkspaceAgentProvider
 } from "@tutti-os/client-tuttid-ts";
 import type { DesktopRuntimeApi } from "@preload/types";
@@ -45,6 +48,21 @@ export function agentActivitySessionFromTuttidSession(
   return mapAgentActivitySessionFromTuttidSession(workspaceId, session, {
     currentUserId: DESKTOP_AGENT_GUI_CURRENT_USER_ID
   });
+}
+
+export function agentActivitySessionDetailFromTuttid(
+  workspaceId: string,
+  expectedAgentSessionId: string,
+  detail: WorkspaceAgentSessionDetailResponse
+): AgentActivitySessionDetailSnapshot {
+  return mapAgentActivitySessionDetailFromTuttid(
+    workspaceId,
+    expectedAgentSessionId,
+    detail,
+    {
+      currentUserId: DESKTOP_AGENT_GUI_CURRENT_USER_ID
+    }
+  );
 }
 
 export function createDesktopAgentActivityAdapter({

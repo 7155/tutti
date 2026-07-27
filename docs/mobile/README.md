@@ -412,7 +412,11 @@ Google Play 账号。以下事项等正式分发前再处理：
   Mobile 将 `message_delta` 投影到 activity-core optimistic overlay，直接应用
   Turn/Interaction 更新，并在 discontinuity、序列断点和重连时读取 canonical 数据；
 - workspace 前台已有 live stream 时不再运行一秒消息轮询和两秒会话轮询；长流断开或
-  协议不可用时才恢复单飞轮询，并以一秒退避自动重建 live stream；
+  协议不可用时才恢复轮询。`WorkspaceActivityMessagePageLoader` 单独负责 transport
+  page 请求、DTO 映射、Engine 应用和按 Session + 查询覆盖范围的 single-flight；
+  `WorkspaceActivityService` 只决定轮询时机和 authoritative/incremental 读取语义。
+  older/incremental 请求不会吞掉 live gap 所需的 authoritative newest-page 读取；
+  旧会话的慢请求也不会阻塞用户刚切换到的会话，并以一秒退避自动重建 live stream；
 - Android caller 已接入 create/get/update attempt、STUN 二次 gathering、真实
   DeviceLink request stream、端到端请求 deadline、prepare/connect generation
   fencing 和 Native 15 秒后台 grace period；
@@ -426,6 +430,12 @@ Google Play 账号。以下事项等正式分发前再处理：
   切换会话会定位最新内容，流式更新只在 `following` 时跟随；主动上滑会在首个滚动帧前
   进入 `detached` 并提供回到底部入口，内容增长和近底部几何不能自行恢复跟随；加载历史
   消息时保持当前阅读锚点；
+- Rail service 只保存 section membership、Session id、cursor、total 和请求状态；
+  首屏与分页返回的 Session DTO 瞬时通过共享 mapper upsert 到 workspace Engine，
+  不在 Mobile 再维护一份实体缓存。root detail 的 Session、child Session 和 Turn
+  也通过一个原子 `session/detailSnapshotReceived` 进入 Engine；当前 Native
+  会话流不展示 child 对话，因此只分页读取选中 root Session 的消息，不预取没有消费方的
+  child transcript；
 - Agent 消息正文已接入 Fabric 原生 Markdown renderer，支持 GFM 标题、列表、代码块、
   表格、任务列表、流式尾部动画和系统文本选择；样式全部映射到 Native UI System
   token，Mobile 不再维护 Markdown AST 或另一份消息类型；
@@ -435,7 +445,16 @@ Google Play 账号。以下事项等正式分发前再处理：
 - Composer options 以 Agent Target 为 key 通过同一个 `AgentSessionEngine` 加载，复用
   AgentGUI 的纯 support/settings projection 和 activity-tuttid DTO mapper。Native
   sheet 只负责模型、推理、速度、权限和计划模式的本地展示；已有会话设置走 Engine
-  command，新建会话的目标设置作为 activation intent 一并提交；
+  command，新建会话的目标设置作为 activation intent 一并提交。settings sheet 与
+  tools modal 共享一个带 activation identity 的 overlay 状态，Native 延迟关闭回调
+  只能关闭自己所属的 activation，不能在 ABA 切换后关闭同类型的新 overlay；
+  `commandsAvailable` 为 false 时关闭现有 overlay，并统一禁用输入、工具入口、设置
+  chips 和 sheet 选项，避免展示可操作但会被 command adapter 拒绝的控件；
+- Mobile 与 Desktop 复用 activity-core 的 realtime observation 和 prompt command
+  executor。Interaction 的 submitting/failure、child 聚合和 per-Session runtime
+  availability 全部从 Engine 投影；前后台恢复会解锁 Engine 中全部已知 Session，
+  不依赖有界 Rail 页重新发现。Native card 不维护独立 Promise 状态，失败重试复用
+  Engine 保存的原始 response，不能修改后伪装成同一请求；
 - Go authenticated link、owner host、application frame、allowlist、race，以及
   TypeScript/Jest、Metro bundle、Kotlin/Java/CMake、四 ABI APK 均已有自动验证。
 - `apps/mobile/ios` 已建立 React Native 0.86/Fabric Simulator shell，并提供与

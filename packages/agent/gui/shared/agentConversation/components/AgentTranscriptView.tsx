@@ -13,6 +13,7 @@ import type { AgentMessageMarkdownWorkspaceAppIcon } from "../../AgentMessageMar
 import type { AgentGUIProviderSkillOption } from "../../../agent-gui/agentGuiNode/model/agentGuiNodeTypes";
 import type { AgentConversationVM } from "../contracts/agentConversationVM";
 import type { AgentConversationParticipantPresentation } from "../contracts/agentConversationParticipantPresentation";
+import type { AgentConversationFollowEndMode } from "../agentConversationFollowEndController";
 import { AgentTranscriptItemView } from "./AgentTranscriptItemView";
 import { useAgentTurnDisclosureStore } from "./AgentTurnDisclosureContext";
 import { AgentTurnWorkSection } from "./AgentTurnWorkSection";
@@ -62,6 +63,7 @@ export type { AgentTranscriptVirtualScrollController } from "./useAgentTranscrip
 
 export interface AgentTranscriptViewProps {
   conversation: AgentConversationVM;
+  isVisible?: boolean;
   turnAttachments?: readonly AgentTranscriptTurnAttachment[];
   turnAttachmentLocatorRef?: Ref<AgentTranscriptAttachmentLocator>;
   onTurnAttachmentVisibilityChange?: (
@@ -74,6 +76,7 @@ export interface AgentTranscriptViewProps {
   workspaceAppIcons?: readonly AgentMessageMarkdownWorkspaceAppIcon[];
   showRawTimelineJson?: boolean;
   participantPresentation?: AgentConversationParticipantPresentation;
+  followEndMode?: AgentConversationFollowEndMode;
   virtualListLayoutRevision?: number;
   virtualScrollControllerRef?: Ref<AgentTranscriptVirtualScrollController>;
   labels: {
@@ -188,6 +191,10 @@ function transcriptConversationRenderInputEquals(
         next.sourceDetail.session.agentSessionId &&
       previous.sourceDetail.session.activeTurnId ===
         next.sourceDetail.session.activeTurnId &&
+      previous.sourceDetail.session.activeTurn?.turnId ===
+        next.sourceDetail.session.activeTurn?.turnId &&
+      previous.sourceDetail.session.activeTurn?.phase ===
+        next.sourceDetail.session.activeTurn?.phase &&
       previous.sourceDetail.session.imported ===
         next.sourceDetail.session.imported &&
       previous.sourceDetail.cwd === next.sourceDetail.cwd &&
@@ -211,6 +218,7 @@ export function areAgentTranscriptViewPropsEqual(
       previous.conversation,
       next.conversation
     ) &&
+    (previous.isVisible ?? true) === (next.isVisible ?? true) &&
     previous.onLinkAction === next.onLinkAction &&
     previous.onAuthLogin === next.onAuthLogin &&
     previous.availableSkills === next.availableSkills &&
@@ -220,6 +228,7 @@ export function areAgentTranscriptViewPropsEqual(
     previous.onTurnAttachmentVisibilityChange ===
       next.onTurnAttachmentVisibilityChange &&
     previous.showRawTimelineJson === next.showRawTimelineJson &&
+    previous.followEndMode === next.followEndMode &&
     previous.virtualListLayoutRevision === next.virtualListLayoutRevision &&
     previous.virtualScrollControllerRef === next.virtualScrollControllerRef &&
     participantPresentationEqual(
@@ -232,6 +241,7 @@ export function areAgentTranscriptViewPropsEqual(
 
 export const AgentTranscriptView = memo(function AgentTranscriptView({
   conversation,
+  isVisible = true,
   turnAttachments = [],
   turnAttachmentLocatorRef,
   onTurnAttachmentVisibilityChange,
@@ -241,6 +251,7 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
   workspaceAppIcons,
   showRawTimelineJson = false,
   participantPresentation,
+  followEndMode,
   virtualListLayoutRevision = 0,
   virtualScrollControllerRef,
   labels
@@ -362,6 +373,7 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
   const { rowVirtualizer, setVirtualizerHostElement, virtualizerHostRef } =
     useAgentTranscriptVirtualizer({
       agentSessionId,
+      followEndMode,
       hasMovingTurnDisclosure,
       scrollElement: virtualScrollElement,
       scrollMargin: virtualListOffsetFromScrollOrigin,
@@ -413,7 +425,7 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
   );
 
   useLayoutEffect(() => {
-    if (!shouldVirtualize) {
+    if (!isVisible || !shouldVirtualize) {
       return;
     }
     const virtualizerHost = virtualizerHostRef.current;
@@ -434,7 +446,7 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
     setVirtualListOffsetFromScrollOrigin((previousOffset) =>
       previousOffset === nextOffset ? previousOffset : nextOffset
     );
-  }, [shouldVirtualize, virtualListLayoutRevision]);
+  }, [isVisible, shouldVirtualize, virtualListLayoutRevision]);
 
   const renderRow = (
     row: AgentConversationVM["rows"][number],
@@ -456,6 +468,15 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
       isAssistantParticipantContentRow(row)
         ? "assistant"
         : undefined;
+    const activeTurn = conversation.sourceDetail.session.activeTurn;
+    const canonicalTurn =
+      row.turnId === null ? null : (canonicalTurnById.get(row.turnId) ?? null);
+    const isActiveTurn =
+      row.turnId !== null &&
+      canonicalTurn?.phase !== "settled" &&
+      (activeTurn?.turnId === row.turnId
+        ? activeTurn.phase !== "settled"
+        : conversation.sourceDetail.session.activeTurnId === row.turnId);
 
     return (
       <div
@@ -500,6 +521,7 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
           showRawTimelineJson={showRawTimelineJson}
           participantPresentation={participantPresentation}
           showParticipantHeader={showParticipantHeader}
+          isActiveTurn={isActiveTurn}
           toolGroupExpanded={
             row.kind === "tool-group"
               ? expandedToolRows[rowKey] === true
@@ -586,7 +608,9 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
     return (
       <>
         <AgentMessageLocatorRail
+          followEndMode={followEndMode}
           items={userMessageLocatorItems}
+          isVisible={isVisible}
           label={labels.userMessageLocator}
           onLocate={handleLocateUserMessage}
           virtualSelectionSource={rowVirtualizer}
@@ -637,7 +661,9 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
   return (
     <>
       <AgentMessageLocatorRail
+        followEndMode={followEndMode}
         items={userMessageLocatorItems}
+        isVisible={isVisible}
         label={labels.userMessageLocator}
         onLocate={handleLocateUserMessage}
       />

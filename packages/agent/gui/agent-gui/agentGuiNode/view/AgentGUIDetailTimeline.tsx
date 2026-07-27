@@ -12,6 +12,7 @@ import type { WorkspaceLinkAction } from "../../../actions/workspaceLinkActions"
 import { AgentGUIConversationTimelinePane } from "./AgentGUIConversationTimelinePane";
 import styles from "../AgentGUINode.styles";
 import type { AgentTranscriptVirtualScrollController } from "../../../shared/agentConversation/components/AgentTranscriptView";
+import type { AgentConversationFollowEndMode } from "../../../shared/agentConversation/agentConversationFollowEndController";
 
 const TIMELINE_CONTENT_STYLE: CSSProperties = {
   width: "100%",
@@ -33,8 +34,10 @@ interface AgentGUIDetailTimelineProps {
     userMessageLocator: string;
   };
   hasActiveConversation: boolean;
+  followEndMode: AgentConversationFollowEndMode;
   homeContent: ReactNode;
   isLoadingOlderMessages: boolean;
+  isVisible: boolean;
   isTimelineScrolledToTop: boolean;
   labels: {
     loadingConversation: string;
@@ -55,8 +58,10 @@ export const AgentGUIDetailTimeline = memo(function AgentGUIDetailTimeline({
   conversationFlowEmpty,
   conversationFlowLabels,
   hasActiveConversation,
+  followEndMode,
   homeContent,
   isLoadingOlderMessages,
+  isVisible,
   isTimelineScrolledToTop,
   labels,
   onAuthLogin,
@@ -88,8 +93,10 @@ export const AgentGUIDetailTimeline = memo(function AgentGUIDetailTimeline({
       {hasActiveConversation ? (
         <AgentGUIConversationTimelinePane
           conversation={conversation}
+          followEndMode={followEndMode}
           isLoading={showTimelineSkeleton}
           isLoadingOlderMessages={isLoadingOlderMessages}
+          isVisible={isVisible}
           loadingLabel={labels.loadingConversation}
           empty={conversationFlowEmpty}
           onLinkAction={onLinkAction}

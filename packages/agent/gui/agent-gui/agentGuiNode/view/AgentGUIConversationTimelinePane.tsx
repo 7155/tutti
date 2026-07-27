@@ -10,6 +10,7 @@ import type {
   AgentTranscriptVirtualScrollController
 } from "../../../shared/agentConversation/components/AgentTranscriptView";
 import { userScrollBehavior } from "./agentGUIDetailScrollHelpers";
+import type { AgentConversationFollowEndMode } from "../../../shared/agentConversation/agentConversationFollowEndController";
 
 const EMPTY_WORKSPACE_APP_ICONS: readonly AgentMessageMarkdownWorkspaceAppIcon[] =
   [];
@@ -24,6 +25,8 @@ interface AgentGUIConversationTimelinePaneProps {
   ) => void;
   isLoading: boolean;
   isLoadingOlderMessages: boolean;
+  isVisible: boolean;
+  followEndMode: AgentConversationFollowEndMode;
   virtualScrollControllerRef: Ref<AgentTranscriptVirtualScrollController>;
   loadingLabel: string;
   empty: React.JSX.Element;
@@ -48,6 +51,8 @@ export const AgentGUIConversationTimelinePane = memo(
     onTurnAttachmentVisibilityChange,
     isLoading,
     isLoadingOlderMessages,
+    isVisible,
+    followEndMode,
     virtualScrollControllerRef,
     loadingLabel,
     empty,
@@ -72,10 +77,12 @@ export const AgentGUIConversationTimelinePane = memo(
         ) : null}
         <AgentConversationFlow
           conversation={conversation}
+          followEndMode={followEndMode}
           turnAttachments={turnAttachments}
           turnAttachmentLocatorRef={turnAttachmentLocatorRef}
           onTurnAttachmentVisibilityChange={onTurnAttachmentVisibilityChange}
           isLoading={isLoading}
+          isVisible={isVisible}
           loadingLabel={loadingLabel}
           empty={empty}
           onLinkAction={onLinkAction}

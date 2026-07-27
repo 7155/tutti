@@ -1133,6 +1133,9 @@ export const zhCN = {
         visibilityLabel: "显示开发者面板"
       },
       lab: {
+        agentInputHistoryDescription:
+          "在 Agent 输入框中使用上下键切换当前会话的历史输入",
+        agentInputHistoryLabel: "Agent 输入历史",
         backLabel: "返回",
         automationRulesDescription: "显示自动化规则配置与会话覆盖选项",
         automationRulesLabel: "自动化规则",
@@ -1188,7 +1191,9 @@ export const zhCN = {
         terminal: "终端"
       },
       filePreview: {
+        edit: "编辑",
         loading: "加载中...",
+        preview: "预览",
         revert: "还原",
         save: "保存",
         saved: "已保存",

@@ -23,7 +23,8 @@ Use the focused runtime index or open one area directly:
   Includes shared-device recovery that looks terminal while the host is still retrying.
   Also covers new-conversation requests that silently fail after a Chats
   Session working directory is mistaken for a selected project, and one hung
-  provider startup blocking unrelated Agent sessions.
+  provider startup blocking unrelated Agent sessions. Includes canonical
+  completion delayed behind a streaming activity-report backlog.
 - [Agent Approvals And Child Sessions](./agent-approvals-subagents.md): Approval gates, plan exits, root/parent/child event attribution, child sessions, and Message Center.
   Includes provider-native work that continues invisibly after root cancellation
   and late child creation racing the durable cancel boundary.
@@ -52,6 +53,7 @@ React rendering, Workbench state, external stores, input composition, and UI per
 
 - [Renderer body requests fail with `ERR_H2_OR_QUIC_REQUIRED`](./workbench-renderer.md#renderer-body-requests-fail-with-err_h2_or_quic_required)
 - [Renderer `fetch()` rejects an Electron image protocol that `<img>` can load](./workbench-renderer.md#renderer-fetch-rejects-an-electron-image-protocol-that-img-can-load)
+- [AgentGUI carousel owner avatar stays a solid badge](./workbench-renderer.md#agentgui-carousel-owner-avatar-stays-a-solid-badge)
 - [Renderer tile memory warnings from hidden autoplay animation](./workbench-renderer.md#renderer-tile-memory-warnings-from-hidden-autoplay-animation)
 - [Standalone Agent dev window stays black during cold startup](./workbench-renderer.md#standalone-agent-dev-window-stays-black-during-cold-startup)
 - [IME composition breaks fuzzy search or controlled search inputs](./workbench-renderer.md#ime-composition-breaks-fuzzy-search-or-controlled-search-inputs)
@@ -119,6 +121,7 @@ Android app login, native bridge, secure identity, and mobile transport diagnost
 - [Mobile composer model and permission controls are missing](./mobile.md#mobile-composer-model-and-permission-controls-are-missing)
 - [Mobile composer option chips do not open](./mobile.md#mobile-composer-option-chips-do-not-open)
 - [Browser login returns to the App but remains signed out](./mobile.md#browser-login-returns-to-the-app-but-remains-signed-out)
+- [Android scanner returns but pairing never starts](./mobile.md#android-scanner-returns-but-pairing-never-starts)
 - [Android DeviceLink opens a session and then repeatedly restarts](./mobile.md#android-devicelink-opens-a-session-and-then-repeatedly-restarts)
 - [iOS pod install intermittently reports pathname contains null byte](./mobile.md#ios-pod-install-intermittently-reports-pathname-contains-null-byte)
 - [React Native Pressable rows stack their children vertically](./mobile.md#react-native-pressable-rows-stack-their-children-vertically)

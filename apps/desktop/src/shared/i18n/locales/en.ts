@@ -1208,6 +1208,9 @@ export const en = {
         visibilityLabel: "Show developer panel"
       },
       lab: {
+        agentInputHistoryDescription:
+          "Use Up and Down in Agent input to recall earlier prompts from the current session.",
+        agentInputHistoryLabel: "Agent input history",
         backLabel: "Back",
         automationRulesDescription:
           "Shows Automation Rule configuration and session overrides.",
@@ -1269,7 +1272,9 @@ export const en = {
         terminal: "Terminal"
       },
       filePreview: {
+        edit: "Edit",
         loading: "Loading...",
+        preview: "Preview",
         revert: "Revert",
         save: "Save",
         saved: "Saved",

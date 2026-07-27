@@ -16,6 +16,7 @@ import type { useAgentGUISessionDetailTransport } from "./useAgentGUISessionDeta
 import { resolveAgentGUIProviderReadinessGateForView } from "../model/agentGuiProviderReadiness";
 import type { useAgentGUITuttiModeActivation } from "./useAgentGUITuttiModeActivation";
 import { targetConnectionForAgentGUIView } from "./agentGuiController.providerHelpers";
+import { isAgentGUIAgentTargetComingSoon } from "../../../agentTargets";
 
 type ConversationPresentationInput = Parameters<
   typeof useAgentGUIConversationPresentation
@@ -40,6 +41,7 @@ type SessionPresentationInput = Omit<
   | "conversation"
   | "isInterrupting"
   | "pendingApproval"
+  | "providerReadinessGate"
   | "serverInteractivePrompt"
 >;
 type ProviderHomeInput = Parameters<typeof useAgentGUIProviderHome>[0];
@@ -118,10 +120,24 @@ export function useAgentGUIViewAssembly(input: UseAgentGUIViewAssemblyInput) {
     ...input,
     activeConversation
   });
+  const providerReadinessGate =
+    input.activeConversationId === null &&
+    isAgentGUIAgentTargetComingSoon(
+      input.effectiveSelectedProviderTarget,
+      input.normalizedComingSoonProviders
+    )
+      ? ({ status: "coming_soon" } as const)
+      : resolveAgentGUIProviderReadinessGateForView({
+          activeConversationId: input.activeConversationId,
+          providerReadinessGates: input.providerReadinessGates,
+          selectedProvider: input.effectiveSelectedProviderTarget.provider
+        });
   const session = useAgentGUISessionPresentation({
     ...input,
     activeConversation,
+    currentUserId: input.currentUserId,
     ownerDeviceLabel: targetConnection.ownerDeviceLabel,
+    providerReadinessGate,
     targetConnectionAgentTargetId: targetConnection.agentTargetId,
     activeLiveState: detail.activeLiveState,
     activationError: detail.activationError,
@@ -147,11 +163,6 @@ export function useAgentGUIViewAssembly(input: UseAgentGUIViewAssemblyInput) {
     input.activeConversationId === null
       ? input.selectedComposerTargetData.data
       : input.data;
-  const providerReadinessGate = resolveAgentGUIProviderReadinessGateForView({
-    activeConversationId: input.activeConversationId,
-    providerReadinessGates: input.providerReadinessGates,
-    selectedProvider: input.effectiveSelectedProviderTarget.provider
-  });
   const viewModel = useAgentGUIViewModel({
     shell: {
       nodeId: input.nodeId?.trim() || null,
@@ -200,7 +211,7 @@ export function useAgentGUIViewAssembly(input: UseAgentGUIViewAssemblyInput) {
       promptImagesSupported: input.promptImagesSupported,
       compactSupported: input.compactSupported,
       goalPauseSupported: input.goalPauseSupported,
-      canSubmit: session.canSubmit,
+      gate: session.composerGate,
       isTuttiModeActive: input.tuttiModeActivation.active,
       isTuttiModeUpdating: input.tuttiModeActivation.updatePending,
       tuttiModeOrchestrationIntensity:
@@ -209,12 +220,10 @@ export function useAgentGUIViewAssembly(input: UseAgentGUIViewAssemblyInput) {
       composerSettings: stableComposerSettings,
       queueStatus: detail.queueStatus,
       queuedPrompts: detail.queuedPrompts,
-      drainingQueuedPromptId: detail.drainingQueuedPromptId,
-      canQueueWhileBusy: session.canQueueWhileBusy
+      drainingQueuedPromptId: detail.drainingQueuedPromptId
     },
     interaction: {
       isRespondingApproval: session.isRespondingApproval,
-      isRuntimeBlocked: session.sessionRuntimeBlocked,
       pendingApproval: detail.pendingApproval,
       pendingInteractivePrompt: session.pendingInteractivePrompt,
       sessionChrome: session.sessionChrome,
@@ -230,10 +239,6 @@ export function useAgentGUIViewAssembly(input: UseAgentGUIViewAssemblyInput) {
     readiness: {
       activeLiveState: detail.activeLiveState,
       activationError: detail.activationError,
-      activeConversationBusy: session.activeConversationBusy,
-      sessionRuntimeBlocked: session.sessionRuntimeBlocked,
-      sessionRuntimeBlockedReason: session.sessionRuntimeBlockedReason,
-      targetConnectionBlocked: session.targetConnectionBlocked,
       providerReadinessGate
     },
     operations: {

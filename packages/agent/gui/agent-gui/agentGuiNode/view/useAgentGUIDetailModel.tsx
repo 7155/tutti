@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import type { AgentGUIProviderReadinessGate } from "../../../types";
 import { isAgentGUIAgentTargetComingSoon } from "../../../agentTargets";
 import { UnavailableChatIcon } from "../../../app/renderer/components/icons/UnavailableChatIcon";
 import { useProjectedAgentConversation } from "../../../shared/agentConversation/projection/useProjectedAgentConversation";
@@ -13,11 +12,9 @@ import type {
 import type { AgentGUIViewLabels } from "../AgentGUINodeView";
 import {
   isContextCanceledMessage,
-  isDifferentKnownConversationOwner,
   isAgentGUITransportNoticeVisible,
   resolveActiveConversationBusyStatus,
   resolveConversationDetailStatus,
-  resolveAgentGUIComposerDisabled,
   resolveAgentGUIHomeNoticeChrome,
   resolveAgentGUIStopControl,
   resolveSlashStatus,
@@ -85,9 +82,7 @@ export function useAgentGUIDetailModel(input: Input) {
     viewModel.rail.comingSoonProviders
   );
   const emptyProviderReadinessGate = !hasActiveConversation
-    ? selectedAgentTargetComingSoon
-      ? ({ status: "coming_soon" } satisfies AgentGUIProviderReadinessGate)
-      : viewModel.readiness.providerReadinessGate
+    ? viewModel.readiness.providerReadinessGate
     : null;
   const activePrompt =
     viewModel.interaction.pendingInteractivePrompt ??
@@ -231,45 +226,20 @@ export function useAgentGUIDetailModel(input: Input) {
   });
   const activeConversationTurnBusy =
     viewModel.composer.isSubmitting ||
-    viewModel.readiness.activeConversationBusy ||
+    viewModel.composer.gate.conversationBusy ||
     derivedBusyStatus !== null;
   const isComposerSending =
     viewModel.composer.isSubmitting ||
     activeConversationTurnBusy ||
     (!hasActiveConversation && viewModel.composer.isCreatingConversation);
-  const isCollaboratorConversation = isDifferentKnownConversationOwner({
-    conversationUserId: viewModel.rail.activeConversation?.userId,
-    currentUserId: viewModel.shell.currentUserId
-  });
-  const canQueueWhileBusy =
-    viewModel.composer.canQueueWhileBusy && !isCollaboratorConversation;
+  const isCollaboratorConversation =
+    viewModel.composer.gate.editor.status === "blocked" &&
+    viewModel.composer.gate.editor.reason === "collaborator_read_only";
   const composerDisabledReason = isCollaboratorConversation
     ? labels.collaboratorSessionReadOnlyPlaceholder
     : null;
-  const hasNonRetryableRecoveryFailure =
-    (sessionChrome.recovery?.kind === "failed" &&
-      sessionChrome.recovery.canRetry === false) ||
-    sessionChrome.recovery?.kind === "resume-unavailable";
-  const runtimeBlocked =
-    viewModel.readiness.sessionRuntimeBlocked ||
-    viewModel.readiness.targetConnectionBlocked;
-  const submitDisabled =
-    hasNonRetryableRecoveryFailure ||
-    isCollaboratorConversation ||
-    runtimeBlocked ||
-    (!viewModel.composer.canSubmit && !canQueueWhileBusy);
-  const composerDisabled = resolveAgentGUIComposerDisabled({
-    canQueueWhileBusy,
-    hasNonRetryableRecoveryFailure,
-    isCollaboratorConversation,
-    isCreatingConversation: viewModel.composer.isCreatingConversation,
-    isInterrupting: viewModel.composer.isInterrupting,
-    isSubmitting: viewModel.composer.isSubmitting,
-    pendingApproval: viewModel.interaction.pendingApproval !== null,
-    pendingInteractivePrompt:
-      viewModel.interaction.pendingInteractivePrompt !== null,
-    runtimeBlocked
-  });
+  const runtimeCommandsBlocked =
+    viewModel.composer.gate.runtime.status === "blocked";
   const stopControl = resolveAgentGUIStopControl({
     hasPendingApproval: viewModel.interaction.pendingApproval !== null,
     hasPendingInteractivePrompt:
@@ -281,7 +251,7 @@ export function useAgentGUIDetailModel(input: Input) {
     isInterrupting: viewModel.composer.isInterrupting,
     isSubmitting: viewModel.composer.isSubmitting,
     isUnavailable: viewModel.readiness.activeLiveState === "failed",
-    sessionRuntimeBlocked: runtimeBlocked
+    runtimeCommandsBlocked
   });
   const showStopButton = stopControl.visible;
   const stopDisabled = stopControl.disabled;
@@ -742,11 +712,10 @@ export function useAgentGUIDetailModel(input: Input) {
     activePromptRequestId,
     bottomDockLiftedPrompt,
     bottomDockReplacementPrompt,
-    canQueueWhileBusy,
     chromeLabels,
     composerActivePrompt,
-    composerDisabled,
     composerDisabledReason,
+    composerGate: viewModel.composer.gate,
     composerLabels,
     conversation,
     conversationFlowEmpty,
@@ -766,7 +735,6 @@ export function useAgentGUIDetailModel(input: Input) {
     showTimelineSkeleton,
     showUnavailableChatEmpty,
     slashStatus,
-    submitDisabled,
     timelineConversationId,
     timelineInteractionLocked: timelineTransitionPending
   };

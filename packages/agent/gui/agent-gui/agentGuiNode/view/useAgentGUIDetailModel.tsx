@@ -13,8 +13,6 @@ import type { AgentGUIViewLabels } from "../AgentGUINodeView";
 import {
   isContextCanceledMessage,
   isAgentGUITransportNoticeVisible,
-  resolveActiveConversationBusyStatus,
-  resolveConversationDetailStatus,
   resolveAgentGUIHomeNoticeChrome,
   resolveAgentGUIStopControl,
   resolveSlashStatus,
@@ -216,22 +214,12 @@ export function useAgentGUIDetailModel(input: Input) {
       : activePrompt;
   const showUnavailableChatEmpty =
     hasActiveConversation && viewModel.detail.availability === "not_found";
-  const activeDetailStatus = resolveConversationDetailStatus(
-    viewModel.detail.conversationDetail
-  );
-  const derivedBusyStatus = resolveActiveConversationBusyStatus({
-    conversationStatus: viewModel.rail.activeConversation?.status,
-    detailStatus: activeDetailStatus,
-    conversation: targetConversation
-  });
-  const activeConversationTurnBusy =
-    viewModel.composer.isSubmitting ||
-    viewModel.composer.gate.conversationBusy ||
-    derivedBusyStatus !== null;
+  const activeConversationTurnBusy = viewModel.composer.gate.conversationBusy;
   const isComposerSending =
-    viewModel.composer.isSubmitting ||
     activeConversationTurnBusy ||
-    (!hasActiveConversation && viewModel.composer.isCreatingConversation);
+    (!hasActiveConversation &&
+      viewModel.composer.gate.submission.status === "blocked" &&
+      viewModel.composer.gate.submission.reason === "creating_conversation");
   const isCollaboratorConversation =
     viewModel.composer.gate.editor.status === "blocked" &&
     viewModel.composer.gate.editor.reason === "collaborator_read_only";

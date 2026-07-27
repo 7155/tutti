@@ -97,6 +97,20 @@ describe("resolveAgentGUIComposerGate", () => {
     });
   });
 
+  it("keeps submitting in the same busy/queue gate snapshot", () => {
+    expect(
+      resolveAgentGUIComposerGate({
+        ...readyInput,
+        isSubmitting: true
+      })
+    ).toMatchObject({
+      conversationBusy: true,
+      runtime: { status: "ready" },
+      editor: { status: "editable", reason: null },
+      submission: { status: "queue", reason: "conversation_busy" }
+    });
+  });
+
   it("blocks both editing and submission for a collaborator-owned session", () => {
     expect(
       resolveAgentGUIComposerGate({

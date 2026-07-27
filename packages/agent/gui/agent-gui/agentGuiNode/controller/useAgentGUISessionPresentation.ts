@@ -297,29 +297,55 @@ export function useAgentGUISessionPresentation(
     (sessionChrome.recovery?.kind === "failed" &&
       sessionChrome.recovery.canRetry === false) ||
     sessionChrome.recovery?.kind === "resume-unavailable";
-  const composerGate = resolveAgentGUIComposerGate({
-    activeConversationBusy,
-    activeConversationId: input.activeConversationId,
-    activeEngineHasPendingInteractions:
-      input.activeEngineHasPendingInteractions,
-    activeLiveState: input.activeLiveState,
-    activeConversationResumeUnavailable,
-    agentTargetsLoading: input.agentTargetsLoading,
-    authBlocked: sessionChrome.auth !== null,
-    hasNonRetryableRecoveryFailure,
-    isCollaboratorConversation: isDifferentKnownConversationOwner({
-      conversationUserId: input.activeConversation?.userId,
-      currentUserId: input.currentUserId
-    }),
-    isCreatingConversation: input.isCreatingConversation,
-    isInterrupting: input.isInterrupting,
-    isSubmitting: input.isSubmitting,
-    pendingApproval: input.pendingApproval !== null,
-    pendingInteractivePrompt: pendingInteractivePrompt !== null,
-    providerReadinessGate: input.providerReadinessGate,
-    sessionRuntimeBlockedReason,
-    targetConnectionBlocked: targetConnection.blocked
+  const authBlocked = sessionChrome.auth !== null;
+  const isCollaboratorConversation = isDifferentKnownConversationOwner({
+    conversationUserId: input.activeConversation?.userId,
+    currentUserId: input.currentUserId
   });
+  const pendingApproval = input.pendingApproval !== null;
+  const hasPendingInteractivePrompt = pendingInteractivePrompt !== null;
+  const composerGate = useMemo(
+    () =>
+      resolveAgentGUIComposerGate({
+        activeConversationBusy,
+        activeConversationId: input.activeConversationId,
+        activeEngineHasPendingInteractions:
+          input.activeEngineHasPendingInteractions,
+        activeLiveState: input.activeLiveState,
+        activeConversationResumeUnavailable,
+        agentTargetsLoading: input.agentTargetsLoading,
+        authBlocked,
+        hasNonRetryableRecoveryFailure,
+        isCollaboratorConversation,
+        isCreatingConversation: input.isCreatingConversation,
+        isInterrupting: input.isInterrupting,
+        isSubmitting: input.isSubmitting,
+        pendingApproval,
+        pendingInteractivePrompt: hasPendingInteractivePrompt,
+        providerReadinessGate: input.providerReadinessGate,
+        sessionRuntimeBlockedReason,
+        targetConnectionBlocked: targetConnection.blocked
+      }),
+    [
+      activeConversationBusy,
+      activeConversationResumeUnavailable,
+      authBlocked,
+      hasNonRetryableRecoveryFailure,
+      hasPendingInteractivePrompt,
+      input.activeConversationId,
+      input.activeEngineHasPendingInteractions,
+      input.activeLiveState,
+      input.agentTargetsLoading,
+      input.isCreatingConversation,
+      input.isInterrupting,
+      input.isSubmitting,
+      input.providerReadinessGate,
+      isCollaboratorConversation,
+      pendingApproval,
+      sessionRuntimeBlockedReason,
+      targetConnection.blocked
+    ]
+  );
   const canSubmit = composerGate.submission.status === "ready";
   const canQueueWhileBusy = composerGate.submission.status === "queue";
   const hasSentUserMessage = input.activeTimelineItems.some(

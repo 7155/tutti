@@ -120,18 +120,26 @@ export function useAgentGUIViewAssembly(input: UseAgentGUIViewAssemblyInput) {
     ...input,
     activeConversation
   });
-  const providerReadinessGate =
-    input.activeConversationId === null &&
-    isAgentGUIAgentTargetComingSoon(
+  const providerReadinessGate = useMemo(
+    () =>
+      input.activeConversationId === null &&
+      isAgentGUIAgentTargetComingSoon(
+        input.effectiveSelectedProviderTarget,
+        input.normalizedComingSoonProviders
+      )
+        ? ({ status: "coming_soon" } as const)
+        : resolveAgentGUIProviderReadinessGateForView({
+            activeConversationId: input.activeConversationId,
+            providerReadinessGates: input.providerReadinessGates,
+            selectedProvider: input.effectiveSelectedProviderTarget.provider
+          }),
+    [
+      input.activeConversationId,
       input.effectiveSelectedProviderTarget,
-      input.normalizedComingSoonProviders
-    )
-      ? ({ status: "coming_soon" } as const)
-      : resolveAgentGUIProviderReadinessGateForView({
-          activeConversationId: input.activeConversationId,
-          providerReadinessGates: input.providerReadinessGates,
-          selectedProvider: input.effectiveSelectedProviderTarget.provider
-        });
+      input.normalizedComingSoonProviders,
+      input.providerReadinessGates
+    ]
+  );
   const session = useAgentGUISessionPresentation({
     ...input,
     activeConversation,

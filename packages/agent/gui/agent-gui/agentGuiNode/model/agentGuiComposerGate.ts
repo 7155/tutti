@@ -29,6 +29,7 @@ export interface ResolveAgentGUIComposerGateInput {
 export function resolveAgentGUIComposerGate(
   input: ResolveAgentGUIComposerGateInput
 ): AgentGUIComposerGate {
+  const conversationBusy = input.activeConversationBusy || input.isSubmitting;
   const runtime: AgentGUIComposerGate["runtime"] = input.targetConnectionBlocked
     ? {
         status: "blocked",
@@ -49,9 +50,7 @@ export function resolveAgentGUIComposerGate(
   const canQueue =
     input.activeConversationId !== null &&
     runtime.status === "ready" &&
-    (input.activeConversationBusy ||
-      input.isSubmitting ||
-      input.activeEngineHasPendingInteractions);
+    (conversationBusy || input.activeEngineHasPendingInteractions);
   const canSubmit =
     !input.agentTargetsLoading &&
     input.providerReadinessGate === null &&
@@ -62,9 +61,8 @@ export function resolveAgentGUIComposerGate(
     !input.pendingApproval &&
     !input.pendingInteractivePrompt &&
     !input.authBlocked &&
-    !input.activeConversationBusy &&
+    !conversationBusy &&
     !input.isCreatingConversation &&
-    !input.isSubmitting &&
     !input.isInterrupting;
 
   const hardBlockReason = resolveHardBlockReason(input, runtime);
@@ -100,7 +98,7 @@ export function resolveAgentGUIComposerGate(
           };
 
   return {
-    conversationBusy: input.activeConversationBusy,
+    conversationBusy,
     runtime,
     editor,
     submission

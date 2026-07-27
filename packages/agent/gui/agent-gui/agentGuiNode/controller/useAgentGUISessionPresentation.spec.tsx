@@ -85,7 +85,13 @@ describe("useAgentGUISessionPresentation", () => {
       targetConnectionSource,
       workspaceId: "workspace-1"
     } as unknown as Parameters<typeof useAgentGUISessionPresentation>[0];
-    const rendered = renderHook(() => useAgentGUISessionPresentation(input));
+    const rendered = renderHook(
+      ({ renderRevision }) => {
+        void renderRevision;
+        return useAgentGUISessionPresentation(input);
+      },
+      { initialProps: { renderRevision: 0 } }
+    );
 
     expect(rendered.result.current.composerGate).toMatchObject({
       runtime: { status: "blocked", reason: "target_connection" },
@@ -102,5 +108,10 @@ describe("useAgentGUISessionPresentation", () => {
       editor: { status: "editable", reason: null },
       submission: { status: "ready", reason: null }
     });
+    const readyGate = rendered.result.current.composerGate;
+
+    rendered.rerender({ renderRevision: 1 });
+
+    expect(rendered.result.current.composerGate).toBe(readyGate);
   });
 });

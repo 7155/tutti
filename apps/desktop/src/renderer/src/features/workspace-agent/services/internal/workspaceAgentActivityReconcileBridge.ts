@@ -851,16 +851,23 @@ export abstract class WorkspaceAgentActivityReconcileBridge {
     const discoveredSessionIds = new Set(
       discoveredSessions.map((session) => session.agentSessionId)
     );
-    const childSessionsNeedingFinalRead = detail.childSessions.filter(
-      (session) => {
-        if (!discoveredSessionIds.has(session.agentSessionId)) return true;
-        return (
-          latestDurableMessageVersion(
-            cachedMessagesBySessionId.get(session.agentSessionId) ?? []
-          ) < session.messageVersion
-        );
-      }
-    );
+    const finalChildSessionsById = new Map<string, AgentActivitySession>();
+    if (detail.session.kind === "child") {
+      finalChildSessionsById.set(detail.session.agentSessionId, detail.session);
+    }
+    for (const session of detail.childSessions) {
+      finalChildSessionsById.set(session.agentSessionId, session);
+    }
+    const childSessionsNeedingFinalRead = [
+      ...finalChildSessionsById.values()
+    ].filter((session) => {
+      if (!discoveredSessionIds.has(session.agentSessionId)) return true;
+      return (
+        latestDurableMessageVersion(
+          cachedMessagesBySessionId.get(session.agentSessionId) ?? []
+        ) < session.messageVersion
+      );
+    });
     pages.push(...(await reconcileMessages(childSessionsNeedingFinalRead)));
     if (this.isSessionTombstoned(workspaceId, agentSessionId)) {
       return;

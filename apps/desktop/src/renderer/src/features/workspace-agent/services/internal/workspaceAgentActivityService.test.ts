@@ -2114,7 +2114,7 @@ test("WorkspaceAgentActivityService reconciles child sessions and their messages
   );
 });
 
-test("WorkspaceAgentActivityService catches up a child that advances between detail reads", async () => {
+test("WorkspaceAgentActivityService catches up children that advance between detail reads", async () => {
   const root = workspaceAgentSession({ status: "ready" });
   const child = {
     ...workspaceAgentSession({ status: "working" }),
@@ -2132,8 +2132,21 @@ test("WorkspaceAgentActivityService catches up a child that advances between det
   const childRequests: Array<Record<string, unknown>> = [];
   const service = new WorkspaceAgentActivityService({
     tuttidClient: {
-      getWorkspaceAgentSession: async () => {
+      getWorkspaceAgentSession: async (
+        _workspaceId: string,
+        requestedSessionId: string
+      ) => {
         detailReads += 1;
+        if (requestedSessionId === "child-1") {
+          return {
+            session: {
+              ...child,
+              messageVersion: detailReads === 2 ? 3 : 2
+            },
+            childSessions: [],
+            turns: []
+          };
+        }
         return {
           session: root,
           childSessions: [
@@ -2160,7 +2173,8 @@ test("WorkspaceAgentActivityService catches up a child that advances between det
           return { hasMore: false, latestVersion: 0, messages: [] };
         }
         childRequests.push(request);
-        const version = request.afterVersion === 1 ? 2 : 1;
+        const version =
+          request.afterVersion === 2 ? 3 : request.afterVersion === 1 ? 2 : 1;
         return {
           hasMore: false,
           latestVersion: version,
@@ -2213,6 +2227,27 @@ test("WorkspaceAgentActivityService catches up a child that advances between det
   assert.equal(
     service.getSnapshot("ws-1").sessionMessagesById["child-1"]?.[0]?.version,
     2
+  );
+
+  childRequests.length = 0;
+  detailReads = 0;
+  service.ensureSessionSynchronized({
+    agentSessionId: "child-1",
+    workspaceId: "ws-1"
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(childRequests, [
+    {
+      afterVersion: 2,
+      beforeVersion: undefined,
+      limit: undefined,
+      order: "asc"
+    }
+  ]);
+  assert.equal(
+    service.getSnapshot("ws-1").sessionMessagesById["child-1"]?.[0]?.version,
+    3
   );
 });
 

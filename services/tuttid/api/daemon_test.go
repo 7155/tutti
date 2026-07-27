@@ -94,6 +94,7 @@ type stubAgentSessionService struct {
 	clearFn                         func(context.Context, string) (agentservice.ClearSessionsResult, error)
 	composerOptionsFn               func(context.Context, agentservice.ComposerOptionsInput) (agentservice.ComposerOptions, error)
 	createFn                        func(context.Context, string, agentservice.CreateSessionInput) (agentservice.Session, error)
+	getDetailFn                     func(context.Context, string, string) (agentservice.SessionDetail, error)
 	getFn                           func(context.Context, string, string) (agentservice.Session, error)
 	deleteFn                        func(context.Context, string, string) (agentservice.DeleteSessionResult, error)
 	listSectionDeletionCandidatesFn func(context.Context, string, agentservice.ListSessionSectionDeletionCandidatesInput) (agentservice.SessionSectionDeletionCandidates, error)
@@ -354,7 +355,10 @@ func (s stubAgentSessionService) Get(ctx context.Context, workspaceID, agentSess
 	return s.getFn(ctx, workspaceID, agentSessionID)
 }
 
-func (stubAgentSessionService) GetDetail(context.Context, string, string) (agentservice.SessionDetail, error) {
+func (s stubAgentSessionService) GetDetail(ctx context.Context, workspaceID, agentSessionID string) (agentservice.SessionDetail, error) {
+	if s.getDetailFn != nil {
+		return s.getDetailFn(ctx, workspaceID, agentSessionID)
+	}
 	return agentservice.SessionDetail{ChildSessions: []agentservice.Session{}}, nil
 }
 
@@ -2284,6 +2288,196 @@ func TestDaemonAPIGeneratedRoutesProjectTurnlessAgentSessionMessagesAsSessionLev
 	}
 	if response.Messages[0].TurnId != nil {
 		t.Fatalf("turnId = %v, want null", *response.Messages[0].TurnId)
+	}
+}
+
+func TestGeneratedWorkspaceAgentSafeIntegerBounds(t *testing.T) {
+	t.Parallel()
+
+	value, err := generatedWorkspaceAgentSafeInteger(
+		"message version",
+		maxWorkspaceAgentJSONSafeInteger,
+	)
+	if err != nil {
+		t.Fatalf("maximum safe integer rejected: %v", err)
+	}
+	if value != int64(maxWorkspaceAgentJSONSafeInteger) {
+		t.Fatalf("value = %d, want %d", value, maxWorkspaceAgentJSONSafeInteger)
+	}
+	if _, err := generatedWorkspaceAgentSafeInteger(
+		"message version",
+		maxWorkspaceAgentJSONSafeInteger+1,
+	); err == nil {
+		t.Fatal("maximum safe integer plus one accepted")
+	}
+}
+
+func TestDaemonAPIGeneratedRoutesAcceptSafeAgentMessageCursorQueries(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutes(mux, NewRoutes(DaemonAPI{
+		AgentSessionService: stubAgentSessionService{
+			listMessagesFn: func(_ context.Context, _ string, _ string, input agentservice.ListMessagesInput) (agentservice.SessionMessagesPage, error) {
+				if input.AfterVersion != maxWorkspaceAgentJSONSafeInteger {
+					t.Fatalf("afterVersion = %d, want %d", input.AfterVersion, maxWorkspaceAgentJSONSafeInteger)
+				}
+				if input.BeforeVersion != maxWorkspaceAgentJSONSafeInteger {
+					t.Fatalf("beforeVersion = %d, want %d", input.BeforeVersion, maxWorkspaceAgentJSONSafeInteger)
+				}
+				return agentservice.SessionMessagesPage{
+					AgentSessionID: "agent-session-1",
+					Messages:       []agentservice.SessionMessage{},
+					LatestVersion:  maxWorkspaceAgentJSONSafeInteger,
+				}, nil
+			},
+		},
+	}))
+
+	recorder := performGeneratedRouteRequest(
+		t,
+		mux,
+		http.MethodGet,
+		fmt.Sprintf(
+			"/v1/workspaces/ws-1/agent-sessions/agent-session-1/messages?afterVersion=%d&beforeVersion=%d",
+			maxWorkspaceAgentJSONSafeInteger,
+			maxWorkspaceAgentJSONSafeInteger,
+		),
+		nil,
+	)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+}
+
+func TestDaemonAPIGeneratedRoutesRejectUnsafeAgentMessageCursorQueries(t *testing.T) {
+	for _, parameter := range []string{"afterVersion", "beforeVersion"} {
+		t.Run(parameter, func(t *testing.T) {
+			mux := http.NewServeMux()
+			RegisterRoutes(mux, NewRoutes(DaemonAPI{
+				AgentSessionService: stubAgentSessionService{
+					listMessagesFn: func(context.Context, string, string, agentservice.ListMessagesInput) (agentservice.SessionMessagesPage, error) {
+						t.Fatal("unsafe cursor reached the service")
+						return agentservice.SessionMessagesPage{}, nil
+					},
+				},
+			}))
+
+			recorder := performGeneratedRouteRequest(
+				t,
+				mux,
+				http.MethodGet,
+				fmt.Sprintf(
+					"/v1/workspaces/ws-1/agent-sessions/agent-session-1/messages?%s=%d",
+					parameter,
+					maxWorkspaceAgentJSONSafeInteger+1,
+				),
+				nil,
+			)
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body: %s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestDaemonAPIGeneratedRoutesRejectUnsafeAgentMessageResponseIntegers(t *testing.T) {
+	tests := []struct {
+		name string
+		page agentservice.SessionMessagesPage
+	}{
+		{
+			name: "sequence",
+			page: agentservice.SessionMessagesPage{
+				AgentSessionID: "agent-session-1",
+				LatestVersion:  1,
+				Messages: []agentservice.SessionMessage{{
+					ID:             maxWorkspaceAgentJSONSafeInteger + 1,
+					AgentSessionID: "agent-session-1",
+					MessageID:      "message-1",
+					Kind:           "text",
+					Role:           "assistant",
+					Version:        1,
+				}},
+			},
+		},
+		{
+			name: "message version",
+			page: agentservice.SessionMessagesPage{
+				AgentSessionID: "agent-session-1",
+				LatestVersion:  maxWorkspaceAgentJSONSafeInteger + 1,
+				Messages: []agentservice.SessionMessage{{
+					ID:             1,
+					AgentSessionID: "agent-session-1",
+					MessageID:      "message-1",
+					Kind:           "text",
+					Role:           "assistant",
+					Version:        maxWorkspaceAgentJSONSafeInteger + 1,
+				}},
+			},
+		},
+		{
+			name: "latest version",
+			page: agentservice.SessionMessagesPage{
+				AgentSessionID: "agent-session-1",
+				LatestVersion:  maxWorkspaceAgentJSONSafeInteger + 1,
+				Messages:       []agentservice.SessionMessage{},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			RegisterRoutes(mux, NewRoutes(DaemonAPI{
+				AgentSessionService: stubAgentSessionService{
+					listMessagesFn: func(context.Context, string, string, agentservice.ListMessagesInput) (agentservice.SessionMessagesPage, error) {
+						return test.page, nil
+					},
+				},
+			}))
+
+			recorder := performGeneratedRouteRequest(
+				t,
+				mux,
+				http.MethodGet,
+				"/v1/workspaces/ws-1/agent-sessions/agent-session-1/messages",
+				nil,
+			)
+			if recorder.Code != http.StatusBadGateway {
+				t.Fatalf("status = %d, want %d; body: %s", recorder.Code, http.StatusBadGateway, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestDaemonAPIGeneratedRoutesRejectUnsafeSessionMessageVersion(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutes(mux, NewRoutes(DaemonAPI{
+		AgentSessionService: stubAgentSessionService{
+			getDetailFn: func(context.Context, string, string) (agentservice.SessionDetail, error) {
+				return agentservice.SessionDetail{
+					Session: agentservice.Session{
+						ID:             "agent-session-1",
+						Kind:           agentactivitybiz.SessionKindRoot,
+						MessageVersion: maxWorkspaceAgentJSONSafeInteger + 1,
+						Provider:       "codex",
+						RailSectionKey: "conversations",
+						CreatedAt:      time.UnixMilli(1),
+					},
+					ChildSessions: []agentservice.Session{},
+					Turns:         []agentactivitybiz.Turn{},
+				}, nil
+			},
+		},
+	}))
+
+	recorder := performGeneratedRouteRequest(
+		t,
+		mux,
+		http.MethodGet,
+		"/v1/workspaces/ws-1/agent-sessions/agent-session-1",
+		nil,
+	)
+	if recorder.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d; body: %s", recorder.Code, http.StatusBadGateway, recorder.Body.String())
 	}
 }
 

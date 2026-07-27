@@ -54,6 +54,22 @@ export function reconcileAfterVersion(
     : latest;
 }
 
+export function latestDurableMessageVersion(
+  messages: readonly AgentActivityMessage[]
+): number {
+  return messages.reduce((latest, message) => {
+    if (
+      !Number.isSafeInteger(message.sequence) ||
+      (message.sequence ?? 0) <= 0 ||
+      !Number.isSafeInteger(message.version) ||
+      message.version <= 0
+    ) {
+      return latest;
+    }
+    return Math.max(latest, message.version);
+  }, 0);
+}
+
 export function hasInlineMessagesData(data: unknown): boolean {
   return (
     typeof data === "object" &&

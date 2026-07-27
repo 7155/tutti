@@ -16,6 +16,19 @@ test("session mapping requires and preserves the host-owned user identity", () =
     { currentUserId: "account-user-1" }
   );
   assert.equal(session.userId, "account-user-1");
+  assert.equal(session.messageVersion, 7);
+});
+
+test("session mapping rejects an invalid message cursor", () => {
+  assert.throws(
+    () =>
+      agentActivitySessionFromTuttidSession(
+        "workspace-1",
+        { ...createSession(), messageVersion: -1 },
+        { currentUserId: "account-user-1" }
+      ),
+    /messageVersion must be a non-negative safe integer/
+  );
 });
 
 test("session mapping rejects missing protocol-v2 fields", () => {
@@ -23,6 +36,7 @@ test("session mapping rejects missing protocol-v2 fields", () => {
     "activeTurnId",
     "latestTurnInteractions",
     "pendingInteractions",
+    "messageVersion",
     "railSectionKey",
     "tuttiModeActivation"
   ] as const) {
@@ -98,6 +112,7 @@ function createSession(): WorkspaceAgentSession {
     kind: "root",
     latestTurn: null,
     latestTurnInteractions: [],
+    messageVersion: 7,
     parentAgentSessionId: null,
     parentToolCallId: null,
     parentTurnId: null,

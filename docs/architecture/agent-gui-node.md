@@ -393,6 +393,10 @@ notice does not offer a manual retry because transport recovery is host-owned.
   drain and one subscriber notification. Desktop and Mobile use the same
   `@tutti-os/agent-activity-tuttid-adapter` aggregate mapper and must not
   dispatch each entity independently
+- every daemon Session response carries the required `messageVersion`
+  high-water cursor. Daemon and renderer ship as one protocol unit, so the
+  shared adapter rejects a missing or invalid cursor instead of fabricating
+  zero or entering a compatibility read path
 - Desktop and Mobile use the same host-neutral event-observation helper to
   decide whether normalized entities can apply inline and whether the exact
   Session needs an authoritative state or message reconcile; partial parsing,
@@ -410,6 +414,20 @@ Child Session discovery does not require every host to prefetch child transcript
 pages. A surface that does not render child conversations keeps the hierarchy
 and pending Interaction state canonical without paying for unused child message
 history.
+
+Desktop hydrates child messages only when its aggregate projections need them.
+The first read remains a bounded newest-first page. Later root-detail
+reconciliation compares each child's required Session `messageVersion` with the
+largest locally cached durable message version; an unchanged child performs no
+message request. Newly discovered children use the bounded newest-first read,
+while already hydrated children that advanced use incremental reads. A known
+empty child window is an authoritative durable cursor at zero, so its first
+later messages are drained incrementally from `afterVersion=0`; it is not
+treated as an unknown window. The second detail read catches a child that
+advances while the first message pass is in flight. Transient optimistic rows
+never advance this cursor. This child policy is separate from the root
+conversation's user-boundary repair policy, which may intentionally restart an
+incremental read at zero.
 
 A `waiting` Turn does not imply user action. Only a pending Interaction produces approval/question attention.
 

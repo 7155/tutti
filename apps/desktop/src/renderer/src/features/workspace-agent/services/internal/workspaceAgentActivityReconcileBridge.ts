@@ -8,6 +8,7 @@ import {
   analyzeAgentActivityEventObservation,
   agentActivitySessionMessageWindowFromDescendingPage,
   createAgentActivitySnapshotProjector,
+  mergeAgentActivityMessages,
   parseAgentActivityMessageDeltaEvent,
   selectEngineSession
 } from "@tutti-os/agent-activity-core";
@@ -17,6 +18,7 @@ import {
   agentActivitySessionReconcileDiagnosticDetails,
   hostMessageEventFromCore,
   isWorkspaceAgentSessionNotFoundError,
+  latestDurableMessageVersion,
   normalizeWorkspaceId,
   reconcileAfterVersion,
   stringifyError
@@ -729,6 +731,22 @@ export abstract class WorkspaceAgentActivityReconcileBridge {
     if (this.isSessionTombstoned(workspaceId, agentSessionId)) {
       return;
     }
+    const cachedMessagesBySessionId = new Map<
+      string,
+      AgentActivitySnapshot["sessionMessagesById"][string]
+    >();
+    const knownMessageWindows = new Set<string>();
+    const initialSnapshot = this.activitySnapshot(workspaceId);
+    for (const [sessionId, messages] of Object.entries(
+      initialSnapshot.sessionMessagesById
+    )) {
+      cachedMessagesBySessionId.set(sessionId, messages);
+    }
+    for (const sessionId of Object.keys(
+      initialSnapshot.sessionMessageWindowsById ?? {}
+    )) {
+      knownMessageWindows.add(sessionId);
+    }
     const reconcileMessages = async (
       sessions: AgentActivitySession[]
     ): Promise<
@@ -741,11 +759,29 @@ export abstract class WorkspaceAgentActivityReconcileBridge {
       Promise.all(
         sessions.map(async (session) => {
           const sessionId = session.agentSessionId;
-          const snapshot = this.activitySnapshot(workspaceId);
-          const cached = snapshot.sessionMessagesById[sessionId];
-          const startsAtNewestBoundary =
-            snapshot.sessionMessageWindowsById?.[sessionId] === undefined;
-          const afterVersion = reconcileAfterVersion(cached ?? []);
+          const cached = cachedMessagesBySessionId.get(sessionId) ?? [];
+          const startsAtNewestBoundary = !knownMessageWindows.has(sessionId);
+          const childSession = session.kind === "child";
+          const afterVersion = childSession
+            ? latestDurableMessageVersion(cached)
+            : reconcileAfterVersion(cached);
+          if (
+            childSession &&
+            !startsAtNewestBoundary &&
+            afterVersion >= session.messageVersion
+          ) {
+            this.reportReconcileTrace({
+              agentSessionId: sessionId,
+              traceEvent: "reconcile.combined.messages_skipped",
+              workspaceId,
+              fields: {
+                afterVersion,
+                messageVersion: session.messageVersion,
+                requestedSessionId: agentSessionId
+              }
+            });
+            return null;
+          }
           this.reportReconcileTrace({
             agentSessionId: sessionId,
             traceEvent: "reconcile.combined.messages_requested",
@@ -755,7 +791,8 @@ export abstract class WorkspaceAgentActivityReconcileBridge {
           const page = await reconcileAgentSessionMessagePages({
             adapter: entry.adapter,
             agentSessionId: sessionId,
-            cached: cached ?? [],
+            cached,
+            cursorPolicy: childSession ? "durable" : "conversation",
             messageWindowKnown: !startsAtNewestBoundary,
             shouldAbort: () => this.isSessionTombstoned(workspaceId, sessionId),
             workspaceId
@@ -771,12 +808,29 @@ export abstract class WorkspaceAgentActivityReconcileBridge {
               requestedSessionId: agentSessionId
             }
           });
+          cachedMessagesBySessionId.set(
+            sessionId,
+            mergeAgentActivityMessages(cached, page.messages)
+          );
+          if (startsAtNewestBoundary) {
+            knownMessageWindows.add(sessionId);
+          }
           return {
             agentSessionId: sessionId,
             page,
             startsAtNewestBoundary
           };
         })
+      ).then((results) =>
+        results.filter(
+          (
+            result
+          ): result is {
+            agentSessionId: string;
+            page: AgentActivityMessagePage;
+            startsAtNewestBoundary: boolean;
+          } => result !== null
+        )
       );
     const discoveredSessions = [
       discoveryDetail.session,
@@ -797,10 +851,17 @@ export abstract class WorkspaceAgentActivityReconcileBridge {
     const discoveredSessionIds = new Set(
       discoveredSessions.map((session) => session.agentSessionId)
     );
-    const newlyDiscoveredSessions = detail.childSessions.filter(
-      (session) => !discoveredSessionIds.has(session.agentSessionId)
+    const childSessionsNeedingFinalRead = detail.childSessions.filter(
+      (session) => {
+        if (!discoveredSessionIds.has(session.agentSessionId)) return true;
+        return (
+          latestDurableMessageVersion(
+            cachedMessagesBySessionId.get(session.agentSessionId) ?? []
+          ) < session.messageVersion
+        );
+      }
     );
-    pages.push(...(await reconcileMessages(newlyDiscoveredSessions)));
+    pages.push(...(await reconcileMessages(childSessionsNeedingFinalRead)));
     if (this.isSessionTombstoned(workspaceId, agentSessionId)) {
       return;
     }
@@ -893,7 +954,15 @@ export abstract class WorkspaceAgentActivityReconcileBridge {
     const messages = snapshot.sessionMessagesById[agentSessionId];
     const startsAtNewestBoundary =
       snapshot.sessionMessageWindowsById?.[agentSessionId] === undefined;
-    const afterVersion = reconcileAfterVersion(messages ?? []);
+    const cursorPolicy =
+      selectEngineSession(entry.engine.getSnapshot(), agentSessionId)?.kind ===
+      "child"
+        ? "durable"
+        : "conversation";
+    const afterVersion =
+      cursorPolicy === "durable"
+        ? latestDurableMessageVersion(messages ?? [])
+        : reconcileAfterVersion(messages ?? []);
     this.reportReconcileTrace({
       agentSessionId,
       traceEvent: "reconcile.messages.requested",
@@ -904,6 +973,7 @@ export abstract class WorkspaceAgentActivityReconcileBridge {
       adapter: entry.adapter,
       agentSessionId,
       cached: messages ?? [],
+      cursorPolicy,
       messageWindowKnown: !startsAtNewestBoundary,
       shouldAbort: () => this.isSessionTombstoned(workspaceId, agentSessionId),
       workspaceId

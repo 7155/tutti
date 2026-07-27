@@ -4,12 +4,16 @@ import {
   type AgentActivityMessage,
   type AgentActivityMessagePage
 } from "@tutti-os/agent-activity-core";
-import { reconcileAfterVersion } from "./workspaceAgentActivityDiagnostics.ts";
+import {
+  latestDurableMessageVersion,
+  reconcileAfterVersion
+} from "./workspaceAgentActivityDiagnostics.ts";
 
 interface ReconcileAgentSessionMessagePagesInput {
   adapter: AgentActivityAdapter;
   agentSessionId: string;
   cached: AgentActivityMessage[];
+  cursorPolicy: "conversation" | "durable";
   messageWindowKnown: boolean;
   shouldAbort: () => boolean;
   workspaceId: string;
@@ -18,7 +22,14 @@ interface ReconcileAgentSessionMessagePagesInput {
 export async function reconcileAgentSessionMessagePages(
   input: ReconcileAgentSessionMessagePagesInput
 ): Promise<AgentActivityMessagePage> {
-  if (input.cached.length === 0 || !input.messageWindowKnown) {
+  const afterVersion =
+    input.cursorPolicy === "durable"
+      ? latestDurableMessageVersion(input.cached)
+      : reconcileAfterVersion(input.cached);
+  const shouldLoadNewestPage =
+    !input.messageWindowKnown ||
+    (input.cursorPolicy === "conversation" && input.cached.length === 0);
+  if (shouldLoadNewestPage) {
     return input.adapter.listSessionMessages({
       workspaceId: input.workspaceId,
       agentSessionId: input.agentSessionId,
@@ -27,7 +38,6 @@ export async function reconcileAgentSessionMessagePages(
     });
   }
 
-  const afterVersion = reconcileAfterVersion(input.cached);
   const result = await loadAllAgentSessionMessages({
     afterVersion,
     listPage: (cursor) =>

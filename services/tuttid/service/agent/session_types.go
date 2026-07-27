@@ -236,6 +236,7 @@ type Session struct {
 	Settings             *ComposerSettings
 	PermissionConfig     PermissionConfig
 	Title                *string
+	MessageVersion       uint64
 	PinnedAtUnixMS       int64
 	CreatedAt            time.Time
 	UpdatedAt            *time.Time
@@ -371,6 +372,7 @@ type PersistedSession struct {
 	Metadata               agentactivitybiz.SessionMetadata
 	InternalRuntimeContext map[string]any
 	Title                  string
+	MessageVersion         uint64
 	PinnedAtUnixMS         int64
 	LastEventUnixMS        int64
 	StartedAtUnixMS        int64

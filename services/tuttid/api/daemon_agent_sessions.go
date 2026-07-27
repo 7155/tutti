@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -159,16 +160,18 @@ func (api DaemonAPI) ListWorkspaceAgentSessionMessages(ctx context.Context, requ
 	agentSessionID := string(request.AgentSessionID)
 	input := agentservice.ListMessagesInput{}
 	if request.Params.AfterVersion != nil {
-		if *request.Params.AfterVersion < 0 {
+		afterVersion, err := workspaceAgentMessageCursorFromRequest(*request.Params.AfterVersion)
+		if err != nil {
 			return writeListWorkspaceAgentSessionMessagesError(agentservice.ErrInvalidArgument), nil
 		}
-		input.AfterVersion = uint64(*request.Params.AfterVersion)
+		input.AfterVersion = afterVersion
 	}
 	if request.Params.BeforeVersion != nil {
-		if *request.Params.BeforeVersion < 0 {
+		beforeVersion, err := workspaceAgentMessageCursorFromRequest(*request.Params.BeforeVersion)
+		if err != nil {
 			return writeListWorkspaceAgentSessionMessagesError(agentservice.ErrInvalidArgument), nil
 		}
-		input.BeforeVersion = uint64(*request.Params.BeforeVersion)
+		input.BeforeVersion = beforeVersion
 	}
 	if request.Params.Order != nil {
 		switch *request.Params.Order {
@@ -216,6 +219,10 @@ func (api DaemonAPI) ListWorkspaceAgentSessionMessages(ctx context.Context, requ
 		return writeListWorkspaceAgentSessionMessagesError(err), nil
 	}
 	messages, err := generatedAgentSessionMessages(page.Messages)
+	var latestVersion int64
+	if err == nil {
+		latestVersion, err = generatedWorkspaceAgentSafeInteger("latest message version", page.LatestVersion)
+	}
 	if err != nil {
 		firstVersion, lastVersion := agentSessionMessageVersionRange(page.Messages)
 		slog.Warn("workspace agent session messages response transform failed",
@@ -255,7 +262,7 @@ func (api DaemonAPI) ListWorkspaceAgentSessionMessages(ctx context.Context, requ
 	return tuttigenerated.ListWorkspaceAgentSessionMessages200JSONResponse{
 		AgentSessionId: page.AgentSessionID,
 		HasMore:        page.HasMore,
-		LatestVersion:  int64(page.LatestVersion),
+		LatestVersion:  latestVersion,
 		Messages:       messages,
 	}, nil
 }
@@ -717,6 +724,10 @@ func generatedAgentSession(session agentservice.Session) (tuttigenerated.Workspa
 	if err != nil {
 		return tuttigenerated.WorkspaceAgentSession{}, err
 	}
+	messageVersion, err := generatedWorkspaceAgentSafeInteger("session message version", session.MessageVersion)
+	if err != nil {
+		return tuttigenerated.WorkspaceAgentSession{}, fmt.Errorf("project workspace agent session %q: %w", session.ID, err)
+	}
 	return tuttigenerated.WorkspaceAgentSession{
 		ActiveTurn:             activeTurn,
 		ActiveTurnId:           optionalStringPointer(strings.TrimSpace(session.ActiveTurnID)),
@@ -731,6 +742,7 @@ func generatedAgentSession(session agentservice.Session) (tuttigenerated.Workspa
 		Kind:                   tuttigenerated.WorkspaceAgentSessionKind(session.Kind),
 		LatestTurn:             latestTurn,
 		LatestTurnInteractions: latestTurnInteractions,
+		MessageVersion:         messageVersion,
 		ParentAgentSessionId:   optionalStringPointer(strings.TrimSpace(session.ParentAgentSessionID)),
 		ParentToolCallId:       optionalStringPointer(strings.TrimSpace(session.ParentToolCallID)),
 		ParentTurnId:           optionalStringPointer(strings.TrimSpace(session.ParentTurnID)),

@@ -73,12 +73,10 @@ test("provenance filter handles row clicks and disabled option visibility", asyn
         members: "Members",
         allMembers: "All members",
         allSources: "All sources",
-        filteredSources: "Filtered sources",
-        reset: "Reset"
+        filteredSources: "Filtered sources"
       },
       memberOptions: [{ id: "member-1", label: longMemberLabel }],
       popoverElevation: "panel",
-      onReset() {},
       onToggle(_dimension, id) {
         calls.push(id);
       },
@@ -109,22 +107,15 @@ test("provenance filter handles row clicks and disabled option visibility", asyn
     });
 
     assert.doesNotMatch(dom.window.document.body.textContent ?? "", /Cursor/);
-    const resetButton = [
-      ...dom.window.document.querySelectorAll<HTMLButtonElement>("button")
-    ].find((element) => element.textContent === "Reset");
+    assert.doesNotMatch(dom.window.document.body.textContent ?? "", /Reset/);
     const filterTrigger = dom.window.document.querySelector<HTMLButtonElement>(
       'button[aria-label="Filtered sources"]'
     );
-    assert.ok(resetButton);
     assert.ok(filterTrigger);
     assert.match(filterTrigger.className, /(?:^|\s)border-0(?:\s|$)/);
     assert.doesNotMatch(
       filterTrigger.className,
       /border-\[var\(--border-focus\)\]/
-    );
-    assert.ok(
-      resetButton.compareDocumentPosition(filterTrigger) &
-        dom.window.Node.DOCUMENT_POSITION_FOLLOWING
     );
     const popover = dom.window.document.querySelector<HTMLElement>(".nodrag");
     assert.ok(popover);

@@ -28,7 +28,6 @@ export interface ReferenceProvenanceFilterLabels {
   agents: string;
   filteredSources: string;
   members: string;
-  reset: string;
 }
 
 export interface ReferenceProvenanceFilterControlProps {
@@ -40,7 +39,6 @@ export interface ReferenceProvenanceFilterControlProps {
   /** Disabled options stay in the injected catalog but are hidden by default. */
   showDisabledOptions?: boolean;
   value: ReferenceProvenanceFilter;
-  onReset: () => void;
   onToggle: (dimension: ReferenceProvenanceDimension, id: string) => void;
   onToggleAll: (dimension: ReferenceProvenanceDimension) => void;
 }
@@ -100,7 +98,6 @@ export function ReferenceProvenanceFilterControl({
   popoverElevation = "default",
   showDisabledOptions = false,
   value,
-  onReset,
   onToggle,
   onToggleAll
 }: ReferenceProvenanceFilterControlProps) {
@@ -127,18 +124,7 @@ export function ReferenceProvenanceFilterControl({
   if (enabledDimensions.length === 0) return null;
 
   return (
-    <div className="flex shrink-0 items-center gap-1.5">
-      {active ? (
-        <Button
-          className="h-7 px-2 text-xs"
-          size="sm"
-          type="button"
-          variant="ghost"
-          onClick={onReset}
-        >
-          {labels.reset}
-        </Button>
-      ) : null}
+    <div className="flex shrink-0 items-center">
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <Button

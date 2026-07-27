@@ -668,7 +668,6 @@ export const enAgentGui = {
   provenanceFilterAgents: "Agents",
   provenanceFilterFilteredSources: "Filtered sources",
   provenanceFilterMembers: "Members",
-  provenanceFilterReset: "Reset",
   mentionFilterSession: "Sessions",
   mentionFilterIssue: "Tasks",
   mentionKindAgent: "Agent",

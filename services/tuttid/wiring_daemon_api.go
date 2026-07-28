@@ -615,13 +615,14 @@ func buildDaemonAPI(ctx context.Context, store workspacedata.CatalogStore, analy
 	agentRuntimePreparer.CommandCatalog = runtimePrepCommandCatalog{Catalog: cliRegistry}
 
 	terminalService := &workspaceservice.TerminalService{}
-	accountService.OnLoginCompleted = func(ctx context.Context) {
-		tuttiagentservice.BootstrapTuttiAgentUserAuth(ctx)
+	tuttiAgentReadiness := tuttiagentservice.NewReadinessCoordinator(&agentStatusService, agentTargets)
+	accountService.OnLoginCompleted = func(context.Context) {
+		tuttiAgentReadiness.Trigger("account_login_completed")
 	}
 	accountService.OnLogoutCompleted = func(ctx context.Context) {
 		tuttiagentservice.LogoutTuttiAgentUserAuth(ctx)
 	}
-	go tuttiagentservice.BootstrapTuttiAgentUserAuth(context.Background())
+	tuttiAgentReadiness.Trigger("daemon_started")
 
 	// External credential switchers (for example cc-switch) rewrite provider
 	// auth/config files without notifying tuttid. Watch those files so cached
@@ -682,6 +683,7 @@ func buildDaemonAPI(ctx context.Context, store workspacedata.CatalogStore, analy
 		},
 		AgentSessionService:        agentSessionService,
 		AgentStatusService:         &agentStatusService,
+		TuttiAgentReadiness:        tuttiAgentReadiness,
 		TerminalService:            terminalService,
 		IssueService:               issueService,
 		IssueExecutionService:      issueExecutionCoordinator,

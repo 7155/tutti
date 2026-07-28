@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
+	runtimeprep "github.com/tutti-os/tutti/packages/agent/runtimeprep"
 	"github.com/tutti-os/tutti/services/tuttid/biz/agentprovider"
 )
 
@@ -237,6 +238,9 @@ func applyExtensionComposerCapabilities(options ComposerOptions, profile Extensi
 		if _, ok := allowed[capability]; !ok {
 			continue
 		}
+		if capability == providerregistry.CapabilityBrowserUse && !runtimeprep.BrowserUseDefaultEnabled() {
+			continue
+		}
 		if _, ok := seen[capability]; ok {
 			continue
 		}
@@ -246,6 +250,11 @@ func applyExtensionComposerCapabilities(options ComposerOptions, profile Extensi
 	if _, declared := allowed[providerregistry.CapabilitySkills]; declared && len(options.Skills) > 0 {
 		if _, exists := seen[providerregistry.CapabilitySkills]; !exists {
 			effective = append(effective, providerregistry.CapabilitySkills)
+		}
+	}
+	if _, declared := allowed[providerregistry.CapabilityBrowserUse]; declared && runtimeprep.BrowserUseDefaultEnabled() {
+		if _, exists := seen[providerregistry.CapabilityBrowserUse]; !exists {
+			effective = append(effective, providerregistry.CapabilityBrowserUse)
 		}
 	}
 	options.Capabilities = effective

@@ -25,8 +25,12 @@ const (
 
 var hiddenTuttiProviderSkills = map[string]struct{}{
 	"tutti-cli":     {},
+	"tutti-handoff": {},
 	"issue-manager": {},
 	"workspace-app": {},
+	"reference":     {},
+	"browser-use":   {},
+	"computer-use":  {},
 }
 
 func discoverComposerSkillOptions(provider string, cwd string, env []string) []ComposerSkillOption {

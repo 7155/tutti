@@ -143,6 +143,19 @@ func TestExtensionCapabilitiesRemainUnknownWithoutLiveRuntimeFacts(t *testing.T)
 	}
 }
 
+func TestExtensionBrowserCapabilityHonorsMasterSwitch(t *testing.T) {
+	t.Setenv("TUTTI_BROWSER_USE", "0")
+	options := applyExtensionComposerCapabilities(ComposerOptions{
+		RuntimeContext: map[string]any{"capabilities": []string{"browserUse", "compact"}},
+	}, ExtensionComposerProfile{Capabilities: []string{"browserUse", "compact"}})
+	if slices.Contains(options.Capabilities, "browserUse") {
+		t.Fatalf("capabilities = %#v, want browserUse omitted when master switch is off", options.Capabilities)
+	}
+	if !slices.Contains(options.Capabilities, "compact") {
+		t.Fatalf("capabilities = %#v, want unrelated capability preserved", options.Capabilities)
+	}
+}
+
 func TestExtensionSpawnPermissionUsesSemanticComposerIDs(t *testing.T) {
 	projection, err := projectExtensionPermissionConfig(extensionPermissionProjectionInput{
 		Profile: ExtensionComposerProfile{

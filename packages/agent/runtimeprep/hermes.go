@@ -185,6 +185,17 @@ func mergeHermesExternalDirs(config string, externalDirs []string) string {
 		}
 		return strings.Join(lines, "\n") + "\n"
 	}
+	if value := yamlLineValue(lines[skillsStart], "skills"); value != "" {
+		inlineSkills, ok := yamlInlineMapLines(value, 2)
+		if !ok {
+			return strings.Join(lines, "\n") + "\n"
+		}
+		lines[skillsStart] = strings.Repeat(" ", yamlLineIndent(lines[skillsStart])) + "skills:"
+		if len(inlineSkills) > 0 {
+			lines = append(lines[:skillsStart+1], append(inlineSkills, lines[skillsStart+1:]...)...)
+			skillsEnd += len(inlineSkills)
+		}
+	}
 	externalStart, externalEnd := nestedYAMLBlock(lines, skillsStart+1, skillsEnd, 2, "external_dirs")
 	if externalStart < 0 {
 		insert := []string{"  external_dirs:"}
@@ -195,6 +206,16 @@ func mergeHermesExternalDirs(config string, externalDirs []string) string {
 		return strings.Join(lines, "\n") + "\n"
 	}
 	existing := hermesExternalDirsFromLines(lines[externalStart+1 : externalEnd])
+	if inline := hermesExternalDirsFromInlineValue(yamlLineValue(lines[externalStart], "external_dirs")); len(inline) > 0 {
+		existing = appendUniquePaths(existing, inline)
+		lines[externalStart] = strings.Repeat(" ", yamlLineIndent(lines[externalStart])) + "external_dirs:"
+		insert := make([]string, 0, len(existing))
+		for _, dir := range existing {
+			insert = append(insert, "    - "+quoteYAMLString(dir))
+		}
+		lines = append(lines[:externalStart+1], append(insert, lines[externalStart+1:]...)...)
+		externalEnd += len(insert)
+	}
 	appendLines := []string{}
 	for _, dir := range dirs {
 		if slices.Contains(existing, dir) {
@@ -278,6 +299,73 @@ func hermesExternalDirsFromLines(lines []string) []string {
 		result = appendUniquePath(result, value)
 	}
 	return result
+}
+
+func hermesExternalDirsFromInlineValue(value string) []string {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "[") || !strings.HasSuffix(value, "]") {
+		return nil
+	}
+	inner := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(value, "["), "]"))
+	if inner == "" {
+		return nil
+	}
+	parts := strings.Split(inner, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		part = strings.Trim(part, "\"'")
+		result = appendUniquePath(result, part)
+	}
+	return result
+}
+
+func yamlInlineMapLines(value string, indent int) ([]string, bool) {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "{") || !strings.HasSuffix(value, "}") {
+		return nil, false
+	}
+	inner := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(value, "{"), "}"))
+	if inner == "" {
+		return nil, true
+	}
+	parts := strings.Split(inner, ",")
+	lines := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if !strings.Contains(part, ":") {
+			return nil, false
+		}
+		lines = append(lines, strings.Repeat(" ", indent)+part)
+	}
+	return lines, true
+}
+
+func appendUniquePaths(existing []string, values []string) []string {
+	result := append([]string(nil), existing...)
+	for _, value := range values {
+		result = appendUniquePath(result, value)
+	}
+	return result
+}
+
+func yamlLineValue(line string, key string) string {
+	trimmed := strings.TrimSpace(line)
+	prefix := key + ":"
+	if !strings.HasPrefix(trimmed, prefix) {
+		return ""
+	}
+	value := strings.TrimSpace(strings.TrimPrefix(trimmed, prefix))
+	if strings.HasPrefix(value, "#") {
+		return ""
+	}
+	return value
 }
 
 func yamlLineIndent(line string) int {

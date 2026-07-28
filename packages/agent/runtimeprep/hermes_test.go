@@ -295,3 +295,55 @@ other: value
 		t.Fatalf("mergeHermesExternalDirs() mismatch:\nwant:\n%s\ngot:\n%s", want, got)
 	}
 }
+
+func TestMergeHermesExternalDirsExpandsInlineExternalDirs(t *testing.T) {
+	got := mergeHermesExternalDirs(`model: test
+skills:
+  external_dirs: ["/user/first", '/user/second']
+other: value
+`, []string{"/tutti/root", "/user/first"})
+	want := `model: test
+skills:
+  external_dirs:
+    - "/user/first"
+    - "/user/second"
+    - "/tutti/root"
+other: value
+`
+	if got != want {
+		t.Fatalf("mergeHermesExternalDirs() mismatch:\nwant:\n%s\ngot:\n%s", want, got)
+	}
+}
+
+func TestMergeHermesExternalDirsExpandsInlineEmptySkillsMap(t *testing.T) {
+	got := mergeHermesExternalDirs(`model: test
+skills: {}
+other: value
+`, []string{"/tutti/root"})
+	want := `model: test
+skills:
+  external_dirs:
+    - "/tutti/root"
+other: value
+`
+	if got != want {
+		t.Fatalf("mergeHermesExternalDirs() mismatch:\nwant:\n%s\ngot:\n%s", want, got)
+	}
+}
+
+func TestMergeHermesExternalDirsExpandsInlineSkillsMap(t *testing.T) {
+	got := mergeHermesExternalDirs(`model: test
+skills: {enabled: true}
+other: value
+`, []string{"/tutti/root"})
+	want := `model: test
+skills:
+  enabled: true
+  external_dirs:
+    - "/tutti/root"
+other: value
+`
+	if got != want {
+		t.Fatalf("mergeHermesExternalDirs() mismatch:\nwant:\n%s\ngot:\n%s", want, got)
+	}
+}

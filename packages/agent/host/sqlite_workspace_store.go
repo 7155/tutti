@@ -45,6 +45,7 @@ var _ CanonicalStore = (*SQLiteWorkspaceStore)(nil)
 var _ SessionManagementStore = (*SQLiteWorkspaceStore)(nil)
 var _ SessionBatchManagementStore = (*SQLiteWorkspaceStore)(nil)
 var _ SessionForkStore = (*SQLiteWorkspaceStore)(nil)
+var _ SessionForkTurnIdentityStore = (*SQLiteWorkspaceStore)(nil)
 
 func (s *SQLiteWorkspaceStore) GetSession(ctx context.Context, workspaceID, sessionID string) (storesqlite.Session, bool, error) {
 	store, err := s.store(workspaceID)
@@ -74,6 +75,17 @@ func (s *SQLiteWorkspaceStore) CheckSessionForkThroughTurn(
 		return storesqlite.SessionForkBoundary{}, false, err
 	}
 	return store.CheckSessionForkThroughTurn(ctx, workspaceID, sourceSessionID, throughTurnID)
+}
+
+func (s *SQLiteWorkspaceStore) ListSessionForkTurnIdentities(
+	ctx context.Context,
+	workspaceID, sourceSessionID string,
+) ([]storesqlite.SessionForkTurnIdentity, error) {
+	store, err := s.store(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	return store.ListSessionForkTurnIdentities(ctx, workspaceID, sourceSessionID)
 }
 
 func (s *SQLiteWorkspaceStore) PrepareSessionFork(

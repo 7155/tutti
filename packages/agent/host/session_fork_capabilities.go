@@ -60,12 +60,7 @@ func (h *Host) GetSessionForkCapabilities(
 		return capabilities, nil
 	}
 	capabilities.ThroughTurnIDsKnown = true
-	identityStore, ok := h.sessionForks.(SessionForkTurnIdentityStore)
-	if !ok {
-		capabilities.ThroughTurn = false
-		return capabilities, nil
-	}
-	identities, err := identityStore.ListSessionForkTurnIdentities(
+	identities, err := h.sessionForks.ListSessionForkTurnIdentities(
 		ctx,
 		input.WorkspaceID,
 		input.SourceAgentSessionID,

@@ -4128,7 +4128,7 @@ aside.workspace-agents-status-panel
 .agent-gui-conversation__message-footer
   > .agent-gui-conversation__message-copy-button
   + .agent-gui-conversation__message-copy-button {
-  margin-left: -4px;
+  margin-left: -8px;
 }
 
 .agent-gui-conversation__message-group[data-agent-message-speaker="user"]

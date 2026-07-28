@@ -43,6 +43,7 @@ type CanonicalSubmitClaimStore interface {
 // SessionForkStore is an independent durable saga boundary. Provider dispatch
 // must never share a transaction with canonical history cloning.
 type SessionForkStore interface {
+	SessionForkTurnIdentityStore
 	GetSessionForkSource(context.Context, string, string) (storesqlite.Session, bool, error)
 	CheckSessionForkThroughTurn(context.Context, string, string, string) (storesqlite.SessionForkBoundary, bool, error)
 	PrepareSessionFork(context.Context, storesqlite.SessionForkPrepare) (storesqlite.SessionForkOperation, bool, error)

@@ -331,7 +331,6 @@ func (s *Service) withProtocolV2TurnStates(ctx context.Context, workspaceID stri
 		}
 		session.PendingInteractions = pendingBySessionID[sessionID]
 		session.LatestTurnInteractions = latestInteractionsBySessionID[sessionID]
-		session = s.withSessionForkCapabilities(ctx, workspaceID, session)
 		session, err = s.withSessionForkLineage(ctx, workspaceID, session)
 		if err != nil {
 			return nil, err

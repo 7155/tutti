@@ -57,12 +57,14 @@ func (s *sessionForkCapabilityStore) ListSessionForkTurnIdentities(
 type sessionForkCapabilityRuntime struct {
 	agenthost.SessionForkRuntime
 	source agenthost.ProviderRuntimeSession
+	calls  int
 }
 
 func (r *sessionForkCapabilityRuntime) ResolveSessionFork(
 	_ context.Context,
 	source agenthost.ProviderRuntimeSession,
 ) (agenthost.SessionForkDriverDescriptor, error) {
+	r.calls++
 	r.source = source
 	return agenthost.SessionForkDriverDescriptor{
 		Kind:                        "native",
@@ -115,6 +117,61 @@ func TestWithSessionForkCapabilitiesUsesProviderSessionCapability(t *testing.T) 
 	}
 	if runtime.source.ProviderSessionID != "provider-session-1" {
 		t.Fatalf("runtime source = %#v", runtime.source)
+	}
+}
+
+type sessionForkListProjectionStore struct {
+	agenthost.SessionForkStore
+	sourceReads  int
+	lineageReads int
+}
+
+func (s *sessionForkListProjectionStore) GetSessionForkSource(
+	_ context.Context,
+	_, _ string,
+) (storesqlite.Session, bool, error) {
+	s.sourceReads++
+	return storesqlite.Session{}, false, nil
+}
+
+func (s *sessionForkListProjectionStore) GetSessionForkLineage(
+	_ context.Context,
+	_, _ string,
+) (storesqlite.SessionForkLineage, bool, error) {
+	s.lineageReads++
+	return storesqlite.SessionForkLineage{}, false, nil
+}
+
+func TestProtocolV2BatchProjectionDoesNotProbeSessionForkCapabilities(t *testing.T) {
+	store := &sessionForkListProjectionStore{}
+	runtime := &sessionForkCapabilityRuntime{}
+	service := &Service{TurnStore: failingTurnStore{}}
+	service.SetApplicationHost(agenthost.New(agenthost.Config{
+		SessionForks: store, SessionForkRuntime: runtime,
+	}))
+
+	projected, err := service.withProtocolV2TurnStates(
+		t.Context(),
+		"workspace-1",
+		[]Session{{
+			ID: "source-1", Kind: agentactivitybiz.SessionKindRoot,
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projected) != 1 {
+		t.Fatalf("projected sessions=%d, want 1", len(projected))
+	}
+	if runtime.calls != 0 || store.sourceReads != 0 {
+		t.Fatalf(
+			"list projection probed fork capability: runtime=%d sourceReads=%d",
+			runtime.calls,
+			store.sourceReads,
+		)
+	}
+	if store.lineageReads != 1 {
+		t.Fatalf("lineage reads=%d, want 1 canonical read", store.lineageReads)
 	}
 }
 

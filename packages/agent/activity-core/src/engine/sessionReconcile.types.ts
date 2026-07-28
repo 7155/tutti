@@ -12,8 +12,10 @@ export interface SessionReconcileRecord {
   errorCode: string | null;
   errorMessage: string | null;
   inFlightCommandId: string | null;
+  inFlightLive: boolean;
   inFlightScope: SessionReconcileScope | null;
   messagesHydrated: boolean;
+  pendingLive: boolean;
   pendingMessages: boolean;
   pendingState: boolean;
   workspaceId: string;
@@ -27,6 +29,7 @@ export interface SessionReconcileState {
 export interface SessionReconcileRequestedIntent {
   type: "session/reconcileRequested";
   agentSessionId: string;
+  live?: boolean;
   needsMessages: boolean;
   needsState: boolean;
   workspaceId: string;
@@ -64,6 +67,7 @@ export interface SessionReconcileCommand {
   type: "session/reconcile";
   agentSessionId: string;
   commandId: string;
+  live: boolean;
   scope: SessionReconcileScope;
   timeoutMs?: number;
   workspaceId: string;

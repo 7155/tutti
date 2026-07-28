@@ -975,7 +975,7 @@ test("WorkspaceAgentActivityService model catalog invalidation drops composer ca
   assert.equal(composerOptionCalls, 3);
 });
 
-test("WorkspaceAgentActivityService starts session-event streams and preserves uncached outcome patches", async () => {
+test("WorkspaceAgentActivityService starts session-event streams and forwards canonical turn events", async () => {
   const subscriptions: Array<{
     scope: unknown;
     topic: string;
@@ -1026,7 +1026,7 @@ test("WorkspaceAgentActivityService starts session-event streams and preserves u
     }
   });
 
-  const receivedEvent = new Promise<unknown>((resolve) => {
+  const receivedTurnEvent = new Promise<unknown>((resolve) => {
     service.onSessionEvent(" ws-1 ", resolve);
   });
 
@@ -1054,34 +1054,6 @@ test("WorkspaceAgentActivityService starts session-event streams and preserves u
   );
   assert.ok(activityUpdatedListener);
 
-  const sourceEvent = {
-    data: {
-      agentSessionId: "session-1",
-      provider: "codex",
-      title: "Finish the task",
-      turn: {
-        outcome: "completed",
-        phase: "settled",
-        turnId: "turn-1"
-      },
-      workspaceId: "ws-1"
-    },
-    eventType: "state_patch"
-  };
-  activityUpdatedListener({
-    payload: {
-      agentSessionId: "session-1",
-      data: sourceEvent.data,
-      eventType: sourceEvent.eventType,
-      workspaceId: "ws-1"
-    }
-  });
-
-  assert.deepEqual(await receivedEvent, sourceEvent);
-
-  const receivedTurnEvent = new Promise<unknown>((resolve) => {
-    service.onSessionEvent("ws-1", resolve);
-  });
   const turnEvent = {
     data: {
       activeTurnId: null,
@@ -1672,7 +1644,14 @@ test("WorkspaceAgentActivityService preserves live provenance across a transient
     tuttidClient: {
       getWorkspaceAgentSession: async () => {
         getCalls += 1;
-        if (getCalls === 2) throw new Error("temporary reconcile failure");
+        if (getCalls === 2) {
+          throw new TuttidProtocolError({
+            code: "workspace_not_found",
+            developerMessage: "workspace agent session not found",
+            reason: "workspace_agent_session_not_found",
+            statusCode: 404
+          });
+        }
         return {
           session: getCalls === 1 ? running : settled,
           childSessions: [],
@@ -2979,7 +2958,12 @@ test("WorkspaceAgentActivityService tombstones an explicit session deletion even
     }
   ).reconcileAgentActivityUpdate({
     agentSessionId: "session-1",
-    data: { reason: "deleted" },
+    data: {
+      agentSessionId: "session-1",
+      deletedAtUnixMs: 1,
+      eventType: "session_deleted",
+      workspaceId: "ws-1"
+    },
     eventType: "session_deleted",
     workspaceId: "ws-1"
   });

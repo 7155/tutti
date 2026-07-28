@@ -154,6 +154,8 @@ export function executeWorkspaceActivityCommand(
     case "attention/readState/read":
     case "attention/readState/write":
     case "plan/submitDecision":
+    case "session/ackForkObserved":
+    case "session/forkThroughTurn":
     case "session/unactivate":
     case "tuttiMode/update":
       return Promise.reject(

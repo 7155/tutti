@@ -255,6 +255,11 @@ export interface AgentActivityComposerOptions {
   speeds: AgentActivityComposerSettingOption[];
   /** Mirrors tuttid modelConfig.configurable; false when absent. */
   modelConfigurable?: boolean;
+  /**
+   * Provider-resolved runtime model. This remains separate from the selected
+   * model so an inherited `default` choice stays inherited.
+   */
+  effectiveModel?: string | null;
   /** Mirrors tuttid reasoningConfig.configurable; false when absent. */
   reasoningConfigurable?: boolean;
   /** Mirrors tuttid speedConfig.configurable; false when absent. */

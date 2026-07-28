@@ -411,6 +411,11 @@ disable submission, but must not change editor editability.
   drain and one subscriber notification. Desktop and Mobile use the same
   `@tutti-os/agent-activity-tuttid-adapter` aggregate mapper and must not
   dispatch each entity independently
+- Desktop and Mobile execute Engine-owned `session/reconcile` commands through
+  the same activity-core Session reconcile executor. The executor owns scope,
+  cursor/window, pagination, double-detail race closure, cancellation/deletion
+  fences, and atomic application; hosts own transport, DTO mapping, diagnostics,
+  polling, and presentation side effects
 - every daemon Session response carries the required `messageVersion`
   high-water cursor. Daemon and renderer ship as one protocol unit, so the
   shared adapter rejects a missing or invalid cursor instead of fabricating
@@ -433,17 +438,19 @@ pages. A surface that does not render child conversations keeps the hierarchy
 and pending Interaction state canonical without paying for unused child message
 history.
 
-Desktop hydrates child messages only when its aggregate projections need them.
-The first read remains a bounded newest-first page. Later root-detail
-reconciliation compares each child's required Session `messageVersion` with the
-largest locally cached durable message version; an unchanged child performs no
-message request. Newly discovered children use the bounded newest-first read,
-while already hydrated children that advanced use incremental reads. A known
-empty child window is an authoritative durable cursor at zero, so its first
-later messages are drained incrementally from `afterVersion=0`; it is not
-treated as an unknown window. The second detail read catches a child that
-advances while the first message pass is in flight. Transient optimistic rows
-never advance this cursor. This child policy is separate from the root
+The shared reconcile executor exposes an explicit message-hydration policy.
+Desktop selects Session-hierarchy hydration for its aggregate projections;
+Mobile selects requested-Session hydration while it does not render child
+transcripts. The first read remains a bounded newest-first page. Later detail
+reconciliation compares each hydrated Session's required `messageVersion` with
+the largest locally cached durable message version; an unchanged child performs
+no message request. Newly discovered children use the bounded newest-first
+read, while already hydrated children that advanced use incremental reads. A
+known empty child window is an authoritative durable cursor at zero, so its
+first later messages are drained incrementally from `afterVersion=0`; it is not
+treated as an unknown window. The second detail read catches a root or child
+that advances while the first message pass is in flight. Transient optimistic
+rows never advance this cursor. This child policy is separate from the root
 conversation's user-boundary repair policy, which may intentionally restart an
 incremental read at zero.
 

@@ -2374,12 +2374,23 @@ test("WorkspaceAgentActivityService drains child incremental pages from its dura
   requests.length = 0;
   await (
     service as unknown as {
-      reconcileAgentSessionMessages(
-        workspaceId: string,
-        agentSessionId: string
-      ): Promise<unknown>;
+      executeSessionReconcileCommand(command: {
+        agentSessionId: string;
+        commandId: string;
+        live: boolean;
+        scope: "messages";
+        type: "session/reconcile";
+        workspaceId: string;
+      }): Promise<unknown>;
     }
-  ).reconcileAgentSessionMessages("ws-1", "session-1");
+  ).executeSessionReconcileCommand({
+    agentSessionId: "session-1",
+    commandId: "test-child-incremental",
+    live: false,
+    scope: "messages",
+    type: "session/reconcile",
+    workspaceId: "ws-1"
+  });
 
   assert.deepEqual(
     requests.map((request) => request.afterVersion),

@@ -1,16 +1,17 @@
 import type {
   AgentActivitySendInput,
   AgentActivitySession,
+  AgentActivitySessionDetailSnapshot,
   AgentSessionEngine,
   EngineExternalCommand,
-  SessionActivateCommand
+  SessionActivateCommand,
+  SessionReconcileCommand
 } from "@tutti-os/agent-activity-core";
 import { executeAgentActivityPromptCommand } from "@tutti-os/agent-activity-core";
 import {
   agentActivityComposerOptionsFromTuttidResult,
   agentActivitySessionFromTuttidSession,
-  agentActivityTurnFromTuttidTurn,
-  type AgentActivitySessionDetailSnapshot
+  agentActivityTurnFromTuttidTurn
 } from "@tutti-os/agent-activity-tuttid-adapter";
 import type { TuttidClient } from "@tutti-os/client-tuttid-ts";
 import { mobileLocale } from "../i18n";
@@ -28,12 +29,8 @@ interface WorkspaceActivityCommandContext {
     detail: Awaited<ReturnType<TuttidClient["getWorkspaceAgentSession"]>>
   ): AgentActivitySessionDetailSnapshot;
   reconcileSession(
-    agentSessionId: string,
-    scope: Extract<
-      EngineExternalCommand,
-      { type: "session/reconcile" }
-    >["scope"],
-    live: boolean
+    command: SessionReconcileCommand,
+    signal?: AbortSignal
   ): Promise<unknown>;
   reconcileWorkspace(): Promise<unknown>;
 }
@@ -91,11 +88,7 @@ export function executeWorkspaceActivityCommand(
         )
         .then((session) => ({ session: context.mapSession(session) }));
     case "session/reconcile":
-      return context.reconcileSession(
-        command.agentSessionId,
-        command.scope,
-        command.live
-      );
+      return context.reconcileSession(command, signal);
     case "composerOptions/load":
       return context.client
         .getAgentProviderComposerOptions(

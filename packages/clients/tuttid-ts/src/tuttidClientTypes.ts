@@ -364,7 +364,8 @@ export interface TuttidClient
   getWorkspace(workspaceID: string): Promise<WorkspaceSummary>;
   getWorkspaceAgentSession(
     workspaceID: string,
-    agentSessionID: string
+    agentSessionID: string,
+    requestOptions?: TuttidRequestOptions
   ): Promise<WorkspaceAgentSessionDetailResponse>;
   getAgentProviderComposerOptions(
     provider: WorkspaceAgentProvider,
@@ -684,7 +685,8 @@ export interface TuttidClient
       beforeVersion?: number;
       order?: "asc" | "desc";
       limit?: number;
-    }
+    },
+    requestOptions?: TuttidRequestOptions
   ): Promise<WorkspaceAgentSessionMessagesResponse>;
   listWorkspaceFileDirectory(
     workspaceID: string,

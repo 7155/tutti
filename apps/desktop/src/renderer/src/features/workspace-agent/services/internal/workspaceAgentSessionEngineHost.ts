@@ -33,7 +33,10 @@ interface CreateWorkspaceAgentSessionEngineHostInput {
     turnId: string;
     workspaceId: string;
   }): Promise<unknown>;
-  reconcileSession(command: SessionReconcileCommand): Promise<unknown>;
+  reconcileSession(
+    command: SessionReconcileCommand,
+    signal?: AbortSignal
+  ): Promise<unknown>;
   runtimeApi: Pick<DesktopRuntimeApi, "logTerminalDiagnostic">;
   sendInput(input: AgentActivitySendInput): Promise<unknown>;
   submitInteractive: AgentActivityRuntime["submitInteractive"];
@@ -208,7 +211,7 @@ export function createWorkspaceAgentSessionEngineHost(
             return list;
           }
           case "session/reconcile":
-            return input.reconcileSession(command);
+            return input.reconcileSession(command, options?.signal);
           case "session/unactivate":
             return input.unactivateSession({
               agentSessionId: command.agentSessionId,

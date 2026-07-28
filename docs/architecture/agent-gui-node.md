@@ -820,7 +820,20 @@ hidden and refresh from current time when visual exposure resumes.
 
 Rail selection, detail hydration, older-page loading, and transcript projection are separate states.
 
-A focused controller may own detail paging/loading/error. Canonical messages, Turns, Interactions, and optimistic prompts still come from the engine. An empty message list means neither hydrated nor not-found.
+Desktop and Mobile use the same renderer-neutral AgentGUI conversation-message
+controller for focused detail message queries. Initial hydration and latest
+refresh enter the Engine as Session reconcile intents; explicit older-page
+loads read only the Engine's authoritative message window, share one
+in-flight/retry/stale-request fence, and apply mapped durable pages back to the
+same Engine. Switching the focused Session or pausing the host aborts and
+generation-fences the obsolete older-page request. A failed request remains
+retryable at the same cursor.
+
+The host owns mapped transport, foreground/background and disconnected-polling
+triggers, diagnostics enrichment, scrolling, and rendering. Canonical messages,
+Turns, Interactions, and optimistic prompts still come from the Engine; neither
+Desktop view state nor Mobile services keep an older-message entity store. An
+empty message list means neither hydrated nor not-found.
 Selecting an already hydrated Session must not start another detail reconcile;
 the selection controller alone decides whether hydration is missing. Composer
 option synchronization does not own Session detail reloads.

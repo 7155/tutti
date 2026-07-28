@@ -97,13 +97,26 @@ export type {
 } from "./engine/types.ts";
 export { AGENT_SESSION_ENGINE_LOCAL_ORIGIN } from "./engine/types.ts";
 export { selectWorkspaceReconcileState } from "./engine/engineRuntime.selectors.ts";
-export { dispatchSessionMutation } from "./engine/sessionMutationDispatch.ts";
 export {
+  dispatchSessionForkThroughTurn,
+  dispatchSessionMutation,
+  type DispatchSessionForkThroughTurnInput
+} from "./engine/sessionMutationDispatch.ts";
+export {
+  selectPendingSessionForkThroughTurnIds,
+  selectSessionForkThroughTurnMutation,
   selectSessionMutation,
-  selectSessionMutations
+  selectSessionMutations,
+  type SessionForkThroughTurnPendingSelectorInput,
+  type SessionForkThroughTurnMutationSelectorInput
 } from "./engine/sessionMutations.selectors.ts";
 export type {
   SessionDeleteMutationResult,
+  SessionAcknowledgeForkObservedCommand,
+  SessionForkObservationAckStatus,
+  SessionForkThroughTurnCommand,
+  SessionForkThroughTurnMutationRecord,
+  SessionForkThroughTurnRequestedIntent,
   SessionMutationCommand,
   SessionMutationRecord,
   SessionMutationStatus,
@@ -338,6 +351,7 @@ export type {
   AgentActivitySendInputResult,
   AgentActivitySetSessionPinnedInput,
   AgentActivitySession,
+  AgentActivitySessionForkLineage,
   AgentActivitySessionCapabilities,
   AgentActivitySessionGoal,
   AgentActivitySessionPermissionConfig,
@@ -367,4 +381,9 @@ export type {
   AgentActivityUpdatedApplyResult,
   AgentActivityUpdatedEvent
 } from "./types.ts";
+export type {
+  AgentActivityForkSessionOperationStatus,
+  AgentActivityForkSessionResult,
+  AgentActivityForkSessionThroughTurnInput
+} from "./sessionFork.types.ts";
 export { workspaceAgentSessionStatus } from "./workspaceAgentSessionProjection.ts";

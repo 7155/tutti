@@ -140,18 +140,18 @@ provider runtime observation
 
 ### 2.3 Ownership map
 
-| Layer                           | Owns                                                                                       | Must not own                                      |
-| ------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------- |
-| `store-sqlite/canonical`        | canonical phase, outcome, origin, Interaction, capability vocabulary, and pure projections | HTTP, provider processes, React                   |
-| `store-sqlite`                  | canonical transactions, SQLite repositories, durable tombstones/outbox participation       | product UI, transport policy                      |
-| `packages/agent/host`           | create/resume/send/cancel, Interaction, Goal, operation, and recovery lifecycle            | HTTP DTOs, Electron, concrete provider wire       |
-| `packages/agent/daemon`         | provider registry, runtime mechanics, wire normalization                                   | AgentGUI policy, cross-provider UI branches       |
-| `services/tuttid/service/agent` | Host adapters, HTTP/query/composer/product policy, provider preparation                    | reimplementation of Host lifecycle                |
-| tuttid `ActivityProjection`     | canonical read projection, commit observation, event publication/repair                    | lifecycle decisions, React state                  |
-| `agent-activity-core`           | workspace engine, canonical frontend entities, pending intents, queue, selectors           | HTTP, Electron, React                             |
-| `agent-gui`                     | runtime contract, projections, controllers, views, UI-local state                          | daemon truth, a second session store              |
-| `apps/desktop`                  | tuttid client, business-event WebSocket, preload, Workbench, windows, file/OS capabilities | a second Agent business core                      |
-| `apps/mobile`                   | DeviceLink adapter, Native renderer, app lifecycle, navigation and drafts                  | a second Agent business core or Session DTO cache |
+| Layer                           | Owns                                                                                          | Must not own                                      |
+| ------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `store-sqlite/canonical`        | canonical phase, outcome, origin, Interaction, capability vocabulary, and pure projections    | HTTP, provider processes, React                   |
+| `store-sqlite`                  | canonical transactions, SQLite repositories, durable tombstones/outbox participation          | product UI, transport policy                      |
+| `packages/agent/host`           | create/resume/send/cancel/fork, lineage, Interaction, Goal, operation, and recovery lifecycle | HTTP DTOs, Electron, concrete provider wire       |
+| `packages/agent/daemon`         | provider registry, runtime mechanics, wire normalization                                      | AgentGUI policy, cross-provider UI branches       |
+| `services/tuttid/service/agent` | Host adapters, HTTP/query/composer/product policy, provider preparation                       | reimplementation of Host lifecycle                |
+| tuttid `ActivityProjection`     | canonical read projection, commit observation, event publication/repair                       | lifecycle decisions, React state                  |
+| `agent-activity-core`           | workspace engine, canonical frontend entities, pending intents, queue, selectors              | HTTP, Electron, React                             |
+| `agent-gui`                     | runtime contract, projections, controllers, views, UI-local state                             | daemon truth, a second session store              |
+| `apps/desktop`                  | tuttid client, business-event WebSocket, preload, Workbench, windows, file/OS capabilities    | a second Agent business core                      |
+| `apps/mobile`                   | DeviceLink adapter, Native renderer, app lifecycle, navigation and drafts                     | a second Agent business core or Session DTO cache |
 
 `services/tuttid/api/openapi/tuttid.v1.yaml` is authoritative for HTTP request/response contracts. It projects the canonical domain; it does not replace `store-sqlite/canonical`.
 
@@ -247,6 +247,87 @@ delegation call and the canonical child Session/Turn. AgentGUI attaches the
 child lane only through the immutable `parentToolCallId`; it must not parse
 provider-native spawn events, invent a missing parent card, or create a
 presentation-only child lane.
+
+User-initiated Fork creates a new root Session rather than a provider-native
+subagent. The child records durable lineage to the source Session and inclusive
+boundary Turn, but receives a caller-reserved canonical Session id and a
+provider-created Session id. Canonical Session, Turn, Message, and Interaction
+identities are session-scoped and are remapped during the atomic clone.
+
+### 3.1.1 Session Fork
+
+`throughTurn` means the boundary Turn and all earlier canonical history are
+included. AgentGUI emits only the canonical Turn id. Host resolves its durable
+provider root Turn id and invokes the exact provider adapter selected by the
+runtime registry; shared UI and Host code never branch on provider names.
+
+The projected Session capability is an exact, fail-closed provider/runtime
+conjunction:
+
+```text
+provider registry declares native Session Fork
+  AND the exact adapter/version attests throughTurn support
+  AND product-owned Session context can be transferred safely
+  AND that provider explicitly registers target runtime state binding
+```
+
+Only that conjunction projects `lifecycleCapabilities.forkThroughTurn=true`.
+The Codex adapter reads the initialized version from an exact live process when
+one exists. For a historical, detached, or newly forked Session it performs one
+cached short-lived initialize probe against the same resolved adapter/runtime;
+that probe neither resumes the provider thread nor creates a canonical Turn.
+AgentGUI renders one action in each settled root Turn footer and hides it
+otherwise. Boundary availability is deliberately separate: execution
+transactionally rejects an unverified prefix, descendant lane, or
+session-scoped local attachment. This prevents a later unavailable Turn from
+hiding an earlier valid Turn while preserving a fail-closed commit.
+
+Tuttid currently rejects worktree-isolated sources at the Session capability
+layer. A provider-native thread Fork keeps the provider cwd; copying the
+source worktree ownership or silently selecting another checkout would be
+incorrect. Non-isolated stable runtime facts are frozen into the target
+snapshot. Session-scoped local attachments are also fail-closed until a
+versioned through-Turn resource manifest and atomic resource binding exist;
+the implementation never copies the whole source attachment directory.
+
+Fork is a durable Host-owned saga:
+
+```text
+prepared -> dispatching -> provider_accepted -> committed
+                  \-> unknown
+           \-------------------------> failed
+```
+
+`requestId` is the caller-stable replay identity and
+`targetAgentSessionId` is reserved at prepare. The prepared snapshot freezes
+the source provider Session, provider Turn boundary, driver kind/version, and
+canonical prefix proof. A source Fork fence prevents reporting, goal/runtime
+mutations, deletion, or another Fork from changing that source while provider
+and canonical state are being matched. The provider call begins only after the
+`dispatching` marker commits. Once provider acceptance is known, all
+checkpoints and the local clone use a detached bounded context so an HTTP
+disconnect cannot lose the child identity.
+
+Before `provider_accepted`, Host delegates provider-local persistence binding
+to a product adapter. Codex validates every JSONL record plus the accepted
+child `session_meta.id`, verifies source/target size and SHA-256, and atomically
+copies only that rollout from the source run-scoped `CODEX_HOME` into the
+target run-scoped `CODEX_HOME`. File and directory fsync make the rename
+crash-durable before the Host checkpoint where directory fsync is supported;
+Windows retains file fsync plus atomic rename because its portable filesystem
+API does not expose directory fsync. The target therefore owns resumable
+provider state independently of source cleanup.
+Binding failure becomes `unknown`; Host neither commits the canonical child nor
+reissues `thread/fork`.
+
+`provider_accepted` recovery retries only the atomic local clone, never the
+provider call. A crash in `dispatching` becomes `unknown` and is never
+automatically redispatched. On startup, a `prepared` operation is safely marked
+failed because its durable state proves provider dispatch never began; this
+releases the abandoned source fence and target reservation without requiring a
+live runtime. Terminal `unknown`, `failed`, and `committed` states release the source fence.
+The canonical commit re-proves the frozen prefix, clones the inclusive history
+and lineage in one transaction, and emits the complete committed delta.
 
 ### 3.2 Turn
 

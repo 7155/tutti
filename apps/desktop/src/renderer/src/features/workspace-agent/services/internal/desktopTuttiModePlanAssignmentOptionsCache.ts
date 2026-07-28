@@ -9,10 +9,6 @@ import type {
   TuttiModePlanAssignmentOptionsSource
 } from "@tutti-os/agent-gui";
 import { resolveAgentGUIProviderCatalogIdentity } from "@tutti-os/agent-gui/provider-catalog";
-import {
-  createWorkspaceQueryCache,
-  type WorkspaceQueryCache
-} from "@tutti-os/agent-gui/workspace-query-cache";
 
 type AssignmentOptionsTuttidClient = Pick<
   TuttidClient,
@@ -33,6 +29,21 @@ interface AssignmentOptionsCacheIdentity {
   cacheKey: string;
   provider: string;
   workspaceId: string;
+}
+
+interface AssignmentOptionsCacheEntry<TValue> {
+  readonly resolvedAtUnixMs: number;
+  stale: boolean;
+  readonly value: TValue;
+}
+
+interface AssignmentOptionsQueryCache<TValue> {
+  invalidate(key: string): void;
+  read(key: string): AssignmentOptionsCacheEntry<TValue> | null;
+  request(
+    key: string,
+    load: () => Promise<TValue>
+  ): Promise<AssignmentOptionsCacheEntry<TValue>>;
 }
 
 export interface DesktopTuttiModePlanAssignmentOptionsCache {
@@ -57,6 +68,67 @@ const EMPTY_ASSIGNMENT_AGENT_DETAIL: TuttiModePlanAssignmentAgentDetail = {
 const SUPERSEDED_ASSIGNMENT_OPTIONS_LOAD = Symbol(
   "superseded-assignment-options-load"
 );
+
+function createAssignmentOptionsQueryCache<TValue>(input: {
+  maxEntries: number;
+  now: () => number;
+}): AssignmentOptionsQueryCache<TValue> {
+  const entries = new Map<string, AssignmentOptionsCacheEntry<TValue>>();
+  const requests = new Map<
+    string,
+    Promise<AssignmentOptionsCacheEntry<TValue>>
+  >();
+
+  const touch = (
+    key: string,
+    entry: AssignmentOptionsCacheEntry<TValue>
+  ): void => {
+    entries.delete(key);
+    entries.set(key, entry);
+  };
+
+  const write = (
+    key: string,
+    value: TValue
+  ): AssignmentOptionsCacheEntry<TValue> => {
+    const entry = {
+      resolvedAtUnixMs: input.now(),
+      stale: false,
+      value
+    };
+    touch(key, entry);
+    while (entries.size > input.maxEntries) {
+      const oldestKey = entries.keys().next().value;
+      if (typeof oldestKey !== "string") break;
+      entries.delete(oldestKey);
+    }
+    return entry;
+  };
+
+  return {
+    invalidate(key) {
+      const entry = entries.get(key);
+      if (entry) entry.stale = true;
+    },
+    read(key) {
+      const entry = entries.get(key);
+      if (!entry) return null;
+      touch(key, entry);
+      return entry;
+    },
+    request(key, load) {
+      const active = requests.get(key);
+      if (active) return active;
+      const request = load()
+        .then((value) => write(key, value))
+        .finally(() => {
+          if (requests.get(key) === request) requests.delete(key);
+        });
+      requests.set(key, request);
+      return request;
+    }
+  };
+}
 
 function workspaceAgentIsSelectable(agent: WorkspaceAgent): boolean {
   return (
@@ -97,7 +169,7 @@ function cacheEntryIsFresh(
 }
 
 async function requestCachedValue<TValue>(input: {
-  cache: WorkspaceQueryCache<TValue>;
+  cache: AssignmentOptionsQueryCache<TValue>;
   cacheKey: string;
   generations: Map<string, number>;
   load: () => Promise<TValue>;
@@ -129,7 +201,7 @@ async function requestCachedValue<TValue>(input: {
 }
 
 function invalidateCachedValue<TValue>(input: {
-  cache: WorkspaceQueryCache<TValue>;
+  cache: AssignmentOptionsQueryCache<TValue>;
   cacheKey: string;
   generations: Map<string, number>;
 }): void {
@@ -144,14 +216,14 @@ export function createDesktopTuttiModePlanAssignmentOptionsCache(
   tuttidClient: AssignmentOptionsTuttidClient,
   now: () => number = Date.now
 ): DesktopTuttiModePlanAssignmentOptionsCache {
-  const directoryCache = createWorkspaceQueryCache<
+  const directoryCache = createAssignmentOptionsQueryCache<
     readonly AssignmentAgentDirectoryEntry[]
   >({
     maxEntries: 24,
     now
   });
   const detailCache =
-    createWorkspaceQueryCache<TuttiModePlanAssignmentAgentDetail>({
+    createAssignmentOptionsQueryCache<TuttiModePlanAssignmentAgentDetail>({
       maxEntries: 96,
       now
     });

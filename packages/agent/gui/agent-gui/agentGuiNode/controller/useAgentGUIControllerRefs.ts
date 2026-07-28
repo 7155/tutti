@@ -112,15 +112,6 @@ export function useAgentGUIControllerRefs(
       options?: AgentComposerSubmitOptions
     ) => void
   >(() => {});
-  const reloadSelectedConversationRef = useRef<
-    (
-      agentSessionId: string,
-      options: { reloadConversations: boolean; reloadDetail: boolean }
-    ) => void
-  >(() => {});
-  const syncConversationListProjectionRef = useRef<
-    (agentSessionId?: string | null) => Promise<void>
-  >(async () => {});
   const isComposerHomeRef = useRef(input.isComposerHome);
   const isCreatingConversationRef = useRef(input.isCreatingConversation);
 
@@ -170,13 +161,11 @@ export function useAgentGUIControllerRefs(
     onShowMessageRef,
     pendingOpenSessionRequestRef,
     agentTargetsProvidedRef,
-    reloadSelectedConversationRef,
     selectedComposerTargetDataRef,
     selectedProjectPathRef,
     selectedAgentTargetIsExplicitRef,
     selectedAgentTargetRef,
     submitPromptRef,
-    syncConversationListProjectionRef,
     userProjectsLoadSeqRef,
     userProjectsRef
   };

@@ -120,7 +120,7 @@
       "packages/agent/gui/workbench/browser-element-context/browserElementContextSelectionController.ts": 1,
       "packages/agent/gui/workbench/tool-sidebar/useAgentToolSidebarController.ts": 3
     },
-    "renderMirrorRefs": 8,
+    "renderMirrorRefs": 7,
     "setTimeoutCount": 36,
     "swallowedCatch": 3,
     "useSyncExternalStoreCount": 4

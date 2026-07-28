@@ -37,7 +37,7 @@ export function useAgentGUIComposerOptionsSync(input: {
   isComposerHomeRef: RefObject<boolean>;
   isCreatingConversation: boolean;
   loadDraftComposerOptionsRef: RefObject<() => void>;
-  loadSessionState(agentSessionId: string, cause?: unknown): void;
+  loadSessionState(agentSessionId: string): void;
   onComposerDefaultsAuthorityReloadedRef: RefObject<AgentGUIComposerDefaultsAuthorityReconciler>;
   providerComposerOptions:
     | { behavior?: { prewarmDraftSession?: boolean } | null }
@@ -196,10 +196,7 @@ export function useAgentGUIComposerOptionsSync(input: {
         ) {
           return;
         }
-        input.loadSessionState(activeId, {
-          source: "settings-update",
-          force: true
-        });
+        input.loadSessionState(activeId);
       }
     );
   }, [input.loadSessionState, loadDraftComposerOptions]);

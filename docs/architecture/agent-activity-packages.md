@@ -1017,7 +1017,11 @@ host availability changes, and dispatches accepted mapped pages into that
 Engine. Mobile's disconnected poller and app lifecycle, Desktop diagnostics
 and WebSocket integration, and both renderers' scroll behavior remain host
 concerns. Hosts must not add a second older-message store or a host-local
-cursor/retry state machine.
+cursor/retry state machine. Desktop conversation selection owns activation
+guards and Rail projection coordination, then delegates initial or forced
+detail hydration to this controller. Message paging adapters do not call back
+into selection or Rail orchestration, and hosts do not maintain a second
+messages-only reconcile entrypoint.
 
 Event-stream continuity and command reachability are separate host facts.
 `eventStreamConnectionChanged` belongs to the coordinator and triggers

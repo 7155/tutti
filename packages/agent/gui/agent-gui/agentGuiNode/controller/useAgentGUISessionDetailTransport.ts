@@ -1,12 +1,10 @@
 import {
-  selectLatestActivationForSession,
   selectSessionMessages,
   selectSessionMessageWindow,
-  type SessionReconcileScope,
   type AgentSessionEngine
 } from "@tutti-os/agent-activity-core";
 import type { RefObject } from "react";
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import type { AgentActivityRuntime } from "../../../agentActivityRuntime";
 import { useAgentSessionControllerState } from "../../../contexts/workspace/presentation/renderer/agentSessions/useAgentSessionControllerState";
 import type { AgentGUINodeData } from "../../../types";
@@ -24,16 +22,7 @@ export function useAgentGUISessionDetailTransport(input: {
   agentActivityRuntimeOrigin: string;
   dataRef: RefObject<AgentGUINodeData>;
   isMountedRef: RefObject<boolean>;
-  reloadSelectedConversationRef: RefObject<
-    (
-      agentSessionId: string,
-      options: { reloadConversations: boolean; reloadDetail: boolean }
-    ) => void
-  >;
   sessionEngine: AgentSessionEngine;
-  syncConversationListProjectionRef: RefObject<
-    (agentSessionId?: string | null) => Promise<void>
-  >;
   workspaceId: string;
 }) {
   const {
@@ -43,9 +32,7 @@ export function useAgentGUISessionDetailTransport(input: {
     agentActivityRuntimeOrigin,
     dataRef,
     isMountedRef,
-    reloadSelectedConversationRef,
     sessionEngine,
-    syncConversationListProjectionRef,
     workspaceId
   } = input;
   const sessionViewRef = useCallback(
@@ -79,28 +66,20 @@ export function useAgentGUISessionDetailTransport(input: {
     },
     [sessionEngine]
   );
-  const { loadSessionState, refreshMessagesFromSnapshot } = useMemo(() => {
-    const reconcileSession = (
-      agentSessionId: string,
-      scope: SessionReconcileScope
-    ) => {
+  const loadSessionState = useCallback(
+    (agentSessionId: string) => {
       const normalized = agentSessionId.trim();
       if (!normalized) return;
       sessionEngine.dispatch({
         agentSessionId: normalized,
-        needsMessages: scope !== "state",
-        needsState: scope !== "messages",
+        needsMessages: false,
+        needsState: true,
         type: "session/reconcileRequested",
         workspaceId
       });
-    };
-    return {
-      loadSessionState: (agentSessionId: string, _cause?: unknown) =>
-        reconcileSession(agentSessionId, "state"),
-      refreshMessagesFromSnapshot: (agentSessionId: string) =>
-        reconcileSession(agentSessionId, "messages")
-    };
-  }, [sessionEngine, workspaceId]);
+    },
+    [sessionEngine, workspaceId]
+  );
   const paging = useAgentConversationMessagePaging({
     diagnostics: {
       error: ({ agentSessionId, context, error, phase }) =>
@@ -131,20 +110,10 @@ export function useAgentGUISessionDetailTransport(input: {
         sessionViewRef(activeConversationIdRef.current),
         loading
       ),
-    reload: {
-      getActivationStatus: (agentSessionId) =>
-        selectLatestActivationForSession(
-          sessionEngine.getSnapshot(),
-          agentSessionId
-        )?.status ?? null,
-      syncConversationList: (agentSessionId) =>
-        void syncConversationListProjectionRef.current(agentSessionId)
-    },
     runtime: agentActivityRuntime,
     sessionEngine,
     workspaceId
   });
-  reloadSelectedConversationRef.current = paging.reloadSelectedConversation;
   const markSelectedConversationDetailPending = useCallback(
     (agentSessionId: string) => {
       const normalized = agentSessionId.trim();
@@ -162,8 +131,6 @@ export function useAgentGUISessionDetailTransport(input: {
     loadSelectedConversationMessages: paging.loadInitialMessages,
     loadSessionState,
     markSelectedConversationDetailPending,
-    refreshMessagesFromSnapshot,
-    reloadSelectedConversation: paging.reloadSelectedConversation,
     resolveSessionMessages,
     setActiveMessageSession: paging.setActiveSession,
     sessionViewRef

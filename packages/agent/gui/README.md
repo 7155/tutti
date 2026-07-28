@@ -127,7 +127,10 @@ of older history.
 Hosts supply the mapped message transport and retain lifecycle concerns such as
 Mobile foreground/background behavior, disconnected polling, DOM or Native
 scrolling, and diagnostics enrichment. The controller does not own navigation,
-rendering, localization, or transport authorization.
+rendering, localization, or transport authorization. Desktop selection owns
+activation guards and Rail projection coordination, then requests initial or
+forced message hydration through this controller; it must not add a parallel
+messages-only Engine reconcile path.
 
 ## Reference Picker Error Recovery
 

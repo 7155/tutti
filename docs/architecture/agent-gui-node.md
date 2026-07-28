@@ -845,7 +845,12 @@ Desktop view state nor Mobile services keep an older-message entity store. An
 empty message list means neither hydrated nor not-found.
 Selecting an already hydrated Session must not start another detail reconcile;
 the selection controller alone decides whether hydration is missing. Composer
-option synchronization does not own Session detail reloads.
+option synchronization does not own Session detail reloads. On Desktop the
+selection controller also owns activation guards and Rail projection
+coordination before requesting a forced detail hydration. The message paging
+adapter owns only focused message-controller lifetime, transport mapping,
+diagnostics, and initial/older commands; it does not call back into selection
+or Rail state. There is no separate messages-only Engine reconcile helper.
 
 Timeline projection is pure, deterministic, and provider-neutral. React views render rows/cards and dispatch actions.
 Transcript Turn membership and order come only from timeline items in the

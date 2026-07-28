@@ -367,6 +367,69 @@ func TestCodexAppServerForkThroughProviderTurn(t *testing.T) {
 	}
 }
 
+func TestCodexAppServerForkedChildCanResumeAndStartTurn(t *testing.T) {
+	adapter, source, transport := startForkCapableCodexAdapter(t)
+	result, err := adapter.Fork(t.Context(), SessionForkInput{
+		Source:         source,
+		ProviderTurnID: "provider-turn-2",
+	})
+	if err != nil {
+		t.Fatalf("Fork: %v", err)
+	}
+
+	transport.setConfigure(func(conn *scriptedAppServerConnection) {
+		conn.userAgent = "codex/0.144.1"
+		conn.holdTurn = true
+	})
+	target := source
+	target.AgentSessionID = "agent-session-fork"
+	target.ProviderSessionID = result.ProviderSessionID
+	if err := adapter.Resume(t.Context(), target); err != nil {
+		t.Fatalf("Resume forked child: %v", err)
+	}
+	if !adapter.HasLiveSession(target) {
+		t.Fatal("forked child did not retain a live resumed session")
+	}
+
+	if err := adapter.ExecAsync(
+		t.Context(),
+		target,
+		[]PromptContentBlock{{Type: "text", Text: "continue from fork"}},
+		"",
+		"canonical-fork-turn-1",
+		nil,
+		nil,
+	); err != nil {
+		t.Fatalf("ExecAsync forked child: %v", err)
+	}
+	targetConn := transport.conn(2)
+	waitForCondition(t, func() bool {
+		return len(appServerRequestParamsList(
+			t,
+			targetConn,
+			appServerMethodTurnStart,
+		)) == 1
+	})
+	turnStart := appServerRequestParams(
+		t,
+		targetConn,
+		appServerMethodTurnStart,
+	)
+	if got := asString(turnStart["threadId"]); got != result.ProviderSessionID {
+		t.Fatalf(
+			"forked child turn/start threadId = %q, want %q",
+			got,
+			result.ProviderSessionID,
+		)
+	}
+	if !adapter.HasLiveSession(source) {
+		t.Fatal("resuming forked child replaced the source live session")
+	}
+	if err := adapter.Close(t.Context(), target); err != nil {
+		t.Fatalf("Close forked child: %v", err)
+	}
+}
+
 func TestCodexAppServerForkRejectsUnavailableBoundaryBeforeProviderMutation(
 	t *testing.T,
 ) {

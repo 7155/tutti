@@ -53,6 +53,15 @@ export {
   type AgentActivityWorkspaceEventInput
 } from "./workspaceEventCoordinator.ts";
 export {
+  createAgentActivitySessionReconcileExecutor,
+  type AgentActivityChildMessageHydration,
+  type AgentActivitySessionReconcileExecutor,
+  type AgentActivitySessionReconcilePort,
+  type AgentActivitySessionReconcileResult,
+  type AgentActivitySessionReconcileTrace,
+  type CreateAgentActivitySessionReconcileExecutorInput
+} from "./sessionReconcileExecutor.ts";
+export {
   createAgentSessionEngine,
   ENGINE_INTENT_BATCH_DELAY_MS,
   type CreateAgentSessionEngineInput
@@ -267,6 +276,7 @@ export {
 } from "./engine/pendingIntents.selectors.ts";
 export type { SessionActivationPresentation } from "./engine/pendingIntents.selectors.ts";
 export type {
+  AgentActivitySessionDetailSnapshot,
   SessionActivityObservedIntent,
   SessionDetailSnapshotReceivedIntent,
   SessionReconcileCommand,

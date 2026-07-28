@@ -114,11 +114,16 @@ export function createWorkspaceAgentClient(
         "Clear workspace agent sessions request failed."
       );
     },
-    async getWorkspaceAgentSession(workspaceID, agentSessionID) {
+    async getWorkspaceAgentSession(
+      workspaceID,
+      agentSessionID,
+      requestOptions
+    ) {
       return unwrapData(
         await getWorkspaceAgentSession({
           client,
-          path: { agentSessionID, workspaceID }
+          path: { agentSessionID, workspaceID },
+          ...requestOptions
         }),
         "Workspace agent session request failed."
       );
@@ -232,13 +237,15 @@ export function createWorkspaceAgentClient(
     async listWorkspaceAgentSessionMessages(
       workspaceID,
       agentSessionID,
-      request
+      request,
+      requestOptions
     ) {
       return unwrapData(
         await listWorkspaceAgentSessionMessages({
           client,
           path: { agentSessionID, workspaceID },
-          query: request
+          query: request,
+          ...requestOptions
         }),
         "Workspace agent session messages request failed."
       );

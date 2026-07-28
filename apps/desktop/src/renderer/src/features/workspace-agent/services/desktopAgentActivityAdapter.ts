@@ -2,14 +2,14 @@ import {
   workspaceAgentSessionStatus,
   type AgentActivityAdapter,
   type AgentActivitySession,
+  type AgentActivitySessionDetailSnapshot,
   type AgentPromptContentBlock
 } from "@tutti-os/agent-activity-core";
 import {
   agentActivityMessageFromTuttidMessage,
   agentActivitySessionDetailFromTuttid as mapAgentActivitySessionDetailFromTuttid,
   agentActivitySessionFromTuttidSession as mapAgentActivitySessionFromTuttidSession,
-  agentActivityTuttiModeActivationFromTuttid,
-  type AgentActivitySessionDetailSnapshot
+  agentActivityTuttiModeActivationFromTuttid
 } from "@tutti-os/agent-activity-tuttid-adapter";
 export {
   agentActivityMessageFromTuttidMessage,
@@ -101,7 +101,8 @@ export function createDesktopAgentActivityAdapter({
             beforeVersion: input.beforeVersion,
             order: input.order,
             limit: input.limit
-          }
+          },
+          { signal: input.signal }
         );
         const messages = response.messages.map((message) =>
           agentActivityMessageFromTuttidMessage(input.workspaceId, message)

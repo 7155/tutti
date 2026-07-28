@@ -8,11 +8,12 @@ import (
 	"testing"
 )
 
-// TestHermesPreparerRealHermesDiscoversTuttiSkills 是本地集成验证（默认跳过，
-// TUTTI_HERMES_VERIFY=1 才跑）：用真实 HermesPreparer + 真实全局 ~/.hermes 产出
-// per-session HERMES_HOME，再 exec 系统 hermes 读 skills 列表，确认 hermes 真的能
-// 发现 tutti-handoff/tutti-cli。非 CI 测试，依赖本机已装 hermes-agent。
-func TestHermesPreparerRealHermesDiscoversTuttiSkills(t *testing.T) {
+// TestExtensionRuntimePreparerRealHermesDiscoversTuttiSkills 是本地集成验证
+// （默认跳过，TUTTI_HERMES_VERIFY=1 才跑）：用真实 Hermes runtimePrep profile +
+// 真实全局 ~/.hermes 产出 per-session HERMES_HOME，再 exec 系统 hermes 读 skills
+// 列表，确认 hermes 真的能发现 tutti-handoff/tutti-cli。非 CI 测试，依赖本机已装
+// hermes-agent。
+func TestExtensionRuntimePreparerRealHermesDiscoversTuttiSkills(t *testing.T) {
 	if os.Getenv("TUTTI_HERMES_VERIFY") != "1" {
 		t.Skip("set TUTTI_HERMES_VERIFY=1 to run real-hermes integration check")
 	}
@@ -25,6 +26,8 @@ func TestHermesPreparerRealHermesDiscoversTuttiSkills(t *testing.T) {
 	result, err := NewDefaultPreparer(stateDir).Prepare(t.Context(), PrepareInput{
 		WorkspaceID: "verify-ws", AgentSessionID: "verify-sess",
 		AgentTargetID: "local:hermes", Provider: "acp:hermes", Cwd: cwd,
+		ExtensionRuntimePrep: hermesRuntimePrep(),
+		ExtensionSkillRoots:  []string{".agent_context/skills"},
 	})
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)

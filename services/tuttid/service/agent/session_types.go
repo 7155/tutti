@@ -192,6 +192,7 @@ type ExtensionComposerProfile struct {
 	PermissionModes                  []ExtensionComposerPermissionMode
 	ReasoningConfigOptionID          string
 	Skills                           *ExtensionComposerSkillProfile
+	RuntimePrep                      *runtimeprep.ExtensionRuntimePrep
 	SlashCommands                    []ExtensionComposerSlashCommand
 	SlashCommandCatalogAuthoritative bool
 }

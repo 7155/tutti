@@ -50,6 +50,14 @@ func safeExtensionSkillRootPath(path string) (string, bool) {
 	return cleaned, true
 }
 
+func (s *Service) resolveExtensionRuntimePrep(ctx context.Context, providerTargetRef map[string]any) *runtimeprep.ExtensionRuntimePrep {
+	profile, err := s.extensionComposerProfileForLaunch(ctx, providerTargetRef)
+	if err != nil {
+		return nil
+	}
+	return profile.RuntimePrep
+}
+
 func composerProviderCapabilities(provider string, computerUseAvailable bool) []string {
 	if !composerProfileKnown(provider) {
 		return nil

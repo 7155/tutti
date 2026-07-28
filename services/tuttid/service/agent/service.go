@@ -515,6 +515,7 @@ func (s *Service) prepareRuntimeWithModelEndpoint(
 		ComputerUse:               s.clampComposerComputerUseForLaunch(ctx, provider, input.ProviderTargetRef, input.ComputerUse),
 		ProviderTargetRef:         clonePayload(input.ProviderTargetRef),
 		ExtensionSkillRoots:       s.resolveExtensionSkillRoots(ctx, input.ProviderTargetRef),
+		ExtensionRuntimePrep:      s.resolveExtensionRuntimePrep(ctx, input.ProviderTargetRef),
 		Model:                     clampComposerModelForLaunch(provider, input.ProviderTargetRef, value(input.Model)),
 		ReasoningEffort:           normalizeReasoningEffortForLaunch(provider, input.ProviderTargetRef, value(input.ReasoningEffort)),
 		ConversationDetailMode:    input.ConversationDetailMode,

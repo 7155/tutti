@@ -2872,6 +2872,72 @@ func TestServiceCreatePassesExtraSkillsToRuntimePreparer(t *testing.T) {
 	}
 }
 
+func TestServiceCreatePassesExtensionRuntimePrepToRuntimePreparer(t *testing.T) {
+	runtime := newFakeRuntime()
+	var prepareInput runtimeprep.PrepareInput
+	service := newTestService(runtime)
+	service.RuntimePreparer = fakeRuntimePreparer{
+		input: &prepareInput,
+		result: runtimeprep.PreparedRuntime{
+			Cwd: "/prepared/workdir",
+		},
+	}
+	service.AgentTargetStore = fakeAgentTargetStore{targets: map[string]agenttargetbiz.Target{
+		"extension:hermes": {
+			ID:            "extension:hermes",
+			Provider:      "acp:hermes",
+			LaunchRefJSON: `{"type":"agent_extension","extensionInstallationId":"hermes@0.18.2"}`,
+			Name:          "Hermes Agent",
+			Enabled:       true,
+			Source:        agenttargetbiz.SourceSystem,
+		},
+	}}
+	runtimePrep := &runtimeprep.ExtensionRuntimePrep{
+		InstructionsFile: "AGENTS.md",
+		Home: &runtimeprep.ExtensionRuntimeHome{
+			EnvVar:             "HERMES_HOME",
+			DirName:            "hermes",
+			SourceEnvVar:       "HERMES_HOME",
+			SourceDefaultRel:   ".hermes",
+			CopyFiles:          []string{"config.yaml", "auth.json", ".env"},
+			ConfigFile:         "config.yaml",
+			ConfigFormat:       "yaml",
+			ExternalDirsKey:    []string{"skills", "external_dirs"},
+			UserHomeSkillDir:   "skills",
+			IncludeSkillRoots:  true,
+			IncludeUserHomeDir: true,
+		},
+	}
+	service.ExtensionComposerProfiles = extensionComposerProfileResolverStub{
+		profile: ExtensionComposerProfile{
+			RuntimePrep: runtimePrep,
+			Skills: &ExtensionComposerSkillProfile{Roots: []ExtensionComposerSkillRoot{
+				{Scope: "workspace", Path: ".agent_context/skills"},
+			}},
+		},
+	}
+	cwd := "/user/workdir"
+
+	if _, err := service.Create(context.Background(), "ws-1", CreateSessionInput{
+		AgentTargetID:  "extension:hermes",
+		Cwd:            &cwd,
+		Provider:       "acp:hermes",
+		InitialContent: TextPromptContent("hello"),
+	}); err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	if prepareInput.ExtensionRuntimePrep == nil || prepareInput.ExtensionRuntimePrep.Home == nil {
+		t.Fatalf("prepare extension runtime prep = %#v", prepareInput.ExtensionRuntimePrep)
+	}
+	if prepareInput.ExtensionRuntimePrep.Home.EnvVar != "HERMES_HOME" {
+		t.Fatalf("prepare extension runtime prep = %#v", prepareInput.ExtensionRuntimePrep)
+	}
+	if !slices.Equal(prepareInput.ExtensionSkillRoots, []string{".agent_context/skills"}) {
+		t.Fatalf("prepare extension skill roots = %#v", prepareInput.ExtensionSkillRoots)
+	}
+}
+
 func TestServiceGetSkillBundleUsesRuntimeRenderer(t *testing.T) {
 	runtime := newFakeRuntime()
 	var renderInput runtimeprep.PrepareInput

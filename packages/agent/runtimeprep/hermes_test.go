@@ -3,16 +3,38 @@ package runtimeprep
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
-// TestHermesPreparerAddsExtensionSkillRootsToSessionConfig 守住 hermes
+func hermesRuntimePrep() *ExtensionRuntimePrep {
+	return &ExtensionRuntimePrep{
+		InstructionsFile: "AGENTS.md",
+		Home: &ExtensionRuntimeHome{
+			EnvVar:             "HERMES_HOME",
+			DirName:            "hermes",
+			SourceEnvVar:       "HERMES_HOME",
+			SourceDefaultRel:   ".hermes",
+			CopyFiles:          []string{"config.yaml", "auth.json", ".env"},
+			ConfigFile:         "config.yaml",
+			ConfigFormat:       "yaml",
+			ExternalDirsKey:    []string{"skills", "external_dirs"},
+			UserHomeSkillDir:   "skills",
+			IncludeSkillRoots:  true,
+			IncludeUserHomeDir: true,
+		},
+	}
+}
+
+// TestExtensionRuntimePreparerAddsDeclaredSkillRootsToSessionConfig 守住 hermes
 // extension 的 skill 加载根因修复。hermes-agent 从 $HERMES_HOME/config.yaml 的
-// skills.external_dirs 发现外部 skill，因此 HermesPreparer 复用 extension profile
-// 声明的 workspace root，把 tutti skills 稳定物化到该 root，再把 root 加入
-// per-session config overlay。AGENTS.md 仍写到 cwd。
-func TestHermesPreparerAddsExtensionSkillRootsToSessionConfig(t *testing.T) {
+// skills.external_dirs 发现外部 skill，因此 extension runtime overlay 复用 extension
+// profile 声明的 workspace root 推导 session-scoped root，把 tutti skills 稳定物化
+// 到该 root，再把 root 加入 per-session config overlay。AGENTS.md 仍写到 cwd。
+func TestExtensionRuntimePreparerAddsDeclaredSkillRootsToSessionConfig(t *testing.T) {
 	// 模拟用户全局 hermes home（含 config + auth + .env），用 HERMES_HOME 指向它做隔离。
 	globalHome := t.TempDir()
 	t.Setenv("HERMES_HOME", globalHome)
@@ -36,11 +58,12 @@ func TestHermesPreparerAddsExtensionSkillRootsToSessionConfig(t *testing.T) {
 	prep := NewDefaultPreparer(stateDir)
 	prep.CommandCatalog = staticCommandCatalog(nil)
 	prepared, err := prep.Prepare(t.Context(), PrepareInput{
-		WorkspaceID:    "workspace-1",
-		AgentSessionID: "session-1",
-		AgentTargetID:  "local:hermes",
-		Provider:       "acp:hermes",
-		Cwd:            cwd,
+		WorkspaceID:          "workspace-1",
+		AgentSessionID:       "session-1",
+		AgentTargetID:        "local:hermes",
+		Provider:             "acp:hermes",
+		Cwd:                  cwd,
+		ExtensionRuntimePrep: hermesRuntimePrep(),
 		ExtensionSkillRoots: []string{
 			".agent_context/skills",
 			".agent_context/skills",
@@ -72,7 +95,11 @@ func TestHermesPreparerAddsExtensionSkillRootsToSessionConfig(t *testing.T) {
 		}
 	}
 
-	workspaceSkillRoot := filepath.Join(cwd, ".agent_context", "skills")
+	runtimeRoot, err := LocalStore{StateDir: stateDir}.RuntimeRoot("workspace-1", "session-1")
+	if err != nil {
+		t.Fatalf("RuntimeRoot() error = %v", err)
+	}
+	sessionSkillRoot := filepath.Join(runtimeRoot, "extension-skills", ".agent_context", "skills")
 
 	config, err := os.ReadFile(filepath.Join(hermesHome, "config.yaml"))
 	if err != nil {
@@ -81,26 +108,28 @@ func TestHermesPreparerAddsExtensionSkillRootsToSessionConfig(t *testing.T) {
 	configText := string(config)
 	for _, want := range []string{
 		"model: test-model",
-		"providers: {}",
-		"- \"/already-configured\"",
-		"- " + quoteYAMLString(workspaceSkillRoot),
-		"- " + quoteYAMLString(globalSkills),
+		"/already-configured",
+		sessionSkillRoot,
+		globalSkills,
 	} {
 		if !strings.Contains(configText, want) {
 			t.Fatalf("session config missing %q:\n%s", want, configText)
 		}
 	}
-	if strings.Count(configText, workspaceSkillRoot) != 1 {
-		t.Fatalf("workspace skill root should be de-duplicated in config:\n%s", configText)
+	if strings.Count(configText, sessionSkillRoot) != 1 {
+		t.Fatalf("session skill root should be de-duplicated in config:\n%s", configText)
 	}
 
-	// tutti skill 物化到 extension profile 声明的 workspace root，再由
-	// skills.external_dirs 暴露给 hermes，而不是复制到 per-session HERMES_HOME/skills。
+	// Tutti skill 物化到 session-scoped root，避免多个 session 共享同一个 cwd
+	// 下的 extension skill root 时互相覆盖 session/target 相关内容。
 	for _, name := range []string{tuttiHandoffSkillName, tuttiSkillName} {
-		skillPath := filepath.Join(workspaceSkillRoot, name, "SKILL.md")
+		skillPath := filepath.Join(sessionSkillRoot, name, "SKILL.md")
 		if _, err := os.Stat(skillPath); err != nil {
-			t.Fatalf("skill %s SKILL.md missing in extension skill root: %v", name, err)
+			t.Fatalf("skill %s SKILL.md missing in session extension skill root: %v", name, err)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(cwd, ".agent_context", "skills")); !os.IsNotExist(err) {
+		t.Fatalf("cwd extension skill root should not be written, got err=%v", err)
 	}
 	if _, err := os.Stat(filepath.Join(hermesHome, "skills")); !os.IsNotExist(err) {
 		t.Fatalf("HERMES_HOME/skills should not be created or copied, got err=%v", err)
@@ -112,127 +141,35 @@ func TestHermesPreparerAddsExtensionSkillRootsToSessionConfig(t *testing.T) {
 	}
 }
 
-func TestHermesPreparerMaterializesBrowserUseSkillWhenEnabled(t *testing.T) {
+func TestExtensionRuntimePreparerMaterializesBrowserUseSkillWhenEnabled(t *testing.T) {
 	t.Setenv("HERMES_HOME", t.TempDir())
 	stateDir := t.TempDir()
 	cwd := t.TempDir()
 	prep := NewDefaultPreparer(stateDir)
 	prep.CommandCatalog = staticCommandCatalog(testCommandCapabilities())
 	if _, err := prep.Prepare(t.Context(), PrepareInput{
-		WorkspaceID:         "workspace-1",
-		AgentSessionID:      "session-1",
-		AgentTargetID:       "local:hermes",
-		Provider:            "acp:hermes",
-		Cwd:                 cwd,
-		BrowserUse:          true,
-		ExtensionSkillRoots: []string{".agent_context/skills"},
+		WorkspaceID:          "workspace-1",
+		AgentSessionID:       "session-1",
+		AgentTargetID:        "local:hermes",
+		Provider:             "acp:hermes",
+		Cwd:                  cwd,
+		BrowserUse:           true,
+		ExtensionRuntimePrep: hermesRuntimePrep(),
+		ExtensionSkillRoots:  []string{".agent_context/skills"},
 	}); err != nil {
 		t.Fatalf("Prepare() error = %v", err)
-	}
-	skillPath := filepath.Join(cwd, ".agent_context", "skills", browserUseSkillName, "SKILL.md")
-	if _, err := os.Stat(skillPath); err != nil {
-		t.Fatalf("browser-use SKILL.md missing in extension skill root: %v", err)
-	}
-}
-
-func TestHermesPreparerDoesNotAdvertiseBrowserUseWithoutCommandCapabilities(t *testing.T) {
-	t.Setenv("HERMES_HOME", t.TempDir())
-	stateDir := t.TempDir()
-	cwd := t.TempDir()
-	prep := NewDefaultPreparer(stateDir)
-	prep.CommandCatalog = staticCommandCatalog(nil)
-	prepared, err := prep.Prepare(t.Context(), PrepareInput{
-		WorkspaceID:         "workspace-1",
-		AgentSessionID:      "session-1",
-		AgentTargetID:       "local:hermes",
-		Provider:            "acp:hermes",
-		Cwd:                 cwd,
-		BrowserUse:          true,
-		ExtensionSkillRoots: []string{".agent_context/skills"},
-	})
-	if err != nil {
-		t.Fatalf("Prepare() error = %v", err)
-	}
-	for _, env := range prepared.Env {
-		if strings.HasPrefix(env, browserUseEnabledSessionEnv+"=") {
-			t.Fatalf("Hermes should not advertise browser use without browser command capabilities, env=%v", prepared.Env)
-		}
-	}
-	skillPath := filepath.Join(cwd, ".agent_context", "skills", browserUseSkillName, "SKILL.md")
-	if _, err := os.Stat(skillPath); !os.IsNotExist(err) {
-		t.Fatalf("browser-use SKILL.md should not be materialized without browser command capabilities, err=%v", err)
-	}
-}
-
-// TestHermesPreparerDoesNotMaterializeToAgentContextSkills 确认 hermes 的 skill
-// 不再物化到 .agent_context/skills（hermes 不读该目录），避免无谓写入与重复目录。
-func TestHermesPreparerDoesNotMaterializeToAgentContextSkills(t *testing.T) {
-	t.Setenv("HERMES_HOME", t.TempDir())
-	stateDir := t.TempDir()
-	cwd := t.TempDir()
-	prep := NewDefaultPreparer(stateDir)
-	prep.CommandCatalog = staticCommandCatalog(nil)
-	if _, err := prep.Prepare(t.Context(), PrepareInput{
-		WorkspaceID:    "workspace-1",
-		AgentSessionID: "session-1",
-		AgentTargetID:  "local:hermes",
-		Provider:       "acp:hermes",
-		Cwd:            cwd,
-	}); err != nil {
-		t.Fatalf("Prepare() error = %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(cwd, ".agent_context", "skills")); !os.IsNotExist(err) {
-		t.Fatalf(".agent_context/skills should not exist for hermes (hermes does not read it), got err=%v", err)
-	}
-}
-
-func TestHermesPreparerPrepareTwiceIsIdempotent(t *testing.T) {
-	globalHome := t.TempDir()
-	t.Setenv("HERMES_HOME", globalHome)
-	if err := os.WriteFile(filepath.Join(globalHome, "config.yaml"), []byte("model: test-model\n"), 0o600); err != nil {
-		t.Fatalf("write global config: %v", err)
-	}
-	stateDir := t.TempDir()
-	cwd := t.TempDir()
-	input := PrepareInput{
-		WorkspaceID:         "workspace-1",
-		AgentSessionID:      "session-1",
-		AgentTargetID:       "local:hermes",
-		Provider:            "acp:hermes",
-		Cwd:                 cwd,
-		ExtensionSkillRoots: []string{".agent_context/skills"},
-	}
-	prep := NewDefaultPreparer(stateDir)
-	prep.CommandCatalog = staticCommandCatalog(nil)
-	if _, err := prep.Prepare(t.Context(), input); err != nil {
-		t.Fatalf("first Prepare() error = %v", err)
-	}
-	if _, err := prep.Prepare(t.Context(), input); err != nil {
-		t.Fatalf("second Prepare() error = %v", err)
-	}
-	root := filepath.Join(cwd, ".agent_context", "skills")
-	if _, err := os.Stat(filepath.Join(root, tuttiSkillName, "SKILL.md")); err != nil {
-		t.Fatalf("stable tutti skill missing: %v", err)
-	}
-	for _, unexpected := range []string{tuttiSkillName + "-tutti", tuttiSkillName + "-tutti-2", tuttiHandoffSkillName + "-tutti"} {
-		if _, err := os.Stat(filepath.Join(root, unexpected)); !os.IsNotExist(err) {
-			t.Fatalf("unexpected duplicate skill directory %s, err=%v", unexpected, err)
-		}
 	}
 	runtimeRoot, err := LocalStore{StateDir: stateDir}.RuntimeRoot("workspace-1", "session-1")
 	if err != nil {
 		t.Fatalf("RuntimeRoot() error = %v", err)
 	}
-	config, err := os.ReadFile(filepath.Join(runtimeRoot, "hermes", "config.yaml"))
-	if err != nil {
-		t.Fatalf("read session config: %v", err)
-	}
-	if strings.Count(string(config), filepath.Join(cwd, ".agent_context", "skills")) != 1 {
-		t.Fatalf("session config should contain one workspace root after retry:\n%s", config)
+	skillPath := filepath.Join(runtimeRoot, "extension-skills", ".agent_context", "skills", browserUseSkillName, "SKILL.md")
+	if _, err := os.Stat(skillPath); err != nil {
+		t.Fatalf("browser-use SKILL.md missing in extension skill root: %v", err)
 	}
 }
 
-func TestHermesPreparerSkipsGlobalCopiesWhenHomeUnavailable(t *testing.T) {
+func TestExtensionRuntimePreparerSkipsGlobalCopiesWhenHomeUnavailable(t *testing.T) {
 	t.Setenv("HERMES_HOME", "")
 	t.Setenv("HOME", "")
 	t.Setenv("USERPROFILE", "")
@@ -249,11 +186,12 @@ func TestHermesPreparerSkipsGlobalCopiesWhenHomeUnavailable(t *testing.T) {
 	prep := NewDefaultPreparer(stateDir)
 	prep.CommandCatalog = staticCommandCatalog(nil)
 	prepared, err := prep.Prepare(t.Context(), PrepareInput{
-		WorkspaceID:    "workspace-1",
-		AgentSessionID: "session-1",
-		AgentTargetID:  "local:hermes",
-		Provider:       "acp:hermes",
-		Cwd:            cwd,
+		WorkspaceID:          "workspace-1",
+		AgentSessionID:       "session-1",
+		AgentTargetID:        "local:hermes",
+		Provider:             "acp:hermes",
+		Cwd:                  cwd,
+		ExtensionRuntimePrep: hermesRuntimePrep(),
 	})
 	if err != nil {
 		t.Fatalf("Prepare() error = %v", err)
@@ -274,76 +212,55 @@ func TestHermesPreparerSkipsGlobalCopiesWhenHomeUnavailable(t *testing.T) {
 	}
 }
 
-func TestMergeHermesExternalDirsPreservesUserPrecedenceAndDedupes(t *testing.T) {
-	got := mergeHermesExternalDirs(`model: test
-skills:
-  enabled: true
-  external_dirs:
-    - "/user/first"
-other: value
-`, []string{"/tutti/root", "/user/first", "/home/.hermes/skills", "/tutti/root"})
-	want := `model: test
-skills:
-  enabled: true
-  external_dirs:
-    - "/user/first"
-    - "/tutti/root"
-    - "/home/.hermes/skills"
-other: value
-`
-	if got != want {
-		t.Fatalf("mergeHermesExternalDirs() mismatch:\nwant:\n%s\ngot:\n%s", want, got)
+func TestACPExtensionWithoutRuntimePrepDoesNotUseProviderSpecificHome(t *testing.T) {
+	t.Setenv("HERMES_HOME", t.TempDir())
+	stateDir := t.TempDir()
+	cwd := t.TempDir()
+	prep := NewDefaultPreparer(stateDir)
+	prep.CommandCatalog = staticCommandCatalog(nil)
+	prepared, err := prep.Prepare(t.Context(), PrepareInput{
+		WorkspaceID:         "workspace-1",
+		AgentSessionID:      "session-1",
+		AgentTargetID:       "local:hermes",
+		Provider:            "acp:hermes",
+		Cwd:                 cwd,
+		ExtensionSkillRoots: []string{".agent_context/skills"},
+	})
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if slices.ContainsFunc(prepared.Env, func(env string) bool { return strings.HasPrefix(env, "HERMES_HOME=") }) {
+		t.Fatalf("acp:hermes without runtime prep should not receive provider-specific env, env=%v", prepared.Env)
+	}
+	if _, err := os.Stat(filepath.Join(cwd, ".agent_context", "skills", tuttiSkillName, "SKILL.md")); err != nil {
+		t.Fatalf("generic acp extension skill missing: %v", err)
 	}
 }
 
-func TestMergeHermesExternalDirsExpandsInlineExternalDirs(t *testing.T) {
-	got := mergeHermesExternalDirs(`model: test
-skills:
-  external_dirs: ["/user/first", '/user/second']
+func TestMergeYAMLStringListPreservesUserPrecedenceAndDedupes(t *testing.T) {
+	got, err := mergeYAMLStringList(`model: test
+skills: {enabled: true, external_dirs: ["/user/first"]}
 other: value
-`, []string{"/tutti/root", "/user/first"})
-	want := `model: test
-skills:
-  external_dirs:
-    - "/user/first"
-    - "/user/second"
-    - "/tutti/root"
-other: value
-`
-	if got != want {
-		t.Fatalf("mergeHermesExternalDirs() mismatch:\nwant:\n%s\ngot:\n%s", want, got)
+`, []string{"skills", "external_dirs"}, []string{"/tutti/root", "/user/first", "/home/.hermes/skills", "/tutti/root"})
+	if err != nil {
+		t.Fatalf("mergeYAMLStringList() error = %v", err)
+	}
+	var parsed struct {
+		Skills struct {
+			ExternalDirs []string `yaml:"external_dirs"`
+		} `yaml:"skills"`
+	}
+	if err := yaml.Unmarshal([]byte(got), &parsed); err != nil {
+		t.Fatalf("merged YAML should parse: %v\n%s", err, got)
+	}
+	want := []string{"/user/first", "/tutti/root", "/home/.hermes/skills"}
+	if !slices.Equal(parsed.Skills.ExternalDirs, want) {
+		t.Fatalf("external_dirs = %#v, want %#v\n%s", parsed.Skills.ExternalDirs, want, got)
 	}
 }
 
-func TestMergeHermesExternalDirsExpandsInlineEmptySkillsMap(t *testing.T) {
-	got := mergeHermesExternalDirs(`model: test
-skills: {}
-other: value
-`, []string{"/tutti/root"})
-	want := `model: test
-skills:
-  external_dirs:
-    - "/tutti/root"
-other: value
-`
-	if got != want {
-		t.Fatalf("mergeHermesExternalDirs() mismatch:\nwant:\n%s\ngot:\n%s", want, got)
-	}
-}
-
-func TestMergeHermesExternalDirsExpandsInlineSkillsMap(t *testing.T) {
-	got := mergeHermesExternalDirs(`model: test
-skills: {enabled: true}
-other: value
-`, []string{"/tutti/root"})
-	want := `model: test
-skills:
-  enabled: true
-  external_dirs:
-    - "/tutti/root"
-other: value
-`
-	if got != want {
-		t.Fatalf("mergeHermesExternalDirs() mismatch:\nwant:\n%s\ngot:\n%s", want, got)
+func TestMergeYAMLStringListRejectsInvalidConfig(t *testing.T) {
+	if _, err := mergeYAMLStringList("skills: nope\n", []string{"skills", "external_dirs"}, []string{"/tutti/root"}); err == nil {
+		t.Fatal("mergeYAMLStringList() error = nil, want invalid skills mapping error")
 	}
 }

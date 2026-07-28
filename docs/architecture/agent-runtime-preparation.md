@@ -29,25 +29,27 @@ can be enabled if Cursor adds that capability; it is not a current runtime
 guarantee. Never write an equivalent hook into user or project Cursor config to
 work around the provider limitation.
 
-Hermes Agent Extension currently has a narrow temporary runtime-preparation
-adapter keyed by `acp:hermes`. Hermes anchors config, auth, and state under
-`HERMES_HOME`, and discovers external skills through `skills.external_dirs` in
-that home's `config.yaml`. The adapter keeps a per-session `HERMES_HOME`, copies
-only the opaque global auth/env files needed for provider login, and reuses the
-workspace-scoped `PrepareInput.ExtensionSkillRoots` declared by the signed
-extension composer profile. Tutti-managed skills are materialized idempotently
-into those extension roots and are referenced through a session config overlay;
-the user's native `~/.hermes/skills` directory is appended as an external root
-when it exists and is never recursively copied into session state.
+Agent Extensions may declare a constrained `runtimePrep` overlay in the signed
+composer profile when a provider needs a per-session home or config merge. The
+service validates that declaration before launch and passes it through
+`PrepareInput.ExtensionRuntimePrep`; runtimeprep must not branch on extension
+provider IDs. The overlay can write the standard instructions file, create a
+session-scoped home, copy declared opaque files from a user home source, expose
+the home through one validated environment variable, materialize Tutti-managed
+skills into session-scoped roots derived from the extension's declared workspace
+skill roots, and merge those session roots into a supported YAML string-list key
+such as `skills.external_dirs`.
 
-Hermes config merge precedence is explicit: the user's original `config.yaml`
-content is preserved, existing user `skills.external_dirs` remain first, Tutti
-extension workspace roots are appended next, and the user's native Hermes skill
-root is appended last. Exact duplicate paths are ignored after their first
-occurrence. This provider-specific branch must be removed once Agent Extension
-packages can declare constrained runtime-prep overlays, or once Hermes exposes a
-native `--skills-dir` or environment contract that the extension can declare
-without core runtimeprep knowing the provider identity.
+For Hermes, the extension profile declares the `HERMES_HOME` overlay instead of
+Tutti core knowing `acp:hermes`. The resulting session keeps per-session state,
+copies only the declared auth/env/config files needed for provider login, and
+references both Tutti's session-scoped extension skill roots and the user's
+native skill directory through the declared config merge. Merge precedence is
+explicit: the user's original config content is parsed as YAML, existing user
+list entries remain first, Tutti session roots are appended next, and the user's
+native skill root is appended last. Exact duplicate paths are ignored after
+their first occurrence. Invalid YAML or an incompatible target key shape stops
+runtime preparation with a clear error instead of silently omitting skills.
 
 Product-owned responsibilities remain outside the module:
 

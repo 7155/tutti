@@ -118,7 +118,7 @@ func (p *DefaultPreparer) Prepare(ctx context.Context, input PrepareInput) (Prep
 	})
 
 	result := ProviderPrepareResult{Cwd: cwd}
-	if provider := p.provider(providerID); provider != nil {
+	if provider := p.provider(input); provider != nil {
 		logRuntimePrepareTrace("runtime_prepare.provider_requested", input, map[string]any{
 			"provider": providerID,
 		})
@@ -206,22 +206,16 @@ func ensureCwdDirectory(cwd string) error {
 	return nil
 }
 
-func (p *DefaultPreparer) provider(providerID string) ProviderPreparer {
+func (p *DefaultPreparer) provider(input PrepareInput) ProviderPreparer {
 	if p == nil {
 		return nil
 	}
-	providerID = strings.TrimSpace(providerID)
+	providerID := strings.TrimSpace(input.Provider)
 	if provider := p.providers[providerID]; provider != nil {
 		return provider
 	}
-	// Temporary Hermes migration path: hermes anchors config/auth/state to
-	// HERMES_HOME and discovers extension workspace skills only when they are
-	// added to config.yaml skills.external_dirs. Keep this hard-coded adapter
-	// only until Agent Extension packages can declare constrained runtime-prep
-	// overlays, or Hermes exposes a native --skills-dir/env contract that the
-	// extension can declare without a core provider-specific branch.
-	if providerID == "acp:hermes" {
-		return HermesPreparer{}
+	if input.ExtensionRuntimePrep != nil {
+		return ExtensionRuntimePreparer{}
 	}
 	// Other acp: extensions share a generic instruction+skill preparer; their
 	// skill roots arrive via PrepareInput.ExtensionSkillRoots from the

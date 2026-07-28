@@ -1,4 +1,15 @@
-import type { AgentGUIAgentConfigMenuContext } from "@tutti-os/agent-gui";
+import type {
+  AgentGUIAgent,
+  AgentGUIAgentConfigMenuContext
+} from "@tutti-os/agent-gui";
+
+export function hasDesktopLocalTuttiAgent(
+  agents: readonly Pick<AgentGUIAgent, "agentTargetId">[]
+): boolean {
+  return agents.some(
+    (agent) => agent.agentTargetId.trim() === "local:tutti-agent"
+  );
+}
 
 export function isDesktopLocalTuttiAgentConfigContext(
   context: AgentGUIAgentConfigMenuContext

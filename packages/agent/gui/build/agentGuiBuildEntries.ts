@@ -41,8 +41,7 @@ export const agentGUIBuildEntries = {
   "conversation-rail-runtime": "agentConversationRailRuntime.ts",
   "conversation-rail-projection": "conversationRailProjection.ts",
   "conversation-projection": "conversationProjection.ts",
-  "composer-projection": "composerProjection.ts",
-  "workspace-query-cache": "shared/query/workspaceQueryCache.ts"
+  "composer-projection": "composerProjection.ts"
 } as const;
 
 type AgentGUIBuildEntry = keyof typeof agentGUIBuildEntries;
@@ -77,8 +76,7 @@ export const agentGUIDtsEntryGroups = [
     "conversation-rail-runtime",
     "conversation-rail-projection",
     "conversation-projection",
-    "composer-projection",
-    "workspace-query-cache"
+    "composer-projection"
   ],
   [
     "dock-icons",

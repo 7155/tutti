@@ -35,7 +35,6 @@
     "./conversation-rail-projection": "./conversationRailProjection.ts",
     "./conversation-projection": "./conversationProjection.ts",
     "./composer-projection": "./composerProjection.ts",
-    "./workspace-query-cache": "./shared/query/workspaceQueryCache.ts",
     "./i18n": "./i18n/index.ts",
     "./workbench": "./workbench/index.ts",
     "./workbench/contribution": "./workbench/contribution.ts",
@@ -245,10 +244,6 @@
         "types": "./dist/composer-projection.d.ts",
         "import": "./dist/composer-projection.js"
       },
-      "./workspace-query-cache": {
-        "types": "./dist/workspace-query-cache.d.ts",
-        "import": "./dist/workspace-query-cache.js"
-      },
       "./i18n": {
         "types": "./dist/i18n/index.d.ts",
         "import": "./dist/i18n/index.js"
@@ -371,9 +366,6 @@
         ],
         "composer-projection": [
           "./dist/composer-projection.d.ts"
-        ],
-        "workspace-query-cache": [
-          "./dist/workspace-query-cache.d.ts"
         ],
         "i18n": [
           "./dist/i18n/index.d.ts"

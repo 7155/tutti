@@ -89,6 +89,13 @@ describe("Agent GUI declaration build groups", () => {
     );
   });
 
+  it("keeps the workspace query cache package-internal", () => {
+    expect(agentGUIBuildEntries).not.toHaveProperty("workspace-query-cache");
+    expect(
+      packageManifest.publishConfig.exports["./workspace-query-cache"]
+    ).toBeUndefined();
+  });
+
   it("builds and publishes the DOM-free conversation rail projection", () => {
     expect(agentGUIBuildEntries["conversation-rail-projection"]).toBe(
       "conversationRailProjection.ts"

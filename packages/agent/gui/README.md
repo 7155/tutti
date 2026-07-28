@@ -243,7 +243,10 @@ verifies its `(workspaceId, origin)` identity. Module-global runtime slots and
 hidden origin registries are forbidden.
 
 The `@tutti-os/agent-gui/conversation-rail-runtime` subpath exposes the
-host-neutral Rail query/mutation cohort. The sibling
+host-neutral Rail query/mutation cohort through
+`createAgentConversationRailRuntime` and its runtime/source types. Method-name
+manifests and UI capability inspection remain package-internal; hosts use the
+typed factory instead of importing test helpers. The sibling
 `@tutti-os/agent-gui/conversation-rail-controller` subpath exposes the canonical
 `createAgentGUIConversationRailQueryController` factory and controller
 interface used by Desktop and Native Mobile. The headless implementation owns
@@ -256,9 +259,9 @@ its internal query helpers as public API.
 Its public snapshot is presentation-free; Desktop derives localized
 conversation summaries from that snapshot plus Engine state in its adapter.
 The factory owns resolved-query cache reuse per workspace Engine; cache access
-is not a runtime or host capability. In-flight first-page results are fenced to
-the attached controller generation so stale mounts cannot mutate the Engine or
-cache.
+is not a runtime or host capability and has no published package entrypoint.
+In-flight first-page results are fenced to the attached controller generation
+so stale mounts cannot mutate the Engine or cache.
 
 Run this boundary check after changing AgentGUI data flow:
 

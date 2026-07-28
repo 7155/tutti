@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { AgentActivityRuntime } from "../../../agentActivityRuntime";
 import type { AgentActivityMessage } from "@tutti-os/agent-activity-core";
 import { isWorkspaceAgentActivityOptimisticMessage } from "../../../shared/workspaceAgentMessageOverlay";
-import { createAgentConversationMessageController } from "../../../agentConversationMessageController";
+import {
+  createAgentConversationMessageController,
+  type AgentConversationMessageController
+} from "../../../agentConversationMessageController";
 
 const PAGE_SIZE = 100;
 
@@ -234,7 +237,29 @@ export function useAgentConversationMessagePaging(
       }),
     [input.sessionEngine, input.workspaceId]
   );
-  useEffect(() => () => controller.dispose(), [controller]);
+  const controllerLifetimeRef = useRef<{
+    controller: AgentConversationMessageController;
+    generation: number;
+  } | null>(null);
+  if (controllerLifetimeRef.current?.controller !== controller) {
+    controllerLifetimeRef.current = { controller, generation: 0 };
+  }
+  const controllerLifetime = controllerLifetimeRef.current;
+  useEffect(() => {
+    const generation = ++controllerLifetime.generation;
+    return () => {
+      // React development Strict Mode and Fast Refresh may immediately replay
+      // an effect cleanup/setup pair against the same memoized controller.
+      // Delay permanent disposal for one microtask so a replay can renew the
+      // ownership generation; real unmounts and controller replacements still
+      // dispose the abandoned instance.
+      queueMicrotask(() => {
+        if (controllerLifetime.generation === generation) {
+          controller.dispose();
+        }
+      });
+    };
+  }, [controller, controllerLifetime]);
 
   const loadInitialMessages = useCallback(
     async (agentSessionId: string) => {

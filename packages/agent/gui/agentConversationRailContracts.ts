@@ -1,5 +1,4 @@
 import type { AgentActivitySession } from "@tutti-os/agent-activity-core";
-import type { WorkspaceQueryCache } from "./shared/query/workspaceQueryCache.ts";
 
 export interface AgentConversationRailUserProject {
   createdAtUnixMs: number;
@@ -101,9 +100,6 @@ export interface AgentConversationRailRuntimePort {
   deleteSessionsBatch?(
     input: AgentConversationRailDeleteSessionsBatchInput
   ): Promise<AgentConversationRailDeleteSessionsBatchResult>;
-  getSessionSectionsQueryCache?(
-    workspaceId: string
-  ): WorkspaceQueryCache<unknown>;
   listPinnedSessionsPage?(
     input: AgentConversationRailListPinnedSessionsPageInput
   ): Promise<AgentConversationRailSessionPage>;

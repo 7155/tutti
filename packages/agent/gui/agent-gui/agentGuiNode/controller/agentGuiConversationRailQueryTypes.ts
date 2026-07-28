@@ -20,7 +20,6 @@ export type ConversationRailQueryRuntime = Pick<
   | "listSessionSectionPage"
   | "listSessionSections"
   | "listSessionsPage"
-  | "getSessionSectionsQueryCache"
   | "reportDiagnostic"
 >;
 

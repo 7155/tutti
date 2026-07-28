@@ -135,9 +135,6 @@ export class AgentGUIConversationRailQueryController {
       );
     this.sessionSectionsQueryCache =
       input.sessionSectionsQueryCache ??
-      (input.runtime.getSessionSectionsQueryCache?.(input.workspaceId) as
-        | WorkspaceQueryCache<CachedConversationRailQuery>
-        | undefined) ??
       createWorkspaceQueryCache<CachedConversationRailQuery>();
     this.scheduler = input.scheduler ?? agentGuiScheduler;
     this.sectionPageSize = positiveInteger(

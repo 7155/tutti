@@ -15,6 +15,7 @@ import {
 } from "./AgentGUIConversationRailQueryController";
 import { resolveConversationRailQueryScope } from "./agentGuiConversationRailQueryTypes";
 import { createConversationRailConversationsSelector } from "./agentGuiConversationRailQuerySnapshot";
+import type { CachedConversationRailQuery } from "./agentGuiConversationRailQueryCache";
 
 describe("AgentGUIConversationRailQueryController", () => {
   it("does not ingest a first-page response after detach", async () => {
@@ -74,7 +75,7 @@ describe("AgentGUIConversationRailQueryController", () => {
 
   it("does not write a stale scope response with another scope's query state", async () => {
     const engine = createTestAgentSessionEngine();
-    const cache = createWorkspaceQueryCache<unknown>();
+    const cache = createWorkspaceQueryCache<CachedConversationRailQuery>();
     const pending: Array<{
       agentTargetId: string;
       resolve(): void;
@@ -110,8 +111,8 @@ describe("AgentGUIConversationRailQueryController", () => {
     const controller = new AgentGUIConversationRailQueryController({
       engine,
       getActiveConversationId: () => null,
+      sessionSectionsQueryCache: cache,
       runtime: {
-        getSessionSectionsQueryCache: () => cache,
         listSessionSectionPage: async (input) => ({
           hasMore: false,
           kind: "conversations",
@@ -1169,7 +1170,7 @@ describe("AgentGUIConversationRailQueryController", () => {
 
   it("isolates in-flight controller requests and restores the resolved cache after remount", async () => {
     const engine = createTestAgentSessionEngine();
-    const cache = createWorkspaceQueryCache<unknown>();
+    const cache = createWorkspaceQueryCache<CachedConversationRailQuery>();
     const sectionResolvers: Array<() => void> = [];
     const listSessionSections = vi.fn<
       NonNullable<ConversationRailQueryRuntime["listSessionSections"]>
@@ -1190,7 +1191,6 @@ describe("AgentGUIConversationRailQueryController", () => {
       }))
     );
     const runtime: ConversationRailQueryRuntime = {
-      getSessionSectionsQueryCache: () => cache,
       listSessionSections,
       listSessionSectionPage: async (input) => ({
         hasMore: false,
@@ -1212,12 +1212,14 @@ describe("AgentGUIConversationRailQueryController", () => {
       engine,
       getActiveConversationId: () => null,
       runtime,
+      sessionSectionsQueryCache: cache,
       workspaceId: "test-workspace"
     });
     const second = new AgentGUIConversationRailQueryController({
       engine,
       getActiveConversationId: () => null,
       runtime,
+      sessionSectionsQueryCache: cache,
       workspaceId: "test-workspace"
     });
     first.configure(scope);
@@ -1240,6 +1242,7 @@ describe("AgentGUIConversationRailQueryController", () => {
       engine,
       getActiveConversationId: () => null,
       runtime,
+      sessionSectionsQueryCache: cache,
       workspaceId: "test-workspace"
     });
     remounted.configure(scope);

@@ -49,7 +49,6 @@ import type {
   AgentConversationRailSessionsPageResult,
   AgentConversationRailUserProject
 } from "./agentConversationRailContracts";
-import type { WorkspaceQueryCache } from "./shared/query/workspaceQueryCache";
 
 export interface AgentActivityRuntimeUpdateSessionSettingsResult {
   agentSessionId: string;
@@ -327,9 +326,6 @@ export interface AgentActivityRuntime {
   ): Promise<AgentActivityUpdateTuttiModeActivationResult>;
   getSnapshot(workspaceId: string): AgentActivitySnapshot;
   getSessionEngine(workspaceId: string): AgentSessionEngine;
-  getSessionSectionsQueryCache?(
-    workspaceId: string
-  ): WorkspaceQueryCache<unknown>;
   listSessionMessages(
     input: AgentActivityRuntimeListSessionMessagesInput
   ): Promise<AgentActivityMessagePage>;

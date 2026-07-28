@@ -3,10 +3,11 @@ import type {
   AgentSessionEngine
 } from "@tutti-os/agent-activity-core";
 import {
-  AgentGUIConversationRailQueryController,
+  createAgentGUIConversationRailQueryController,
+  type AgentGUIConversationRailQueryController,
   type AgentGUIConversationRailQuerySnapshot,
   type ConversationRailQueryRuntime
-} from "@tutti-os/agent-gui/conversation-rail-runtime";
+} from "@tutti-os/agent-gui/conversation-rail-controller";
 import type {
   TuttidClient,
   UserProject,
@@ -81,7 +82,7 @@ export class WorkspaceConversationRailService extends ObservableService<Workspac
     dependencies: WorkspaceConversationRailServiceDependencies
   ) {
     super();
-    this.controller = new AgentGUIConversationRailQueryController({
+    this.controller = createAgentGUIConversationRailQueryController({
       engine: dependencies.engine,
       getActiveConversationId: dependencies.getActiveConversationId,
       runtime: createMobileConversationRailRuntime({

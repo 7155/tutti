@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useRef } from "react";
-import { useAgentActivityRuntime } from "../../../agentActivityRuntime";
+import {
+  useAgentActivityRuntime,
+  type AgentActivityRuntime
+} from "../../../agentActivityRuntime";
+import {
+  createAgentGUIConversationRailQueryController,
+  type AgentGUIConversationRailQuerySnapshot,
+  type ConversationRailQueryRuntime
+} from "../../../agentConversationRailController";
 import { inspectAgentConversationBatchDeletionCapability } from "../../../agentConversationRailRuntime";
 import { useEngineSelector } from "../../../shared/engine/useEngineSelector";
 import type { AgentGUINodeViewModel } from "../model/agentGuiNodeTypes";
-import {
-  AgentGUIConversationRailQueryController,
-  type AgentGUIConversationRailQuerySnapshot
-} from "./AgentGUIConversationRailQueryController";
 import { createConversationRailConversationsSelector } from "./agentGuiConversationRailQuerySnapshot";
 import { resolveConversationRailQueryScope } from "./agentGuiConversationRailQueryTypes";
 import { reportAgentGUIConversationBatchDeletionCapabilityIncomplete } from "./agentGuiController.reporting";
@@ -43,16 +47,19 @@ export function useAgentGUIConversationRailQuery({
   );
   const activeConversationIdRef = useRef(activeConversationId);
   activeConversationIdRef.current = activeConversationId;
+  const railRuntime = useMemo(
+    () => createAgentGUIConversationRailRuntimeAdapter(runtime, nodeId),
+    [nodeId, runtime]
+  );
   const controller = useMemo(
     () =>
-      new AgentGUIConversationRailQueryController({
+      createAgentGUIConversationRailQueryController({
         engine,
         getActiveConversationId: () => activeConversationIdRef.current,
-        nodeId,
-        runtime,
+        runtime: railRuntime,
         workspaceId
       }),
-    [engine, nodeId, runtime, workspaceId]
+    [engine, railRuntime, workspaceId]
   );
 
   useEffect(() => {
@@ -163,4 +170,40 @@ function identitySnapshot(
   snapshot: AgentGUIConversationRailQuerySnapshot
 ): AgentGUIConversationRailQuerySnapshot {
   return snapshot;
+}
+
+function createAgentGUIConversationRailRuntimeAdapter(
+  runtime: AgentActivityRuntime,
+  nodeId: string | null | undefined
+): ConversationRailQueryRuntime {
+  const adapter: ConversationRailQueryRuntime = {};
+  const listPinnedSessionsPage = runtime.listPinnedSessionsPage?.bind(runtime);
+  if (listPinnedSessionsPage) {
+    adapter.listPinnedSessionsPage = listPinnedSessionsPage;
+  }
+  const listSessionSectionPage = runtime.listSessionSectionPage?.bind(runtime);
+  if (listSessionSectionPage) {
+    adapter.listSessionSectionPage = listSessionSectionPage;
+  }
+  const listSessionSections = runtime.listSessionSections?.bind(runtime);
+  if (listSessionSections) {
+    adapter.listSessionSections = listSessionSections;
+  }
+  const listSessionsPage = runtime.listSessionsPage?.bind(runtime);
+  if (listSessionsPage) {
+    adapter.listSessionsPage = listSessionsPage;
+  }
+  const reportDiagnostic = runtime.reportDiagnostic?.bind(runtime);
+  if (reportDiagnostic) {
+    const normalizedNodeId = nodeId?.trim() || null;
+    adapter.reportDiagnostic = (input) =>
+      reportDiagnostic({
+        ...input,
+        details: {
+          ...input.details,
+          nodeId: normalizedNodeId
+        }
+      });
+  }
+  return adapter;
 }

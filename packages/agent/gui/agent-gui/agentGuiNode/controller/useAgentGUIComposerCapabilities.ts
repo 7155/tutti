@@ -1,10 +1,11 @@
 import {
   resolveAgentActivityCapability,
   resolveAgentActivityUsage,
+  type AgentActivityUsage,
   type AgentActivitySnapshot,
   type CanonicalAgentSession
 } from "@tutti-os/agent-activity-core";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import type {
   AgentSessionComposerSettings,
   AgentSessionReasoningEffort,
@@ -36,6 +37,9 @@ interface UseAgentGUIComposerCapabilitiesInput {
 export function useAgentGUIComposerCapabilities(
   input: UseAgentGUIComposerCapabilitiesInput
 ) {
+  const retainedUsageBySessionIdRef = useRef(
+    new Map<string, AgentActivityUsage>()
+  );
   const composerTargetData = composerTargetDataForConversation({
     activeConversationId: input.activeConversationId,
     data: input.data,
@@ -106,10 +110,21 @@ export function useAgentGUIComposerCapabilities(
   }, [providerComposerOptions, sessionCapabilities]);
 
   const usageSource = input.activeEngineSession?.usage ?? null;
-  const usage = useMemo(
-    () => resolveAgentActivityUsage({ sessionUsage: usageSource }),
-    [usageSource]
-  );
+  const usage = useMemo(() => {
+    const agentSessionId =
+      input.activeEngineSession?.agentSessionId.trim() ?? "";
+    if (!agentSessionId) {
+      return null;
+    }
+    const resolved = resolveAgentActivityUsage({
+      sessionUsage: usageSource
+    });
+    if (resolved) {
+      retainedUsageBySessionIdRef.current.set(agentSessionId, resolved);
+      return resolved;
+    }
+    return retainedUsageBySessionIdRef.current.get(agentSessionId) ?? null;
+  }, [input.activeEngineSession?.agentSessionId, usageSource]);
 
   return {
     compactSupported:

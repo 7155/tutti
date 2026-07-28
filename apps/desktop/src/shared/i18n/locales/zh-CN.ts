@@ -760,11 +760,11 @@ export const zhCN = {
       },
       nav: {
         about: "关于",
-        account: "账号",
         apps: "应用",
         sectionsLabel: "设置分区",
         appearance: "外观",
         agent: "Agent",
+        connection: "连接",
         developer: "开发者",
         general: "通用",
         lab: "实验室",
@@ -1099,7 +1099,7 @@ export const zhCN = {
         logsSummary: "{{count}} 个文件，共 {{size}}",
         logsTitle: "日志",
         mobileRemoteAccessSettingsDescription:
-          "在账号设置中显示手机配对与远程访问控制项",
+          "显示连接设置以及手机配对与远程访问控制项",
         mobileRemoteAccessSettingsLabel: "显示手机远程访问设置",
         mobileRemoteAccessSettingsSaveFailed:
           "暂时无法更新手机远程访问显示设置",
@@ -1133,6 +1133,9 @@ export const zhCN = {
         visibilityLabel: "显示开发者面板"
       },
       lab: {
+        agentInputHistoryDescription:
+          "在 Agent 输入框中使用上下键切换当前会话的历史输入",
+        agentInputHistoryLabel: "Agent 输入历史",
         backLabel: "返回",
         automationRulesDescription: "显示自动化规则配置与会话覆盖选项",
         automationRulesLabel: "自动化规则",
@@ -1188,7 +1191,9 @@ export const zhCN = {
         terminal: "终端"
       },
       filePreview: {
+        edit: "编辑",
         loading: "加载中...",
+        preview: "预览",
         revert: "还原",
         save: "保存",
         saved: "已保存",
@@ -1262,9 +1267,6 @@ export const zhCN = {
         unavailableItem: "{{title}}，{{reason}}"
       },
       missionControl: {
-        activateShortcutDefault: "Ctrl + 1",
-        activateShortcutMac: "Cmd + 1",
-        activateTrigger: "快速激活节点",
         layoutShortcutDefault: "Ctrl + 2",
         layoutShortcutMac: "Cmd + 2",
         layoutTrigger: "快速布局",

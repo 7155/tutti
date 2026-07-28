@@ -435,7 +435,7 @@ export function WorkspaceAgentMessageCenterAction({
                 })
               }
             >
-              <MessageCenterIcon className="shrink-0" />
+              <MessageCenterIcon className="size-4 shrink-0" size={16} />
               <span className="text-[13px] font-semibold">{triggerLabel}</span>
             </Button>
           </span>

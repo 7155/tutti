@@ -3,8 +3,8 @@ import type { AgentTranscriptPresentationKind } from "../contracts/agentTranscri
 import type { AgentTranscriptRowVM } from "../contracts/agentTranscriptRowVM";
 import {
   attachLeadingToolRowsToFollowingMessages,
+  buildAgentParticipantTurnProjection,
   buildAgentTranscriptTurnGroups,
-  findParticipantTurnDividerRowIndexes,
   findTurnDividerRowIndexes,
   transcriptRowKey
 } from "./agentTranscriptModel";
@@ -150,31 +150,38 @@ function toolGroupRow(id: string, turnId: string): AgentTranscriptRowVM {
   };
 }
 
-describe("findParticipantTurnDividerRowIndexes", () => {
-  it("marks every user message after the first row as a turn divider", () => {
-    expect([
-      ...findParticipantTurnDividerRowIndexes([
-        userRow("turn-1"),
-        row("turn-1"),
-        userRow("turn-2"),
-        row("turn-2")
-      ])
-    ]).toEqual([2]);
+describe("buildAgentParticipantTurnProjection", () => {
+  it("starts a presentation turn at each user message", () => {
+    const projection = buildAgentParticipantTurnProjection([
+      userRow("turn-1"),
+      row("turn-1"),
+      userRow("turn-2"),
+      row("turn-2")
+    ]);
+
+    expect([...projection.dividerRowIndexes]).toEqual([2]);
+    expect([...projection.turnIndexByRowIndex.values()]).toEqual([0, 0, 1, 1]);
   });
 
-  it("marks a user message that follows another user message", () => {
-    expect([
-      ...findParticipantTurnDividerRowIndexes([
-        userRow("turn-1"),
-        userRow("turn-2")
-      ])
-    ]).toEqual([1]);
+  it("does not split a reply when its canonical turn id changes", () => {
+    const projection = buildAgentParticipantTurnProjection([
+      userRow("turn-1"),
+      row("turn-1"),
+      row("turn-recovery")
+    ]);
+
+    expect([...projection.dividerRowIndexes]).toEqual([]);
+    expect([...projection.turnIndexByRowIndex.values()]).toEqual([0, 0, 0]);
   });
 
-  it("never marks the first row", () => {
-    expect([
-      ...findParticipantTurnDividerRowIndexes([userRow("turn-1")])
-    ]).toEqual([]);
+  it("starts a new turn when user messages are adjacent", () => {
+    const projection = buildAgentParticipantTurnProjection([
+      userRow("turn-1"),
+      userRow("turn-2")
+    ]);
+
+    expect([...projection.dividerRowIndexes]).toEqual([1]);
+    expect([...projection.turnIndexByRowIndex.values()]).toEqual([0, 1]);
   });
 });
 

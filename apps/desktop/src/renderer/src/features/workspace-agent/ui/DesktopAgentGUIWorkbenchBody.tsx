@@ -17,7 +17,12 @@ import { resolveInsufficientCreditsSemantic } from "@tutti-os/commerce";
 import { useService } from "@tutti-os/infra/di";
 import { requestWorkspaceAgentGuiLaunch } from "../services/workspaceAgentGuiLaunchCoordinator.ts";
 import { registerWorkspaceAgentGuiOpenSession } from "../../workspace-workbench/services/workspaceAgentGuiOpenSessionCoordinator.ts";
-import { workbenchFocusInputActivationType } from "@tutti-os/workbench-surface";
+import {
+  selectWorkbenchNodeIsVisuallyExposed,
+  useWorkbenchSelector,
+  useWorkbenchVisualOcclusionPresentation,
+  workbenchFocusInputActivationType
+} from "@tutti-os/workbench-surface";
 import { useTranslation } from "@renderer/i18n";
 import type { WorkspaceAgentProvider } from "@tutti-os/client-tuttid-ts";
 import { useDesktopPreferencesService } from "@renderer/features/desktop-preferences/ui/useDesktopPreferencesService";
@@ -69,18 +74,22 @@ import { useDesktopAgentGUIReadiness } from "./useDesktopAgentGUIReadiness.ts";
 import { useDesktopAgentGUIOpenConversationWindow } from "./useDesktopAgentGUIOpenConversationWindow.ts";
 import { useDesktopAgentGUIWorkbenchEvents } from "./useDesktopAgentGUIWorkbenchEvents.ts";
 import { useStableDesktopAgentGUIHostProps } from "./useStableDesktopAgentGUIHostProps.ts";
+import { resolveDesktopAgentGUIEmbeddedDesktopSize } from "./desktopAgentGUIEmbeddedFrame.ts";
+import { scheduleDesktopAgentGUIWorkbenchHydration } from "./desktopAgentGUIWorkbenchHydration.ts";
 import { IAgentEnvService } from "../services/agentEnvService.interface.ts";
 import { preloadDesktopAgentGuiMentionBrowse } from "../services/preloadDesktopAgentGuiMentionBrowse.ts";
 import { DESKTOP_AGENT_GUI_CURRENT_USER_ID } from "../services/desktopAgentGuiIdentity.ts";
 import {
   AGENT_REFERENCE_PROVENANCE_FILTER_FLAG,
   isFeatureEnabled,
+  LAB_AGENT_INPUT_HISTORY_FLAG,
   LAB_TUTTI_MODE_FLAG
 } from "../../../../../shared/featureFlags/catalog.ts";
 
 function DesktopAgentGUISurfaceImpl({
   agentActivityRuntime,
   agentHostApi,
+  agentStatusSource,
   tuttiModePlanReviewRuntime,
   appCenterService,
   agentProviderStatusService,
@@ -331,12 +340,15 @@ function DesktopAgentGUISurfaceImpl({
     },
     [desktopPreferencesService, nodeProvider, runtimeApi, workspaceId]
   );
-  const agentStatusController = useDesktopAgentStatusController({
-    agentActivityRuntime,
-    agents,
-    workspaceAgentProbes: agentHostApi.workspaceAgentProbes,
-    workspaceId
-  });
+  const agentStatusController = useDesktopAgentStatusController(
+    {
+      agentActivityRuntime,
+      agents,
+      workspaceAgentProbes: agentHostApi.workspaceAgentProbes,
+      workspaceId
+    },
+    agentStatusSource
+  );
   const handleOpenSessionActivationError = useCallback(
     (input: { agentSessionId: string; error: unknown }) => {
       Toast.Error(
@@ -520,11 +532,8 @@ function DesktopAgentGUISurfaceImpl({
     [agentHostApi]
   );
   const desktopSize = useMemo(
-    () => ({
-      height: Math.max(frame.height, frame.y + frame.height),
-      width: Math.max(frame.width, frame.x + frame.width)
-    }),
-    [frame.height, frame.width, frame.x, frame.y]
+    () => resolveDesktopAgentGUIEmbeddedDesktopSize(frame),
+    [frame.height, frame.width]
   );
   const composerFocusRequestSequence =
     composerAppendRequest?.sequence ??
@@ -562,6 +571,10 @@ function DesktopAgentGUISurfaceImpl({
   const referenceProvenanceFilterEnabled = isFeatureEnabled(
     desktopPreferencesState.featureFlags,
     AGENT_REFERENCE_PROVENANCE_FILTER_FLAG
+  );
+  const sessionInputHistoryEnabled = isFeatureEnabled(
+    desktopPreferencesState.featureFlags,
+    LAB_AGENT_INPUT_HISTORY_FLAG
   );
   const providerAuthAccountLabels = useMemo(() => {
     const labels: Partial<Record<WorkspaceAgentProvider, string>> = {};
@@ -621,6 +634,7 @@ function DesktopAgentGUISurfaceImpl({
     },
     hostCapabilities: {
       referenceProvenanceFilterEnabled,
+      sessionInputHistoryEnabled,
       capabilityMenuState,
       visibleErrorPresentationOverrides,
       comingSoonProviders: comingSoonAgentProviders,
@@ -679,9 +693,7 @@ function DesktopAgentGUISurfaceImpl({
           desktopSize,
           isMaximized: surface.displayMode === "fullscreen",
           isActive: surface.isFocused,
-          isVisible:
-            surface.presentationMode !== "mission-control" &&
-            surface.isMinimized !== true,
+          isVisible: surface.isVisible,
           embedded: true
         }}
         state={nodeState}
@@ -700,6 +712,38 @@ function DesktopAgentGUIWorkbenchBodyAdapter({
   context,
   ...props
 }: DesktopAgentGUIWorkbenchBodyProps): JSX.Element {
+  const visualOcclusionPresentation = useWorkbenchVisualOcclusionPresentation();
+  const isVisuallyExposed = useWorkbenchSelector((state) =>
+    selectWorkbenchNodeIsVisuallyExposed(
+      state,
+      context.node.id,
+      visualOcclusionPresentation
+    )
+  );
+  const isBodyVisible = context.isVisible && isVisuallyExposed;
+  const [bodyHydrated, setBodyHydrated] = useState(
+    context.isFocused || isBodyVisible
+  );
+  useEffect(() => {
+    if (bodyHydrated || context.isFocused || isBodyVisible) {
+      if (!bodyHydrated) {
+        setBodyHydrated(true);
+      }
+      return;
+    }
+    return scheduleDesktopAgentGUIWorkbenchHydration(() => {
+      setBodyHydrated(true);
+    });
+  }, [bodyHydrated, context.isFocused, isBodyVisible]);
+  if (!bodyHydrated && !context.isFocused && !isBodyVisible) {
+    return (
+      <div
+        aria-hidden="true"
+        className="size-full bg-[var(--background-panel)]"
+        data-agent-gui-workbench-hydration="pending"
+      />
+    );
+  }
   const surface: DesktopAgentGUISurfaceContext = {
     activation: context.activation,
     displayMode: context.displayMode,
@@ -710,6 +754,7 @@ function DesktopAgentGUIWorkbenchBodyAdapter({
     isFocused: context.isFocused,
     isMinimized: context.node.isMinimized === true,
     isResizing: context.isResizing,
+    isVisible: isBodyVisible,
     nodeId: context.node.id,
     nodeTitle: context.node.title,
     presentationMode: context.presentationMode,

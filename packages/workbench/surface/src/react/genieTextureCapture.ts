@@ -11,18 +11,153 @@ export interface PreparedGenieTextureCapture {
   rect: WorkbenchGenieViewportRect;
 }
 
+type GenieCloneMaskImageProperty = "-webkit-mask-image" | "mask-image";
+
+interface GenieCloneMaskImageReference {
+  element: HTMLElement;
+  property: GenieCloneMaskImageProperty;
+}
+
+const genieCloneMaskImageProperties = [
+  "-webkit-mask-image",
+  "mask-image"
+] as const satisfies readonly GenieCloneMaskImageProperty[];
+
+interface ReadableStylesheetFingerprint {
+  disabled: boolean;
+  ownerText: string | null;
+  ruleCount: number;
+  stylesheet: CSSStyleSheet;
+}
+
+interface CachedReadableStylesheetText {
+  fingerprints: ReadableStylesheetFingerprint[];
+  text: string;
+}
+
+const readableStylesheetTextByDocument = new WeakMap<
+  Document,
+  CachedReadableStylesheetText
+>();
+
+function readSingleCssUrl(value: string): string | null {
+  const normalized = value.trim();
+  if (!normalized.startsWith("url(") || !normalized.endsWith(")")) {
+    return null;
+  }
+  const inner = normalized.slice(4, -1).trim();
+  if (!inner) {
+    return null;
+  }
+  const quote = inner[0];
+  if (quote === '"' || quote === "'") {
+    return inner.endsWith(quote) ? inner.slice(1, -1) : null;
+  }
+  return inner.includes('"') || inner.includes("'") ? null : inner;
+}
+
+export async function inlineGenieCloneMaskImageResources({
+  cloneRoot,
+  readResource
+}: {
+  cloneRoot: HTMLElement;
+  readResource: (url: string) => Promise<string | null>;
+}): Promise<void> {
+  const referencesByUrl = new Map<string, GenieCloneMaskImageReference[]>();
+  const elements = [
+    cloneRoot,
+    ...Array.from(cloneRoot.querySelectorAll<HTMLElement>("[style]"))
+  ];
+
+  for (const element of elements) {
+    for (const property of genieCloneMaskImageProperties) {
+      const url = readSingleCssUrl(element.style.getPropertyValue(property));
+      if (!url) {
+        continue;
+      }
+      const references = referencesByUrl.get(url) ?? [];
+      references.push({ element, property });
+      referencesByUrl.set(url, references);
+    }
+  }
+
+  await Promise.all(
+    Array.from(referencesByUrl.entries(), async ([url, references], index) => {
+      const inlineUrl = await readResource(url);
+      if (!inlineUrl) {
+        return;
+      }
+      const variableName = `--workbench-genie-capture-mask-${index}`;
+      cloneRoot.style.setProperty(
+        variableName,
+        `url(${JSON.stringify(inlineUrl)})`
+      );
+      for (const { element, property } of references) {
+        element.style.setProperty(property, `var(${variableName})`);
+      }
+    })
+  );
+}
+
+function hasSameStylesheetFingerprints(
+  left: ReadableStylesheetFingerprint[],
+  right: ReadableStylesheetFingerprint[]
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((fingerprint, index) => {
+      const candidate = right[index];
+      return (
+        candidate?.stylesheet === fingerprint.stylesheet &&
+        candidate.disabled === fingerprint.disabled &&
+        candidate.ruleCount === fingerprint.ruleCount &&
+        candidate.ownerText === fingerprint.ownerText
+      );
+    })
+  );
+}
+
 function collectReadableStylesheetText(document: Document): string {
-  const rules: string[] = [];
+  const readableStylesheets: {
+    fingerprint: ReadableStylesheetFingerprint;
+    rules: CSSRuleList;
+  }[] = [];
   for (const stylesheet of Array.from(document.styleSheets)) {
     try {
-      for (const rule of Array.from(stylesheet.cssRules)) {
-        rules.push(rule.cssText);
-      }
+      const rules = stylesheet.cssRules;
+      readableStylesheets.push({
+        fingerprint: {
+          disabled: stylesheet.disabled,
+          ownerText:
+            stylesheet.ownerNode instanceof HTMLStyleElement
+              ? stylesheet.ownerNode.textContent
+              : null,
+          ruleCount: rules.length,
+          stylesheet
+        },
+        rules
+      });
     } catch {
       // Browsers do not expose rules from cross-origin stylesheets.
     }
   }
-  return rules.join("\n");
+
+  const fingerprints = readableStylesheets.map(
+    ({ fingerprint }) => fingerprint
+  );
+  const cached = readableStylesheetTextByDocument.get(document);
+  if (
+    cached &&
+    hasSameStylesheetFingerprints(cached.fingerprints, fingerprints)
+  ) {
+    return cached.text;
+  }
+
+  const text = readableStylesheets
+    .flatMap(({ rules }) => Array.from(rules, (rule) => rule.cssText))
+    .join("\n");
+  readableStylesheetTextByDocument.set(document, { fingerprints, text });
+  return text;
 }
 
 function collectImageClones(
@@ -33,6 +168,8 @@ function collectImageClones(
     return {
       displayHeight: rect.height,
       displayWidth: rect.width,
+      naturalHeight: image.naturalHeight,
+      naturalWidth: image.naturalWidth,
       url: image.currentSrc || image.src || image.getAttribute("src") || null
     };
   });

@@ -238,6 +238,7 @@ func buildDaemonAPI(ctx context.Context, store workspacedata.CatalogStore, analy
 	mobileRemoteService, err := buildMobileRemoteService(
 		agentExtensionStateDir,
 		accountService,
+		events,
 	)
 	if err != nil {
 		return tuttiapi.DaemonAPI{}, nil, nil, nil, err
@@ -292,6 +293,9 @@ func buildDaemonAPI(ctx context.Context, store workspacedata.CatalogStore, analy
 		Publisher: eventstreamservice.AgentQuickPromptPublisher{Service: events},
 	}
 	agentRuntimeController := newAgentRuntimeAdapter(agentRuntime.Controller())
+	agentRuntime.Controller().SetStreamEventObserver(agentRuntimeActivityEventBridge{
+		publisher: eventstreamservice.AgentActivityPublisher{Service: events},
+	})
 	agentSessionService := agentservice.NewService(agentRuntimeController)
 	agentSessionService.ModelGateway = modelGateway
 	if browserService != nil {
@@ -331,6 +335,7 @@ func buildDaemonAPI(ctx context.Context, store workspacedata.CatalogStore, analy
 	agentSessionService.TurnSummaryReader = agentActivityRepo
 	agentSessionService.RuntimeOperationStore = agentActivityRepo
 	agentSessionService.GoalStateStore = agentActivityRepo
+	agentSessionService.GoalGenerationFenceStore = agentActivityRepo
 	agentSessionService.CommitObserver = agentActivityProjection
 	agentSessionService.SubmitClaimStore = agentActivityRepo
 	agentSessionService.RuntimeOperationEventPublisher = agentActivityProjection
@@ -394,9 +399,14 @@ func buildDaemonAPI(ctx context.Context, store workspacedata.CatalogStore, analy
 		Observer:             agentActivityProjection,
 		InitializationPolicy: agentActivityProjection,
 	}
-	agentHost := agentservice.NewApplicationHostWithPorts(agentSessionService, canonicalHostStore, &agenthostadapter.RuntimeController{
-		Backend: agentRuntime.Controller(),
-	})
+	agentHost := agentservice.NewApplicationHostWithPorts(
+		agentSessionService,
+		canonicalHostStore,
+		canonicalStoreProvider.AgentCanonicalStore(),
+		&agenthostadapter.RuntimeController{
+			Backend: agentRuntime.Controller(),
+		},
+	)
 	agentSessionService.SetApplicationHost(agentHost)
 	// Host fixes startup order: durable runtime operations first, then goal
 	// operations and reconcile inbox work, and only then stale turns.

@@ -39,45 +39,69 @@ export interface AgentTurnWorkSectionModel {
 export function findParticipantHeaderRenderKeys(
   groups: readonly AgentTranscriptTurnGroup[],
   rowKeys: readonly string[],
-  modelByGroupKey: ReadonlyMap<string, AgentTurnWorkSectionModel | null>
+  modelByGroupKey: ReadonlyMap<string, AgentTurnWorkSectionModel | null>,
+  participantTurnIndexByRowIndex: ReadonlyMap<number, number>
 ): ReadonlySet<string> {
-  const headerKeys = new Set<string>();
+  const headerCandidateByTurn = new Map<
+    number,
+    Map<
+      AgentMessageRowVM["speaker"],
+      { renderKey: string; visibilityPriority: number }
+    >
+  >();
 
   for (const group of groups) {
     const model = modelByGroupKey.get(group.key);
-    const renderedRows: readonly AgentTurnWorkSectionRow[] = model
-      ? model.collapseEligible
-        ? [
-            ...model.leadingRows,
-            ...model.sections.flatMap((section) =>
-              section.kind === "visible" ? section.rows : []
-            ),
-            ...model.sections.flatMap((section) =>
-              section.kind === "work" ? section.rows : []
-            )
-          ]
-        : [
-            ...model.leadingRows,
-            ...model.sections.flatMap((section) => section.rows)
-          ]
-      : group.rows;
-    const seenSpeakers = new Set<AgentMessageRowVM["speaker"]>();
+    const renderedRows: ReadonlyArray<{
+      entry: AgentTurnWorkSectionRow;
+      visibilityPriority: number;
+    }> = model
+      ? [
+          ...model.leadingRows.map((entry) => ({
+            entry,
+            visibilityPriority: 0
+          })),
+          ...model.sections.flatMap((section) =>
+            section.rows.map((entry) => ({
+              entry,
+              visibilityPriority:
+                model.collapseEligible && section.kind === "work" ? 1 : 0
+            }))
+          )
+        ]
+      : group.rows.map((entry) => ({ entry, visibilityPriority: 0 }));
 
-    for (const entry of renderedRows) {
+    for (const { entry, visibilityPriority } of renderedRows) {
       const row = entry.row;
+      if (row.kind !== "message" || row.messages.length === 0) {
+        continue;
+      }
+      const participantTurnIndex =
+        participantTurnIndexByRowIndex.get(entry.rowIndex) ?? entry.rowIndex;
+      let candidateBySpeaker = headerCandidateByTurn.get(participantTurnIndex);
+      if (!candidateBySpeaker) {
+        candidateBySpeaker = new Map();
+        headerCandidateByTurn.set(participantTurnIndex, candidateBySpeaker);
+      }
+      const currentCandidate = candidateBySpeaker.get(row.speaker);
       if (
-        row.kind !== "message" ||
-        row.messages.length === 0 ||
-        seenSpeakers.has(row.speaker)
+        currentCandidate &&
+        currentCandidate.visibilityPriority <= visibilityPriority
       ) {
         continue;
       }
-      seenSpeakers.add(row.speaker);
-      headerKeys.add(entry.renderKey ?? rowKeys[entry.rowIndex] ?? row.id);
+      candidateBySpeaker.set(row.speaker, {
+        renderKey: entry.renderKey ?? rowKeys[entry.rowIndex] ?? row.id,
+        visibilityPriority
+      });
     }
   }
 
-  return headerKeys;
+  return new Set(
+    [...headerCandidateByTurn.values()].flatMap((candidateBySpeaker) =>
+      [...candidateBySpeaker.values()].map((candidate) => candidate.renderKey)
+    )
+  );
 }
 
 interface AgentTurnWorkSectionOptions {
@@ -399,11 +423,7 @@ function groupContainsBlockingMessage(
 }
 
 function isExplicitWorkRow(row: AgentTurnWorkSectionRow["row"]): boolean {
-  return (
-    row.kind === "tool-group" ||
-    row.kind === "turn-summary" ||
-    row.kind === "processing"
-  );
+  return row.kind === "tool-group" || row.kind === "processing";
 }
 
 function isExplicitWorkMessage(message: AgentMessageContentVM): boolean {

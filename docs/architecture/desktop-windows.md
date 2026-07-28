@@ -18,6 +18,20 @@ The window model is intentionally simple:
 - keep Agent-only windows tied to the same workspace, preload, renderer
   bundle, daemon session, and persisted account state as the workspace window
 
+On Linux, the desktop currently requests X11/Xwayland explicitly. The
+Agent-only window contract depends on global source-window bounds,
+deterministic duplicate-window positioning, and programmatic content-width
+resizing, which native Wayland does not expose. Native Wayland must not be
+enabled until those interactions have a Wayland-specific product contract and
+fallback behavior. Agent-only windows also keep square native corners on Linux
+so Electron upgrades do not silently change the established frameless shell.
+
+Native file dialogs use product-semantic starting locations. Project
+directories start in Documents, while archive import/export, icon upload,
+browser downloads, and cookie import start in Downloads. A successful choice
+updates the matching starting directory for the remainder of the current app
+process; these locations are not persisted as user preferences.
+
 ## Current Window Types
 
 ### Dashboard Window
@@ -238,6 +252,12 @@ App Center preparation, it has no reversible pending attempt, and reporting
 failure would trigger a duplicate system fallback. When presentation fails, its
 fallback notification policy also comes from the registration that started the
 attempt, rather than a replacement registered while the attempt was in flight.
+The OS Workbench preview Node keeps text-family files in its editable source
+surface. Markdown targets additionally expose an Edit/Preview toggle in the
+node header. Preview mode renders the current draft, including unsaved changes,
+with sanitized GFM; switching modes does not replace the controller or reset
+dirty/save state. The selected mode is runtime-only node presentation state and
+is not written to the durable Workbench snapshot.
 
 The App Center contribution keeps the catalog and one app-specific Browser Node
 for every id in `openAppIds` mounted in both shells. The catalog is a permanent

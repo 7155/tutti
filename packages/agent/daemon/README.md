@@ -27,6 +27,19 @@ if err != nil {
 controller := runtime.Controller()
 ```
 
+Controller startup coordination is scoped to one Session. The legacy `Start`
+form that omits `AgentSessionID` is scoped by room and provider while it
+allocates and deduplicates the Session ID. Provider-specific credential
+coordination belongs in the Host startup gate; provider I/O must not run under
+a process-wide Controller startup lock.
+
+`Controller.SubscribeWhenAvailable` is the observation-only stream attachment
+for consumers that already have durable session identity but may race runtime
+resume after a daemon restart. It waits for `Start`, `Resume`, or
+`Host.EnsureRuntimeSession` to repopulate the runtime registry and then
+subscribes with the current state snapshot. It never starts or resumes a
+provider itself; lifecycle authority stays with Agent Host.
+
 Hosts that need to prepare a provider launch immediately before process spawn
 can set `ProviderLaunchPreparer`. The hook receives the provider, session,
 command, environment, cwd, and direct-start mode; it returns the command,
@@ -64,6 +77,19 @@ The host daemon owns:
 - provider availability and install status
 - update metadata caching, source-ownership verification, and update actions
 - workspace attachment, runtime VM lifecycle, and product auth
+
+## Provider Authentication Status
+
+`providerregistry` owns each provider's auth status command and parser kind.
+Hosts execute that descriptor-owned command in their provider runtime, then use
+`providerstatus.ParseAuthStatusOutput` to interpret the output consistently.
+The same package exposes narrow helpers for explicit Codex and Claude API
+billing configuration. Credential-file or token presence must not be used as
+proof that an OAuth session is still authenticated.
+
+`providerstatus` returns an observation only. Each host remains responsible for
+runtime coordination, freshness, failure ordering, and projecting the result
+through its own authoritative provider-status registry.
 
 ## Live Session Recycling
 

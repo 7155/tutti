@@ -21,6 +21,11 @@ export interface AgentMessageLocatorItem {
   summary: string;
 }
 
+export interface AgentParticipantTurnProjection {
+  dividerRowIndexes: ReadonlySet<number>;
+  turnIndexByRowIndex: ReadonlyMap<number, number>;
+}
+
 export function useEnteringTranscriptRows(
   rowKeys: string[]
 ): ReadonlySet<string> {
@@ -219,21 +224,30 @@ export function findTurnDividerRowIndexes(
 }
 
 /**
- * Participant-header presentation (Agent board session detail): a new user
- * message always starts the next turn, so the divider goes between the
- * previous turn's last row and every user message row — regardless of whether
- * the rebuilt session carries canonical turn ids.
+ * Participant-header presentation (Agent board session detail): a presentation
+ * turn starts at each user message and continues until the next user message.
+ * Canonical Turn ids deliberately do not participate because recovery or
+ * provider continuation may split one visible reply across multiple Turns.
  */
-export function findParticipantTurnDividerRowIndexes(
+export function buildAgentParticipantTurnProjection(
   rows: ReadonlyArray<AgentConversationVM["rows"][number]>
-): ReadonlySet<number> {
+): AgentParticipantTurnProjection {
   const dividerRowIndexes = new Set<number>();
+  const turnIndexByRowIndex = new Map<number, number>();
+  let turnIndex = 0;
+
   rows.forEach((row, rowIndex) => {
     if (rowIndex > 0 && row.kind === "message" && row.speaker === "user") {
+      turnIndex += 1;
       dividerRowIndexes.add(rowIndex);
     }
+    turnIndexByRowIndex.set(rowIndex, turnIndex);
   });
-  return dividerRowIndexes;
+
+  return {
+    dividerRowIndexes,
+    turnIndexByRowIndex
+  };
 }
 
 /**
@@ -259,10 +273,7 @@ export function attachLeadingToolRowsToFollowingMessages(
       if (pendingToolRows.length > 0) {
         result.push({
           ...row,
-          leadingToolRows: [
-            ...(row.leadingToolRows ?? []),
-            ...pendingToolRows
-          ]
+          leadingToolRows: [...(row.leadingToolRows ?? []), ...pendingToolRows]
         });
         pendingToolRows = [];
         continue;
@@ -283,9 +294,10 @@ export function attachLeadingToolRowsToFollowingMessages(
 /**
  * Read hook owning the display-row projection for the transcript view: in
  * participant-header mode tool-group rows attach to the following assistant
- * message, and row keys derive from the same pass. Keeping the memoization in
- * this model module (next to `useEnteringTranscriptRows`) keeps the view
- * component within the degradation-check memoization budget.
+ * message, presentation turns start at user messages, and row keys derive from
+ * the same pass. Keeping the memoization in this model module (next to
+ * `useEnteringTranscriptRows`) keeps the view component within the
+ * degradation-check memoization budget.
  */
 export function useAgentTranscriptDisplayRows(
   rows: ReadonlyArray<AgentConversationVM["rows"][number]>,
@@ -293,11 +305,18 @@ export function useAgentTranscriptDisplayRows(
 ): {
   rows: ReadonlyArray<AgentConversationVM["rows"][number]>;
   rowKeys: string[];
+  participantTurnProjection: AgentParticipantTurnProjection | null;
 } {
   return useMemo(() => {
     const displayRows = participantHeadersEnabled
       ? attachLeadingToolRowsToFollowingMessages(rows)
       : rows;
-    return { rows: displayRows, rowKeys: displayRows.map(transcriptRowKey) };
+    return {
+      rows: displayRows,
+      rowKeys: displayRows.map(transcriptRowKey),
+      participantTurnProjection: participantHeadersEnabled
+        ? buildAgentParticipantTurnProjection(displayRows)
+        : null
+    };
   }, [rows, participantHeadersEnabled]);
 }

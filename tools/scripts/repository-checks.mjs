@@ -75,6 +75,13 @@ export const repositoryCheckDefinitions = [
   },
   {
     group: "generated",
+    key: "generated:agent-live-protocol",
+    label: "generated Agent live protocol",
+    script: "check:agent-live-protocol-generated",
+    matches: isAgentLiveProtocolContractRelevant
+  },
+  {
+    group: "generated",
     key: "generated:workbench-go-contract",
     label: "generated workbench Go contract",
     script: "check:workbench-go-contract",
@@ -274,6 +281,20 @@ function isEventProtocolContractRelevant(file) {
   );
 }
 
+function isAgentLiveProtocolContractRelevant(file) {
+  return (
+    file ===
+      "packages/agent/daemon/liveprotocol/schema/agent-activity-live-event.schema.json" ||
+    file ===
+      "packages/agent/daemon/liveprotocol/schema/agent-activity-live-wire-contract.json" ||
+    file === "packages/agent/daemon/liveprotocol/protocol_revision.gen.go" ||
+    file === "packages/agent/activity-core/src/liveProtocolRevision.gen.ts" ||
+    file ===
+      "packages/events/protocol/definitions/agent/activity.updated.event.json" ||
+    file === "tools/scripts/generate-agent-live-protocol.mjs"
+  );
+}
+
 function isWorkbenchGoContractRelevant(file) {
   return (
     file === "packages/workbench/snapshot/src/schema.json" ||
@@ -375,6 +396,9 @@ function isAgentGuiDegradationRelevant(file) {
   return (
     file.startsWith("packages/agent/") ||
     file.startsWith("tools/degradation-baseline/") ||
+    file === "tools/scripts/agent-gui-presentation-performance-policy.mjs" ||
+    file ===
+      "tools/scripts/agent-gui-presentation-performance-policy.test.mjs" ||
     file === "tools/scripts/check-agent-gui-degradation.mjs" ||
     file === "tools/scripts/check-agent-gui-degradation.test.mjs"
   );

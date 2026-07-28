@@ -808,11 +808,11 @@ export const en = {
       },
       nav: {
         about: "About",
-        account: "Account",
         apps: "Apps",
         sectionsLabel: "Settings sections",
         appearance: "Appearance",
         agent: "Agent",
+        connection: "Connection",
         developer: "Developer",
         general: "General",
         lab: "Lab",
@@ -1169,7 +1169,7 @@ export const en = {
         logsSummary: "{{count}} files, {{size}} total",
         logsTitle: "Logs",
         mobileRemoteAccessSettingsDescription:
-          "Show phone pairing and remote access controls in Account settings.",
+          "Show Connection settings with phone pairing and remote access controls.",
         mobileRemoteAccessSettingsLabel: "Show mobile remote access settings",
         mobileRemoteAccessSettingsSaveFailed:
           "We couldn't update mobile remote access visibility.",
@@ -1208,6 +1208,9 @@ export const en = {
         visibilityLabel: "Show developer panel"
       },
       lab: {
+        agentInputHistoryDescription:
+          "Use Up and Down in Agent input to recall earlier prompts from the current session.",
+        agentInputHistoryLabel: "Agent input history",
         backLabel: "Back",
         automationRulesDescription:
           "Shows Automation Rule configuration and session overrides.",
@@ -1269,7 +1272,9 @@ export const en = {
         terminal: "Terminal"
       },
       filePreview: {
+        edit: "Edit",
         loading: "Loading...",
+        preview: "Preview",
         revert: "Revert",
         save: "Save",
         saved: "Saved",
@@ -1350,9 +1355,6 @@ export const en = {
         unavailableItem: "{{title}}, {{reason}}"
       },
       missionControl: {
-        activateShortcutDefault: "Ctrl + 1",
-        activateShortcutMac: "Cmd + 1",
-        activateTrigger: "Quick activate node",
         layoutShortcutDefault: "Ctrl + 2",
         layoutShortcutMac: "Cmd + 2",
         layoutTrigger: "Quick layout",

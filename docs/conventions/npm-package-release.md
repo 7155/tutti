@@ -16,6 +16,7 @@ automation are updated together.
 The current fixed release group is:
 
 ```text
+@tutti-os/analytics
 @tutti-os/event-stream-core
 @tutti-os/workspace-file-manager
 @tutti-os/workspace-file-reference
@@ -31,6 +32,7 @@ The current fixed release group is:
 @tutti-os/browser-node
 @tutti-os/workspace-file-preview
 @tutti-os/workbench-snapshot
+@tutti-os/workbench-electron
 @tutti-os/workbench-host
 @tutti-os/workbench-launchpad
 @tutti-os/workbench-surface
@@ -125,10 +127,11 @@ package release tag sequence. Do not add package Go modules that require an
 independent release cadence unless this convention and the release automation
 are updated together.
 
-`packages/device-link` is temporarily excluded while the Personal
-Android/Desktop path is still an unreleased transport spike. Remove the
-exclusion and add its stable Go tag only after that product path validates the
-authenticated connection lifecycle and AAR consumer build.
+`packages/device-link` participates in the same stable Go module tag sequence
+after the Personal Android/Desktop path validated its authenticated connection
+lifecycle and AAR consumer build. TSH and other consumers must install its
+released cohort version; do not consume a pseudo-version or add a workspace
+replacement.
 
 ## Local Beta Releases
 
@@ -161,6 +164,7 @@ pnpm add @tutti-os/workspace-file-manager@beta
 pnpm add @tutti-os/workspace-issue-manager@beta
 pnpm add @tutti-os/workspace-app-center@beta
 pnpm add @tutti-os/workspace-terminal@beta
+pnpm add @tutti-os/workbench-electron@beta
 pnpm add @tutti-os/workbench-host@beta
 pnpm add @tutti-os/workbench-surface@beta
 pnpm add @tutti-os/workbench-snapshot@beta
@@ -204,6 +208,12 @@ peer versions, so component-internal extensions must be bundled from development
 dependencies rather than resolved independently in the consumer. A
 package-private copy of the shared runtime can make structurally identical
 extensions type-incompatible in consumers.
+
+Platform-specific peers used only by an optional public subpath must remain
+peer dependencies and set `peerDependenciesMeta.<name>.optional` to `true`.
+The platform app that imports that subpath must declare the concrete runtime
+dependency itself. This keeps web and desktop consumers from installing
+unused native dependency chains.
 
 Runtime assets that are rendered or referenced by public entrypoints must also
 survive the packed package shape. When a public runtime entrypoint such as
@@ -333,6 +343,7 @@ The stable package entrypoints are:
 @tutti-os/workspace-terminal/workbench
 @tutti-os/workbench-snapshot
 @tutti-os/workbench-snapshot/schema.json
+@tutti-os/workbench-electron
 @tutti-os/workbench-host
 @tutti-os/workbench-host/conformance
 @tutti-os/workbench-surface

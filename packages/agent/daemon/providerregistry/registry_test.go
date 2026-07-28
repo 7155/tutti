@@ -60,6 +60,15 @@ func TestMigratedTuttiAgentDescriptorRequiresRefreshCapableVersion(t *testing.T)
 		!descriptor.Status.Install.IncludeOptional {
 		t.Fatalf("Status.Install = %#v", descriptor.Status.Install)
 	}
+	if slices.Contains(descriptor.ComposerProfile.Capabilities, CapabilityRateLimits) {
+		t.Fatal("Tutti Agent must not advertise ChatGPT rate limits")
+	}
+	if descriptor.ComposerProfile.ReasoningEffort ||
+		descriptor.ComposerProfile.Speed ||
+		descriptor.ComposerProfile.ConfigOptionIDs.Reasoning != "" ||
+		descriptor.ComposerProfile.ConfigOptionIDs.Speed != "" {
+		t.Fatalf("Tutti Agent must hide provider-wide reasoning and speed controls: %#v", descriptor.ComposerProfile)
+	}
 }
 
 func TestValidateRejectsInvalidMinimumVersionFloor(t *testing.T) {
@@ -269,7 +278,7 @@ func TestMigratedProviderDesktopIntegrationIsDescriptorOwned(t *testing.T) {
 		CodexProviderID:      {Managed: true, ManagedOrder: 2, StatusProbePriority: 1, UsageProbeKind: DesktopUsageProbeCodex, DeveloperLogs: true, DefaultProviderEligible: true, DefaultProviderPriority: 1},
 		ClaudeCodeProviderID: {Managed: true, ManagedOrder: 1, StatusProbePriority: 2, UsageProbeKind: DesktopUsageProbeClaudeCode, DeveloperLogs: true, DefaultProviderEligible: true, DefaultProviderPriority: 2},
 		CursorProviderID:     {Managed: true, ManagedOrder: 3, StatusProbePriority: 3, RuntimeProbeFallback: DesktopRuntimeProbeFallbackDirect, DeveloperLogs: true, DefaultProviderEligible: true, DefaultProviderPriority: 3},
-		TuttiAgentProviderID: {Managed: true, ManagedOrder: 4, StatusProbePriority: 4, VisibilityGate: DesktopVisibilityGateTuttiAgent, InstallBootstrap: true, RefreshOnAccountChange: true},
+		TuttiAgentProviderID: {Managed: true, ManagedOrder: 4, StatusProbePriority: 4, VisibilityGate: DesktopVisibilityGateTuttiAgent, InstallBootstrap: true, RefreshOnAccountChange: true, DeveloperLogs: true},
 		OpenCodeProviderID:   {Managed: true, ManagedOrder: 5, StatusProbePriority: 5, DefaultProviderEligible: true, DefaultProviderPriority: 4},
 		NexightProviderID:    {},
 		OpenClawProviderID:   {Managed: true, ManagedOrder: 7, StatusProbePriority: 7, UnavailableDockOrderOffset: 200},

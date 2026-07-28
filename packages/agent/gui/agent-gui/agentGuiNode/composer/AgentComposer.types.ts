@@ -12,6 +12,7 @@ import type { AgentProjectPathChangeMetadata } from "../AgentComposerSettingsMen
 import type { AgentSlashCommandCapability } from "../model/agentSlashCommandProviderPolicy";
 import type {
   AgentComposerDraft,
+  AgentGUIComposerGate,
   AgentGUIComposerSettingsVM,
   AgentGUIProviderSkillOption,
   AgentGUIQueueStatus,
@@ -27,6 +28,7 @@ import type {
 } from "@tutti-os/workspace-file-reference/react";
 import type { AgentQuickPromptLabels } from "./quickPrompts/agentQuickPromptLabels";
 import type { AgentMentionFilterId } from "../AgentMentionSearchContracts";
+import type { AgentComposerInputHistoryEntry } from "../model/agentComposerInputHistory";
 
 export interface AgentComposerReferenceProvenanceFilter {
   snapshot: ReferenceProvenanceFilterSnapshot;
@@ -66,6 +68,7 @@ export interface AgentComposerCapabilityReference {
 
 export interface AgentComposerProps {
   workspaceId: string;
+  agentSessionId?: string | null;
   workspacePath?: string | null;
   currentUserId?: string | null;
   provider: string;
@@ -75,13 +78,20 @@ export interface AgentComposerProps {
   engagement?: AgentGUIComposerEngagement;
   /** Stable project/session owner for async draft attachment work. */
   draftScopeKey?: string;
+  inputHistory?: readonly AgentComposerInputHistoryEntry[];
+  inputHistoryHasOlderPage?: boolean;
+  inputHistoryIsLoadingOlderPage?: boolean;
+  onRequestOlderInputHistoryPage?: () => void;
   availableCommands: readonly AgentSessionCommand[];
   hasCompactableContext?: boolean;
   compactSupported?: boolean | null;
   availableSkills?: readonly AgentGUIProviderSkillOption[];
-  disabled: boolean;
+  gate: AgentGUIComposerGate;
+  /** View-local lock that does not redefine canonical Composer readiness. */
+  presentationEditorDisabled: boolean;
   disabledReason?: string | null;
-  submitDisabled: boolean;
+  /** Draft-independent view-local submission lock. */
+  presentationSubmitDisabled: boolean;
   /** Canonical engine projection of the independent TuttiModeActivation. */
   tuttiModeActive?: boolean;
   /** Blocks submission/removal while activation CAS or creation is unresolved. */
@@ -103,7 +113,6 @@ export interface AgentComposerProps {
     agentTargetId?: string | null;
   }) => void;
   onHandoffConversation?: (target: AgentGUIAgentTarget) => void;
-  canQueueWhileBusy: boolean;
   showStopButton: boolean;
   stopDisabled: boolean;
   activePrompt: AgentConversationPromptVM | null;

@@ -446,18 +446,34 @@ export class DefaultWorkspaceFileManagerSession implements WorkspaceFileManagerS
     await this.treeController.toggleDirectoryExpanded(entry);
   }
 
-  async copyToClipboard(entry: WorkspaceFileEntry): Promise<void> {
+  async copyToClipboard(entry: WorkspaceFileEntry): Promise<boolean> {
     if (this.isExternalLocationSelected()) {
-      return;
+      return false;
     }
     if (!this.host.copyEntriesToClipboard) {
-      return;
+      return false;
     }
 
-    await this.host.copyEntriesToClipboard({
-      paths: [entry.path],
-      workspaceID: this.store.workspaceID
-    });
+    try {
+      await this.host.copyEntriesToClipboard({
+        paths: [entry.path],
+        workspaceID: this.store.workspaceID
+      });
+      return true;
+    } catch (error) {
+      // Copy is triggered from visible affordances, so a rejection must reach
+      // the user instead of becoming an unhandled rejection.
+      const message = this.resolveErrorMessage(error);
+      const handled = this.onMutationErrorMessage?.({
+        actionKind: "copy",
+        error,
+        message
+      });
+      if (!handled) {
+        this.store.error = message;
+      }
+      return false;
+    }
   }
 
   getCachedOpenWithApplications(

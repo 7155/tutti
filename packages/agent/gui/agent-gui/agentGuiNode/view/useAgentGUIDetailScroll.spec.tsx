@@ -1,7 +1,9 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 import type { MutableRefObject, RefObject } from "react";
 import type { AgentConversationVM } from "../../../shared/agentConversation/contracts/agentConversationVM";
+import type { AgentTranscriptVirtualScrollController } from "../../../shared/agentConversation/components/AgentTranscriptView";
 import type { AgentGUINodeViewModel } from "../model/agentGuiNodeTypes";
 import type { AgentGUINodeViewProps } from "../AgentGUINodeView";
 import { useAgentGUIDetailScroll } from "./useAgentGUIDetailScroll";
@@ -61,6 +63,232 @@ describe("useAgentGUIDetailScroll", () => {
       scrollHeight: 1,
       scrollTop: 0
     });
+  });
+
+  it("delegates a virtualized conversation switch and bottom request to TanStack", () => {
+    const harness = createHarness({ scrollHeight: 5_000 });
+    const controller = virtualScrollController("conversation-virtualized");
+    harness.virtualScrollControllerRef.current = controller;
+    const { result } = renderHook(() =>
+      useAgentGUIDetailScroll(
+        harness.input({
+          activeConversationId: "conversation-virtualized",
+          showTimelineSkeleton: false
+        })
+      )
+    );
+
+    expect(controller.scrollToEnd).toHaveBeenCalledWith({ behavior: "auto" });
+    expect(harness.scrollTopWriteCount()).toBe(0);
+    expect(harness.geometryReadCounts()).toEqual({
+      clientHeight: 0,
+      scrollHeight: 0,
+      scrollTop: 0
+    });
+    controller.scrollToEnd.mockClear();
+
+    act(() => result.current.scrollTimelineToBottom());
+
+    expect(controller.scrollToEnd).toHaveBeenCalledWith({
+      behavior: "smooth"
+    });
+    expect(harness.scrollTopWriteCount()).toBe(0);
+  });
+
+  it("does not use a previous Session virtual controller", () => {
+    const harness = createHarness({ scrollHeight: 5_000 });
+    const staleController = virtualScrollController("conversation-previous");
+    harness.virtualScrollControllerRef.current = staleController;
+    const { result } = renderHook(() =>
+      useAgentGUIDetailScroll(
+        harness.input({
+          activeConversationId: "conversation-current",
+          showTimelineSkeleton: false
+        })
+      )
+    );
+
+    act(() => result.current.scrollTimelineToBottom());
+
+    expect(staleController.scrollToEnd).not.toHaveBeenCalled();
+    expect(harness.scrollTopWriteCount()).toBe(0);
+  });
+
+  it("explicitly returns a submitted prompt to the virtualized end", () => {
+    const harness = createHarness({ scrollHeight: 5_000 });
+    const controller = virtualScrollController("conversation-submit");
+    harness.virtualScrollControllerRef.current = controller;
+    const { rerender } = renderHook(
+      ({ conversation }) =>
+        useAgentGUIDetailScroll(
+          harness.input({
+            activeConversationId: "conversation-submit",
+            conversation,
+            showTimelineSkeleton: false
+          })
+        ),
+      { initialProps: { conversation: conversationVM("first") } }
+    );
+    controller.scrollToEnd.mockClear();
+    harness.submittedPromptScrollConversationRef.current =
+      "conversation-submit";
+
+    rerender({ conversation: conversationVM("second") });
+
+    expect(controller.scrollToEnd).toHaveBeenCalledWith({ behavior: "auto" });
+  });
+
+  it("leaves virtualized prepend compensation to TanStack", () => {
+    const harness = createHarness({ scrollHeight: 5_000 });
+    const controller = virtualScrollController("conversation-prepend", false);
+    harness.virtualScrollControllerRef.current = controller;
+    const { rerender } = renderHook(
+      ({ isLoadingOlderMessages }) =>
+        useAgentGUIDetailScroll(
+          harness.input({
+            activeConversationId: "conversation-prepend",
+            isLoadingOlderMessages,
+            showTimelineSkeleton: false
+          })
+        ),
+      { initialProps: { isLoadingOlderMessages: false } }
+    );
+    controller.scrollToEnd.mockClear();
+    harness.timeline.scrollTop = 200;
+    harness.pendingPrependScrollAnchorRef.current = {
+      conversationId: "conversation-prepend",
+      scrollHeight: 5_000,
+      scrollTop: 200
+    };
+    harness.setScrollHeight(6_000);
+    harness.resetScrollTopWriteCount();
+
+    rerender({ isLoadingOlderMessages: true });
+
+    expect(controller.scrollToEnd).not.toHaveBeenCalled();
+    expect(harness.timeline.scrollTop).toBe(200);
+    expect(harness.scrollTopWriteCount()).toBe(0);
+  });
+
+  it("does not re-follow virtualized content after user scroll-away intent", () => {
+    const resizeObservers = installResizeObserverMock();
+    const harness = createHarness({ scrollHeight: 5_000 });
+    const controller = virtualScrollController("conversation-away", false);
+    harness.virtualScrollControllerRef.current = controller;
+    renderHook(() =>
+      useAgentGUIDetailScroll(
+        harness.input({
+          activeConversationId: "conversation-away",
+          showTimelineSkeleton: false
+        })
+      )
+    );
+    controller.scrollToEnd.mockClear();
+    const timelineObserver = resizeObservers.find((observer) =>
+      observer.observed.has(harness.timelineContent)
+    );
+
+    act(() => {
+      harness.timeline.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));
+      harness.timeline.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "PageUp" })
+      );
+      harness.timeline.dispatchEvent(new Event("pointerdown"));
+      harness.timeline.scrollTop = 2_000;
+      harness.timeline.dispatchEvent(new Event("scroll"));
+      window.dispatchEvent(new Event("pointerup"));
+      timelineObserver?.callback([], timelineObserver);
+    });
+
+    expect(controller.scrollToEnd).not.toHaveBeenCalled();
+    expect(harness.timeline.scrollTop).toBe(2_000);
+  });
+
+  it("releases virtualized bottom lock after one upward mouse-wheel step", () => {
+    const resizeObservers = installResizeObserverMock();
+    const harness = createHarness({ scrollHeight: 5_000 });
+    const controller = virtualScrollController("conversation-wheel-step");
+    harness.virtualScrollControllerRef.current = controller;
+    const { result, rerender } = renderHook(
+      ({ conversation }) =>
+        useAgentGUIDetailScroll(
+          harness.input({
+            activeConversationId: "conversation-wheel-step",
+            conversation,
+            showTimelineSkeleton: false
+          })
+        ),
+      { initialProps: { conversation: conversationVM("first") } }
+    );
+    controller.scrollToEnd.mockClear();
+    const timelineObserver = resizeObservers.find((observer) =>
+      observer.observed.has(harness.timelineContent)
+    );
+
+    act(() => {
+      harness.timeline.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));
+      harness.timeline.scrollTop = 4_899;
+      harness.timeline.dispatchEvent(new Event("scroll"));
+      timelineObserver?.callback([], timelineObserver);
+    });
+
+    expect(controller.scrollToEnd).not.toHaveBeenCalled();
+    expect(harness.timeline.scrollTop).toBe(4_899);
+    expect(result.current.isTimelineScrolledToBottom).toBe(false);
+
+    rerender({ conversation: conversationVM("second") });
+    act(() => timelineObserver?.callback([], timelineObserver));
+
+    expect(controller.scrollToEnd).not.toHaveBeenCalled();
+    expect(harness.timeline.scrollTop).toBe(4_899);
+    expect(result.current.isTimelineScrolledToBottom).toBe(false);
+  });
+
+  it("releases and restores the DOM bottom lock around a mouse-wheel step", () => {
+    const resizeObservers = installResizeObserverMock();
+    const harness = createHarness({ scrollHeight: 5_000 });
+    const { result, rerender } = renderHook(
+      ({ conversation }) =>
+        useAgentGUIDetailScroll(
+          harness.input({
+            activeConversationId: "conversation-dom-wheel-step",
+            conversation,
+            showTimelineSkeleton: false
+          })
+        ),
+      { initialProps: { conversation: conversationVM("first") } }
+    );
+    const timelineObserver = resizeObservers.find((observer) =>
+      observer.observed.has(harness.timelineContent)
+    );
+    harness.resetScrollTopWriteCount();
+
+    act(() => {
+      harness.timeline.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));
+      timelineObserver?.callback([], timelineObserver);
+      harness.timeline.scrollTop = 4_899;
+      harness.timeline.dispatchEvent(new Event("scroll"));
+    });
+
+    expect(harness.scrollTopWriteCount()).toBe(1);
+    expect(harness.timeline.scrollTop).toBe(4_899);
+    expect(result.current.isTimelineScrolledToBottom).toBe(false);
+
+    harness.setScrollHeight(5_100);
+    rerender({ conversation: conversationVM("second") });
+    act(() => timelineObserver?.callback([], timelineObserver));
+
+    expect(harness.scrollTopWriteCount()).toBe(1);
+    expect(harness.timeline.scrollTop).toBe(4_899);
+    expect(result.current.isTimelineScrolledToBottom).toBe(false);
+
+    act(() => {
+      harness.timeline.dispatchEvent(new WheelEvent("wheel", { deltaY: 1 }));
+      harness.timeline.scrollTop = 5_000;
+      harness.timeline.dispatchEvent(new Event("scroll"));
+    });
+
+    expect(result.current.isTimelineScrolledToBottom).toBe(true);
   });
 
   it("does not scroll the retained previous timeline when selection changes", () => {
@@ -758,6 +986,104 @@ describe("useAgentGUIDetailScroll", () => {
     ).toBe(false);
   });
 
+  it("disconnects layout observation while fully occluded and catches up when exposed", () => {
+    const resizeObservers = installResizeObserverMock();
+    const harness = createHarness({ scrollHeight: 5_000 });
+    const { rerender } = renderHook(
+      ({ conversation, isVisible }) =>
+        useAgentGUIDetailScroll(
+          harness.input({
+            activeConversationId: "conversation-visibility",
+            conversation,
+            isVisible,
+            showTimelineSkeleton: false
+          })
+        ),
+      {
+        initialProps: {
+          conversation: conversationVM("initial"),
+          isVisible: true
+        }
+      }
+    );
+    const visibleDockObserver = resizeObservers.find((observer) =>
+      observer.observed.has(harness.bottomDock)
+    );
+    const visibleTimelineObserver = resizeObservers.find((observer) =>
+      observer.observed.has(harness.timelineContent)
+    );
+    expect(visibleDockObserver).toBeDefined();
+    expect(visibleTimelineObserver).toBeDefined();
+
+    rerender({ conversation: conversationVM("hidden"), isVisible: false });
+
+    expect(visibleDockObserver?.observed.size).toBe(0);
+    expect(visibleTimelineObserver?.observed.size).toBe(0);
+    harness.resetGeometryReadCounts();
+    harness.resetScrollTopWriteCount();
+    harness.setScrollHeight(8_000);
+    rerender({ conversation: conversationVM("streaming"), isVisible: false });
+    expect(harness.geometryReadCounts()).toEqual({
+      clientHeight: 0,
+      scrollHeight: 0,
+      scrollTop: 0
+    });
+    expect(harness.scrollTopWriteCount()).toBe(0);
+
+    rerender({ conversation: conversationVM("streaming"), isVisible: true });
+
+    const resumedTimelineObserver = resizeObservers.find(
+      (observer) =>
+        observer !== visibleTimelineObserver &&
+        observer.observed.has(harness.timelineContent)
+    );
+    expect(resumedTimelineObserver).toBeDefined();
+    act(() => {
+      resumedTimelineObserver?.callback([], resumedTimelineObserver);
+    });
+    expect(harness.timeline.scrollTop).toBe(7_900);
+    expect(harness.geometryReadCounts()).toEqual({
+      clientHeight: 1,
+      scrollHeight: 1,
+      scrollTop: 2
+    });
+    expect(harness.scrollTopWriteCount()).toBe(1);
+  });
+
+  it("restores a following virtualized conversation after exposure", () => {
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    const harness = createHarness({ scrollHeight: 5_000 });
+    const controller = virtualScrollController("conversation-exposure");
+    harness.virtualScrollControllerRef.current = controller;
+    const hiddenConversation = conversationVM("hidden-update");
+    const { rerender } = renderHook(
+      ({ conversation, isVisible }) =>
+        useAgentGUIDetailScroll(
+          harness.input({
+            activeConversationId: "conversation-exposure",
+            conversation,
+            isVisible,
+            showTimelineSkeleton: false
+          })
+        ),
+      {
+        initialProps: {
+          conversation: conversationVM("initial"),
+          isVisible: true
+        }
+      }
+    );
+    controller.scrollToEnd.mockClear();
+
+    rerender({ conversation: hiddenConversation, isVisible: false });
+    rerender({ conversation: hiddenConversation, isVisible: true });
+
+    expect(controller.scrollToEnd).toHaveBeenCalledWith({ behavior: "auto" });
+  });
+
   it("remeasures dock safe-area after store and ResizeObserver invalidation", () => {
     const resizeObservers = installResizeObserverMock();
     const harness = createHarness({ scrollHeight: 5_000 });
@@ -850,6 +1176,7 @@ function createHarness(input: { scrollHeight: number }) {
   let clientHeightReadCount = 0;
   let scrollHeightReadCount = 0;
   let scrollTopReadCount = 0;
+  let scrollTopWriteCount = 0;
   Object.defineProperties(timeline, {
     clientHeight: {
       configurable: true,
@@ -872,6 +1199,7 @@ function createHarness(input: { scrollHeight: number }) {
         return scrollTop;
       },
       set: (value: number) => {
+        scrollTopWriteCount += 1;
         scrollTop = value;
       }
     }
@@ -892,6 +1220,8 @@ function createHarness(input: { scrollHeight: number }) {
     scrollTop: number;
   } | null>(null);
   const submittedPromptScrollConversationRef = mutableRef<string | null>(null);
+  const virtualScrollControllerRef =
+    mutableRef<AgentTranscriptVirtualScrollController | null>(null);
   const loadOlderConversationMessages = vi.fn();
   const actions = {
     loadOlderConversationMessages
@@ -901,12 +1231,20 @@ function createHarness(input: { scrollHeight: number }) {
     bottomDock,
     loadOlderConversationMessages,
     pendingPrependScrollAnchorRef,
+    submittedPromptScrollConversationRef,
     timeline,
     timelineContent,
+    virtualScrollControllerRef,
     resetGeometryReadCounts() {
       clientHeightReadCount = 0;
       scrollHeightReadCount = 0;
       scrollTopReadCount = 0;
+    },
+    resetScrollTopWriteCount() {
+      scrollTopWriteCount = 0;
+    },
+    scrollTopWriteCount() {
+      return scrollTopWriteCount;
     },
     geometryReadCounts() {
       return {
@@ -924,6 +1262,7 @@ function createHarness(input: { scrollHeight: number }) {
       conversation?: AgentConversationVM;
       hasOlderMessages?: boolean;
       isLoadingOlderMessages?: boolean;
+      isVisible?: boolean;
       showTimelineSkeleton: boolean;
       timelineConversationId?: string | null;
     }) {
@@ -932,6 +1271,7 @@ function createHarness(input: { scrollHeight: number }) {
         bottomDockRef: ref(bottomDock),
         bottomDockStoreRevision: options.bottomDockStoreRevision ?? "stable",
         conversation: options.conversation ?? null,
+        isVisible: options.isVisible ?? true,
         pendingPrependScrollAnchorRef,
         showTimelineSkeleton: options.showTimelineSkeleton,
         submittedPromptScrollConversationRef,
@@ -942,6 +1282,7 @@ function createHarness(input: { scrollHeight: number }) {
         timelineContentRef: ref(timelineContent),
         timelineRef: ref(timeline),
         timelineScrollAnchorRef,
+        virtualScrollControllerRef,
         viewModel: viewModel(
           options.activeConversationId,
           options.hasOlderMessages,
@@ -954,6 +1295,21 @@ function createHarness(input: { scrollHeight: number }) {
 
 function conversationVM(id: string): AgentConversationVM {
   return { id } as unknown as AgentConversationVM;
+}
+
+function virtualScrollController(
+  agentSessionId: string,
+  atEnd = true
+): AgentTranscriptVirtualScrollController & {
+  isAtEnd: Mock<() => boolean>;
+  scrollToEnd: Mock<(options?: { behavior?: ScrollBehavior }) => void>;
+} {
+  return {
+    agentSessionId,
+    enabled: true,
+    isAtEnd: vi.fn(() => atEnd),
+    scrollToEnd: vi.fn<(options?: { behavior?: ScrollBehavior }) => void>()
+  };
 }
 
 interface ResizeObserverMock extends ResizeObserver {

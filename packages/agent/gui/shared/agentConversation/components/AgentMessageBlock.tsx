@@ -70,6 +70,8 @@ interface AgentMessageBlockProps {
   rawTimelineJsonLabel?: string;
   participantPresentation?: AgentConversationParticipantPresentation;
   showParticipantHeader?: boolean;
+  isActiveTurn?: boolean;
+  footerAction?: ReactNode;
 }
 
 export function AgentMessageBlock({
@@ -86,7 +88,9 @@ export function AgentMessageBlock({
   showRawTimelineJson = false,
   rawTimelineJsonLabel = "",
   participantPresentation,
-  showParticipantHeader = true
+  showParticipantHeader = true,
+  isActiveTurn = false,
+  footerAction
 }: AgentMessageBlockProps): JSX.Element {
   "use memo";
   const agentHostApi = useOptionalAgentHostApi();
@@ -159,7 +163,9 @@ export function AgentMessageBlock({
         ))
       : null;
 
-  const messageContent = row.messages.map((message) => {
+  const messageContent = row.messages.map((message, messageIndex) => {
+    const messageFooterAction =
+      messageIndex === row.messages.length - 1 ? footerAction : null;
     const rawTimelineJson =
       showRawTimelineJson &&
       rawTimelineJsonLabel &&
@@ -232,7 +238,11 @@ export function AgentMessageBlock({
           }}
           workspaceAppIcons={workspaceAppIcons}
           enableImageZoom
-          streaming={message.statusKind === "working"}
+          streaming={
+            isActiveTurn ||
+            message.statusKind === "working" ||
+            message.statusKind === "waiting"
+          }
         />
       );
 
@@ -244,6 +254,7 @@ export function AgentMessageBlock({
           occurredAtUnixMs={message.occurredAtUnixMs}
           speaker={row.speaker}
           onCopyMessageText={handleCopyMessageText}
+          footerAction={messageFooterAction}
         >
           {content}
           {rawTimelineJson}
@@ -260,6 +271,22 @@ export function AgentMessageBlock({
           occurredAtUnixMs={message.occurredAtUnixMs}
           speaker={row.speaker}
           onCopyMessageText={handleCopyMessageText}
+          footerAction={messageFooterAction}
+        >
+          {content}
+        </AgentCopyableMessageGroup>
+      );
+    }
+
+    if (messageFooterAction) {
+      return (
+        <AgentCopyableMessageGroup
+          key={message.id}
+          copyText={null}
+          occurredAtUnixMs={message.occurredAtUnixMs}
+          speaker={row.speaker}
+          onCopyMessageText={handleCopyMessageText}
+          footerAction={messageFooterAction}
         >
           {content}
         </AgentCopyableMessageGroup>
@@ -399,17 +426,19 @@ function AgentCopyableMessageGroup({
   copyText,
   occurredAtUnixMs,
   onCopyMessageText,
-  speaker
+  speaker,
+  footerAction
 }: {
   children: ReactNode;
   copyText: string | null;
   occurredAtUnixMs: number | null;
   onCopyMessageText: (text: string) => Promise<boolean>;
   speaker: AgentMessageRowVM["speaker"];
+  footerAction?: ReactNode;
 }): JSX.Element {
   "use memo";
   const timestamp = formatAgentMessageTimestamp(occurredAtUnixMs);
-  const hasFooter = Boolean(timestamp || copyText);
+  const hasFooter = Boolean(timestamp || copyText || footerAction);
 
   return (
     <div
@@ -429,6 +458,7 @@ function AgentCopyableMessageGroup({
               onCopyMessageText={onCopyMessageText}
             />
           ) : null}
+          {footerAction}
         </div>
       ) : null}
     </div>

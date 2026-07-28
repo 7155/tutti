@@ -4,18 +4,22 @@ import {
   useCallback,
   useLayoutEffect,
   useMemo,
-  useRef,
   useState,
   type JSX,
+  type ReactNode,
   type Ref
 } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import type { WorkspaceLinkAction } from "../../../contexts/workspace/presentation/renderer/actions/workspaceLinkActions";
 import type { AgentMessageMarkdownWorkspaceAppIcon } from "../../AgentMessageMarkdown";
 import type { AgentGUIProviderSkillOption } from "../../../agent-gui/agentGuiNode/model/agentGuiNodeTypes";
 import type { AgentConversationVM } from "../contracts/agentConversationVM";
 import type { AgentConversationParticipantPresentation } from "../contracts/agentConversationParticipantPresentation";
+import type { AgentConversationFollowEndMode } from "../agentConversationFollowEndController";
 import { AgentTranscriptItemView } from "./AgentTranscriptItemView";
+import {
+  AgentForkThroughTurnButton,
+  AgentForkThroughTurnFooter
+} from "./AgentForkThroughTurnButton";
 import { useAgentTurnDisclosureStore } from "./AgentTurnDisclosureContext";
 import { AgentTurnWorkSection } from "./AgentTurnWorkSection";
 import {
@@ -23,6 +27,7 @@ import {
   findParticipantHeaderRenderKeys
 } from "./agentTurnWorkSectionModel";
 import { assessAgentTranscriptComplexity } from "./agentTranscriptComplexity";
+import { stringListEquals } from "./agentTranscriptEquality";
 import { useTurnDisclosureMotion } from "./useTurnDisclosureMotion";
 import {
   AgentMessageLocatorRail,
@@ -34,7 +39,6 @@ import {
   buildTurnGroupIndexByRowIndex,
   buildUserMessageLocatorItems,
   escapeCssString,
-  findParticipantTurnDividerRowIndexes,
   findTurnDividerRowIndexes,
   transcriptRowKey,
   useAgentTranscriptDisplayRows,
@@ -47,20 +51,44 @@ import {
   type AgentTranscriptAttachmentLocator,
   type AgentTranscriptTurnAttachment
 } from "./useAgentTranscriptTurnAttachments";
+import {
+  AGENT_TRANSCRIPT_ESTIMATED_TURN_HEIGHT_PX,
+  useAgentTranscriptVirtualizer,
+  type AgentTranscriptVirtualScrollController
+} from "./useAgentTranscriptVirtualizer";
 
-const AGENT_TRANSCRIPT_VIRTUALIZATION_OVERSCAN = 6;
-const AGENT_TRANSCRIPT_ESTIMATED_TURN_HEIGHT_PX = 280;
 const AGENT_TRANSCRIPT_DISCLOSURE_TURN_GAP_PX = 24;
 const AGENT_TRANSCRIPT_LEGACY_TURN_GAP_PX = 12;
 const AGENT_TRANSCRIPT_FALLBACK_TURN_COUNT = 3;
-const preventVirtualScrollAdjustment = () => false;
+
+function findLastMessageRowIndex(
+  rows: readonly {
+    row: AgentConversationVM["rows"][number];
+    rowIndex: number;
+  }[]
+): number | null {
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const entry = rows[index];
+    if (
+      entry?.row.kind === "message" &&
+      entry.row.speaker === "assistant" &&
+      entry.row.messages.length > 0
+    ) {
+      return entry.rowIndex;
+    }
+  }
+  return null;
+}
 
 export type {
   AgentTranscriptAttachmentLocator,
   AgentTranscriptTurnAttachment
 } from "./useAgentTranscriptTurnAttachments";
+export type { AgentTranscriptVirtualScrollController } from "./useAgentTranscriptVirtualizer";
+
 export interface AgentTranscriptViewProps {
   conversation: AgentConversationVM;
+  isVisible?: boolean;
   turnAttachments?: readonly AgentTranscriptTurnAttachment[];
   turnAttachmentLocatorRef?: Ref<AgentTranscriptAttachmentLocator>;
   onTurnAttachmentVisibilityChange?: (
@@ -69,10 +97,15 @@ export interface AgentTranscriptViewProps {
   ) => void;
   onLinkAction?: (action: WorkspaceLinkAction) => void;
   onAuthLogin?: (provider?: string | null) => void;
+  onForkThroughTurn?: (turnId: string) => void;
   availableSkills?: readonly AgentGUIProviderSkillOption[];
   workspaceAppIcons?: readonly AgentMessageMarkdownWorkspaceAppIcon[];
   showRawTimelineJson?: boolean;
   participantPresentation?: AgentConversationParticipantPresentation;
+  followEndMode?: AgentConversationFollowEndMode;
+  forkThroughTurnPendingTurnIds?: readonly string[];
+  virtualListLayoutRevision?: number;
+  virtualScrollControllerRef?: Ref<AgentTranscriptVirtualScrollController>;
   labels: {
     toolCallsLabel: (count: number) => string;
     thinkingLabel: string;
@@ -108,6 +141,22 @@ function participantPresentationEqual(
     previous.agent.name === next.agent.name &&
     previous.agent.avatarUrl === next.agent.avatarUrl
   );
+}
+
+function isAssistantParticipantContentRow(
+  row: AgentConversationVM["rows"][number]
+): boolean {
+  switch (row.kind) {
+    case "message":
+      return row.speaker === "assistant";
+    case "generated-image":
+    case "processing":
+    case "tool-group":
+    case "turn-summary":
+      return true;
+    case "goal-control":
+      return false;
+  }
 }
 
 function transcriptLabelsEqual(
@@ -169,8 +218,25 @@ function transcriptConversationRenderInputEquals(
         next.sourceDetail.session.agentSessionId &&
       previous.sourceDetail.session.activeTurnId ===
         next.sourceDetail.session.activeTurnId &&
+      previous.sourceDetail.session.activeTurn?.turnId ===
+        next.sourceDetail.session.activeTurn?.turnId &&
+      previous.sourceDetail.session.activeTurn?.phase ===
+        next.sourceDetail.session.activeTurn?.phase &&
       previous.sourceDetail.session.imported ===
         next.sourceDetail.session.imported &&
+      previous.sourceDetail.session.kind === next.sourceDetail.session.kind &&
+      previous.sourceDetail.session.lifecycleCapabilities.forkThroughTurn ===
+        next.sourceDetail.session.lifecycleCapabilities.forkThroughTurn &&
+      previous.sourceDetail.session.lifecycleCapabilities
+        .forkThroughTurnIdsKnown ===
+        next.sourceDetail.session.lifecycleCapabilities
+          .forkThroughTurnIdsKnown &&
+      stringListEquals(
+        previous.sourceDetail.session.lifecycleCapabilities.forkThroughTurnIds,
+        next.sourceDetail.session.lifecycleCapabilities.forkThroughTurnIds
+      ) &&
+      previous.sourceDetail.session.pendingInteractions ===
+        next.sourceDetail.session.pendingInteractions &&
       previous.sourceDetail.cwd === next.sourceDetail.cwd &&
       transcriptTurnIdentityEquals(
         previous.sourceDetail.turns,
@@ -192,8 +258,12 @@ export function areAgentTranscriptViewPropsEqual(
       previous.conversation,
       next.conversation
     ) &&
+    (previous.isVisible ?? true) === (next.isVisible ?? true) &&
     previous.onLinkAction === next.onLinkAction &&
     previous.onAuthLogin === next.onAuthLogin &&
+    previous.onForkThroughTurn === next.onForkThroughTurn &&
+    previous.forkThroughTurnPendingTurnIds ===
+      next.forkThroughTurnPendingTurnIds &&
     previous.availableSkills === next.availableSkills &&
     previous.workspaceAppIcons === next.workspaceAppIcons &&
     previous.turnAttachments === next.turnAttachments &&
@@ -201,6 +271,9 @@ export function areAgentTranscriptViewPropsEqual(
     previous.onTurnAttachmentVisibilityChange ===
       next.onTurnAttachmentVisibilityChange &&
     previous.showRawTimelineJson === next.showRawTimelineJson &&
+    previous.followEndMode === next.followEndMode &&
+    previous.virtualListLayoutRevision === next.virtualListLayoutRevision &&
+    previous.virtualScrollControllerRef === next.virtualScrollControllerRef &&
     participantPresentationEqual(
       previous.participantPresentation,
       next.participantPresentation
@@ -211,15 +284,21 @@ export function areAgentTranscriptViewPropsEqual(
 
 export const AgentTranscriptView = memo(function AgentTranscriptView({
   conversation,
+  isVisible = true,
   turnAttachments = [],
   turnAttachmentLocatorRef,
   onTurnAttachmentVisibilityChange,
   onLinkAction,
   onAuthLogin,
+  onForkThroughTurn,
   availableSkills,
   workspaceAppIcons,
   showRawTimelineJson = false,
   participantPresentation,
+  followEndMode,
+  forkThroughTurnPendingTurnIds = [],
+  virtualListLayoutRevision = 0,
+  virtualScrollControllerRef,
   labels
 }: AgentTranscriptViewProps): JSX.Element {
   "use memo";
@@ -229,13 +308,17 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
   const [hasMovingTurnDisclosure, handleDisclosureMotionChange] =
     useTurnDisclosureMotion();
   const turnDisclosureStore = useAgentTurnDisclosureStore();
-  const virtualizerHostRef = useRef<HTMLDivElement | null>(null);
   const [virtualScrollElement, setVirtualScrollElement] =
     useState<HTMLElement | null>(null);
+  const [
+    virtualListOffsetFromScrollOrigin,
+    setVirtualListOffsetFromScrollOrigin
+  ] = useState(0);
   const participantHeadersEnabled = participantPresentation?.enabled === true;
   // Participant-header presentation (Agent board session detail): tool-group
   // rows attach to the assistant message that follows them instead of sitting
-  // after the previous message, and turn dividers key off user messages. The
+  // after the previous message, and presentation turns key off user messages.
+  // Canonical Turn groups remain responsible for disclosure and timing. The
   // row projection lives in the transcript model read hook so this component
   // stays within the degradation-check memo budget.
   const transcriptRowSet = useAgentTranscriptDisplayRows(
@@ -244,6 +327,7 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
   );
   const displayRows = transcriptRowSet.rows;
   const rowKeys = transcriptRowSet.rowKeys;
+  const participantTurnProjection = transcriptRowSet.participantTurnProjection;
   const turnGroups = useMemo(
     () => buildAgentTranscriptTurnGroups(displayRows, rowKeys),
     [displayRows, rowKeys]
@@ -285,10 +369,10 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
   );
   const dividerRowIndexes = useMemo(
     () =>
-      participantHeadersEnabled
-        ? findParticipantTurnDividerRowIndexes(displayRows)
+      participantTurnProjection
+        ? participantTurnProjection.dividerRowIndexes
         : findTurnDividerRowIndexes(turnIndexById, displayRows),
-    [displayRows, turnIndexById, participantHeadersEnabled]
+    [displayRows, turnIndexById, participantTurnProjection]
   );
   const canonicalTurnById = new Map(
     (conversation.sourceDetail.sessionTurns ?? []).map((turn) => [
@@ -315,11 +399,12 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
       ] as const;
     })
   );
-  const participantHeaderRenderKeys = participantHeadersEnabled
+  const participantHeaderRenderKeys = participantTurnProjection
     ? findParticipantHeaderRenderKeys(
         turnGroups,
         rowKeys,
-        turnWorkSectionModelByKey
+        turnWorkSectionModelByKey,
+        participantTurnProjection.turnIndexByRowIndex
       )
     : null;
   const basePath = conversation.sourceDetail.cwd;
@@ -329,19 +414,18 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
     () => assessAgentTranscriptComplexity(turnGroups).shouldVirtualize,
     [turnGroups]
   );
-  const rowVirtualizer = useVirtualizer({
-    anchorTo: shouldVirtualize && hasMovingTurnDisclosure ? "start" : "end",
-    count: turnGroups.length,
-    estimateSize: () => AGENT_TRANSCRIPT_ESTIMATED_TURN_HEIGHT_PX,
-    getItemKey: (index) => turnGroups[index]?.key ?? index,
-    getScrollElement: () => virtualScrollElement,
-    overscan: AGENT_TRANSCRIPT_VIRTUALIZATION_OVERSCAN,
-    scrollEndThreshold: 24
-  });
-  rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange =
-    shouldVirtualize && hasMovingTurnDisclosure
-      ? preventVirtualScrollAdjustment
-      : undefined;
+  const agentSessionId = conversation.sourceDetail.session.agentSessionId;
+  const { rowVirtualizer, setVirtualizerHostElement, virtualizerHostRef } =
+    useAgentTranscriptVirtualizer({
+      agentSessionId,
+      followEndMode,
+      hasMovingTurnDisclosure,
+      scrollElement: virtualScrollElement,
+      scrollMargin: virtualListOffsetFromScrollOrigin,
+      shouldVirtualize,
+      turnGroups,
+      virtualScrollControllerRef
+    });
   const attachmentProjection = useAgentTranscriptTurnAttachments({
     attachments: turnAttachments,
     locatorRef: turnAttachmentLocatorRef,
@@ -386,20 +470,34 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
   );
 
   useLayoutEffect(() => {
-    if (!shouldVirtualize) {
+    if (!isVisible || !shouldVirtualize) {
       return;
     }
-    setVirtualScrollElement(
-      virtualizerHostRef.current
-        ? findMessageLocatorScrollParent(virtualizerHostRef.current)
-        : null
+    const virtualizerHost = virtualizerHostRef.current;
+    const scrollElement = virtualizerHost
+      ? findMessageLocatorScrollParent(virtualizerHost)
+      : null;
+    setVirtualScrollElement(scrollElement);
+    if (!virtualizerHost || !scrollElement) {
+      setVirtualListOffsetFromScrollOrigin(0);
+      return;
+    }
+    const nextOffset = Math.max(
+      0,
+      virtualizerHost.getBoundingClientRect().top -
+        scrollElement.getBoundingClientRect().top +
+        scrollElement.scrollTop
     );
-  }, [shouldVirtualize]);
+    setVirtualListOffsetFromScrollOrigin((previousOffset) =>
+      previousOffset === nextOffset ? previousOffset : nextOffset
+    );
+  }, [isVisible, shouldVirtualize, virtualListLayoutRevision]);
 
   const renderRow = (
     row: AgentConversationVM["rows"][number],
     rowIndex: number,
-    renderKey?: string
+    renderKey?: string,
+    footerAction?: ReactNode
   ): JSX.Element => {
     const rowKey =
       renderKey ??
@@ -408,7 +506,23 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
         : transcriptRowKey(row));
     const shouldAnimateEnter =
       row.kind !== "processing" && enteringRowKeys.has(rowKey);
-
+    const showParticipantHeader =
+      participantHeaderRenderKeys?.has(rowKey) ?? false;
+    const participantContent =
+      participantHeadersEnabled &&
+      !showParticipantHeader &&
+      isAssistantParticipantContentRow(row)
+        ? "assistant"
+        : undefined;
+    const activeTurn = conversation.sourceDetail.session.activeTurn;
+    const canonicalTurn =
+      row.turnId === null ? null : (canonicalTurnById.get(row.turnId) ?? null);
+    const isActiveTurn =
+      row.turnId !== null &&
+      canonicalTurn?.phase !== "settled" &&
+      (activeTurn?.turnId === row.turnId
+        ? activeTurn.phase !== "settled"
+        : conversation.sourceDetail.session.activeTurnId === row.turnId);
     return (
       <div
         key={rowKey}
@@ -434,6 +548,7 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
             : undefined
         }
         data-agent-transcript-row-index={rowIndex}
+        data-agent-transcript-row-participant-content={participantContent}
         data-agent-transcript-row-enter={
           shouldAnimateEnter ? "true" : undefined
         }
@@ -450,9 +565,8 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
           workspaceAppIcons={workspaceAppIcons}
           showRawTimelineJson={showRawTimelineJson}
           participantPresentation={participantPresentation}
-          showParticipantHeader={
-            participantHeaderRenderKeys?.has(rowKey) ?? false
-          }
+          showParticipantHeader={showParticipantHeader}
+          isActiveTurn={isActiveTurn}
           toolGroupExpanded={
             row.kind === "tool-group"
               ? expandedToolRows[rowKey] === true
@@ -460,38 +574,93 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
           }
           toolGroupExpansionKey={row.kind === "tool-group" ? rowKey : undefined}
           onToolGroupExpandedChange={handleToolGroupExpandedChange}
+          footerAction={footerAction}
         />
       </div>
     );
   };
 
+  const resolveForkThroughTurnAction = (
+    turnId: string | null
+  ): { disabled: boolean; turnId: string } | null => {
+    const lifecycleCapabilities =
+      conversation.sourceDetail.session.lifecycleCapabilities;
+    if (
+      !turnId ||
+      !onForkThroughTurn ||
+      canonicalTurnById.get(turnId)?.phase !== "settled" ||
+      conversation.sourceDetail.session.kind !== "root" ||
+      lifecycleCapabilities.forkThroughTurn !== true ||
+      (lifecycleCapabilities.forkThroughTurnIdsKnown === true &&
+        !lifecycleCapabilities.forkThroughTurnIds?.includes(turnId))
+    ) {
+      return null;
+    }
+    return {
+      disabled:
+        Boolean(conversation.sourceDetail.session.activeTurnId?.trim()) ||
+        conversation.sourceDetail.session.pendingInteractions.length !== 0 ||
+        forkThroughTurnPendingTurnIds.includes(turnId),
+      turnId
+    };
+  };
+
   const renderLegacyTurnGroup = (
     group: (typeof turnGroups)[number]
-  ): JSX.Element => (
-    <Fragment key={group.key}>
-      {group.rows.map(({ row, rowIndex }) => {
-        const rowKey = rowKeys[rowIndex] ?? transcriptRowKey(row);
-        return (
-          <Fragment key={rowKey}>
-            {dividerRowIndexes.has(rowIndex) ? (
-              <div
-                className="h-px w-full flex-none bg-[var(--line-2,var(--tutti-line-2))]"
-                data-testid="agent-transcript-turn-divider"
-                aria-hidden="true"
-              />
-            ) : null}
-            {renderRow(row, rowIndex)}
-          </Fragment>
-        );
-      })}
-    </Fragment>
-  );
+  ): JSX.Element => {
+    const forkAction = resolveForkThroughTurnAction(group.turnId);
+    const forkButton = forkAction ? (
+      <AgentForkThroughTurnButton
+        disabled={forkAction.disabled}
+        onFork={() => onForkThroughTurn?.(forkAction.turnId)}
+      />
+    ) : null;
+    const footerRowIndex = findLastMessageRowIndex(group.rows);
+    return (
+      <Fragment key={group.key}>
+        {group.rows.map(({ row, rowIndex }) => {
+          const rowKey = rowKeys[rowIndex] ?? transcriptRowKey(row);
+          return (
+            <Fragment key={rowKey}>
+              {dividerRowIndexes.has(rowIndex) ? (
+                <div
+                  className="h-px w-full flex-none bg-[var(--line-2,var(--tutti-line-2))]"
+                  data-testid="agent-transcript-turn-divider"
+                  aria-hidden="true"
+                />
+              ) : null}
+              {renderRow(
+                row,
+                rowIndex,
+                undefined,
+                rowIndex === footerRowIndex ? forkButton : null
+              )}
+            </Fragment>
+          );
+        })}
+        {forkAction && footerRowIndex === null ? (
+          <AgentForkThroughTurnFooter
+            disabled={forkAction.disabled}
+            onFork={() => onForkThroughTurn?.(forkAction.turnId)}
+          />
+        ) : null}
+      </Fragment>
+    );
+  };
 
   const renderTurnGroup = (group: (typeof turnGroups)[number]): JSX.Element => {
     const model = turnWorkSectionModelByKey.get(group.key) ?? null;
     if (!model) {
       return renderLegacyTurnGroup(group);
     }
+    const forkAction = resolveForkThroughTurnAction(group.turnId);
+    const forkButton = forkAction ? (
+      <AgentForkThroughTurnButton
+        disabled={forkAction.disabled}
+        onFork={() => onForkThroughTurn?.(forkAction.turnId)}
+      />
+    ) : null;
+    const footerRowIndex = findLastMessageRowIndex(group.rows);
 
     return (
       <AgentTurnWorkSection
@@ -504,7 +673,22 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
         )}
         disclosureStore={turnDisclosureStore}
         onDisclosureMotionChange={handleDisclosureMotionChange}
-        renderRow={renderRow}
+        renderRow={(row, rowIndex, renderKey) =>
+          renderRow(
+            row,
+            rowIndex,
+            renderKey,
+            rowIndex === footerRowIndex ? forkButton : null
+          )
+        }
+        footer={
+          forkAction && footerRowIndex === null ? (
+            <AgentForkThroughTurnFooter
+              disabled={forkAction.disabled}
+              onFork={() => onForkThroughTurn?.(forkAction.turnId)}
+            />
+          ) : null
+        }
       />
     );
   };
@@ -520,42 +704,36 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
   );
 
   if (shouldVirtualize) {
-    const virtualItems =
-      virtualScrollElement === null
-        ? turnGroups
-            .slice(-AGENT_TRANSCRIPT_FALLBACK_TURN_COUNT)
-            .map((group, fallbackIndex) => ({
-              index:
-                turnGroups.length -
-                Math.min(
-                  turnGroups.length,
-                  AGENT_TRANSCRIPT_FALLBACK_TURN_COUNT
-                ) +
-                fallbackIndex,
-              key: group.key,
-              start:
-                (turnGroups.length -
-                  Math.min(
-                    turnGroups.length,
-                    AGENT_TRANSCRIPT_FALLBACK_TURN_COUNT
-                  ) +
-                  fallbackIndex) *
-                AGENT_TRANSCRIPT_ESTIMATED_TURN_HEIGHT_PX
-            }))
-        : rowVirtualizer.getVirtualItems();
+    const usesFallbackVirtualItems = virtualScrollElement === null;
+    const fallbackStartIndex = Math.max(
+      0,
+      turnGroups.length - AGENT_TRANSCRIPT_FALLBACK_TURN_COUNT
+    );
+    const virtualItems = usesFallbackVirtualItems
+      ? turnGroups
+          .slice(-AGENT_TRANSCRIPT_FALLBACK_TURN_COUNT)
+          .map((group, fallbackIndex) => ({
+            index: fallbackStartIndex + fallbackIndex,
+            key: group.key,
+            start:
+              (fallbackStartIndex + fallbackIndex) *
+              AGENT_TRANSCRIPT_ESTIMATED_TURN_HEIGHT_PX
+          }))
+      : rowVirtualizer.getVirtualItems();
     return (
       <>
         <AgentMessageLocatorRail
+          followEndMode={followEndMode}
           items={userMessageLocatorItems}
+          isVisible={isVisible}
           label={labels.userMessageLocator}
           onLocate={handleLocateUserMessage}
           virtualSelectionSource={rowVirtualizer}
         />
         <div
-          ref={virtualizerHostRef}
+          ref={setVirtualizerHostElement}
           className="agent-gui-transcript-virtual"
           data-agent-transcript-virtualized="true"
-          style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
         >
           {virtualItems.map((virtualTurn) => {
             const group = turnGroups[virtualTurn.index];
@@ -575,7 +753,11 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
                       ? AGENT_TRANSCRIPT_DISCLOSURE_TURN_GAP_PX
                       : AGENT_TRANSCRIPT_LEGACY_TURN_GAP_PX
                   }px`,
-                  transform: `translateY(${virtualTurn.start}px)`
+                  ...(usesFallbackVirtualItems
+                    ? {
+                        transform: `translateY(${virtualTurn.start}px)`
+                      }
+                    : {})
                 }}
               >
                 {renderTurnGroup(group)}
@@ -594,7 +776,9 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
   return (
     <>
       <AgentMessageLocatorRail
+        followEndMode={followEndMode}
         items={userMessageLocatorItems}
+        isVisible={isVisible}
         label={labels.userMessageLocator}
         onLocate={handleLocateUserMessage}
       />

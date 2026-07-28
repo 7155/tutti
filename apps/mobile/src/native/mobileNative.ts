@@ -1,11 +1,7 @@
 import { NativeModules } from "react-native";
-
-export interface AccountSession {
-  email: string;
-  name: string;
-  sessionId: string;
-  userId: string;
-}
+import type { AccountSession, DeviceIdentity } from "../services/mobileDomain";
+import type { AppLifecycleNative } from "./appLifecyclePort";
+export type { AccountSession, DeviceIdentity } from "../services/mobileDomain";
 
 export interface BrowserLoginCompletion {
   attemptId: string;
@@ -14,22 +10,12 @@ export interface BrowserLoginCompletion {
   transferCode: string;
 }
 
-export interface DeviceIdentity {
-  arch: string;
-  deviceId: string;
-  deviceName: string;
-  publicKey: string;
-}
-
 interface MobileSecurityNative {
+  cancelQRCodeScan(): Promise<void>;
+  clearLegacySessionCookie(accountBaseURL: string): Promise<void>;
   clearSession(): Promise<void>;
-  clearSessionCookie(accountBaseURL: string): Promise<void>;
   getOrCreateIdentity(): Promise<DeviceIdentity>;
   loadSession(): Promise<AccountSession | null>;
-  installSessionCookie(
-    accountBaseURL: string,
-    sessionId: string
-  ): Promise<void>;
   saveSession(
     sessionId: string,
     userId: string,
@@ -46,6 +32,7 @@ interface MobileSecurityNative {
 }
 
 interface DeviceLinkNative {
+  addListener(eventName: string): void;
   closeLink(): Promise<void>;
   connectLink(
     peerDescriptionJSON: string,
@@ -74,7 +61,10 @@ interface DeviceLinkNative {
     protocolEpoch: number;
     status: number;
   }>;
+  removeListeners(count: number): void;
   runLoopbackProbe(timeoutMillis: number): Promise<string>;
+  startAgentLive(workspaceId: string): Promise<void>;
+  stopAgentLive(): Promise<void>;
 }
 
 function requireNativeModule<T>(name: string): T {
@@ -88,5 +78,7 @@ function requireNativeModule<T>(name: string): T {
 export const mobileSecurity = requireNativeModule<MobileSecurityNative>(
   "TuttiMobileSecurity"
 );
+export const appLifecycle =
+  requireNativeModule<AppLifecycleNative>("TuttiAppLifecycle");
 export const deviceLink =
   requireNativeModule<DeviceLinkNative>("TuttiDeviceLink");

@@ -192,12 +192,18 @@ They should remain focused, named by responsibility, and free of hidden business
 DeviceLink is the shared Go peer-transport boundary for Tutti Desktop, TSH
 Desktop, and mobile clients. It owns ICE candidate negotiation, QUIC over the
 selected packet path, mutual ephemeral certificate pinning, categorical path
-classification, and the gomobile build surface.
+classification, the gomobile build surface, and product-neutral authenticated
+link lifecycle mechanics: generation-fenced admission, establishment
+serialization, pooled stream ownership, connection racing, and annealed path
+probing.
 
 It exposes authenticated bidirectional streams and must remain independent of
 Agent, Session, Workspace, account, pairing, rendezvous, and Relay product
-policy. Host services and apps own those adapters. Raw addresses, candidates,
-credentials, and payloads must not enter ordinary logs or metrics.
+policy. Peer keys and registration metadata stay opaque; host services and apps
+inject path dialers, credentials, fallback timing, and application stream
+protocols. The `tuttid` Mobile Remote owner is the first adapter for the shared
+manager; its pairing and Agent framing remain service-owned. Raw addresses,
+candidates, credentials, and payloads must not enter ordinary logs or metrics.
 
 ### `packages/events/*`
 
@@ -275,6 +281,9 @@ Current packages:
   `WorkbenchSnapshot*` component schemas are synchronized from this package.
 - `packages/workbench/service`: shared Go Workbench snapshot service, validation,
   canonicalization, and persistence seam for daemon hosts.
+- `packages/workbench/electron`: Electron main-process Dock preview capture and
+  bounded filesystem cache mechanics. Desktop hosts still own IPC
+  authorization, BrowserWindow ownership, cache paths, and logging.
 - `packages/workbench/surface`: reusable workbench controller, reducer,
   placement, stacking, `WorkbenchHost`, React surface primitives, shell snapshot
   wiring, intent resolution, external-state render plumbing, and host/session
@@ -286,6 +295,9 @@ Rules:
 - keep snapshot compatibility behavior in `snapshot`, not in app renderers
 - keep shared Go Workbench validation, canonicalization, and storage seams in
   `service`, not in host daemons
+- keep shared Electron Dock preview capture and bounded cache mechanics in
+  `electron`; keep host window authorization and product diagnostics in the
+  consuming desktop app
 - keep reusable workbench interaction mechanics in `surface`, not in
   product-specific feature UI
 - when `surface` exposes derived external-store snapshots through

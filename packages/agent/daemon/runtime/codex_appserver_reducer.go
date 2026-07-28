@@ -176,6 +176,16 @@ func (r codexAppServerReducer) reduceNotification(
 			return codexAppServerReduction{}
 		}
 		return emit(normalizer.AppendAssistantChunk(session, turnID, asStringRaw(params["delta"])))
+	case appServerNotifyCommandOutputDelta:
+		if normalizer == nil {
+			return codexAppServerReduction{}
+		}
+		return emit(normalizer.AppendToolOutputDelta(
+			session,
+			turnID,
+			asString(params["itemId"]),
+			asStringRaw(params["delta"]),
+		))
 	case appServerNotifyReasoningSummaryPart, appServerNotifyThreadSettingsUpdated:
 		return codexAppServerReduction{}
 	case appServerNotifyReasoningDelta, appServerNotifyReasoningSummary:
@@ -184,9 +194,17 @@ func (r codexAppServerReducer) reduceNotification(
 		}
 		return emit(normalizer.AppendThinkingChunk(session, turnID, appServerReasoningDeltaText(params)))
 	case appServerNotifyItemStarted:
-		return emit(a.appServerItemEvents(session, turnID, payloadObject(params["item"]), false, normalizer))
+		item := payloadObject(params["item"])
+		if asString(item["type"]) == "subAgentActivity" && route.registeredChildCount == 0 {
+			return emit(nil)
+		}
+		return emit(a.appServerItemEvents(session, turnID, item, false, normalizer))
 	case appServerNotifyItemCompleted:
-		return emit(a.appServerItemEvents(session, turnID, payloadObject(params["item"]), true, normalizer))
+		item := payloadObject(params["item"])
+		if asString(item["type"]) == "subAgentActivity" && route.registeredChildCount == 0 {
+			return emit(nil)
+		}
+		return emit(a.appServerItemEvents(session, turnID, item, true, normalizer))
 	case appServerNotifyPlanUpdated:
 		if normalizer == nil {
 			return codexAppServerReduction{}

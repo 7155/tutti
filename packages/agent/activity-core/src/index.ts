@@ -1,4 +1,6 @@
 export type { AgentActivityAdapter } from "./adapter.ts";
+export { AGENT_ACTIVITY_LIVE_PROTOCOL_REVISION } from "./liveProtocolRevision.gen.ts";
+export type { AgentActivityLiveEvent } from "./liveEvent.types.ts";
 export type { AgentActivityComposerModelConfiguration } from "./composerModelConfiguration.types.ts";
 export type { AgentActivityDisplayStatus } from "./displayStatus.types.ts";
 export type { AgentActivityRailPlacement } from "./railPlacement.types.ts";
@@ -47,6 +49,19 @@ export {
   type AgentActivityUsageInput
 } from "./usage.ts";
 export {
+  createAgentActivityWorkspaceEventCoordinator,
+  type AgentActivityWorkspaceEventInput
+} from "./workspaceEventCoordinator.ts";
+export {
+  createAgentActivitySessionReconcileExecutor,
+  type AgentActivityChildMessageHydration,
+  type AgentActivitySessionReconcileExecutor,
+  type AgentActivitySessionReconcilePort,
+  type AgentActivitySessionReconcileResult,
+  type AgentActivitySessionReconcileTrace,
+  type CreateAgentActivitySessionReconcileExecutorInput
+} from "./sessionReconcileExecutor.ts";
+export {
   createAgentSessionEngine,
   ENGINE_INTENT_BATCH_DELAY_MS,
   type CreateAgentSessionEngineInput
@@ -55,6 +70,10 @@ export type {
   EngineDiagnosticEvent,
   EngineDiagnosticSink
 } from "./engine/diagnostics.ts";
+export {
+  executeAgentActivityPromptCommand,
+  type AgentActivityPromptCommandPort
+} from "./engine/promptCommandExecution.ts";
 export type {
   AgentSessionEngine,
   AgentSessionEngineIdentity,
@@ -68,6 +87,7 @@ export type {
   EngineDispatchOptions,
   EngineDomainReducer,
   EngineExternalCommand,
+  EngineExternalCommandExceptPlanDecision,
   EngineIntent,
   EngineInternalCommand,
   EngineReducerResult,
@@ -77,13 +97,26 @@ export type {
 } from "./engine/types.ts";
 export { AGENT_SESSION_ENGINE_LOCAL_ORIGIN } from "./engine/types.ts";
 export { selectWorkspaceReconcileState } from "./engine/engineRuntime.selectors.ts";
-export { dispatchSessionMutation } from "./engine/sessionMutationDispatch.ts";
 export {
+  dispatchSessionForkThroughTurn,
+  dispatchSessionMutation,
+  type DispatchSessionForkThroughTurnInput
+} from "./engine/sessionMutationDispatch.ts";
+export {
+  selectPendingSessionForkThroughTurnIds,
+  selectSessionForkThroughTurnMutation,
   selectSessionMutation,
-  selectSessionMutations
+  selectSessionMutations,
+  type SessionForkThroughTurnPendingSelectorInput,
+  type SessionForkThroughTurnMutationSelectorInput
 } from "./engine/sessionMutations.selectors.ts";
 export type {
   SessionDeleteMutationResult,
+  SessionAcknowledgeForkObservedCommand,
+  SessionForkObservationAckStatus,
+  SessionForkThroughTurnCommand,
+  SessionForkThroughTurnMutationRecord,
+  SessionForkThroughTurnRequestedIntent,
   SessionMutationCommand,
   SessionMutationRecord,
   SessionMutationStatus,
@@ -187,11 +220,13 @@ export type {
   TurnCancelCommand
 } from "./engine/sessionLifecycle.types.ts";
 export type {
+  PlanDecisionOperation,
   PlanDecisionIntent,
   PlanDecisionRecord,
   PlanDecisionState,
   PlanDecisionStatus,
-  PlanSubmitDecisionCommand
+  PlanSubmitDecisionCommand,
+  PlanSubmitDecisionResult
 } from "./engine/planDecision.types.ts";
 export {
   selectPlanDecisionForTurn,
@@ -254,7 +289,9 @@ export {
 } from "./engine/pendingIntents.selectors.ts";
 export type { SessionActivationPresentation } from "./engine/pendingIntents.selectors.ts";
 export type {
+  AgentActivitySessionDetailSnapshot,
   SessionActivityObservedIntent,
+  SessionDetailSnapshotReceivedIntent,
   SessionReconcileCommand,
   SessionReconcileIntent,
   SessionReconcileRecord,
@@ -294,11 +331,13 @@ export type {
   AgentActivityDeleteSessionResult,
   AgentActivityDeleteSessionsInput,
   AgentActivityDeleteSessionsResult,
+  AgentActivityDurableMessage,
   AgentActivityModelPlanModel,
   AgentActivityModelPlanSummary,
   AgentActivitySetCollaborationAdoptionInput,
   AgentActivityCompletedCommand,
   AgentActivityMessage,
+  AgentActivityMessageDeltaEvent,
   AgentActivityMessageSemantics,
   AgentActivityLoadComposerOptionsInput,
   AgentActivityMessageOrder,
@@ -312,6 +351,7 @@ export type {
   AgentActivitySendInputResult,
   AgentActivitySetSessionPinnedInput,
   AgentActivitySession,
+  AgentActivitySessionForkLineage,
   AgentActivitySessionCapabilities,
   AgentActivitySessionGoal,
   AgentActivitySessionPermissionConfig,
@@ -336,8 +376,14 @@ export type {
   AgentActivityTurn,
   AgentActivityTurnOrigin,
   AgentActivityTurnCancelResponse,
+  AgentActivityTransientMessage,
   AgentActivityInteraction,
   AgentActivityUpdatedApplyResult,
   AgentActivityUpdatedEvent
 } from "./types.ts";
+export type {
+  AgentActivityForkSessionOperationStatus,
+  AgentActivityForkSessionResult,
+  AgentActivityForkSessionThroughTurnInput
+} from "./sessionFork.types.ts";
 export { workspaceAgentSessionStatus } from "./workspaceAgentSessionProjection.ts";

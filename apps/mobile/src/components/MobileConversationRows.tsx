@@ -1,111 +1,115 @@
-import type {
-  WorkspaceAgentInteraction,
-  WorkspaceAgentSessionMessage
-} from "@tutti-os/client-tuttid-ts";
+import type { AgentActivityInteraction } from "@tutti-os/agent-activity-core";
 import {
   buildAskUserAnswerPayload,
   readOwnAnswer,
   writeOwnAnswer
 } from "@tutti-os/agent-gui/agent-conversation/interactive-answer";
+import {
+  projectAgentConversationPromptFromInteraction,
+  type AgentConversationPromptVM
+} from "@tutti-os/agent-gui/conversation-projection";
+import { type NativeTheme, useNativeTheme } from "@tutti-os/ui-system/native";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { PrimaryButton } from "./PrimaryButton";
 import { t } from "../i18n";
-import { theme } from "../theme";
-
-export function MobileMessageRow({
-  message
-}: {
-  message: WorkspaceAgentSessionMessage;
-}) {
-  const body = messageText(message);
-  const user = message.role === "user";
-  if (!body) {
-    return null;
-  }
-  return (
-    <View style={[styles.messageRow, user && styles.userMessageRow]}>
-      <Text style={styles.messageRole}>
-        {user
-          ? t("you")
-          : message.kind === "reasoning"
-            ? t("reasoning")
-            : t("agent")}
-      </Text>
-      <Text style={styles.messageBody}>{body}</Text>
-      {message.status ? (
-        <Text style={styles.messageStatus}>{message.status}</Text>
-      ) : null}
-    </View>
-  );
-}
+import { PrimaryButton } from "./PrimaryButton";
 
 interface MobileInteractionCardProps {
-  interaction: WorkspaceAgentInteraction;
+  failed: boolean;
+  interaction: AgentActivityInteraction;
+  onRetry(): void;
   onSubmit(input: {
     action?: string;
     optionId?: string;
     payload?: Record<string, unknown>;
-  }): Promise<void>;
+  }): void;
+  runtimeAvailable: boolean;
+  submitting: boolean;
 }
 
 export function MobileInteractionCard({
+  failed,
   interaction,
-  onSubmit
+  onRetry,
+  onSubmit,
+  runtimeAvailable,
+  submitting
 }: MobileInteractionCardProps) {
+  const theme = useNativeTheme();
+  const styles = createStyles(theme);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
-  const [failed, setFailed] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [planFeedback, setPlanFeedback] = useState("");
   const interactionIdentity = `${interaction.agentSessionId}:${interaction.turnId}:${interaction.requestId}`;
-  const input = interaction.input ?? {};
-  const questions = useMemo(() => normalizeQuestions(input.questions), [input]);
-  const options = normalizeOptions(input.options);
-  const submit = async (value: Parameters<typeof onSubmit>[0]) => {
-    setSubmitting(true);
-    setFailed(false);
-    try {
-      await onSubmit(value);
-    } catch {
-      setFailed(true);
-    } finally {
-      setSubmitting(false);
-    }
+  const prompt = useMemo(
+    () => projectAgentConversationPromptFromInteraction(interaction),
+    [interaction]
+  );
+  const questions = prompt?.kind === "ask-user" ? prompt.questions : [];
+  const options = prompt?.kind === "approval" ? prompt.options : [];
+  const submit = (value: Parameters<typeof onSubmit>[0]) => {
+    if (submitting || !runtimeAvailable) return;
+    onSubmit(value);
   };
 
   useEffect(() => {
     setAnswers({});
-    setFailed(false);
-    setSubmitting(false);
+    setPlanFeedback("");
   }, [interactionIdentity]);
+
+  if (failed) {
+    return (
+      <View style={styles.interactionCard}>
+        <Text style={styles.interactionKind}>
+          {prompt?.kind === "ask-user"
+            ? t("question")
+            : prompt?.kind === "exit-plan"
+              ? t("plan")
+              : t("approval")}
+        </Text>
+        <Text style={styles.interactionTitle}>
+          {prompt?.title || interactionSummary(interaction)}
+        </Text>
+        <Text style={styles.error}>{t("genericError")}</Text>
+        <PrimaryButton
+          disabled={!runtimeAvailable}
+          label={t("retry")}
+          onPress={onRetry}
+        />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.interactionCard}>
       <Text style={styles.interactionKind}>
-        {interaction.kind === "question"
+        {prompt?.kind === "ask-user"
           ? t("question")
-          : interaction.kind === "plan"
+          : prompt?.kind === "exit-plan"
             ? t("plan")
             : t("approval")}
       </Text>
       <Text style={styles.interactionTitle}>
-        {interactionSummary(interaction)}
+        {prompt?.title || interactionSummary(interaction)}
       </Text>
-      {failed ? <Text style={styles.error}>{t("genericError")}</Text> : null}
-
-      {interaction.kind === "question" ? (
+      {prompt?.kind === "ask-user" ? (
         <>
           {questions.map((question) => {
             const selected = readOwnAnswer(answers, question.id, []);
             return (
               <View key={question.id} style={styles.question}>
-                <Text style={styles.questionText}>{question.question}</Text>
+                <Text style={styles.questionText}>
+                  {question.question || question.header || t("question")}
+                </Text>
                 {question.options.length > 0 ? (
                   <View style={styles.optionList}>
                     {question.options.map((option) => {
-                      const active = selected.includes(option);
+                      const active = selected.includes(option.label);
                       return (
                         <Pressable
-                          key={option}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: active }}
+                          disabled={submitting || !runtimeAvailable}
+                          key={`${question.id}:${option.label}`}
                           onPress={() => {
                             setAnswers((current) => {
                               const updated = { ...current };
@@ -115,10 +119,10 @@ export function MobileInteractionCard({
                                 question.multiSelect
                                   ? active
                                     ? selected.filter(
-                                        (value) => value !== option
+                                        (value) => value !== option.label
                                       )
-                                    : [...selected, option]
-                                  : [option]
+                                    : [...selected, option.label]
+                                  : [option.label]
                               );
                               return updated;
                             });
@@ -128,13 +132,19 @@ export function MobileInteractionCard({
                             active && styles.optionSelected
                           ]}
                         >
-                          <Text style={styles.optionText}>{option}</Text>
+                          <Text style={styles.optionText}>{option.label}</Text>
+                          {option.description ? (
+                            <Text style={styles.optionDescription}>
+                              {option.description}
+                            </Text>
+                          ) : null}
                         </Pressable>
                       );
                     })}
                   </View>
                 ) : (
                   <TextInput
+                    editable={!submitting && runtimeAvailable}
                     multiline
                     onChangeText={(value) => {
                       setAnswers((current) => {
@@ -157,9 +167,14 @@ export function MobileInteractionCard({
             );
           })}
           <PrimaryButton
-            disabled={questions.some(
-              (question) => readOwnAnswer(answers, question.id, []).length === 0
-            )}
+            disabled={
+              submitting ||
+              !runtimeAvailable ||
+              questions.some(
+                (question) =>
+                  readOwnAnswer(answers, question.id, []).length === 0
+              )
+            }
             label={t("submit")}
             loading={submitting}
             onPress={() => {
@@ -172,7 +187,7 @@ export function MobileInteractionCard({
                   question.multiSelect ? values : (values[0] ?? "")
                 );
               }
-              void submit({
+              submit({
                 action: "submit",
                 payload: {
                   ...buildAskUserAnswerPayload(answersByQuestionId)
@@ -181,73 +196,106 @@ export function MobileInteractionCard({
             }}
           />
         </>
-      ) : options.length > 0 ? (
+      ) : prompt?.kind === "approval" ? (
         <View style={styles.actionList}>
           {options.map((option) => (
             <PrimaryButton
+              disabled={submitting || !runtimeAvailable}
               key={option.id}
-              disabled={submitting}
               label={option.label}
-              onPress={() => void submit({ optionId: option.id })}
+              onPress={() => submit({ optionId: option.id })}
               secondary
             />
           ))}
         </View>
+      ) : prompt?.kind === "exit-plan" && prompt.options.length > 0 ? (
+        <MobileExitPlanActions
+          feedback={planFeedback}
+          onFeedbackChange={setPlanFeedback}
+          onSubmit={submit}
+          prompt={prompt}
+          runtimeAvailable={runtimeAvailable}
+          submitting={submitting}
+        />
       ) : (
-        <View style={styles.actionRow}>
-          <PrimaryButton
-            disabled={submitting}
-            label={t("deny")}
-            onPress={() => void submit({ action: "deny" })}
-            secondary
-            style={styles.actionButton}
-          />
-          <PrimaryButton
-            disabled={submitting}
-            label={t("allow")}
-            loading={submitting}
-            onPress={() => void submit({ action: "allow" })}
-            style={styles.actionButton}
-          />
-        </View>
+        <Text style={styles.unsupportedInteraction}>
+          {t("pendingInteractionDesktop")}
+        </Text>
       )}
     </View>
   );
 }
 
-function messageText(message: WorkspaceAgentSessionMessage): string {
-  const payload = message.payload ?? {};
-  for (const value of [
-    payload.text,
-    payload.content,
-    payload.message,
-    payload.summary
-  ]) {
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-  }
-  if (Array.isArray(payload.content)) {
-    return payload.content
-      .map((block) =>
-        typeof block === "object" &&
-        block !== null &&
-        "text" in block &&
-        typeof block.text === "string"
-          ? block.text
-          : ""
-      )
-      .filter(Boolean)
-      .join("\n");
-  }
-  if (message.kind.includes("tool")) {
-    const name = typeof payload.name === "string" ? payload.name : t("tool");
-    return `${name}${message.status ? ` · ${message.status}` : ""}`;
-  }
-  return "";
+function MobileExitPlanActions({
+  feedback,
+  onFeedbackChange,
+  onSubmit,
+  prompt,
+  runtimeAvailable,
+  submitting
+}: {
+  feedback: string;
+  onFeedbackChange(value: string): void;
+  onSubmit(value: {
+    action?: string;
+    optionId?: string;
+    payload?: Record<string, unknown>;
+  }): void;
+  prompt: Extract<AgentConversationPromptVM, { kind: "exit-plan" }>;
+  runtimeAvailable: boolean;
+  submitting: boolean;
+}) {
+  const theme = useNativeTheme();
+  const styles = createStyles(theme);
+  const trimmedFeedback = feedback.trim();
+
+  return (
+    <View style={styles.actionList}>
+      <Text style={styles.questionText}>{t("planPermissionQuestion")}</Text>
+      {prompt.options.map((mode) => (
+        <Pressable
+          accessibilityRole="button"
+          disabled={submitting || !runtimeAvailable}
+          key={mode.id}
+          onPress={() => onSubmit({ action: "allow", optionId: mode.id })}
+          style={styles.option}
+        >
+          <Text style={styles.optionText}>{mode.label}</Text>
+          {mode.description ? (
+            <Text style={styles.optionDescription}>{mode.description}</Text>
+          ) : null}
+        </Pressable>
+      ))}
+      <TextInput
+        editable={!submitting && runtimeAvailable}
+        multiline
+        onChangeText={onFeedbackChange}
+        placeholder={t("planFeedbackHint")}
+        placeholderTextColor={theme.color.muted}
+        style={styles.answerInput}
+        value={feedback}
+      />
+      <PrimaryButton
+        disabled={submitting || !runtimeAvailable}
+        label={trimmedFeedback ? t("sendPlanFeedback") : t("keepPlanning")}
+        onPress={() =>
+          onSubmit({
+            action: "deny",
+            ...(prompt.keepPlanningOptionId
+              ? { optionId: prompt.keepPlanningOptionId }
+              : {}),
+            ...(trimmedFeedback
+              ? { payload: { denyMessage: trimmedFeedback } }
+              : {})
+          })
+        }
+        secondary
+      />
+    </View>
+  );
 }
 
-function interactionSummary(interaction: WorkspaceAgentInteraction): string {
+function interactionSummary(interaction: AgentActivityInteraction): string {
   const input = interaction.input ?? {};
   for (const value of [
     input.displayPrompt,
@@ -264,156 +312,54 @@ function interactionSummary(interaction: WorkspaceAgentInteraction): string {
   return interaction.toolName?.trim() || t("pendingInteraction");
 }
 
-function normalizeOptions(
-  value: unknown
-): Array<{ id: string; label: string }> {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.flatMap((candidate) => {
-    if (!candidate || typeof candidate !== "object") {
-      return [];
+function createStyles(theme: NativeTheme) {
+  return StyleSheet.create({
+    actionList: { gap: theme.space.small, marginTop: theme.space.medium },
+    answerInput: {
+      borderColor: theme.color.border,
+      borderRadius: theme.radius.medium,
+      borderWidth: StyleSheet.hairlineWidth,
+      color: theme.color.text,
+      minHeight: 72,
+      padding: theme.space.small
+    },
+    error: { color: theme.color.danger, fontSize: 12 },
+    interactionCard: {
+      backgroundColor: theme.color.panelRaised,
+      borderColor: theme.color.accent,
+      borderRadius: theme.radius.medium,
+      borderWidth: StyleSheet.hairlineWidth,
+      gap: theme.space.small,
+      padding: theme.space.medium
+    },
+    interactionKind: {
+      color: theme.color.accent,
+      fontSize: 11,
+      fontWeight: "700",
+      textTransform: "uppercase"
+    },
+    interactionTitle: {
+      color: theme.color.text,
+      fontSize: 15,
+      fontWeight: "700",
+      lineHeight: 21
+    },
+    option: {
+      borderColor: theme.color.border,
+      borderRadius: theme.radius.medium,
+      borderWidth: StyleSheet.hairlineWidth,
+      padding: theme.space.small
+    },
+    optionDescription: { color: theme.color.muted, fontSize: 12, marginTop: 3 },
+    optionList: { gap: 6 },
+    optionSelected: { borderColor: theme.color.accent },
+    optionText: { color: theme.color.text, fontSize: 14 },
+    question: { gap: theme.space.small },
+    questionText: { color: theme.color.textSecondary, fontSize: 14 },
+    unsupportedInteraction: {
+      color: theme.color.textSecondary,
+      fontSize: 13,
+      lineHeight: 19
     }
-    const option = candidate as Record<string, unknown>;
-    const id =
-      typeof option.optionId === "string"
-        ? option.optionId
-        : typeof option.id === "string"
-          ? option.id
-          : "";
-    if (!id.trim()) {
-      return [];
-    }
-    const label =
-      typeof option.label === "string"
-        ? option.label
-        : typeof option.name === "string"
-          ? option.name
-          : id;
-    return [{ id: id.trim(), label: label.trim() || id.trim() }];
   });
 }
-
-function normalizeQuestions(value: unknown): Array<{
-  id: string;
-  multiSelect: boolean;
-  options: string[];
-  question: string;
-}> {
-  if (!Array.isArray(value) || value.length === 0) {
-    return [
-      {
-        id: "response",
-        multiSelect: false,
-        options: [],
-        question: t("question")
-      }
-    ];
-  }
-  return value.map((candidate, index) => {
-    const question =
-      candidate && typeof candidate === "object"
-        ? (candidate as Record<string, unknown>)
-        : {};
-    const options = Array.isArray(question.options)
-      ? question.options.flatMap((option) => {
-          if (typeof option === "string") {
-            return option.trim() ? [option.trim()] : [];
-          }
-          if (!option || typeof option !== "object") {
-            return [];
-          }
-          const record = option as Record<string, unknown>;
-          const label =
-            typeof record.label === "string"
-              ? record.label
-              : typeof record.name === "string"
-                ? record.name
-                : "";
-          return label.trim() ? [label.trim()] : [];
-        })
-      : [];
-    return {
-      id:
-        typeof question.id === "string" && question.id.trim()
-          ? question.id.trim()
-          : `question-${index + 1}`,
-      multiSelect: question.multiSelect === true,
-      options,
-      question:
-        typeof question.question === "string" && question.question.trim()
-          ? question.question.trim()
-          : t("question")
-    };
-  });
-}
-
-const styles = StyleSheet.create({
-  actionButton: { flex: 1 },
-  actionList: { gap: theme.space.small, marginTop: theme.space.medium },
-  actionRow: {
-    flexDirection: "row",
-    gap: theme.space.small,
-    marginTop: theme.space.medium
-  },
-  answerInput: {
-    borderColor: theme.color.border,
-    borderRadius: theme.radius.medium,
-    borderWidth: StyleSheet.hairlineWidth,
-    color: theme.color.text,
-    minHeight: 72,
-    padding: theme.space.small
-  },
-  interactionCard: {
-    backgroundColor: theme.color.panelRaised,
-    borderColor: theme.color.accent,
-    borderRadius: theme.radius.medium,
-    borderWidth: StyleSheet.hairlineWidth,
-    gap: theme.space.small,
-    padding: theme.space.medium
-  },
-  error: { color: theme.color.danger, fontSize: 12 },
-  interactionKind: {
-    color: theme.color.accent,
-    fontSize: 11,
-    fontWeight: "700",
-    textTransform: "uppercase"
-  },
-  interactionTitle: {
-    color: theme.color.text,
-    fontSize: 15,
-    fontWeight: "700",
-    lineHeight: 21
-  },
-  messageBody: { color: theme.color.text, fontSize: 15, lineHeight: 23 },
-  messageRole: {
-    color: theme.color.accent,
-    fontSize: 11,
-    fontWeight: "700",
-    marginBottom: 7,
-    textTransform: "uppercase"
-  },
-  messageRow: {
-    backgroundColor: theme.color.panel,
-    borderColor: theme.color.border,
-    borderRadius: theme.radius.large,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: theme.space.medium
-  },
-  messageStatus: { color: theme.color.muted, fontSize: 11, marginTop: 8 },
-  option: {
-    borderColor: theme.color.border,
-    borderRadius: theme.radius.medium,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: theme.space.small
-  },
-  optionList: { gap: 6 },
-  optionSelected: { borderColor: theme.color.accent },
-  optionText: { color: theme.color.text, fontSize: 14 },
-  question: { gap: theme.space.small },
-  questionText: { color: theme.color.textSecondary, fontSize: 14 },
-  userMessageRow: {
-    backgroundColor: theme.color.panelRaised,
-    marginLeft: 32
-  }
-});

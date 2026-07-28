@@ -2,17 +2,35 @@
 
 Status: accepted product direction; Personal direct-lane MVP in implementation
 
-## Implementation progress (2026-07-23)
+## Implementation progress (2026-07-27)
 
-The provisional `packages/device-link` core now preserves the production ICE,
+The release-enabled `packages/device-link` core now preserves the production ICE,
 QUIC, certificate-pinning, candidate filtering and privacy behavior extracted
-from TSH. Personal Desktop and Android consume the same authenticated facade;
-the direct lane includes paired-device rendezvous, framed Agent HTTP, request
-deadlines and foreground/background close behavior. Android 15 ARM64 emulator
-build/install/start and authenticated loopback integration pass. Real-account
-physical-device network transitions, Relay fallback and event streaming remain
-acceptance work. The module is not yet a stable released cross-repository
-contract.
+from TSH. It also owns the shared generation fence, authenticated link pool,
+per-peer establishment serialization, connection race, annealed path-probe
+cache, trickle-ICE facade, and rolling ALPN compatibility seam. Product
+adapters still own room/device identity, rendezvous, Relay credentials and
+fallback policy. Personal Desktop and Android consume the same authenticated
+facade; the direct lane includes paired-device rendezvous, framed Agent HTTP,
+request deadlines, event streaming and foreground/background close behavior.
+Android 15 ARM64 emulator build/install/start and authenticated loopback
+integration pass. Real-account physical-device network transitions and Relay
+fallback remain hardening work that does not expand the transport API. A stable
+tag still requires the authenticated lifecycle checks and reproducible Mobile
+AAR consumer build to pass at the release head. TSH cutover to the shared
+manager remains a consumer-side rollout step.
+
+The Mobile shell now uses mutually exclusive unauthenticated/authenticated DI
+children and one active workspace child. Login, pairing, DeviceLink lifecycle,
+workspace catalog, Agent Target directory, navigation identity, drafts,
+polling, and command execution live in pure TypeScript services rather than
+screen effects. Workspace state is projected from one
+`AgentSessionEngine`; Desktop and Mobile share generated-tuttid DTO mapping
+through `@tutti-os/agent-activity-tuttid-adapter`, shared realtime-observation
+rules through `@tutti-os/agent-activity-core`, and DOM-free conversation and
+Rail projections through `@tutti-os/agent-gui`. Mobile Rail state contains only
+membership and pagination metadata; canonical Session entities remain in the
+Engine. Conversation-list visual alignment remains the next UI milestone.
 
 ## 1. 背景
 
@@ -37,14 +55,15 @@ Tutti Personal 已经拥有本机 Agent Host、Agent Activity、AgentGUI 和完�
 MVP 不包含：
 
 - Remote SSH、Terminal、远程桌面或任意 localhost 端口转发；
-- iOS 客户端；
+- iOS 真机验收、TestFlight、App Store 和 release 签名；
 - 后台长期运行、系统推送和通知操作；
 - 离线读取、离线写队列和会话内容持久缓存；
 - 文件上传、图片输入、语音输入、富文本编辑器、`@` 引用选择器；
 - 完整复制桌面右侧面板；
 - TSH/VM 用户入口；
 - Web 与 React Native 组件源码的全面统一；
-- 前期多版本协议兼容、迁移 shim 或灰度兼容窗口。
+- 长期多版本协议兼容矩阵；只保留 TSH 切换期间有界、可观测、可删除的临时 ALPN
+  seam。
 
 ## 4. 设计原则
 
@@ -53,7 +72,8 @@ MVP 不包含：
 - Session、Turn、Interaction、Goal 和 runtime operation 的生命周期仍由 `packages/agent/host` 唯一定义。
 - 移动端使用同一个 workspace `AgentSessionEngine` 语义，不创建 `MobileSession`、`RemoteSession` 或第二套会话状态机。
 - `tsh-server` 只拥有账号、设备、配对、在线发现和短期 rendezvous 状态。
-- DeviceLink 只拥有认证链路、P2P/Relay 选路和双向流，不解释 Agent DTO。
+- DeviceLink 只拥有认证链路、product-neutral 双路径竞速和双向流，不解释 Agent
+  DTO；direct/Relay 身份认证与选路策略由产品 adapter 注入。
 - React Native 只拥有导航、展示和设备本地的临时 UI 状态。
 
 ### 4.2 复用协议，不镜像页面
@@ -72,29 +92,33 @@ MVP 从第一天复用行为、projection、状态语义和现有视觉语言。
 
 ## 5. 产品导航
 
-移动端包含四个导航层级：
+Tutti Personal 移动端包含四个导航层级：
 
 ```text
 登录页
 └─ 设备选择页
-   └─ Workspace / Room 选择页
-      └─ Workspace 工作页
-         ├─ 主视图：当前会话的对话流
-         └─ 左侧抽屉：会话列表与新建会话
+   └─ 会话列表页
+      └─ 会话详情页
 ```
 
 规则：
 
 - 未登录时停留在登录页。
-- 只有一台可用设备时自动跳过设备选择页。
-- 只有一个 workspace 时自动跳过 workspace 选择页。
-- Tutti Personal 单台设备通常只有一个 workspace，因此常见路径是登录后直接进入工作页。
+- 完成登录前，登录页是唯一可用路由；登录后设备选择页是固定首屏。
+- Device 是用户选择的远端电脑和 DeviceLink 连接上下文，因此保留独立页面。
+- Tutti Personal 约定每台 Device 恰好包含一个 workspace。`workspaceId` 仍是所有
+  Agent 请求的 canonical scope，但不建立 workspace 选择路由；返回零个或多个
+  workspace 时连接失败并显示明确错误，不静默选择。
 - TSH 的 `roomId` 在产品适配层一对一映射为 canonical `workspaceId`。
-- 进入 workspace 时优先恢复本机记录的上次会话；不存在时打开最近活跃会话；没有会话时显示新建会话空态。
-- Workspace 顶部始终展示当前设备和 workspace，并提供返回选择页的入口。
-- Android 返回键依次关闭抽屉、返回上一级页面，再按系统规则退出。
+- 进入唯一 workspace 后先展示会话列表；只有用户选择会话或新建会话时才进入详情路由。
+- 会话列表和会话详情是两个真实路由；会话详情顶部始终展示当前设备和 workspace。
+- 会话详情路由的 `agentSessionId` 是详情导航的唯一所有者；workspace activity 只消费该
+  选择，不得在 reconcile 时静默切换详情路由。当前会话失效时返回会话列表。
+- Android 返回键和边缘返回手势由原生导航栈处理：详情返回会话列表，会话列表返回
+  设备页并释放 DeviceLink，设备根页面再按系统规则退出。返回设备页时先同步失效旧
+  device/workspace scope，并在旧 DeviceLink 完成关闭前阻止新的连接操作。
 
-会话列表复用桌面当前的 membership、分组、排序、置顶和运行状态语义，但布局与信息密度由移动端独立设计。MVP 不做跨设备聚合会话列表；每次只展示当前设备、当前 workspace 下的会话。
+会话列表复用桌面当前的 membership、分组、排序、置顶和运行状态语义，但布局与信息密度由移动端独立设计。MVP 不做跨设备聚合会话列表；每次只展示当前设备唯一 workspace 下的会话。
 
 ## 6. 系统结构
 
@@ -126,13 +150,34 @@ mobile account session
 
 Agent 请求和响应不经过 tsh-server 业务存储。Relay 只转发已认证的加密字节流。
 
+### 6.1 Mobile DI 和页面边界
+
+Mobile 使用稳定 Bootstrap container。未登录 child 与登录后 child 互斥；账号变化
+销毁并重建完整登录后子树。登录后 child 同时拥有账号会话、单个 DeviceLink、
+动态 Agent Target 目录和 workspace catalog，不再增加语义重复的 Device child。
+它下面最多持有一个 workspace child，后者拥有唯一
+`AgentSessionEngine`、会话导航和进程内草稿。
+
+`services/**` 是不依赖 React 的纯 TypeScript 服务。页面 binding 通过
+`useSyncExternalStore` 订阅服务快照，props-only View 只持有抽屉、滚动、焦点、
+键盘和 Interaction 输入等 UI 状态。数据加载、轮询、重连、DI scope、会话命令和
+快照复制不得由页面 `useEffect` 驱动。
+
+设备级快捷提示词由登录后的设备 scope 中的独立 service 读取，不进入 workspace
+`AgentSessionEngine`、Session 或移动端持久存储。该 service 通过生成客户端读取电脑端
+`agent.quickPromptLibrary` 开关和 canonical 提示词顺序；开关打开时，Composer 的 `+`
+菜单提供搜索与只读选择，点选后在当前输入位置添加文本，不替换已有草稿，恢复输入焦点且不自动发送。
+新增、编辑、删除和排序仍由电脑端负责。DeviceLink 只为此能力开放精确的桌面偏好和
+快捷提示词列表 GET 路由，不开放 mutation 或单条记录路由。
+
 ## 7. DeviceLink 边界
 
 ### 7.1 共享核心
 
 新增一个先由 Personal 验证、随后再稳定为跨消费者边界的 `packages/device-link`：
 
-- 从 TSH 现有生产实现提炼 Go ICE、STUN candidate、QUIC、证书 pinning、连接竞速、负缓存和 Relay fallback；
+- 从 TSH 现有生产实现提炼 Go ICE、STUN candidate、QUIC、证书 pinning、连接竞速、
+  负缓存，以及供产品 adapter 注入 direct/Relay 的生命周期 seam；
 - 暴露认证后的双向流，不包含 Session、Turn、Composer 或 Workspace 业务实体；
 - 提供 gomobile/AAR 构建入口；
 - 在 Personal Desktop 和 Android 闭环验收后，成为 Tutti Desktop、TSH Desktop 和 Android 的共同源头。
@@ -152,7 +197,9 @@ TSH 当前代码作为 donor implementation。Personal 验收前不要求 TSH �
 - 投影 Android 网络变化与前后台生命周期；
 - 返回经过清洗的连接状态和错误分类。
 
-ICE、QUIC、证书校验、连接竞速和 Relay 选路不得在 Kotlin 中重写。
+ICE、QUIC、证书校验、连接竞速和探测退避不得在 Kotlin 中重写。direct/Relay
+身份认证、fallback 延迟和错误分类仍由产品 adapter 决定，并通过共享 manager
+提供的 dial、race 和 probe seam 接入。
 
 ### 7.3 业务传输
 
@@ -202,10 +249,11 @@ Cookie，也不新增移动端账号实体。
 5. tsh-server 校验同账号和 challenge 状态；
 6. Desktop 显式确认配对。
 
-Desktop 的账号登录入口与手机远程访问入口独立发布。登录能力可以面向用户开放，
-而账号设置中的手机配对和远程访问区块默认隐藏；开发者设置通过持久化
-`mobile.remoteAccessSettings` feature flag 控制该区块是否显示。此开关只控制
-Desktop 设置入口可见性，不创建第二套登录态、设备实体或协议能力。
+Desktop 的账号登录入口与手机远程访问入口独立发布。开发者设置中的
+`Tutti Agent Switch` 控制工作区账号菜单和 Agent 开发控制项是否显示。独立持久化的
+`mobile.remoteAccessSettings` feature flag 控制「连接」设置入口是否显示；「连接」
+页承载账号登录、退出、刷新、手机配对和远程访问能力。两个开关都只控制 Desktop
+入口可见性，不创建第二套登录态、设备实体或协议能力。
 
 QR 不包含 bearer token、私钥、原始候选或可长期使用的连接凭据。
 
@@ -387,6 +435,10 @@ MVP 支持：
 
 ## 13. 连接生命周期
 
+- Mobile application service 只消费平台原生提供的进程级前后台信号。
+  Android 由 `ProcessLifecycleOwner` 投影，iOS 由 `UIApplication` 投影；
+  React Activity 暂停、同进程扫码 Activity、授权 Activity 等页面切换不得解释为
+  App 进入后台。配对、DeviceLink 和会话服务不感知平台 Activity 类型。
 - 前台保持实时连接。
 - 进入后台后只做短时 best-effort 保活，随后主动断开；Android 系统可更早终止连接。
 - MVP 不使用常驻前台服务或推送唤醒。
@@ -456,8 +508,12 @@ Wi-Fi/蜂窝切换和 VPN/TUN 失败分类仍待验证。
 完成条件：Personal Desktop 与 Android 真机通过同一 facade 建立链路，原始
 `QUICEndpoint` 不进入产品桥接；TSH 仍保持现状，不阻塞 Personal 验证。
 
-当前进度：共享 facade、Desktop owner host、Android caller bridge 和真实
-authenticated stream 集成测试已完成；真机跨网络验证仍待完成。
+当前进度：共享 facade、Desktop owner host、Android caller bridge、真实
+authenticated stream 集成测试，以及代际隔离、连接池、建连去重、连接竞速和探测
+退避的 product-neutral manager 均已完成；Tutti Desktop `mobileremote` owner
+已经作为首个 adapter 接管共享 manager，TSH adapter 切换和真机跨网络验证仍待
+完成。Relay 身份认证、控制面、fallback 产品策略和 TSH 产品诊断继续由消费端
+拥有。
 
 ### M2 — 设备、配对和控制面
 
@@ -499,29 +555,41 @@ allowlist 和 Android fetch adapter，并直接复用生成的
 `@tutti-os/client-tuttid-ts`；workspace、Agent Target catalog、Session
 list/get/create/send/cancel/Interaction 均沿用现有 HTTP contract。owner host 会在
 caller 获得 response-only STUN endpoints 并二次发布 ICE 后再认领 attempt，避免
-连接旧 fingerprint。Relay 和 event stream 尚未实现，当前消息更新使用前台增量
-snapshot polling。
+连接旧 fingerprint。Relay 尚未实现。direct lane 的 `agent_live` event stream
+已经接入：delta、Turn、Interaction 和 session audit 通过 framed live protocol
+进入 Mobile；canonical-only 更新由 Personal 的 `mobileremote` adapter 转为
+scoped discontinuity，再触发权威 snapshot reconcile。Session/Message poller
+仅在 event stream 未就绪或断开时作为降级路径。
 
-### M4 — Android App shell
+### M4 — Mobile App shell（Android 首发）
 
 归属：`tutti`。
 
 - 建立 `apps/mobile` bare React Native 工程，Android 首发并保留未来 iOS 目录能力。
-- 接入账号登录、Android Keystore、设备列表、workspace 选择和导航恢复。
+- 接入账号登录、Android Keystore、设备列表、Personal 单 workspace 校验和导航恢复。
 - 接入前后台连接生命周期、连接状态和错误页。
-- 实现单设备/单 workspace 自动跳过。
+- 使用原生导航栈实现登录门禁、设备根页面和 Android 系统返回。
 - 建立移动端 i18n 与 Native theme mapping。
 
-完成条件：登录、配对、选设备、选 workspace、重连和撤销形成完整非 Agent UI 闭环。
+完成条件：登录、配对、选设备、解析唯一 workspace、重连和撤销形成完整非 Agent UI 闭环。
 
 当前进度：bare React Native 0.86 Android 工程、系统浏览器 GitHub 登录、邮箱验证码登录、Keystore
 Ed25519 identity、扫码/粘贴配对码、配对设备列表、Native DeviceLink bridge、移动端 i18n
-和 semantic theme mapping 已完成。workspace 单项自动进入/多项选择、设备连接、
-Native 15 秒后台 grace 后断开也已接入。当前最低版本为 Android 13/API 33，
+和 semantic theme mapping 已完成。账号、设备、workspace 和前后台生命周期已迁入
+纯 TypeScript DI service；页面只保留 binding 与 Native presentation。登录、
+设备、会话列表和会话详情使用类型安全的原生导航栈；连接 Device 后会校验并打开
+唯一 workspace，不建立 workspace 选择页。Native 15 秒后台 grace 后断开也已接入。当前最低版本为 Android 13/API 33，
 以使用系统 Ed25519 provider；prepare/connect 使用 native generation token
 隔离取消后晚到的连接任务。TypeScript/Jest、Metro、Kotlin/Java/CMake、
 四 ABI APK 构建，以及 Android 15 ARM64 模拟器安装启动均通过；前台自动重连和
 撤销专用状态仍待完成。
+
+iOS Simulator host 已在相同 `apps/mobile` application core 上建立。它复用全部
+TypeScript service、AgentGUI projection、Native renderer 和 Composer，只实现
+`TuttiMobileSecurity` / `TuttiDeviceLink` 平台 port。当前 iOS adapter 包含
+Keychain/CryptoKit identity、账号 session/Cookie、localhost browser login bridge、
+AVFoundation scanner、gomobile XCFramework、Agent HTTP/live framing 和前后台 grace；
+Simulator 的相机路径明确使用现有手动配对码降级。真机与分发仍不属于本阶段完成条件。
 
 ### M5 — AgentGUI MVP
 
@@ -529,22 +597,30 @@ Native 15 秒后台 grace 后断开也已接入。当前最低版本为 Android 
 
 - 清理 `agent-conversation` 平台无关导出，阻止 DOM/Monaco 依赖进入 Native bundle。
 - 接入 workspace `AgentSessionEngine` 和 authoritative snapshot/event reconcile。
-- 实现会话抽屉、默认会话选择、新建和切换。
+- 实现独立会话列表页、默认会话选择、新建和切换。
 - 实现 Message、Reasoning、Tool、Approval、Question、Plan、Processing 和 unsupported fallback。
 - 实现纯文本 Composer、发送、停止、重试和 per-session 内存草稿。
 - 验证 Desktop 与 Mobile 同时操作及请求幂等。
 
 完成条件：达到第 17 节所有产品闭环验收项。
 
-当前进度：会话抽屉、动态 Agent Target 新建会话、切换、canonical message
+当前进度：独立会话列表页、动态 Agent Target 新建会话、切换、canonical message
 增量读取、纯文本 Composer、发送、停止，以及 Approval/Question/Plan
-Interaction 提交已接入。当前 Native renderer 是 `apps/mobile` 内的 MVP
-presentation adapter；它不定义 Session/Message DTO，并直接消费生成契约。
+Interaction 提交已接入。Mobile 已接入 workspace `AgentSessionEngine`；create、
+send、stop 和 Interaction response 统一通过 Engine intent/command port，Session
+和 Message 快照映射后进入同一 canonical state。Desktop 与 Mobile 的生成契约
+映射、Session detail 聚合和事件 reconcile 判定分别由
+`@tutti-os/agent-activity-tuttid-adapter` 与
+`@tutti-os/agent-activity-core` 复用；Mobile Rail 只保存分组、Session id、游标
+和总数，实体页瞬时映射后直接 upsert 到 Engine。Interaction 提交中、失败状态和
+per-Session runtime availability 也由 Engine 投影，Native card 不维护第二套
+Promise 状态。当前 Native renderer 是
+`apps/mobile` 内的 MVP presentation adapter；它不定义 Session/Message DTO。
 Interaction answer payload 与原型安全的 question-id 读写已从
 `@tutti-os/agent-gui` 的无 DOM 子路径复用；轮询为 single-flight，超时重试保留
-原始 session/submit identity。共享
-Agent conversation projection/native renderer、事件 reconcile、Markdown/code、
-unsupported fallback 的完整视觉语义仍是剩余项。
+原始 session/submit identity；不明确的写入会先做 workspace 权威校准，再使用同一
+identity 进入显式 Retry。Markdown/code、unsupported fallback 的完整视觉语义和
+会话列表视觉对齐仍是剩余项。
 
 ### M6 — 稳定性和第二阶段准备
 
@@ -554,8 +630,30 @@ unsupported fallback 的完整视觉语义仍是剩余项。
 - 完成前后台、睡眠唤醒、网络切换、daemon 重启和事件缺口测试。
 - 清洗指标与诊断，确认无 IP、candidate、token 和 Agent payload 泄露。
 - 根据验证结果决定 UI token 提炼和共享组件的下一批范围。
-- Personal 验收后冻结最小公开 API、启用稳定 Go tag 和可复现 AAR consumer gate。
+- 已冻结最小 transport API；每次启用稳定 Go tag 前，在 release head 重跑可复现
+  AAR consumer gate。真实网络切换和 Relay 验收作为后续 hardening，不改变该公开边界。
 - 再安排 TSH 切换上游依赖、删除复制实现并启用 VM/room workspace lane。
+
+### M7 — iOS Simulator 功能对齐
+
+归属：`tutti`。
+
+- 从同一 React Native application core 建立 iOS 15.1+ shell，不复制对话流或业务状态机。
+- 为 DeviceLink 与 Agent live mobile packages 生成 device + Simulator XCFramework。
+- 以同名 Native Module contract 实现 Keychain identity/session、Cookie、browser
+  login bridge、扫码、DeviceLink request/live stream 和 lifecycle grace。
+- Simulator 使用手动配对码覆盖无相机环境；硬件能力不得返回伪成功。
+- 通过 iOS Metro bundle、TypeScript/Jest、ObjC binding、Pods 和 Simulator build。
+
+完成条件：Simulator 可以启动同一 App、完成非相机入口的登录/配对/连接和 Agent
+对话闭环；真实相机、蜂窝/VPN/后台稳定性、签名和 TestFlight/App Store 留到 iOS
+真机验收阶段。
+
+当前进度：iOS shell、Native Module adapter、Go XCFramework build boundary 和共享
+TypeScript 平台清理已完成；Metro iOS production bundle、TypeScript/Jest、device +
+Simulator XCFramework、Pods 和 generic Simulator build 已通过。App 已安装并启动于
+iPhone 17 Pro / iOS 26.5 Simulator，Hermes 成功执行共享 JavaScript bundle；真实账号
+登录、手动配对码、DeviceLink 和 Agent 对话闭环仍需在 Simulator 做带账号的验收。
 
 ## 17. Android Personal MVP 验收
 
@@ -596,5 +694,5 @@ MVP 稳定后按真实使用反馈推进：
 3. 将必要 semantic token 提炼到 `@tutti-os/ui-system` 平台无关出口。
 4. 渐进共享 Conversation component source，保留 `.web.tsx` / `.native.tsx` primitive。
 5. 在同一 App 核心启用 TSH/VM workspace/room lane。
-6. 增加 iOS bridge 和 App shell。
+6. 完成 iOS 真机联调、签名与可选的 TestFlight/App Store 分发。
 7. 用户规模和发布节奏稳定后，再设计协议兼容窗口、推送与后台能力。

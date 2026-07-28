@@ -3,11 +3,13 @@ import type { WorkspaceLinkAction } from "../../../contexts/workspace/presentati
 import type { AgentMessageMarkdownWorkspaceAppIcon } from "../../AgentMessageMarkdown";
 import type { AgentConversationVM } from "../contracts/agentConversationVM";
 import type { AgentConversationParticipantPresentation } from "../contracts/agentConversationParticipantPresentation";
+import type { AgentConversationFollowEndMode } from "../agentConversationFollowEndController";
 import { AgentTranscriptSkeleton } from "./AgentTranscriptSkeleton";
 import {
   AgentTranscriptView,
   type AgentTranscriptAttachmentLocator,
-  type AgentTranscriptTurnAttachment
+  type AgentTranscriptTurnAttachment,
+  type AgentTranscriptVirtualScrollController
 } from "./AgentTranscriptView";
 import { AgentTurnDisclosureProvider } from "./AgentTurnDisclosureContext";
 import type { AgentGUIProviderSkillOption } from "../../../agent-gui/agentGuiNode/model/agentGuiNodeTypes";
@@ -21,15 +23,21 @@ export interface AgentConversationFlowProps {
     visible: boolean
   ) => void;
   isLoading: boolean;
+  isVisible?: boolean;
   loadingLabel: string;
   loadingTestId?: string;
   empty: ReactNode;
   onLinkAction?: (action: WorkspaceLinkAction) => void;
   onAuthLogin?: (provider?: string | null) => void;
+  onForkThroughTurn?: (turnId: string) => void;
   availableSkills?: readonly AgentGUIProviderSkillOption[];
   workspaceAppIcons?: readonly AgentMessageMarkdownWorkspaceAppIcon[];
   showRawTimelineJson?: boolean;
   participantPresentation?: AgentConversationParticipantPresentation;
+  followEndMode?: AgentConversationFollowEndMode;
+  forkThroughTurnPendingTurnIds?: readonly string[];
+  virtualListLayoutRevision?: number;
+  virtualScrollControllerRef?: Ref<AgentTranscriptVirtualScrollController>;
   labels: {
     toolCallsLabel: (count: number) => string;
     thinkingLabel: string;
@@ -46,15 +54,21 @@ export const AgentConversationFlow = memo(function AgentConversationFlow({
   turnAttachmentLocatorRef,
   onTurnAttachmentVisibilityChange,
   isLoading,
+  isVisible = true,
   loadingLabel,
   loadingTestId,
   empty,
   onLinkAction,
   onAuthLogin,
+  onForkThroughTurn,
   availableSkills,
   workspaceAppIcons,
   showRawTimelineJson = false,
   participantPresentation,
+  followEndMode,
+  forkThroughTurnPendingTurnIds,
+  virtualListLayoutRevision,
+  virtualScrollControllerRef,
   labels
 }: AgentConversationFlowProps): JSX.Element {
   "use memo";
@@ -73,16 +87,22 @@ export const AgentConversationFlow = memo(function AgentConversationFlow({
     content = (
       <AgentTranscriptView
         conversation={conversation}
+        isVisible={isVisible}
         turnAttachments={turnAttachments}
         turnAttachmentLocatorRef={turnAttachmentLocatorRef}
         onTurnAttachmentVisibilityChange={onTurnAttachmentVisibilityChange}
         onLinkAction={onLinkAction}
         onAuthLogin={onAuthLogin}
+        onForkThroughTurn={onForkThroughTurn}
+        forkThroughTurnPendingTurnIds={forkThroughTurnPendingTurnIds}
         availableSkills={availableSkills}
         workspaceAppIcons={workspaceAppIcons}
         labels={labels}
         showRawTimelineJson={showRawTimelineJson}
+        followEndMode={followEndMode}
         participantPresentation={participantPresentation}
+        virtualListLayoutRevision={virtualListLayoutRevision}
+        virtualScrollControllerRef={virtualScrollControllerRef}
       />
     );
   }

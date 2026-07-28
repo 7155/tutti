@@ -259,16 +259,45 @@ func (h *Host) ensureRuntimeSessionLocked(ctx context.Context, ref SessionRef) (
 	if found && ResolveResumePolicy(canonicalSession).Mode == ResumeModeReject {
 		return ProviderRuntimeSession{}, ErrSessionNotFound
 	}
+	policy := ResolveResumePolicy(canonicalSession)
+	evidence := storesqlite.ProviderSessionResumeEvidence{}
+	if found && policy.Mode != ResumeModeRecreate {
+		evidence, err = h.store.GetProviderSessionResumeEvidence(ctx, ref.WorkspaceID, ref.AgentSessionID)
+		if err != nil {
+			return ProviderRuntimeSession{}, err
+		}
+	}
 	if live, ok := h.runtime.Session(ref.WorkspaceID, ref.AgentSessionID); ok {
 		if !ExternalImportResumeSupported(live.RuntimeContext) {
 			return ProviderRuntimeSession{}, ErrSessionNotFound
+		}
+		if policy.Mode != ResumeModeRecreate &&
+			!runtimeSessionHasActiveTurn(live) &&
+			strings.TrimSpace(canonicalSession.ActiveTurnID) == "" &&
+			evidence.HasSettledTurn && !evidence.Established {
+			return ProviderRuntimeSession{}, ErrProviderSessionNotEstablished
+		}
+		live.Resumable = live.Resumable || evidence.Established
+		// Controller may retain the Session record after releasing an idle
+		// provider connection. Controller's registry handles connection
+		// replacement; clearing this Host marker additionally refreshes its
+		// retained set from the durable store before Ensure returns.
+		if !h.runtimeSessionLive(ref.WorkspaceID, ref.AgentSessionID) {
+			h.goalFencesRestored.Delete(ref.WorkspaceID + "\x00" + ref.AgentSessionID)
+		}
+		if err := h.restoreGoalGenerationFencesOnce(ctx, ref); err != nil {
+			return ProviderRuntimeSession{}, err
 		}
 		return live, nil
 	}
 	if !found || strings.TrimSpace(canonicalSession.Provider) == "" {
 		return ProviderRuntimeSession{}, ErrSessionNotFound
 	}
-	policy := ResolveResumePolicy(canonicalSession)
+	if policy.Mode != ResumeModeRecreate &&
+		!evidence.Established &&
+		(!evidence.HasTurns || evidence.HasSettledTurn) {
+		return ProviderRuntimeSession{}, ErrProviderSessionNotEstablished
+	}
 	prepared := PreparedRuntime{Cwd: strings.TrimSpace(canonicalSession.Cwd)}
 	settings := composerSettingsFromMap(canonicalSession.Settings)
 	if h.preparation != nil {
@@ -288,7 +317,7 @@ func (h *Host) ensureRuntimeSessionLocked(ctx context.Context, ref SessionRef) (
 	result, err := h.runtime.Resume(ctx, RuntimeResumeInput{
 		WorkspaceID: ref.WorkspaceID, AgentSessionID: ref.AgentSessionID,
 		AgentTargetID: strings.TrimSpace(canonicalSession.AgentTargetID), Provider: strings.TrimSpace(canonicalSession.Provider),
-		ProviderSessionID: strings.TrimSpace(canonicalSession.ProviderSessionID), Cwd: prepared.Cwd,
+		ProviderSessionID: strings.TrimSpace(canonicalSession.ProviderSessionID), Resumable: evidence.Established, Cwd: prepared.Cwd,
 		Env: append([]string(nil), prepared.Env...), Title: strings.TrimSpace(canonicalSession.Title),
 		Status: persistedRuntimeStatus(canonicalSession.ActiveTurnID), Settings: settings,
 		CreatedAtUnixMS: canonicalSession.CreatedAtUnixMS, UpdatedAtUnixMS: canonicalSession.UpdatedAtUnixMS,
@@ -299,7 +328,17 @@ func (h *Host) ensureRuntimeSessionLocked(ctx context.Context, ref SessionRef) (
 	if err != nil {
 		return ProviderRuntimeSession{}, err
 	}
+	if err := h.restoreGoalGenerationFences(ctx, ref); err != nil {
+		return ProviderRuntimeSession{}, err
+	}
+	h.goalFencesRestored.Store(ref.WorkspaceID+"\x00"+ref.AgentSessionID, struct{}{})
 	return result, nil
+}
+
+func runtimeSessionHasActiveTurn(session ProviderRuntimeSession) bool {
+	return session.TurnLifecycle != nil &&
+		session.TurnLifecycle.ActiveTurnID != nil &&
+		strings.TrimSpace(*session.TurnLifecycle.ActiveTurnID) != ""
 }
 
 func (h *Host) SendInput(ctx context.Context, ref SessionRef, input SendInput) (SendInputResult, error) {

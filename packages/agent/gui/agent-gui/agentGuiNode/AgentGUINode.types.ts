@@ -19,6 +19,8 @@ import type {
   AgentGUITargetConnectionSource,
   AgentGUIHomeSuggestionId,
   AgentGUIAgentTarget,
+  AgentGUIAgentTargetInfoRenderer,
+  AgentGUIAgentOwnership,
   NodeFrame,
   Point
 } from "../../types";
@@ -123,6 +125,8 @@ export interface AgentGUINodeHostCapabilities {
   referenceProvenanceFilterCatalog?: ReferenceProvenanceCatalog | null;
   /** Legacy Tutti Agent-only opt-in. Prefer an explicit catalog in new hosts. */
   referenceProvenanceFilterEnabled?: boolean;
+  /** Host-owned experimental opt-in for current-Session composer history. */
+  sessionInputHistoryEnabled?: boolean;
   capabilityMenuState?: AgentComposerCapabilityMenuState;
   /**
    * Keeps owner-supported Browser/Computer capability entries visible while
@@ -167,6 +171,11 @@ export interface AgentGUINodeHostActions {
   ) => void;
   onAgentProviderLogin?: (provider: AgentGUIProvider) => void;
   onAgentEnvPanelOpen?: (input?: OpenAgentEnvPanelInput) => void;
+  /**
+   * Notifies the Host when the exact target's config menu opens. Account and
+   * Commerce refreshes remain Host-owned and must not enter Agent status.
+   */
+  onAgentConfigMenuOpen?: (context: AgentGUIAgentConfigMenuContext) => void;
   onOpenConversationWindow?: (agentSessionId: string) => void;
   onClose: () => void;
   onResize: (frame: NodeFrame) => void;
@@ -194,7 +203,24 @@ export interface AgentGUINodeHostActions {
   ) => void;
 }
 
+export interface AgentGUIAgentConfigMenuContext {
+  agentTargetId: string;
+  provider: AgentGUIProvider;
+  label: string;
+  ownership?: AgentGUIAgentOwnership;
+}
+
 export interface AgentGUINodeRenderSlots {
+  /**
+   * Optional Host-owned information for an exact Agent target. AgentGUI owns
+   * tooltip mechanics and invokes this renderer lazily for supported surfaces.
+   */
+  agentTargetInfo?: AgentGUIAgentTargetInfoRenderer;
+  /**
+   * Optional Host chrome for the exact target's account/Commerce presentation.
+   * Returning null preserves AgentGUI's provider account and quota content.
+   */
+  agentConfigAccount?: (context: AgentGUIAgentConfigMenuContext) => ReactNode;
   projectDirectoryPickerHeaderActions?: ReferenceSourcePickerProps["renderHeaderActions"];
   providerRailEmpty?: AgentGUIAgentsEmptyRenderer;
   providerUnavailableState?: AgentGUIProviderUnavailableStateRenderer;
@@ -358,6 +384,7 @@ export function areAgentGUINodePropsEqual(
       nc.referenceProvenanceFilterCatalog &&
     pc.referenceProvenanceFilterEnabled ===
       nc.referenceProvenanceFilterEnabled &&
+    pc.sessionInputHistoryEnabled === nc.sessionInputHistoryEnabled &&
     agentGuiStateEquals(previous.state, next.state) &&
     pf.position.x === nf.position.x &&
     pf.position.y === nf.position.y &&
@@ -400,6 +427,7 @@ export function areAgentGUINodePropsEqual(
     pa.onCapabilitySettingsRequest === na.onCapabilitySettingsRequest &&
     pa.onAgentProviderLogin === na.onAgentProviderLogin &&
     pa.onAgentEnvPanelOpen === na.onAgentEnvPanelOpen &&
+    pa.onAgentConfigMenuOpen === na.onAgentConfigMenuOpen &&
     pa.onOpenConversationWindow === na.onOpenConversationWindow &&
     pa.onClose === na.onClose &&
     pa.onResize === na.onResize &&
@@ -411,6 +439,8 @@ export function areAgentGUINodePropsEqual(
     pa.onShowMessage === na.onShowMessage &&
     pa.onEngagementEvent === na.onEngagementEvent &&
     pa.onConversationRailLayoutChange === na.onConversationRailLayoutChange &&
+    ps.agentConfigAccount === ns.agentConfigAccount &&
+    ps.agentTargetInfo === ns.agentTargetInfo &&
     ps.providerRailEmpty === ns.providerRailEmpty &&
     ps.providerUnavailableState === ns.providerUnavailableState &&
     ps.projectDirectoryPickerHeaderActions ===

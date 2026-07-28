@@ -1,9 +1,13 @@
+import { Platform } from "react-native";
 import { controlPlaneBaseURL, mobileClientVersion } from "../config";
-import {
-  deviceLink,
-  mobileSecurity,
-  type DeviceIdentity
-} from "../native/mobileNative";
+import { deviceLink, mobileSecurity } from "../native/mobileNative";
+import type {
+  DeviceIdentity,
+  DevicePairing,
+  DevicePairingChallenge,
+  UserDevice
+} from "./mobileDomain";
+export type { DevicePairing, UserDevice } from "./mobileDomain";
 import { accountCookie, readJSON } from "./http";
 import {
   base64URLToStandard,
@@ -13,34 +17,14 @@ import {
   standardBase64ToURL,
   type PairingQRPayload
 } from "./pairingProtocol";
-
-export { parsePairingQR } from "./pairingProtocol";
-
-export interface DevicePairing {
-  confirmedAt?: string;
-  controllerUserDeviceId: string;
-  pairingId: string;
-  revision: string;
-  state: string;
-  targetUserDeviceId: string;
-}
-
-export interface UserDevice {
-  displayName: string;
-  platform: string;
-  reportedName: string;
-  userDeviceId: string;
-}
+import { PAIRING_OPERATION_SUSPENDED } from "./servicePorts";
 
 interface RegisteredDevice {
   userDeviceId: string;
 }
 
-interface PairingChallenge {
-  challengeId: string;
-  expiresAt: string;
+interface PairingChallenge extends DevicePairingChallenge {
   pairingId?: string;
-  state: string;
 }
 
 interface DeviceLinkICE {
@@ -66,13 +50,17 @@ interface DeviceLinkAttempt {
 
 export async function claimPairing(
   sessionId: string,
-  payload: PairingQRPayload
+  payload: PairingQRPayload,
+  isCurrent: () => boolean = () => true
 ): Promise<PairingChallenge> {
   const identity = await mobileSecurity.getOrCreateIdentity();
+  requireCurrentPairing(isCurrent);
   await registerIdentity(sessionId, identity);
+  requireCurrentPairing(isCurrent);
   const signature = await mobileSecurity.sign(
     pairingClaimProof(payload.challengeId, payload.secret)
   );
+  requireCurrentPairing(isCurrent);
   const response = await controlPlaneRequest<{ challenge: PairingChallenge }>(
     sessionId,
     `/device-pairing-challenges/${encodeURIComponent(payload.challengeId)}/claim`,
@@ -86,6 +74,13 @@ export async function claimPairing(
     }
   );
   return response.challenge;
+}
+
+function requireCurrentPairing(isCurrent: () => boolean): void {
+  if (isCurrent()) return;
+  throw Object.assign(new Error("pairing operation was suspended"), {
+    code: PAIRING_OPERATION_SUSPENDED
+  });
 }
 
 export async function getPairingChallenge(
@@ -319,7 +314,7 @@ async function registerIdentity(
         arch: identity.arch,
         clientVersion: mobileClientVersion,
         deviceId: identity.deviceId,
-        platform: "android",
+        platform: Platform.OS,
         publicIdentity: {
           algorithm: "ed25519",
           proof,
@@ -359,6 +354,7 @@ async function controlPlaneRequest<T>(
   try {
     const response = await fetch(`${controlPlaneBaseURL}${path}`, {
       ...init,
+      credentials: "omit",
       headers: {
         Accept: "application/json",
         Cookie: accountCookie(sessionId),

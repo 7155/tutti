@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 
 	agenthost "github.com/tutti-os/tutti/packages/agent/host"
@@ -131,6 +132,49 @@ func (a serviceHostStore) GetTurn(ctx context.Context, workspaceID, sessionID, t
 	return a.service.TurnStore.GetTurn(ctx, workspaceID, sessionID, turnID)
 }
 
+func (a serviceHostStore) GetProviderSessionResumeEvidence(
+	ctx context.Context,
+	workspaceID string,
+	sessionID string,
+) (storesqlite.ProviderSessionResumeEvidence, error) {
+	if a.service == nil {
+		return storesqlite.ProviderSessionResumeEvidence{}, nil
+	}
+	if a.service.TurnStore == nil {
+		return storesqlite.ProviderSessionResumeEvidence{HasTurns: true, Established: true}, nil
+	}
+	turns, err := a.service.TurnStore.ListSessionTurns(ctx, workspaceID, sessionID)
+	if err != nil {
+		return storesqlite.ProviderSessionResumeEvidence{}, err
+	}
+	// Older service tests model an established persisted session without
+	// seeding its canonical turns. Keep those fixtures meaningful; the
+	// unestablished-session conformance case seeds an explicit turn with no
+	// provider root id and therefore still exercises the rejection path.
+	if len(turns) == 0 {
+		return storesqlite.ProviderSessionResumeEvidence{HasTurns: true, Established: true}, nil
+	}
+	evidence := storesqlite.ProviderSessionResumeEvidence{HasTurns: len(turns) > 0}
+	for _, turn := range turns {
+		if strings.TrimSpace(turn.Phase) == storesqlite.TurnPhaseSettled {
+			evidence.HasSettledTurn = true
+		}
+		if strings.TrimSpace(turn.RootProviderTurnID) != "" {
+			evidence.Established = true
+			break
+		}
+	}
+	// This adapter is test-only. The shared fake runtime acknowledges Exec
+	// synchronously, so expose that acknowledgement as the canonical evidence
+	// that production receives through root_provider_turn.started persistence.
+	if !evidence.Established {
+		if session, ok := a.service.controller().Session(workspaceID, sessionID); ok {
+			evidence.Established = session.Resumable
+		}
+	}
+	return evidence, nil
+}
+
 func (a serviceHostStore) FindTurnByClientSubmitID(ctx context.Context, workspaceID, sessionID, clientSubmitID string) (string, bool, error) {
 	if a.service.SubmitClaimStore != nil {
 		turnID, found, err := a.service.SubmitClaimStore.FindTurnByClientSubmitID(ctx, workspaceID, sessionID, clientSubmitID)
@@ -195,6 +239,16 @@ func (a serviceHostStore) DeleteSubmitClaim(ctx context.Context, workspaceID, se
 }
 
 type serviceHostRuntime struct{ service *Service }
+
+func (a serviceHostRuntime) RuntimeSessionLive(workspaceID, agentSessionID string) bool {
+	if liveness, ok := a.service.controller().(interface {
+		RuntimeSessionLive(string, string) bool
+	}); ok {
+		return liveness.RuntimeSessionLive(workspaceID, agentSessionID)
+	}
+	_, found := a.service.controller().Session(workspaceID, agentSessionID)
+	return found
+}
 
 func (a serviceHostRuntime) Start(ctx context.Context, input RuntimeStartInput) (ProviderRuntimeSession, error) {
 	session, err := a.service.controller().Start(ctx, input)
@@ -287,9 +341,17 @@ func (a serviceHostGoalRuntime) GoalRecoveryPolicy(ctx context.Context, input ag
 	return resolver.GoalRecoveryPolicy(ctx, input)
 }
 
+func (a serviceHostGoalRuntime) FenceGoalGeneration(ctx context.Context, input agenthost.RuntimeGoalGenerationFenceInput) error {
+	fencer, ok := a.service.controller().(RuntimeGoalGenerationFencer)
+	if !ok {
+		return agenthost.ErrGoalGenerationFenceUnavailable
+	}
+	return normalizeRuntimeError(fencer.FenceGoalGeneration(ctx, input))
+}
+
 func newApplicationHost(s *Service, worktreeGC agenthost.WorktreeGarbageCollector) *agenthost.Host {
 	store := serviceHostStore{service: s}
-	return composeApplicationHost(s, worktreeGC, store, store, store, serviceHostRuntime{service: s}, serviceHostGoalRuntime{service: s})
+	return composeApplicationHost(s, worktreeGC, store, store, store, nil, serviceHostRuntime{service: s}, serviceHostGoalRuntime{service: s})
 }
 
 func configureTestApplicationHost(s *Service) {
@@ -319,7 +381,7 @@ func activitySessionFromPersisted(session PersistedSession) storesqlite.Session 
 		RailSectionKind: session.RailSectionKind, RailProjectPath: session.RailProjectPath,
 		RailSectionKey: session.RailSectionKey, Settings: ComposerSettingsToMap(session.Settings),
 		Metadata: session.Metadata, InternalRuntimeContext: clonePayload(session.InternalRuntimeContext), Title: session.Title,
-		PinnedAtUnixMS: session.PinnedAtUnixMS, LastEventUnixMS: session.LastEventUnixMS,
+		MessageVersion: session.MessageVersion, PinnedAtUnixMS: session.PinnedAtUnixMS, LastEventUnixMS: session.LastEventUnixMS,
 		StartedAtUnixMS: session.StartedAtUnixMS, EndedAtUnixMS: session.EndedAtUnixMS,
 		CreatedAtUnixMS: session.CreatedAtUnixMS, UpdatedAtUnixMS: session.UpdatedAtUnixMS, ActiveTurnID: session.ActiveTurnID,
 	}

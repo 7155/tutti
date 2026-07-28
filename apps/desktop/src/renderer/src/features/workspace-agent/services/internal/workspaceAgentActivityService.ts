@@ -176,8 +176,7 @@ export class WorkspaceAgentActivityService
     workspaceId: string,
     listener: (snapshot: AgentActivitySnapshot) => void
   ): () => void {
-    const entry = this.entry(workspaceId);
-    return entry.engine.subscribe(() =>
+    return this.subscribeActivitySnapshot(workspaceId, () =>
       listener(this.activitySnapshot(workspaceId))
     );
   }
@@ -300,6 +299,7 @@ export class WorkspaceAgentActivityService
             type: "message/snapshotReceived",
             workspaceId
           });
+          this.reconcileOptimisticMessages(workspaceId, input.agentSessionId);
         }
         return page;
       });
@@ -898,8 +898,8 @@ export class WorkspaceAgentActivityService
         return activation;
       },
       cancelTurn: (input) => this.cancelTurn(input),
-      reconcileSession: (command) =>
-        this.executeSessionReconcileCommand(command),
+      reconcileSession: (command, signal) =>
+        this.executeSessionReconcileCommand(command, signal),
       runtimeApi: this.dependencies.runtimeApi,
       sendInput: async (input) => {
         const result = await this.sendInput(input);

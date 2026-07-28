@@ -1980,6 +1980,7 @@ test("WorkspaceAgentActivityService reconciles child sessions and their messages
     ...workspaceAgentSession({ status: "working" }),
     id: "child-1",
     kind: "child",
+    messageVersion: 1,
     rootAgentSessionId: "session-1",
     rootTurnId: "turn-1",
     parentAgentSessionId: "session-1",
@@ -1988,6 +1989,10 @@ test("WorkspaceAgentActivityService reconciles child sessions and their messages
     title: "Child 1"
   };
   const messageRequests: string[] = [];
+  const messageRequestInputs: Array<{
+    agentSessionId: string;
+    request: Record<string, unknown>;
+  }> = [];
   const service = new WorkspaceAgentActivityService({
     tuttidClient: {
       getWorkspaceAgentSession: async () => ({
@@ -2017,9 +2022,11 @@ test("WorkspaceAgentActivityService reconciles child sessions and their messages
       }),
       listWorkspaceAgentSessionMessages: async (
         _workspaceId: string,
-        agentSessionId: string
+        agentSessionId: string,
+        request: Record<string, unknown>
       ) => {
         messageRequests.push(agentSessionId);
+        messageRequestInputs.push({ agentSessionId, request });
         return {
           hasMore: false,
           latestVersion: 1,
@@ -2031,6 +2038,7 @@ test("WorkspaceAgentActivityService reconciles child sessions and their messages
               occurredAtUnixMs: 1,
               payload: { text: agentSessionId },
               role: "assistant",
+              sequence: 1,
               turnId: agentSessionId === "child-1" ? "child-turn-1" : "turn-1",
               version: 1
             }
@@ -2072,6 +2080,17 @@ test("WorkspaceAgentActivityService reconciles child sessions and their messages
     snapshot.sessionMessagesById["child-1"]?.[0]?.turnId,
     "child-turn-1"
   );
+  messageRequests.length = 0;
+  service.ensureSessionSynchronized({
+    agentSessionId: "session-1",
+    workspaceId: "ws-1"
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(
+    messageRequests,
+    ["session-1"],
+    "an unchanged child cursor should skip its message request"
+  );
   assert.deepEqual(
     selectEngineTurnsForSession(
       service.getSessionEngine("ws-1").getSnapshot(),
@@ -2092,6 +2111,143 @@ test("WorkspaceAgentActivityService reconciles child sessions and their messages
         }
       }
     ]
+  );
+});
+
+test("WorkspaceAgentActivityService catches up children that advance between detail reads", async () => {
+  const root = workspaceAgentSession({ status: "ready" });
+  const child = {
+    ...workspaceAgentSession({ status: "working" }),
+    id: "child-1",
+    kind: "child",
+    messageVersion: 1,
+    parentAgentSessionId: "session-1",
+    parentToolCallId: "spawn-1",
+    parentTurnId: "turn-1",
+    rootAgentSessionId: "session-1",
+    rootTurnId: "turn-1"
+  };
+  let detailReads = 0;
+  let advanceBetweenDetailReads = false;
+  const childRequests: Array<Record<string, unknown>> = [];
+  const service = new WorkspaceAgentActivityService({
+    tuttidClient: {
+      getWorkspaceAgentSession: async (
+        _workspaceId: string,
+        requestedSessionId: string
+      ) => {
+        detailReads += 1;
+        if (requestedSessionId === "child-1") {
+          return {
+            session: {
+              ...child,
+              messageVersion: detailReads === 2 ? 3 : 2
+            },
+            childSessions: [],
+            turns: []
+          };
+        }
+        return {
+          session: root,
+          childSessions: [
+            {
+              ...child,
+              messageVersion:
+                advanceBetweenDetailReads && detailReads === 2 ? 2 : 1
+            }
+          ],
+          turns: []
+        };
+      },
+      listWorkspaceAgentSessions: async () => ({
+        hasMore: false,
+        sessions: [root],
+        workspaceId: "ws-1"
+      }),
+      listWorkspaceAgentSessionMessages: async (
+        _workspaceId: string,
+        agentSessionId: string,
+        request: Record<string, unknown>
+      ) => {
+        if (agentSessionId !== "child-1") {
+          return { hasMore: false, latestVersion: 0, messages: [] };
+        }
+        childRequests.push(request);
+        const version =
+          request.afterVersion === 2 ? 3 : request.afterVersion === 1 ? 2 : 1;
+        return {
+          hasMore: false,
+          latestVersion: version,
+          messages: [
+            {
+              agentSessionId,
+              kind: "text",
+              messageId: "child-progress",
+              occurredAtUnixMs: version,
+              payload: { text: `v${version}` },
+              role: "assistant",
+              sequence: 1,
+              turnId: "child-turn-1",
+              version
+            }
+          ]
+        };
+      }
+    } as unknown as TuttidClient,
+    runtimeApi: { logTerminalDiagnostic: async () => {} }
+  });
+
+  await service.load("ws-1");
+  service.ensureSessionSynchronized({
+    agentSessionId: "session-1",
+    workspaceId: "ws-1"
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(childRequests, [
+    { afterVersion: 0, beforeVersion: undefined, limit: 100, order: "desc" }
+  ]);
+  childRequests.length = 0;
+  detailReads = 0;
+  advanceBetweenDetailReads = true;
+  service.ensureSessionSynchronized({
+    agentSessionId: "session-1",
+    workspaceId: "ws-1"
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(childRequests, [
+    {
+      afterVersion: 1,
+      beforeVersion: undefined,
+      limit: undefined,
+      order: "asc"
+    }
+  ]);
+  assert.equal(
+    service.getSnapshot("ws-1").sessionMessagesById["child-1"]?.[0]?.version,
+    2
+  );
+
+  childRequests.length = 0;
+  detailReads = 0;
+  service.ensureSessionSynchronized({
+    agentSessionId: "child-1",
+    workspaceId: "ws-1"
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(childRequests, [
+    {
+      afterVersion: 2,
+      beforeVersion: undefined,
+      limit: undefined,
+      order: "asc"
+    }
+  ]);
+  assert.equal(
+    service.getSnapshot("ws-1").sessionMessagesById["child-1"]?.[0]?.version,
+    3
   );
 });
 
@@ -2156,9 +2312,14 @@ test("WorkspaceAgentActivityService loads the newest history page first", async 
   );
 });
 
-test("WorkspaceAgentActivityService drains every incremental history page", async () => {
+test("WorkspaceAgentActivityService drains child incremental pages from its durable cursor", async () => {
   const requests: Array<Record<string, unknown>> = [];
-  const session = workspaceAgentSession({ status: "ready" });
+  const session = {
+    ...workspaceAgentSession({ status: "ready" }),
+    kind: "child",
+    parentAgentSessionId: "root-1",
+    rootAgentSessionId: "root-1"
+  };
   let mode: "idle" | "incremental" | "seed" = "idle";
   const message = (version: number) => ({
     agentSessionId: "session-1",
@@ -2166,7 +2327,8 @@ test("WorkspaceAgentActivityService drains every incremental history page", asyn
     messageId: `message-${version}`,
     occurredAtUnixMs: version,
     payload: { text: String(version) },
-    role: "user",
+    role: "assistant",
+    sequence: version,
     turnId: `turn-${version}`,
     version
   });
@@ -3036,6 +3198,7 @@ function workspaceAgentSession(overrides: {
   runtimeContext?: Record<string, unknown>;
   settings?: Record<string, unknown>;
   latestTurn?: Record<string, unknown> | null;
+  messageVersion?: number;
   status: string;
   submitAvailability?: Record<string, unknown>;
   turnLifecycle?: Record<string, unknown>;
@@ -3089,6 +3252,7 @@ function workspaceAgentSession(overrides: {
     cwd: "/workspace",
     latestTurn,
     latestTurnInteractions: [],
+    messageVersion: overrides.messageVersion ?? 0,
     pendingInteractions: [],
     permissionConfig: { configurable: false, modes: [] },
     pinnedAtUnixMs: null,

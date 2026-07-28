@@ -2727,6 +2727,45 @@ Turn state, loading, cancel, restore, file-change undo, rail projection, event u
   [workspaceAgentActivityReconcileMessages.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/internal/workspaceAgentActivityReconcileMessages.ts)
   [agent-gui-node.md](../../architecture/agent-gui-node.md)
 
+### Root detail reconciliation repeatedly reloads unchanged child transcripts
+
+- Symptom:
+  Opening or reconciling one root conversation repeatedly issues message-list
+  requests for every known child Session, including assistant-only and
+  tool-only children whose durable messages have not changed.
+- Quick checks:
+  Compare each child Session's required `messageVersion` from both root-detail
+  reads with the largest cached message version that also has a durable
+  `sequence`. If the cache is current but the request still starts at zero,
+  inspect whether child reconciliation reused the root conversation's
+  user-message boundary heuristic.
+- Root cause:
+  The root heuristic intentionally returns zero when cached history has no user
+  message, so it can repair an incomplete root conversation. Applying that
+  heuristic to provider-native child Sessions makes ordinary assistant/tool
+  histories look permanently unhydrated and forces the same reads forever.
+- Fix:
+  Keep root and child cursor policies separate. For a child, derive the cursor
+  only from durable sequenced messages and skip its message request when that
+  cursor has reached the Session `messageVersion`. Preserve the bounded
+  newest-first initial read, but treat an existing empty child window as the
+  authoritative zero cursor and drain later messages from `afterVersion=0`.
+  After the first message pass, read root detail again and incrementally fetch
+  newly discovered children plus existing children whose `messageVersion`
+  advanced during the pass. Do not let optimistic/transient rows advance the
+  durable cursor, and do not add polling; later changes arrive through the
+  existing push-and-reconcile path.
+- Validation:
+  Cover assistant-only and tool-only child caches, a transient row with a higher
+  synthetic version, an unchanged child that performs no request, initial
+  newest-first hydration, an empty known child that gains more than one page,
+  and a child advancing between the two detail reads. Keep a root assistant-only
+  case proving its existing repair still reads from zero.
+- References:
+  [workspaceAgentActivityReconcileBridge.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/internal/workspaceAgentActivityReconcileBridge.ts)
+  [workspaceAgentActivityReconcileMessages.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/internal/workspaceAgentActivityReconcileMessages.ts)
+  [agent-gui-node.md](../../architecture/agent-gui-node.md)
+
 ### AgentActivity replication repeatedly rejects message batches as invalid
 
 - Symptom:

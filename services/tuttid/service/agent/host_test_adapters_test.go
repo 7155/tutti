@@ -381,7 +381,7 @@ func activitySessionFromPersisted(session PersistedSession) storesqlite.Session 
 		RailSectionKind: session.RailSectionKind, RailProjectPath: session.RailProjectPath,
 		RailSectionKey: session.RailSectionKey, Settings: ComposerSettingsToMap(session.Settings),
 		Metadata: session.Metadata, InternalRuntimeContext: clonePayload(session.InternalRuntimeContext), Title: session.Title,
-		PinnedAtUnixMS: session.PinnedAtUnixMS, LastEventUnixMS: session.LastEventUnixMS,
+		MessageVersion: session.MessageVersion, PinnedAtUnixMS: session.PinnedAtUnixMS, LastEventUnixMS: session.LastEventUnixMS,
 		StartedAtUnixMS: session.StartedAtUnixMS, EndedAtUnixMS: session.EndedAtUnixMS,
 		CreatedAtUnixMS: session.CreatedAtUnixMS, UpdatedAtUnixMS: session.UpdatedAtUnixMS, ActiveTurnID: session.ActiveTurnID,
 	}

@@ -71,6 +71,7 @@ export interface AgentActivitySession {
   imported: boolean;
   visible: boolean;
   resumable: boolean;
+  /** Latest accepted durable message change cursor. */
   messageVersion: number;
   lastEventUnixMs: number;
   startedAtUnixMs: number;

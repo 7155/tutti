@@ -697,6 +697,16 @@ Durable daemon message pages and `message_update` payloads use
 `AgentActivityDurableMessage`, whose immutable `sequence` is required. Local
 optimistic and session-audit projections may use the separate transient
 message shape; this must not weaken the durable page or realtime contract.
+The generated daemon Session DTO also requires `messageVersion`. The shared
+`@tutti-os/agent-activity-tuttid-adapter` validates and preserves that high-water
+cursor for Desktop and Mobile; consumers must not replace a missing value with
+zero or add an old-daemon fallback because both binaries upgrade together.
+Every HTTP field in this cursor domain (`messageVersion`, message `version`,
+page `latestVersion`, and `afterVersion`/`beforeVersion`) is bounded by
+JavaScript's maximum safe integer. Durable message `sequence` has the same
+transport bound. Store and service layers retain `uint64`; the daemon API owns
+checked conversion and must fail response projection instead of emitting an
+inexact JSON number.
 
 The adapter exposes the HTTP operations used by that command port and by the
 desktop reconcile bridge:

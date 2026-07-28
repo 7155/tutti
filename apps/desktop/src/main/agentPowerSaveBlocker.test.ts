@@ -222,6 +222,7 @@ function createSession(id: string, status: string): WorkspaceAgentSession {
     activeTurnId: active ? "turn-1" : null,
     latestTurn: null,
     latestTurnInteractions: [],
+    messageVersion: 0,
     pendingInteractions: [],
     permissionConfig: { configurable: false, modes: [] },
     pinnedAtUnixMs: null,

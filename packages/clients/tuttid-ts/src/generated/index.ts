@@ -1624,6 +1624,7 @@ export type {
   WorkspaceAgentInteraction,
   WorkspaceAgentInteractionKind,
   WorkspaceAgentInteractionStatus,
+  WorkspaceAgentMessageCursor,
   WorkspaceAgentModelRef,
   WorkspaceAgentPlanDecisionOperation,
   WorkspaceAgentPlanDecisionResponse,

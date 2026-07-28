@@ -238,8 +238,9 @@ do not restore flat compatibility props.
 
 Hosts may provide `renderSlots.agentTargetInfo` to enrich the exact Agent icon
 in the provider Rail and Conversation Rail. The renderer receives
-`{ target, surface }`; AgentGUI owns Tooltip mechanics and calls the renderer
-only while the content is mounted. Pass the same renderer plus an exact
+`{ target, surface }` and returns one React element, or `null` to retain the
+built-in target-label fallback. AgentGUI owns Tooltip mechanics and calls the
+renderer only while the content is mounted. Pass the same renderer plus an exact
 `conversationAgentTarget` to `AgentGuiWorkbenchHeader` for the Header icon.
 Conversation history resolves the current Host directory by canonical
 `agentTargetId`; missing targets show no enriched Tooltip and target metadata

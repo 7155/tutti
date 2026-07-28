@@ -89,6 +89,7 @@ describe("AgentGuiWorkbenchHeader conversation identity", () => {
   it.each([false, true])(
     "lazily renders exact Host target information for the session icon when collapsed is %s",
     async (isConversationRailCollapsed) => {
+      const onHeaderPointerDown = vi.fn();
       const conversationAgentTarget: AgentGUIAgentTarget = {
         agentTargetId: "agent:shared",
         iconUrl: "shared-agent.png",
@@ -118,15 +119,28 @@ describe("AgentGuiWorkbenchHeader conversation identity", () => {
           renderAgentTargetInfo={renderAgentTargetInfo}
           showConversationRailToggle={false}
           showWindowControls={false}
+          onPointerDown={onHeaderPointerDown}
           onToggleConversationRail={vi.fn()}
         />
       );
 
       expect(renderAgentTargetInfo).not.toHaveBeenCalled();
 
-      const trigger = screen.getByLabelText("Shared Codex");
-      fireEvent.pointerMove(trigger, { pointerType: "mouse" });
+      const trigger = screen.getByRole("img", { name: "Shared Codex" });
+      fireEvent.focus(trigger);
+      const focusTooltip = await screen.findByRole("tooltip");
+      expect(focusTooltip).toHaveTextContent("workbench-header:agent:shared");
+      expect(trigger).toHaveAttribute("aria-describedby", focusTooltip.id);
+      expect(trigger).toHaveAttribute("tabindex", "0");
 
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(screen.queryByRole("tooltip")).toBeNull();
+
+      fireEvent.blur(trigger);
+      fireEvent.pointerDown(trigger);
+      expect(onHeaderPointerDown).not.toHaveBeenCalled();
+      fireEvent.pointerUp(trigger);
+      fireEvent.pointerMove(trigger, { pointerType: "mouse" });
       expect(await screen.findByRole("tooltip")).toHaveTextContent(
         "workbench-header:agent:shared"
       );
@@ -134,7 +148,6 @@ describe("AgentGuiWorkbenchHeader conversation identity", () => {
         surface: "workbench-header",
         target: conversationAgentTarget
       });
-      expect(trigger).toHaveAttribute("tabindex", "0");
     }
   );
 

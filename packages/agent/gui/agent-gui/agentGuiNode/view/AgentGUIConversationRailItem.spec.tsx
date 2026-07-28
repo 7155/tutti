@@ -227,10 +227,19 @@ describe("AgentGUIConversationRailItem interaction lock", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
 
-    fireEvent.focus(screen.getByRole("button", { name: /Session 1/ }));
-    expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      "conversation-rail:Shared Codex"
+    const conversationButton = screen.getByRole("button", {
+      name: /Session 1/
+    });
+    fireEvent.focus(conversationButton);
+    const focusTooltip = await screen.findByRole("tooltip");
+    expect(focusTooltip).toHaveTextContent("conversation-rail:Shared Codex");
+    expect(conversationButton).toHaveAttribute(
+      "aria-describedby",
+      focusTooltip.id
     );
+
+    fireEvent.blur(conversationButton);
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
   });
 
   it("fails closed when a session target is missing from the exact directory", () => {

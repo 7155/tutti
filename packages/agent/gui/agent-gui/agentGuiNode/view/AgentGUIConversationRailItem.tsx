@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { NewWorkspaceLinedIcon, cn } from "@tutti-os/ui-system";
 import { WorkspaceUserProjectSelect } from "@tutti-os/workspace-user-project/ui";
@@ -116,6 +116,36 @@ export const AgentGUIConversationRailItem = memo(
     const agentTargets = useAgentTargetPresentations();
     const renderAgentTargetInfo = useAgentTargetInfoRenderer();
     const targetInfoTarget = useAgentTargetInfoTarget(item.agentTargetId);
+    const hasTargetInfo = Boolean(renderAgentTargetInfo && targetInfoTarget);
+    const targetInfoFocusedRef = useRef(false);
+    const targetInfoPointerOverIconRef = useRef(false);
+    const handleTargetInfoOpenChange = (open: boolean): void => {
+      if (
+        !open ||
+        targetInfoFocusedRef.current ||
+        targetInfoPointerOverIconRef.current
+      ) {
+        setTargetInfoOpen(open);
+      }
+    };
+    const handleTargetInfoIconPointerMove = (): void => {
+      targetInfoPointerOverIconRef.current = true;
+      setTargetInfoOpen(true);
+    };
+    const handleTargetInfoIconPointerLeave = (): void => {
+      targetInfoPointerOverIconRef.current = false;
+      if (!targetInfoFocusedRef.current) {
+        setTargetInfoOpen(false);
+      }
+    };
+    const handleTargetInfoFocus = (): void => {
+      targetInfoFocusedRef.current = true;
+      setTargetInfoOpen(true);
+    };
+    const handleTargetInfoBlur = (): void => {
+      targetInfoFocusedRef.current = false;
+      setTargetInfoOpen(false);
+    };
     const conversationIcon = agentGUIConversationIconPresentation(
       item.provider,
       item.agentTargetId,
@@ -134,6 +164,12 @@ export const AgentGUIConversationRailItem = memo(
             WebkitMaskImage: `url("${conversationIcon.url}")`,
             maskImage: `url("${conversationIcon.url}")`
           }}
+          onPointerLeave={
+            hasTargetInfo ? handleTargetInfoIconPointerLeave : undefined
+          }
+          onPointerMove={
+            hasTargetInfo ? handleTargetInfoIconPointerMove : undefined
+          }
         />
       ) : conversationIcon ? (
         <img
@@ -145,26 +181,14 @@ export const AgentGUIConversationRailItem = memo(
           )}
           draggable={false}
           src={conversationIcon.url}
+          onPointerLeave={
+            hasTargetInfo ? handleTargetInfoIconPointerLeave : undefined
+          }
+          onPointerMove={
+            hasTargetInfo ? handleTargetInfoIconPointerMove : undefined
+          }
         />
       ) : null;
-    const conversationIconWithTargetInfo =
-      conversationIconNode && renderAgentTargetInfo && targetInfoTarget ? (
-        <AgentTargetInfoTooltip
-          align="start"
-          fallbackLabel={targetInfoTarget.label}
-          onOpenChange={setTargetInfoOpen}
-          open={targetInfoOpen}
-          renderer={renderAgentTargetInfo}
-          side="bottom"
-          sideOffset={6}
-          surface="conversation-rail"
-          target={targetInfoTarget}
-        >
-          {conversationIconNode}
-        </AgentTargetInfoTooltip>
-      ) : (
-        conversationIconNode
-      );
     const setItemElement = useCallback(
       (element: HTMLDivElement | null) => {
         registerItemElement(item.id, element);
@@ -225,6 +249,45 @@ export const AgentGUIConversationRailItem = memo(
       onOpenConversationWindow,
       onRequestRenameConversation
     });
+    const conversationSelect = (
+      <button
+        type="button"
+        className={styles.conversationSelect}
+        onClick={handleSelect}
+        onBlur={hasTargetInfo ? handleTargetInfoBlur : undefined}
+        onDoubleClick={(event) => {
+          event.preventDefault();
+          handleRequestRename();
+        }}
+        onFocus={hasTargetInfo ? handleTargetInfoFocus : undefined}
+      >
+        <span className={styles.conversationTitleRow}>
+          {conversationIconNode}
+          <span className={styles.conversationTitle}>
+            {agentGUIConversationRailTitle(item, labels, uiLanguage)}
+          </span>
+        </span>
+        <AgentGUIConversationRailRelativeTime item={item} labels={labels} />
+      </button>
+    );
+    const conversationSelectWithTargetInfo =
+      renderAgentTargetInfo && targetInfoTarget ? (
+        <AgentTargetInfoTooltip
+          align="start"
+          fallbackLabel={targetInfoTarget.label}
+          onOpenChange={handleTargetInfoOpenChange}
+          open={targetInfoOpen}
+          renderer={renderAgentTargetInfo}
+          side="bottom"
+          sideOffset={6}
+          surface="conversation-rail"
+          target={targetInfoTarget}
+        >
+          {conversationSelect}
+        </AgentTargetInfoTooltip>
+      ) : (
+        conversationSelect
+      );
     const row = (
       <div
         ref={setItemElement}
@@ -245,33 +308,7 @@ export const AgentGUIConversationRailItem = memo(
         onMouseLeave={handleMouseLeave}
         onPointerEnter={() => setActionsActivated(true)}
       >
-        <button
-          type="button"
-          className={styles.conversationSelect}
-          onClick={handleSelect}
-          onBlur={
-            renderAgentTargetInfo && targetInfoTarget
-              ? () => setTargetInfoOpen(false)
-              : undefined
-          }
-          onDoubleClick={(event) => {
-            event.preventDefault();
-            handleRequestRename();
-          }}
-          onFocus={
-            renderAgentTargetInfo && targetInfoTarget
-              ? () => setTargetInfoOpen(true)
-              : undefined
-          }
-        >
-          <span className={styles.conversationTitleRow}>
-            {conversationIconWithTargetInfo}
-            <span className={styles.conversationTitle}>
-              {agentGUIConversationRailTitle(item, labels, uiLanguage)}
-            </span>
-          </span>
-          <AgentGUIConversationRailRelativeTime item={item} labels={labels} />
-        </button>
+        {conversationSelectWithTargetInfo}
         {actionsActivated || isPendingDeleteConversation ? (
           <div className={styles.conversationActions}>
             {isPendingDeleteConversation ? (

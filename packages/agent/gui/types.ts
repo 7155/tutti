@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactElement } from "react";
 import type { AgentRuntimeStatus } from "./contexts/agent/domain/types";
 import type {
   AgentSettings,
@@ -252,7 +252,7 @@ export interface AgentGUIAgentTargetInfoRenderContext {
  */
 export type AgentGUIAgentTargetInfoRenderer = (
   context: AgentGUIAgentTargetInfoRenderContext
-) => ReactNode;
+) => ReactElement | null;
 
 export type AgentGUITargetConnectionStatus =
   | "connected"

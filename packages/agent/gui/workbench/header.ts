@@ -590,7 +590,10 @@ function createSessionHeaderIconSlot({
     {
       "aria-label": agentTarget.label,
       className: "agent-gui-workbench-header__session-icon-info-trigger",
-      tabIndex: 0
+      role: "img",
+      tabIndex: 0,
+      onDoubleClick: (event) => event.stopPropagation(),
+      onPointerDown: (event) => event.stopPropagation()
     },
     icon
   );

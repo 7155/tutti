@@ -322,7 +322,7 @@
   `session_deleted` event does tombstone.
 - **References:**
   [workspaceAgentActivityReconcileBridge.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/internal/workspaceAgentActivityReconcileBridge.ts)
-  [workspaceAgentActivityEventSubscriptions.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/internal/workspaceAgentActivityEventSubscriptions.ts)
+  [workspaceEventCoordinator.ts](../../../packages/agent/activity-core/src/workspaceEventCoordinator.ts)
 
 ### A Tutti submission remains `delivery is still being confirmed`
 
@@ -2274,7 +2274,8 @@ Turn state, loading, cancel, restore, file-change undo, rail projection, event u
   the session create and turn both succeeded while the presentation remains
   `activating` until `engine/intentExpired`, inspect which session intent
   reached the pending-activation reducer. Also check that a failed realtime
-  session fetch does not consume the live-reconcile marker before a retry.
+  session fetch preserves `live: true` on the Engine's pending reconcile
+  record before a retry.
 - Root cause:
   An engine migration introduced `session/upserted` for authoritative mutation
   and realtime results, while pending activation still confirmed only from the
@@ -2286,9 +2287,10 @@ Turn state, loading, cancel, restore, file-change undo, rail projection, event u
   Confirm activation from both authoritative session intents. Preserve the
   semantic distinction only where it matters: historical snapshots remain
   neutral for unread attention, while realtime reconciliation additionally
-  emits the live turn update. Move a consumed realtime marker to an in-flight
-  state and restore it after fetch failure until a live session is applied or
-  the session is deleted.
+  emits the live turn update. Carry realtime provenance on the Engine-owned
+  reconcile command, merge it into in-flight demand, and restore it to pending
+  demand after fetch failure until a live session is applied or the session is
+  deleted. Hosts must not keep a parallel marker set.
 - Validation:
   Cover the reducer with a pending activation followed by `session/upserted`.
   At the desktop service boundary, run a real engine activation through the

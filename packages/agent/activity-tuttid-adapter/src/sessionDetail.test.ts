@@ -194,6 +194,7 @@ function createSession(
     kind: "root",
     latestTurn: null,
     latestTurnInteractions: [],
+    messageVersion: 0,
     parentAgentSessionId: null,
     parentToolCallId: null,
     parentTurnId: null,

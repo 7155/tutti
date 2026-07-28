@@ -1873,6 +1873,7 @@ function createSession(
     usage: null,
     visible: true,
     ...canonicalOverrides,
+    messageVersion: canonicalOverrides.messageVersion ?? 0,
     tuttiModeActivation: canonicalOverrides.tuttiModeActivation ?? null,
     kind: canonicalOverrides.kind ?? "root",
     rootAgentSessionId: canonicalOverrides.rootAgentSessionId ?? null,

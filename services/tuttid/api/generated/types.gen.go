@@ -6225,6 +6225,9 @@ type WorkspaceAgentInteractionKind string
 // WorkspaceAgentInteractionStatus defines model for WorkspaceAgentInteractionStatus.
 type WorkspaceAgentInteractionStatus string
 
+// WorkspaceAgentMessageCursor Per-session durable message change cursor. The upper bound preserves exact integer representation in JavaScript clients.
+type WorkspaceAgentMessageCursor = int64
+
 // WorkspaceAgentModelRef defines model for WorkspaceAgentModelRef.
 type WorkspaceAgentModelRef struct {
 	Model       *string `json:"model,omitempty"`
@@ -6305,6 +6308,9 @@ type WorkspaceAgentSession struct {
 
 	// LatestTurnInteractions Protocol v2. Read-only independent Interaction entity projections for latestTurn, including pending, answered, and superseded terminal states. These entities are not session-owned persistent state.
 	LatestTurnInteractions []WorkspaceAgentInteraction `json:"latestTurnInteractions"`
+
+	// MessageVersion Latest accepted per-session message change cursor. This is a high-water mark, not a count of materialized message rows.
+	MessageVersion WorkspaceAgentMessageCursor `json:"messageVersion"`
 
 	// ParentAgentSessionId Direct parent session that created this child session. Null when kind is root.
 	ParentAgentSessionId *string `json:"parentAgentSessionId"`
@@ -6472,15 +6478,19 @@ type WorkspaceAgentSessionMessage struct {
 	// TurnId A non-empty turnId attaches a Turn-scoped message to a real persisted Turn. Null is valid only when kind is session_audit; empty strings are forbidden. Legacy stored turnless rows are read as compatibility data and are never assigned a guessed Turn.
 	TurnId          *string `json:"turnId"`
 	UpdatedAtUnixMs *int64  `json:"updatedAtUnixMs,omitempty"`
-	Version         int64   `json:"version"`
+
+	// Version Per-session durable message change cursor. The upper bound preserves exact integer representation in JavaScript clients.
+	Version WorkspaceAgentMessageCursor `json:"version"`
 }
 
 // WorkspaceAgentSessionMessagesResponse defines model for WorkspaceAgentSessionMessagesResponse.
 type WorkspaceAgentSessionMessagesResponse struct {
-	AgentSessionId string                         `json:"agentSessionId"`
-	HasMore        bool                           `json:"hasMore"`
-	LatestVersion  int64                          `json:"latestVersion"`
-	Messages       []WorkspaceAgentSessionMessage `json:"messages"`
+	AgentSessionId string `json:"agentSessionId"`
+	HasMore        bool   `json:"hasMore"`
+
+	// LatestVersion Per-session durable message change cursor. The upper bound preserves exact integer representation in JavaScript clients.
+	LatestVersion WorkspaceAgentMessageCursor    `json:"latestVersion"`
+	Messages      []WorkspaceAgentSessionMessage `json:"messages"`
 }
 
 // WorkspaceAgentSessionPage defines model for WorkspaceAgentSessionPage.
@@ -7497,8 +7507,8 @@ type ListWorkspaceAgentSessionsParams struct {
 
 // ListWorkspaceAgentSessionMessagesParams defines parameters for ListWorkspaceAgentSessionMessages.
 type ListWorkspaceAgentSessionMessagesParams struct {
-	AfterVersion  *int64                                        `form:"afterVersion,omitempty" json:"afterVersion,omitempty"`
-	BeforeVersion *int64                                        `form:"beforeVersion,omitempty" json:"beforeVersion,omitempty"`
+	AfterVersion  *WorkspaceAgentMessageCursor                  `form:"afterVersion,omitempty" json:"afterVersion,omitempty"`
+	BeforeVersion *WorkspaceAgentMessageCursor                  `form:"beforeVersion,omitempty" json:"beforeVersion,omitempty"`
 	Order         *ListWorkspaceAgentSessionMessagesParamsOrder `form:"order,omitempty" json:"order,omitempty"`
 	Limit         *int                                          `form:"limit,omitempty" json:"limit,omitempty"`
 }

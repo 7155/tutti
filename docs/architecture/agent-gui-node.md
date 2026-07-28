@@ -372,6 +372,18 @@ the existing recovery, approval, or prompt chrome visible until the connection
 notice replaces it. Recovery removes the notice without a success banner. The
 notice does not offer a manual retry because transport recovery is host-owned.
 
+Session presentation derives one canonical Composer gate from target
+connection, Session runtime availability, provider readiness, ownership,
+activation, Interaction, and busy/queue facts. The gate is one atomic
+projection with separate editor, submission, and runtime-command decisions;
+AgentGUI must not place `canSubmit`, target-connection blocking, or
+Session-runtime blocking in independent memoized view slices and recombine them
+later. The editor, send action, keyboard submit paths, Stop availability, and
+Interaction submission consume that same gate snapshot. Busy work may project
+queue submission while keeping the editor editable. Draft emptiness, upload
+progress/failure, project existence, and other draft-local conditions may
+disable submission, but must not change editor editability.
+
 ### 4.1 Read/write rules
 
 - reads use exported selectors or memoized `AgentActivitySnapshot`
@@ -393,6 +405,10 @@ notice does not offer a manual retry because transport recovery is host-owned.
   drain and one subscriber notification. Desktop and Mobile use the same
   `@tutti-os/agent-activity-tuttid-adapter` aggregate mapper and must not
   dispatch each entity independently
+- every daemon Session response carries the required `messageVersion`
+  high-water cursor. Daemon and renderer ship as one protocol unit, so the
+  shared adapter rejects a missing or invalid cursor instead of fabricating
+  zero or entering a compatibility read path
 - Desktop and Mobile use the same host-neutral event-observation helper to
   decide whether normalized entities can apply inline and whether the exact
   Session needs an authoritative state or message reconcile; partial parsing,
@@ -410,6 +426,20 @@ Child Session discovery does not require every host to prefetch child transcript
 pages. A surface that does not render child conversations keeps the hierarchy
 and pending Interaction state canonical without paying for unused child message
 history.
+
+Desktop hydrates child messages only when its aggregate projections need them.
+The first read remains a bounded newest-first page. Later root-detail
+reconciliation compares each child's required Session `messageVersion` with the
+largest locally cached durable message version; an unchanged child performs no
+message request. Newly discovered children use the bounded newest-first read,
+while already hydrated children that advanced use incremental reads. A known
+empty child window is an authoritative durable cursor at zero, so its first
+later messages are drained incrementally from `afterVersion=0`; it is not
+treated as an unknown window. The second detail read catches a child that
+advances while the first message pass is in flight. Transient optimistic rows
+never advance this cursor. This child policy is separate from the root
+conversation's user-boundary repair policy, which may intentionally restart an
+incremental read at zero.
 
 A `waiting` Turn does not imply user action. Only a pending Interaction produces approval/question attention.
 
@@ -776,6 +806,12 @@ Code uses stable horizontal layers and behavior-oriented vertical modules:
 A controller may compose flows but cannot become a second lifecycle state machine. Extract complete behavior first; do not scatter it into a pile of domainless helpers.
 
 Activation and existing-Session submit share a canonical prompt envelope. Submit eligibility includes text and renderable structured content; an individual composer does not redefine it.
+
+The canonical Composer gate belongs to the Session-presentation projection and
+travels through the Composer view-model slice as one object. View-local
+transition or workflow locks may layer on top as explicit presentation locks;
+they do not copy or reinterpret runtime, connection, provider, ownership, or
+queue readiness.
 
 The conversation composer area is a stable `AgentComposerRegion` with explicit
 floating-control, lifted-interaction, accessory, and primary-composer slots.

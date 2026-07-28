@@ -56,7 +56,7 @@ export function agentActivitySessionFromTuttidSession(
     imported: session.imported ?? false,
     visible: session.visible ?? true,
     resumable: session.resumable ?? false,
-    messageVersion: 0,
+    messageVersion: session.messageVersion,
     lastEventUnixMs: updatedAtUnixMs,
     pinnedAtUnixMs: session.pinnedAtUnixMs ?? null,
     startedAtUnixMs: createdAtUnixMs,
@@ -123,6 +123,15 @@ export function assertTuttidProtocolV2SessionContract(
   ) {
     throw new Error(
       "Protocol v2 contract error: workspace agent railSectionKey must be a non-empty string"
+    );
+  }
+  if (
+    typeof value.messageVersion !== "number" ||
+    !Number.isSafeInteger(value.messageVersion) ||
+    value.messageVersion < 0
+  ) {
+    throw new Error(
+      "Protocol v2 contract error: workspace agent messageVersion must be a non-negative safe integer"
     );
   }
 }

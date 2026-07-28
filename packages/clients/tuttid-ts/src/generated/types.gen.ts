@@ -2085,6 +2085,11 @@ export type UpdateTuttiModeActivationResponse = {
  */
 export type WorkspaceAgentSessionKind = "root" | "child";
 
+/**
+ * Per-session durable message change cursor. The upper bound preserves exact integer representation in JavaScript clients.
+ */
+export type WorkspaceAgentMessageCursor = number;
+
 export type WorkspaceAgentSession = {
   id: string;
   kind: WorkspaceAgentSessionKind;
@@ -2114,6 +2119,10 @@ export type WorkspaceAgentSession = {
   agentTargetId: string | null;
   provider: WorkspaceAgentProvider;
   providerSessionId: string | null;
+  /**
+   * Latest accepted per-session message change cursor. This is a high-water mark, not a count of materialized message rows.
+   */
+  messageVersion: WorkspaceAgentMessageCursor;
   cwd: string | null;
   /**
    * Persisted conversation-rail membership key. Clients must use this exact key for section placement and must not infer membership from cwd or project paths.
@@ -2439,13 +2448,13 @@ export type WorkspaceAgentSessionMessage = {
   completedAtUnixMs?: number;
   createdAtUnixMs?: number;
   updatedAtUnixMs?: number;
-  version: number;
+  version: WorkspaceAgentMessageCursor;
 };
 
 export type WorkspaceAgentSessionMessagesResponse = {
   agentSessionId: string;
   messages: Array<WorkspaceAgentSessionMessage>;
-  latestVersion: number;
+  latestVersion: WorkspaceAgentMessageCursor;
   hasMore: boolean;
 };
 
@@ -9754,8 +9763,8 @@ export type ListWorkspaceAgentSessionMessagesData = {
     agentSessionID: string;
   };
   query?: {
-    afterVersion?: number;
-    beforeVersion?: number;
+    afterVersion?: WorkspaceAgentMessageCursor;
+    beforeVersion?: WorkspaceAgentMessageCursor;
     order?: "asc" | "desc";
     limit?: number;
   };

@@ -3,6 +3,7 @@ package runtimeprep
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -39,6 +40,42 @@ func TestDefaultPreparerACPExtensionMaterializesSkillsToDeclaredRoot(t *testing.
 		skillPath := filepath.Join(cwd, ".agent_context", "skills", name, "SKILL.md")
 		if _, err := os.Stat(skillPath); err != nil {
 			t.Fatalf("skill %s SKILL.md missing at declared root: %v", name, err)
+		}
+	}
+}
+
+func TestDefaultPreparerACPExtensionReplacesManagedSkillsWithoutSuffixes(t *testing.T) {
+	stateDir := t.TempDir()
+	cwd := t.TempDir()
+	prep := NewDefaultPreparer(stateDir)
+	prep.CommandCatalog = staticCommandCatalog(nil)
+	input := PrepareInput{
+		WorkspaceID:         "workspace-1",
+		AgentSessionID:      "session-1",
+		AgentTargetID:       "local:extension-test",
+		Provider:            "acp:extension-test",
+		Cwd:                 cwd,
+		ExtensionSkillRoots: []string{".agent_context/skills"},
+	}
+	for range 2 {
+		if _, err := prep.Prepare(t.Context(), input); err != nil {
+			t.Fatalf("Prepare() error = %v", err)
+		}
+	}
+
+	entries, err := os.ReadDir(filepath.Join(cwd, ".agent_context", "skills"))
+	if err != nil {
+		t.Fatalf("ReadDir() error = %v", err)
+	}
+	for _, skillName := range []string{tuttiHandoffSkillName, tuttiSkillName} {
+		matches := 0
+		for _, entry := range entries {
+			if entry.IsDir() && (entry.Name() == skillName || strings.HasPrefix(entry.Name(), skillName+"-")) {
+				matches++
+			}
+		}
+		if matches != 1 {
+			t.Fatalf("managed skill %q directory count = %d, want 1", skillName, matches)
 		}
 	}
 }

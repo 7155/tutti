@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 
 	runtimeprep "github.com/tutti-os/tutti/packages/agent/runtimeprep"
@@ -34,11 +35,19 @@ func (s *Service) resolveExtensionSkillRoots(ctx context.Context, providerTarget
 		if strings.TrimSpace(root.Scope) != "workspace" {
 			continue
 		}
-		if path := strings.TrimSpace(root.Path); path != "" {
+		if path, ok := safeExtensionSkillRootPath(root.Path); ok {
 			roots = append(roots, path)
 		}
 	}
 	return roots
+}
+
+func safeExtensionSkillRootPath(path string) (string, bool) {
+	cleaned := filepath.Clean(strings.TrimSpace(path))
+	if cleaned == "." || filepath.IsAbs(cleaned) || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return cleaned, true
 }
 
 func composerProviderCapabilities(provider string, computerUseAvailable bool) []string {

@@ -33,16 +33,21 @@ func (p InstructionFilePreparer) Prepare(_ context.Context, input ProviderPrepar
 		input.Manifest.RecordManagedFile(path, "provider-instructions", writeResult.Created)
 	}
 	skillRoots := append([]string(nil), input.ExtensionSkillRoots...)
+	usesExtensionSkillRoots := len(skillRoots) > 0
 	if len(skillRoots) == 0 {
 		if root := providerSkillRoot(input.Cwd, input.Provider); root != "" {
 			skillRoots = []string{root}
 		}
 	}
+	installSkills := installProviderNativeSkills
+	if usesExtensionSkillRoots {
+		installSkills = installProviderNativeSkillsStable
+	}
 	for _, skillRoot := range skillRoots {
 		if !filepath.IsAbs(skillRoot) {
 			skillRoot = filepath.Join(input.Cwd, skillRoot)
 		}
-		skillPaths, err := installProviderNativeSkills(skillRoot, input.PrepareInput)
+		skillPaths, err := installSkills(skillRoot, input.PrepareInput)
 		if err != nil {
 			return ProviderPrepareResult{}, err
 		}

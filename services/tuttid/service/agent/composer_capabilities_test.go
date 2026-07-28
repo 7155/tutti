@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -18,6 +19,10 @@ func TestServiceResolveExtensionSkillRootsPicksWorkspaceScope(t *testing.T) {
 			TriggerPrefix: "/",
 			Roots: []ExtensionComposerSkillRoot{
 				{Scope: "workspace", Path: ".agent_context/skills"},
+				{Scope: "workspace", Path: ".agent_context/../.agent_context/other-skills"},
+				{Scope: "workspace", Path: "../outside"},
+				{Scope: "workspace", Path: "."},
+				{Scope: "workspace", Path: filepath.Join(t.TempDir(), "skills")},
 				{Scope: "user", Path: ".agents/skills"},
 			},
 		},
@@ -27,7 +32,7 @@ func TestServiceResolveExtensionSkillRootsPicksWorkspaceScope(t *testing.T) {
 		"extensionInstallationId": "hermes@1.0.0",
 	}
 	roots := service.resolveExtensionSkillRoots(context.Background(), ref)
-	if want := []string{".agent_context/skills"}; !reflect.DeepEqual(roots, want) {
+	if want := []string{".agent_context/skills", ".agent_context/other-skills"}; !reflect.DeepEqual(roots, want) {
 		t.Fatalf("resolveExtensionSkillRoots() = %#v, want %#v (workspace scope only)", roots, want)
 	}
 }

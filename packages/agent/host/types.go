@@ -290,12 +290,21 @@ type CapabilityReference struct {
 
 // TuttiModeTurnSnapshot is the immutable activation revision observed by one
 // turn. It is an execution input, not a reconstruction from capability refs.
+const TuttiModePreferenceVersionEffectSpeed = 1
+
 type TuttiModeTurnSnapshot struct {
-	ActivationID           string
-	RevisionID             string
-	Revision               int64
-	State                  string
-	Source                 string
+	ActivationID      string
+	RevisionID        string
+	Revision          int64
+	State             string
+	Source            string
+	PreferenceVersion int
+	Effect            int
+	Speed             int
+	// OrchestrationIntensity is the legacy single-axis alias of Effect.
+	//
+	// Deprecated: use Effect and Speed with PreferenceVersion set to
+	// TuttiModePreferenceVersionEffectSpeed.
 	OrchestrationIntensity int
 }
 
@@ -613,12 +622,29 @@ type DeleteSessionsInput struct {
 	SessionIDs  []string
 }
 
+// DeleteSessionsPlan is the exact canonical deletion closure resolved by Host.
+// Adapters may inspect it through SessionDeletionGuard but must not expand or
+// replace it with product-specific ownership semantics.
+type DeleteSessionsPlan struct {
+	WorkspaceID string
+	SessionIDs  []string
+}
+
 type DeleteSessionsResult struct {
 	RemovedSessionIDs []string
 	RemovedSessions   int
 	RemovedMessages   int
 	RuntimeClosedIDs  []string
 	CleanupFailedIDs  []string
+}
+
+// DeleteSessionsReport describes the terminal outcome of one admitted plan.
+// Err is non-nil when that attempt failed, including when the canonical closure
+// changed and Host must replan before admitting another attempt.
+type DeleteSessionsReport struct {
+	Plan   DeleteSessionsPlan
+	Result DeleteSessionsResult
+	Err    error
 }
 
 type ClearSessionsResult = DeleteSessionsResult

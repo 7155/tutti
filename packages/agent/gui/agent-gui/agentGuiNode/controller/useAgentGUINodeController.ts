@@ -126,6 +126,7 @@ export function useAgentGUINodeController({
   openSessionRequest = null,
   prefillPromptRequest = null,
   onDataChange,
+  onComposerAppendHandled,
   onRememberComposerDefaults,
   onShowMessage
 }: UseAgentGUINodeControllerInput) {
@@ -625,6 +626,7 @@ export function useAgentGUINodeController({
     agentHostApi,
     composerTargetDataFromProviderTarget,
     composerAppendRequest,
+    onComposerAppendHandled,
     composerSupportPermissionModeChangeDeferred:
       composerSupport.permissionModeChangeDeferred,
     currentProvider: data.provider,

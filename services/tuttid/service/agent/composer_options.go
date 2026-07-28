@@ -429,7 +429,7 @@ func (s *Service) GetComposerOptions(ctx context.Context, input ComposerOptionsI
 		if err != nil {
 			return ComposerOptions{}, err
 		}
-		options = applyExtensionComposerCapabilities(options, extensionProfile)
+		options = applyExtensionComposerCapabilities(options, extensionProfile, s.computerUseAvailable())
 	}
 	options = applyResolvedModelPlanComposerOverlay(options, modelPlanResolution)
 	return options, nil

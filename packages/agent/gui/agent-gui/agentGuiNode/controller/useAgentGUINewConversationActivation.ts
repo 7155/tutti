@@ -93,13 +93,7 @@ export function resolveInitialRailPlacement(input: {
   );
   const sectionKey = selectedProject?.sectionKey?.trim() ?? "";
   if (!sectionKey) {
-    // 项目路径未在用户项目列表中找到（如 handoff 源会话的工作树目录），
-    // 回退到 conversations 而非返回 null，避免静默丢弃新会话创建。
-    return {
-      version: 1,
-      kind: "conversations",
-      sectionKey: "conversations"
-    };
+    return null;
   }
   return {
     version: 1,

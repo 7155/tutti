@@ -17,7 +17,8 @@ import type { WorkspaceLinkAction } from "../../../actions/workspaceLinkActions"
 import type {
   AgentGUIProvider,
   AgentGUIProviderRailAllPresentation,
-  AgentGUIAgentTarget
+  AgentGUIAgentTarget,
+  AgentGUIAgentTargetInfoRenderer
 } from "../../../types";
 import type { AgentMessageMarkdownWorkspaceAppIcon } from "../../../shared/AgentMessageMarkdown";
 import type { PlanIssueBudgetPreset } from "../../../shared/agentConversation/planImplementationPresentation";
@@ -522,6 +523,8 @@ export interface AgentGUINodeViewProps {
   viewModel: AgentGUINodeViewModel;
   referenceProvenanceFilters?: AgentComposerReferenceProvenanceFilters | null;
   sessionInputHistoryEnabled?: boolean;
+  /** Host-owned presentation for exact Agent targets; tooltip behavior stays AgentGUI-owned. */
+  renderAgentTargetInfo?: AgentGUIAgentTargetInfoRenderer;
   renderProjectDirectoryPickerHeaderActions?: ReferenceSourcePickerProps["renderHeaderActions"];
   renderSidebarFooter?: AgentGUISidebarFooterRenderer;
   /** Renders the provider rail empty state in "exact" mode. See the type doc. */

@@ -1003,6 +1003,17 @@ chrome seam for the exact selected Agent Target. Its paired
 state without hiding workflow in the render slot. Returning no content keeps
 the provider account and quota block unchanged. AgentGUI never derives billing
 ownership from provider identity.
+The optional `renderSlots.agentTargetInfo` seam enriches the exact target icon
+in the provider Rail and Conversation Rail. The same
+`AgentGUIAgentTargetInfoRenderer` may be passed to
+`AgentGuiWorkbenchHeader.renderAgentTargetInfo` with its exact
+`conversationAgentTarget`. AgentGUI owns Tooltip disclosure, positioning,
+focus behavior, and the built-in label fallback; the Host renderer receives
+only `{ target, surface }`, remains presentation-only, and is invoked lazily
+while the Tooltip content is mounted. Conversation rows resolve the target by
+canonical `agentTargetId` from the current Host directory and fail closed when
+it is absent. They do not copy owner, device, availability, or other target
+metadata into Session state.
 Host chrome that aligns to AgentGUI's internal layout must consume explicit
 package signals such as `hostActions.onConversationRailLayoutChange`; it must
 not observe package DOM, CSS variables, or class names with
@@ -1123,7 +1134,10 @@ WebGL scene readiness remains local presentation state; it must not enter
 
 The shared Workbench Header owns conversation-identity visibility. When no
 Conversation exists, it ignores conversation titles, Agent titles, primary
-icons, and fallback icons even if a host supplies them.
+icons, exact Agent targets, target-information renderers, and fallback icons
+even if a host supplies them. When target information is enabled, only the
+session icon becomes a no-drag Tooltip trigger; the surrounding title remains
+owned by the Header's existing drag and menu behavior.
 
 The reusable tool-sidebar contract lives in
 `packages/agent/gui/workbench/tool-sidebar`. Hosts provide the supported panel

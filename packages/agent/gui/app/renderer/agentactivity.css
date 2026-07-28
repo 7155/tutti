@@ -5468,6 +5468,19 @@ aside.workspace-agents-status-panel
   border-radius: 5px;
 }
 
+.agent-gui-workbench-header__session-icon-info-trigger {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  border-radius: 5px;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+.agent-gui-workbench-header__session-icon-info-trigger:focus-visible {
+  outline: auto;
+}
+
 .agent-gui-workbench-header__session-icon--pending {
   background: var(--transparency-block);
   animation: agent-gui-workbench-header-icon-pending 1.2s ease-in-out infinite;

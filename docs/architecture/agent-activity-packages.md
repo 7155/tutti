@@ -279,7 +279,11 @@ sections come from current user projects and session membership comes from
 persisted `rail_section_key`, not frontend cwd grouping or project-root
 filters.
 The published `@tutti-os/agent-gui/conversation-rail-runtime` entrypoint owns
-the host-neutral Rail query/mutation cohort. The sibling
+the host-neutral Rail query/mutation cohort. Its stable host surface is the
+typed `createAgentConversationRailRuntime` factory plus the runtime/source
+types; method-name manifests and UI capability inspection are package-internal.
+Downstream hosts such as tsh compose the typed factory and do not import those
+test or presentation helpers. The sibling
 `@tutti-os/agent-gui/conversation-rail-controller` entrypoint owns the
 controller interface, workspace-Engine-scoped query caches, and
 `createAgentGUIConversationRailQueryController` factory. Product hosts provide
@@ -306,9 +310,10 @@ controller snapshot exposes memberships, ordered ids, pagination, search, and
 request state only; Desktop joins it with Engine state for localized
 conversation summaries outside the headless entrypoint. Resolved cache entries
 are shared by controllers created for the same workspace Engine; the factory,
-not `AgentActivityRuntime` or a host adapter, owns that registry. In-flight
-first-page entity payloads stay scoped to one attached controller generation so
-an obsolete mount cannot ingest or cache them.
+not `AgentActivityRuntime` or a host adapter, owns that registry. The cache
+implementation has no published AgentGUI subpath. In-flight first-page entity
+payloads stay scoped to one attached controller generation so an obsolete mount
+cannot ingest or cache them.
 Every daemon `WorkspaceAgentSession` response carries the persisted membership
 as required `railSectionKey`. The desktop adapter rejects a missing or blank
 value as a protocol contract error; it must not manufacture `conversations` or

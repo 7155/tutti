@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AGENT_CONVERSATION_RAIL_RUNTIME_METHODS } from "@tutti-os/agent-gui/conversation-rail-runtime";
 import { createDesktopAgentActivityRuntime } from "./createDesktopAgentActivityRuntime.ts";
 import type { IWorkspaceAgentActivityService } from "./workspaceAgentActivityService.interface.ts";
 
@@ -9,7 +8,14 @@ test("desktop agent activity runtime installs the complete conversation rail cap
     createWorkspaceAgentActivityService()
   );
 
-  for (const method of AGENT_CONVERSATION_RAIL_RUNTIME_METHODS) {
+  for (const method of [
+    "deleteSessionsBatch",
+    "listPinnedSessionsPage",
+    "listSessionSectionDeletionCandidates",
+    "listSessionSectionPage",
+    "listSessionSections",
+    "listSessionsPage"
+  ] as const) {
     assert.equal(typeof runtime[method], "function", method);
   }
 });

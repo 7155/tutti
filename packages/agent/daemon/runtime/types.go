@@ -112,15 +112,16 @@ type ExecInput struct {
 	TurnID         string
 	// ClientSubmitID is a typed host identity. The controller may project it
 	// into adapter execution metadata, but callers must not encode it there.
-	ClientSubmitID    string
-	CapabilityRefs    []CapabilityReference
-	TuttiModeSnapshot *TuttiModeTurnSnapshot
-	Content           []PromptContentBlock
-	DisplayPrompt     string
-	InitialTitle      string
-	InitialTitleBase  string
-	Metadata          map[string]any
-	Guidance          bool
+	ClientSubmitID                  string
+	CanonicalSubmitOccurredAtUnixMS int64
+	CapabilityRefs                  []CapabilityReference
+	TuttiModeSnapshot               *TuttiModeTurnSnapshot
+	Content                         []PromptContentBlock
+	DisplayPrompt                   string
+	InitialTitle                    string
+	InitialTitleBase                string
+	Metadata                        map[string]any
+	Guidance                        bool
 }
 
 // SubmitProvenanceInput describes the canonical user submit that an adapter
@@ -128,13 +129,14 @@ type ExecInput struct {
 // durable provenance never happens while Exec holds the session lifecycle
 // lock.
 type SubmitProvenanceInput struct {
-	RoomID         string
-	AgentSessionID string
-	TurnID         string
-	ClientSubmitID string
-	Content        []PromptContentBlock
-	DisplayPrompt  string
-	Guidance       bool
+	RoomID                          string
+	AgentSessionID                  string
+	TurnID                          string
+	ClientSubmitID                  string
+	CanonicalSubmitOccurredAtUnixMS int64
+	Content                         []PromptContentBlock
+	DisplayPrompt                   string
+	Guidance                        bool
 }
 
 type CapabilityReference = activityshared.CapabilityReference
@@ -432,6 +434,15 @@ func nextEventUnixMS() int64 {
 		}
 		if lastEventUnixMS.CompareAndSwap(last, current) {
 			return current
+		}
+	}
+}
+
+func observeEventUnixMS(value int64) {
+	for value > 0 {
+		last := lastEventUnixMS.Load()
+		if value <= last || lastEventUnixMS.CompareAndSwap(last, value) {
+			return
 		}
 	}
 }

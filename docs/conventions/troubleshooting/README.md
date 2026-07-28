@@ -24,7 +24,9 @@ Use the focused runtime index or open one area directly:
   Also covers new-conversation requests that silently fail after a Chats
   Session working directory is mistaken for a selected project, and one hung
   provider startup blocking unrelated Agent sessions. Includes canonical
-  completion delayed behind a streaming activity-report backlog.
+  completion delayed behind a streaming activity-report backlog, plus
+  provider-completed submissions reported as delivery unknown after canonical
+  message provenance conflicts.
 - [Agent Approvals And Child Sessions](./agent-approvals-subagents.md): Approval gates, plan exits, root/parent/child event attribution, child sessions, and Message Center.
   Includes provider-native work that continues invisibly after root cancellation
   and late child creation racing the durable cancel boundary.

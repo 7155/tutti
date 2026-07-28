@@ -403,10 +403,11 @@ func runtimeExecInput(input host.RuntimeExecInput) agentruntime.ExecInput {
 	return agentruntime.ExecInput{
 		RoomID: input.WorkspaceID, AgentSessionID: input.AgentSessionID,
 		TurnID: input.TurnID, ClientSubmitID: input.ClientSubmitID,
-		CapabilityRefs:    runtimeCapabilityReferences(input.CapabilityRefs),
-		TuttiModeSnapshot: runtimeTuttiModeSnapshot(input.TuttiModeSnapshot),
-		Content:           runtimePromptContent(input.Content),
-		DisplayPrompt:     input.DisplayPrompt, InitialTitle: input.InitialTitle, InitialTitleBase: input.InitialTitleBase,
+		CanonicalSubmitOccurredAtUnixMS: input.CanonicalSubmitOccurredAtUnixMS,
+		CapabilityRefs:                  runtimeCapabilityReferences(input.CapabilityRefs),
+		TuttiModeSnapshot:               runtimeTuttiModeSnapshot(input.TuttiModeSnapshot),
+		Content:                         runtimePromptContent(input.Content),
+		DisplayPrompt:                   input.DisplayPrompt, InitialTitle: input.InitialTitle, InitialTitleBase: input.InitialTitleBase,
 		Metadata: cloneMap(input.Metadata), Guidance: input.Guidance,
 	}
 }
@@ -415,7 +416,8 @@ func runtimeSubmitProvenanceInput(input host.RuntimeSubmitProvenanceInput) agent
 	return agentruntime.SubmitProvenanceInput{
 		RoomID: input.WorkspaceID, AgentSessionID: input.AgentSessionID,
 		TurnID: input.TurnID, ClientSubmitID: input.ClientSubmitID,
-		Content: runtimePromptContent(input.Content), DisplayPrompt: input.DisplayPrompt,
+		CanonicalSubmitOccurredAtUnixMS: input.CanonicalSubmitOccurredAtUnixMS,
+		Content:                         runtimePromptContent(input.Content), DisplayPrompt: input.DisplayPrompt,
 		Guidance: input.Guidance,
 	}
 }

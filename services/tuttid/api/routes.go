@@ -1,3 +1,5 @@
+//revive:disable:file-length-limit
+
 package api
 
 import (
@@ -649,6 +651,30 @@ func RegisterRoutes(mux *http.ServeMux, routes Routes) {
 			return
 		}
 		wrapper.SendWorkspaceAgentSessionInput(w, r)
+	})
+
+	mux.HandleFunc("/v1/workspaces/{workspaceID}/agent-sessions/{agentSessionID}/fork", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			tuttitypes.WriteMethodNotAllowed(w)
+			return
+		}
+		wrapper.ForkWorkspaceAgentSession(w, r)
+	})
+
+	mux.HandleFunc("/v1/workspaces/{workspaceID}/agent-session-fork-operations/{operationID}", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			tuttitypes.WriteMethodNotAllowed(w)
+			return
+		}
+		wrapper.GetWorkspaceAgentSessionForkOperation(w, r)
+	})
+
+	mux.HandleFunc("/v1/workspaces/{workspaceID}/agent-session-fork-operations/{operationID}/acknowledge", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			tuttitypes.WriteMethodNotAllowed(w)
+			return
+		}
+		wrapper.AcknowledgeWorkspaceAgentSessionForkOperation(w, r)
 	})
 
 	mux.HandleFunc("/v1/workspaces/{workspaceID}/agent-sessions/{agentSessionID}/settings", func(w http.ResponseWriter, r *http.Request) {

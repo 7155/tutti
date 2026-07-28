@@ -6,6 +6,7 @@ import {
   type AgentActivitySendInput,
   type AgentSessionEngine,
   type PlanSubmitDecisionResult,
+  type SessionAcknowledgeForkObservedCommand,
   type SessionActivateCommand,
   type SessionReconcileCommand,
   type TuttiModeActivationUpdateCommand
@@ -60,6 +61,14 @@ interface CreateWorkspaceAgentSessionEngineHostInput {
   workspaceId: string;
 }
 
+interface WorkspaceAgentForkObservationAckClient {
+  acknowledgeWorkspaceAgentSessionForkOperation(
+    workspaceId: string,
+    operationId: string,
+    options: { signal?: AbortSignal }
+  ): Promise<unknown>;
+}
+
 export function executeWorkspaceAgentTuttiModeUpdateCommand(
   input: Pick<
     CreateWorkspaceAgentSessionEngineHostInput,
@@ -81,6 +90,18 @@ export function executeWorkspaceAgentTuttiModeUpdateCommand(
     status: command.status,
     workspaceId: command.workspaceId
   });
+}
+
+export function executeWorkspaceAgentForkObservedAckCommand(
+  client: WorkspaceAgentForkObservationAckClient,
+  command: SessionAcknowledgeForkObservedCommand,
+  signal?: AbortSignal
+): Promise<unknown> {
+  return client.acknowledgeWorkspaceAgentSessionForkOperation(
+    command.workspaceId,
+    command.operationId,
+    { ...(signal === undefined ? {} : { signal }) }
+  );
 }
 
 export function createWorkspaceAgentSessionEngineHost(
@@ -182,6 +203,21 @@ export function createWorkspaceAgentSessionEngineHost(
             });
             return { session };
           }
+          case "session/forkThroughTurn":
+            return adapter.forkSession({
+              requestId: command.requestId,
+              signal: options?.signal,
+              sourceAgentSessionId: command.sourceAgentSessionId,
+              targetAgentSessionId: command.targetAgentSessionId,
+              turnId: command.turnId,
+              workspaceId: command.workspaceId
+            });
+          case "session/ackForkObserved":
+            return executeWorkspaceAgentForkObservedAckCommand(
+              input.tuttidClient,
+              command,
+              options?.signal
+            );
           case "sessions/delete":
             return adapter.deleteSessions({
               agentSessionIds: command.agentSessionIds,

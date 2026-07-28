@@ -1,13 +1,6 @@
 export type { AgentActivityAdapter } from "./adapter.ts";
-export {
-  analyzeAgentActivityEventObservation,
-  analyzeInlineMessageVersionContinuity,
-  type AgentActivityEventObservation,
-  type InlineMessageVersionContinuity
-} from "./activityEventObservation.ts";
 export { AGENT_ACTIVITY_LIVE_PROTOCOL_REVISION } from "./liveProtocolRevision.gen.ts";
 export type { AgentActivityLiveEvent } from "./liveEvent.types.ts";
-export { parseAgentActivityMessageDeltaEvent } from "./liveEventParsing.ts";
 export type { AgentActivityComposerModelConfiguration } from "./composerModelConfiguration.types.ts";
 export type { AgentActivityDisplayStatus } from "./displayStatus.types.ts";
 export type { AgentActivityRailPlacement } from "./railPlacement.types.ts";
@@ -37,12 +30,6 @@ export {
 export type { AgentActivitySessionMessageWindow } from "./messageWindow.types.ts";
 export { parseInlineActivityMessages } from "./inlineActivityMessages.ts";
 export {
-  createAgentActivityOptimisticMessageOverlay,
-  type AgentActivityOptimisticApplyResult,
-  type AgentActivityOptimisticMessageOverlay,
-  type AgentActivityOptimisticMessageScope
-} from "./optimisticMessageOverlay.ts";
-export {
   agentActivitySessionMessageWindowFromDescendingPage,
   loadAllAgentSessionMessages,
   type AgentActivityMessagePageLike,
@@ -61,6 +48,10 @@ export {
   type AgentActivityUsage,
   type AgentActivityUsageInput
 } from "./usage.ts";
+export {
+  createAgentActivityWorkspaceEventCoordinator,
+  type AgentActivityWorkspaceEventInput
+} from "./workspaceEventCoordinator.ts";
 export {
   createAgentSessionEngine,
   ENGINE_INTENT_BATCH_DELAY_MS,

@@ -32,7 +32,8 @@ interface WorkspaceActivityCommandContext {
     scope: Extract<
       EngineExternalCommand,
       { type: "session/reconcile" }
-    >["scope"]
+    >["scope"],
+    live: boolean
   ): Promise<unknown>;
   reconcileWorkspace(): Promise<unknown>;
 }
@@ -90,7 +91,11 @@ export function executeWorkspaceActivityCommand(
         )
         .then((session) => ({ session: context.mapSession(session) }));
     case "session/reconcile":
-      return context.reconcileSession(command.agentSessionId, command.scope);
+      return context.reconcileSession(
+        command.agentSessionId,
+        command.scope,
+        command.live
+      );
     case "composerOptions/load":
       return context.client
         .getAgentProviderComposerOptions(

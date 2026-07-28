@@ -219,11 +219,13 @@ an optimistic `message_delta`:
 }
 ```
 
-Hosts clean `message_delta` at the transport boundary, apply it through
-`createAgentActivityOptimisticMessageOverlay`, and project it over canonical
-`sessionMessagesById`. A canonical read calls `reconcile`; only Session removal
-or rebinding calls `reset`. The generated `AgentActivityUpdatedEvent` input
-additionally accepts:
+Each host creates one
+`createAgentActivityWorkspaceEventCoordinator` per workspace and passes
+transport deliveries into it. The coordinator validates and cleans
+`message_delta`, owns its optimistic projection over canonical
+`sessionMessagesById`, and clears that projection after authoritative message
+reads or Session removal. The generated `AgentActivityUpdatedEvent` input also
+accepts:
 
 - `turn_update`: updates the canonical durable turn projection
 - `interaction_update`: updates the canonical durable interaction projection
@@ -233,13 +235,28 @@ additionally accepts:
 Events with a different `workspaceId` are ignored. Unknown event types are
 ignored.
 
-Hosts use `analyzeAgentActivityEventObservation` after transport normalization.
-It returns inline messages, their version continuity, and the single
-`session/activityObserved` intent that drives Engine reconciliation. Desktop
-receives the full canonical event union. The paired-device live protocol carries
-only delta, Turn, Interaction, and audit variants; tuttid converts canonical-only
-message, deletion, and reconcile-required events into scoped discontinuities so
-Mobile performs an authoritative read instead of inventing a second event model.
+The coordinator owns inline-message continuity, Engine observation intents,
+Session tombstones, discontinuity reconciliation, and reconnect hydration.
+Desktop receives the full canonical event union. The paired-device live
+protocol carries only delta, Turn, Interaction, and audit variants; tuttid
+converts canonical message and reconcile-required events into scoped
+discontinuities. It preserves `session_deleted` as a typed deletion delivery so
+Mobile enters the same Engine tombstone flow as Desktop. Platform adapters
+retain socket/DeviceLink lifecycle, diagnostics, Rail invalidation, and
+navigation.
+
+`eventStreamConnectionChanged` describes only event-stream continuity and
+drives reconnect hydration. The host still owns `engine/connectionChanged`,
+which describes command-transport reachability. Desktop may derive both from
+one WebSocket connection. Mobile must derive Engine state from
+application/service command reachability and coordinator state from
+`stream_ready`/disconnect frames; it must not synthesize one from the other.
+
+For realtime Turn observations, the Engine carries `live: true` on the
+resulting `session/reconcile` command. Command adapters preserve that flag on
+`session/detailSnapshotReceived`; failed commands retain it for the next retry.
+This lets authoritative hydration replay the latest Turn only after Session
+identity exists, with identical attention semantics on Desktop and Mobile.
 
 ## Prompt Command Execution
 

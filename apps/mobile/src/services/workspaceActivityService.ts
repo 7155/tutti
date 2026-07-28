@@ -110,8 +110,6 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
       deviceLink,
       engine: this.engine,
       isAvailable: () => !this.disposed && !this.paused,
-      loadSelectedMessages: (authoritative) =>
-        this.loadSelectedMessages(authoritative),
       navigation: this.navigation,
       onActivityChanged: () => this.onDependencyChanged(),
       onConnectionChanged: (connected) => {
@@ -125,7 +123,6 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
       rail: this.rail,
       readCanonicalActivity: () =>
         this.projectActivity(this.engine.getSnapshot()),
-      reconcileWorkspace: () => this.reconcileWorkspace(),
       workspaceId: this.workspace.id
     });
     this.messagePages = new WorkspaceActivityMessagePageLoader({
@@ -513,27 +510,35 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
     });
     for (const session of this.projectActivity(this.engine.getSnapshot())
       .sessions) {
-      this.engine.dispatch(
-        {
-          agentSessionId: session.agentSessionId,
-          availability: { state: "available" },
-          type: "session/runtimeAvailabilityChanged"
-        },
-        { batch: true }
-      );
+      this.engine.dispatch({
+        agentSessionId: session.agentSessionId,
+        availability: { state: "available" },
+        type: "session/runtimeAvailabilityChanged"
+      });
     }
     this.engine.dispatch({
+      retry: true,
       type: "workspace/reconcileRequested",
       workspaceId: this.workspace.id
     });
-    void this.loadSelectedMessages(true);
+    const selectedSessionId =
+      this.navigation.getSnapshot().selectedAgentSessionId;
+    if (selectedSessionId) {
+      this.engine.dispatch({
+        agentSessionId: selectedSessionId,
+        needsMessages: true,
+        needsState: true,
+        type: "session/reconcileRequested",
+        workspaceId: this.workspace.id
+      });
+    }
     this.scheduleMessagesPoll();
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.liveLane.stop();
+    this.liveLane.dispose();
     this.cancelPolls();
     for (const dispose of this.disposables.splice(0)) dispose();
     this.pendingSubmissionsByDraftKey.clear();
@@ -589,8 +594,8 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
         loadComposerOptions: (options) => this.loadComposerOptions(options),
         mapSession: this.mapping.mapSession,
         mapSessionDetail: this.mapping.mapSessionDetail,
-        reconcileSession: (agentSessionId, scope) =>
-          this.reconcileSession(agentSessionId, scope),
+        reconcileSession: (agentSessionId, scope, live) =>
+          this.reconcileSession(agentSessionId, scope, live),
         reconcileWorkspace: () => this.reconcileWorkspace()
       },
       command,
@@ -611,7 +616,8 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
 
   private async reconcileSession(
     agentSessionId: string,
-    scope: "messages" | "state" | "state_and_messages"
+    scope: "messages" | "state" | "state_and_messages",
+    live: boolean
   ): Promise<unknown> {
     let mapped: AgentActivitySessionDetailSnapshot | null = null;
     if (scope !== "messages") {
@@ -622,6 +628,7 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
       mapped = this.mapping.mapSessionDetail(agentSessionId, detail);
       this.engine.dispatch({
         ...mapped,
+        ...(live ? { live: true } : {}),
         type: "session/detailSnapshotReceived",
         workspaceId: this.workspace.id
       });

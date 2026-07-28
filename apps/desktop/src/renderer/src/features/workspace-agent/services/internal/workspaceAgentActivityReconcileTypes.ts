@@ -1,4 +1,4 @@
-import type { AgentActivityUpdatedEvent } from "@tutti-os/agent-activity-core";
+import type { AgentActivityWorkspaceEventInput } from "@tutti-os/agent-activity-core";
 import type {
   TuttidClient,
   TuttidEventStreamClient
@@ -12,10 +12,4 @@ export interface WorkspaceAgentActivityReconcileDependencies {
 }
 
 export type WorkspaceAgentActivityBridgeEvent =
-  | AgentActivityUpdatedEvent
-  | {
-      agentSessionId: string;
-      data: unknown;
-      eventType: "state_patch";
-      workspaceId: string;
-    };
+  AgentActivityWorkspaceEventInput;

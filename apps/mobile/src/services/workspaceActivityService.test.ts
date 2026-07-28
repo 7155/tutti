@@ -500,6 +500,33 @@ describe("WorkspaceActivityService", () => {
     service.dispose();
   });
 
+  test("applies a remote session deletion without letting the rail revive it", async () => {
+    let liveListener: ((delivery: AgentLiveDelivery) => void) | null = null;
+    let session: WorkspaceAgentSession | null = createSession();
+    const client = createClient({
+      listMessages: emptyMessagePage,
+      session: () => session
+    });
+    const service = createService(client, {
+      deviceLink: createLiveDeviceLink((listener) => {
+        liveListener = listener;
+      })
+    });
+
+    await service.start();
+    await flushAsyncWork();
+    session = null;
+    liveListener!({
+      agentSessionId: "session-1",
+      kind: "session_deleted"
+    });
+
+    expect(service.getSnapshot().activity.sessions).toEqual([]);
+    expect(service.getSnapshot().selectedAgentSessionId).toBeNull();
+
+    service.dispose();
+  });
+
   test("projects live message deltas and disables fallback message polling", async () => {
     const clock = new RecordingClock();
     let liveListener: ((delivery: AgentLiveDelivery) => void) | null = null;

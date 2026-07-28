@@ -180,10 +180,6 @@ export interface AgentConversationMessagePagingInput {
   getActiveSessionId(): string | null;
   isMounted(): boolean;
   onOlderPageLoadingChanged(loading: boolean): void;
-  reload: {
-    getActivationStatus(agentSessionId: string): string | null;
-    syncConversationList(agentSessionId: string): void;
-  };
   runtime: AgentActivityRuntime;
   sessionEngine: import("@tutti-os/agent-activity-core").AgentSessionEngine;
   workspaceId: string;
@@ -262,10 +258,10 @@ export function useAgentConversationMessagePaging(
   }, [controller, controllerLifetime]);
 
   const loadInitialMessages = useCallback(
-    async (agentSessionId: string) => {
+    async (agentSessionId: string, options?: { force?: boolean }) => {
       const normalized = agentSessionId.trim();
       if (!normalized) return;
-      controller.requestInitial(normalized);
+      controller.requestInitial(normalized, options);
     },
     [controller]
   );
@@ -279,35 +275,9 @@ export function useAgentConversationMessagePaging(
     [controller]
   );
 
-  const reloadSelectedConversation = useCallback(
-    (
-      agentSessionId: string,
-      options: { reloadConversations: boolean; reloadDetail: boolean }
-    ) => {
-      if (!agentSessionId) return;
-      const current = inputRef.current;
-      const activationStatus =
-        current.reload.getActivationStatus(agentSessionId);
-      if (
-        activationStatus === "failed" ||
-        activationStatus === "canceled" ||
-        activationStatus === "requested" ||
-        activationStatus === "uncertain"
-      )
-        return;
-      if (options.reloadConversations) {
-        current.reload.syncConversationList(agentSessionId);
-      }
-      if (!options.reloadDetail) return;
-      controller.requestInitial(agentSessionId.trim(), { force: true });
-    },
-    [controller]
-  );
-
   return {
     loadInitialMessages,
     loadOlderMessages,
-    reloadSelectedConversation,
     setActiveSession: controller.setActiveSession
   };
 }

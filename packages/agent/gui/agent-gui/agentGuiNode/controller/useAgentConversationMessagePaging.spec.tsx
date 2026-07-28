@@ -45,10 +45,6 @@ describe("useAgentConversationMessagePaging", () => {
         getActiveSessionId: () => "session-1",
         isMounted: () => true,
         onOlderPageLoadingChanged,
-        reload: {
-          getActivationStatus: () => null,
-          syncConversationList: vi.fn()
-        },
         runtime: {
           listSessionMessages
         } as unknown as AgentActivityRuntime,
@@ -102,10 +98,6 @@ describe("useAgentConversationMessagePaging", () => {
         getActiveSessionId: () => "session-1",
         isMounted: () => true,
         onOlderPageLoadingChanged: vi.fn(),
-        reload: {
-          getActivationStatus: () => null,
-          syncConversationList: vi.fn()
-        },
         runtime: {
           listSessionMessages: ({ signal }: { signal: AbortSignal }) => {
             requestSignal = signal;
@@ -160,10 +152,6 @@ describe("useAgentConversationMessagePaging", () => {
           getActiveSessionId: () => "session-1",
           isMounted: () => true,
           onOlderPageLoadingChanged: vi.fn(),
-          reload: {
-            getActivationStatus: () => null,
-            syncConversationList: vi.fn()
-          },
           runtime: {
             listSessionMessages
           } as unknown as AgentActivityRuntime,

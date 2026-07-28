@@ -328,10 +328,8 @@ export function useAgentGUINodeController({
     onDataChangeRef,
     onComposerDefaultsAuthorityReloadedRef,
     pendingOpenSessionRequestRef,
-    reloadSelectedConversationRef,
     selectedComposerTargetDataRef,
     selectedProjectPathRef,
-    syncConversationListProjectionRef,
     userProjectsLoadSeqRef,
     userProjectsRef
   } = controllerRefs;
@@ -342,12 +340,11 @@ export function useAgentGUINodeController({
     agentActivityRuntimeOrigin,
     dataRef,
     isMountedRef,
-    reloadSelectedConversationRef,
     sessionEngine,
-    syncConversationListProjectionRef,
     workspaceId
   });
   const {
+    loadSelectedConversationMessages,
     loadSessionState,
     markSelectedConversationDetailPending,
     resolveSessionMessages,
@@ -487,9 +484,9 @@ export function useAgentGUINodeController({
     isComposerHomeRef,
     isMountedRef,
     loadDraftComposerOptions: () => loadDraftComposerOptionsRef.current(),
+    loadSelectedConversationMessages,
     markSelectedConversationDetailPending,
     onDataChangeRef,
-    reloadSelectedConversationRef,
     sessionEngine,
     requestRailReveal,
     setActiveConversationId,
@@ -506,7 +503,6 @@ export function useAgentGUINodeController({
   const selectConversation = conversationSelection.selectConversation;
   const syncConversationListProjection =
     conversationSelection.syncConversationListProjection;
-  syncConversationListProjectionRef.current = syncConversationListProjection;
 
   const updateSelectedProjectPath = useCallback(
     (

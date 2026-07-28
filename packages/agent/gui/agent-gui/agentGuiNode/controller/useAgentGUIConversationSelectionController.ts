@@ -65,15 +65,13 @@ interface UseAgentGUIConversationSelectionControllerInput {
   isComposerHomeRef: RefObject<boolean>;
   isMountedRef: RefObject<boolean>;
   loadDraftComposerOptions(): void;
+  loadSelectedConversationMessages(
+    agentSessionId: string,
+    options?: { force?: boolean }
+  ): Promise<void>;
   markSelectedConversationDetailPending(agentSessionId: string): string | null;
   onDataChangeRef: RefObject<
     (updater: (current: AgentGUINodeData) => AgentGUINodeData) => void
-  >;
-  reloadSelectedConversationRef: RefObject<
-    (
-      agentSessionId: string,
-      options: { reloadConversations: boolean; reloadDetail: boolean }
-    ) => void
   >;
   sessionEngine: AgentSessionEngine;
   setActiveConversationId: Dispatch<SetStateAction<string | null>>;
@@ -149,9 +147,9 @@ export function useAgentGUIConversationSelectionController(
     isComposerHomeRef,
     isMountedRef,
     loadDraftComposerOptions,
+    loadSelectedConversationMessages,
     markSelectedConversationDetailPending,
     onDataChangeRef,
-    reloadSelectedConversationRef,
     sessionEngine,
     setActiveConversationId,
     setDetailError,
@@ -367,6 +365,19 @@ export function useAgentGUIConversationSelectionController(
   }, [data.lastActiveAgentSessionId]);
   const selection = useAgentConversationSelection({
     activation: {
+      canReload: (agentSessionId) => {
+        const status =
+          selectLatestActivationForSession(
+            sessionEngine.getSnapshot(),
+            agentSessionId
+          )?.status ?? null;
+        return (
+          status !== "failed" &&
+          status !== "canceled" &&
+          status !== "requested" &&
+          status !== "uncertain"
+        );
+      },
       forget: activation.clearFailure,
       isPending: (agentSessionId) =>
         isPendingNewConversationActivation(
@@ -407,8 +418,11 @@ export function useAgentGUIConversationSelectionController(
           agentSessionId
         ),
       markPending: markSelectedConversationDetailPending,
-      reload: (agentSessionId, options) =>
-        reloadSelectedConversationRef.current(agentSessionId, options),
+      reload: (agentSessionId) => {
+        void loadSelectedConversationMessages(agentSessionId, {
+          force: true
+        });
+      },
       setLoading: setIsLoadingMessages
     },
     hasConversationListQuery: () => Boolean(conversationListQuery),

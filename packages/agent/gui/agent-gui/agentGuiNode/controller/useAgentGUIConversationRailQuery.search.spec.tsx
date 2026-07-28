@@ -18,7 +18,6 @@ import {
   type AgentActivityRuntime,
   type AgentActivityRuntimeListSessionsPageInput
 } from "../../../agentActivityRuntime";
-import { AgentGUIConversationRailRuntimeAdapterProvider } from "../../../agentConversationRailRuntimeAdapterContext";
 import type { AgentHostUserProjectsApi } from "../../../host/agentHostApi";
 import { createTestAgentSessionEngine } from "../../../shared/testing/createTestAgentSessionEngine";
 import type { AgentGUINodeData } from "../../../types";
@@ -33,84 +32,23 @@ import type { AgentGUIViewLabels } from "../view/AgentGUINodeView.types";
 import { createDefaultWorkspaceUserProjectI18nRuntime } from "@tutti-os/workspace-user-project/i18n";
 
 describe("useAgentGUIConversationRailQuery search", () => {
-  it("constructs through the host-supplied runtime adapter", () => {
-    const engine = createTestAgentSessionEngine("workspace-1");
-    const adapter = vi.fn((runtime) => runtime);
-    const runtime = {
-      getSessionEngine: () => engine,
-      async listSessionSectionPage(input: { sectionKey: string }) {
-        return {
-          hasMore: false,
-          kind: "conversations" as const,
-          sectionKey: input.sectionKey,
-          sessions: [],
-          totalCount: 0
-        };
-      },
-      async listSessionSections() {
-        return {
-          sections: [],
-          workspaceId: "workspace-1"
-        };
-      }
-    } as unknown as AgentActivityRuntime;
-    const wrapper = ({ children }: PropsWithChildren) => (
-      <AgentGUIConversationRailRuntimeAdapterProvider adapter={adapter}>
-        <AgentActivityRuntimeProvider runtime={runtime}>
-          {children}
-        </AgentActivityRuntimeProvider>
-      </AgentGUIConversationRailRuntimeAdapterProvider>
-    );
-
-    const { unmount } = renderHook(
-      () =>
-        useAgentGUIConversationRailQuery({
-          activeConversationId: null,
-          conversationFilter: { kind: "all" },
-          conversationQuery: "",
-          sectionAgentTargetFallbackId: null,
-          userProjects: [],
-          workspaceId: "workspace-1"
-        }),
-      { wrapper }
-    );
-
-    expect(adapter).toHaveBeenCalledTimes(1);
-    unmount();
-    engine.dispose();
-  });
-
-  it("applies host diagnostic context before controller reporting", async () => {
+  it("adds the Desktop node identity through the runtime diagnostic adapter", async () => {
     const engine = createTestAgentSessionEngine("workspace-1");
     const reportDiagnostic = vi.fn();
     const runtime = {
       getSessionEngine: () => engine,
-      async listSessionSectionPage() {
+      async listSessionSections() {
         throw new Error("section membership unavailable");
       },
-      async listSessionSections() {
+      async listSessionSectionPage() {
         throw new Error("section membership unavailable");
       },
       reportDiagnostic
     } as unknown as AgentActivityRuntime;
     const wrapper = ({ children }: PropsWithChildren) => (
-      <AgentGUIConversationRailRuntimeAdapterProvider
-        adapter={(railRuntime) => ({
-          ...railRuntime,
-          reportDiagnostic: (input) =>
-            railRuntime.reportDiagnostic?.({
-              ...input,
-              details: {
-                ...input.details,
-                nodeId: "desktop-node-1"
-              }
-            })
-        })}
-      >
-        <AgentActivityRuntimeProvider runtime={runtime}>
-          {children}
-        </AgentActivityRuntimeProvider>
-      </AgentGUIConversationRailRuntimeAdapterProvider>
+      <AgentActivityRuntimeProvider runtime={runtime}>
+        {children}
+      </AgentActivityRuntimeProvider>
     );
 
     const { unmount } = renderHook(
@@ -119,6 +57,7 @@ describe("useAgentGUIConversationRailQuery search", () => {
           activeConversationId: null,
           conversationFilter: { kind: "all" },
           conversationQuery: "",
+          nodeId: "desktop-node-1",
           sectionAgentTargetFallbackId: null,
           userProjects: [],
           workspaceId: "workspace-1"

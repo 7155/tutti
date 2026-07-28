@@ -481,12 +481,6 @@ ingestion. Desktop and Native Mobile both construct it through
 exported by `@tutti-os/agent-gui/conversation-rail-controller`; a host must not
 instantiate the internal implementation or recreate that state machine in its
 app layer.
-Full AgentGUI surfaces expose only a runtime-adapter injection point at host
-composition. Desktop passes an adapter from `apps/desktop` that enriches only
-the diagnostic port with its `nodeId`; AgentGUI still invokes the canonical
-factory itself. Native Mobile calls the canonical factory directly. The
-default adapter is identity for consumers without host-specific diagnostic
-context.
 
 The Rail query cache stores section metadata, ordered Session IDs, cursors, and
 totals only. Each first-page or pagination response passes Session DTOs

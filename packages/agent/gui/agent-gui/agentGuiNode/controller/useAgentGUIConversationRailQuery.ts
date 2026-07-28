@@ -8,7 +8,6 @@ import {
   type AgentGUIConversationRailQuerySnapshot,
   type ConversationRailQueryRuntime
 } from "../../../agentConversationRailController";
-import { useAgentGUIConversationRailRuntimeAdapter } from "../../../agentConversationRailRuntimeAdapterContext";
 import { inspectAgentConversationBatchDeletionCapability } from "../../../agentConversationRailRuntime";
 import { useEngineSelector } from "../../../shared/engine/useEngineSelector";
 import type { AgentGUINodeViewModel } from "../model/agentGuiNodeTypes";
@@ -20,6 +19,7 @@ export interface AgentGUIConversationRailInput {
   activeConversationId: string | null;
   conversationFilter: AgentGUINodeViewModel["rail"]["conversationFilter"];
   conversationQuery: string;
+  nodeId?: string | null;
   registerInteractionLockProbe?: (probe: (() => boolean) | null) => void;
   sectionAgentTargetFallbackId: string | null;
   userProjects: AgentGUINodeViewModel["rail"]["userProjects"];
@@ -30,14 +30,13 @@ export function useAgentGUIConversationRailQuery({
   activeConversationId,
   conversationFilter,
   conversationQuery,
+  nodeId,
   registerInteractionLockProbe,
   sectionAgentTargetFallbackId,
   userProjects,
   workspaceId
 }: AgentGUIConversationRailInput) {
   const runtime = useAgentActivityRuntime();
-  const adaptConversationRailRuntime =
-    useAgentGUIConversationRailRuntimeAdapter();
   const batchDeletionCapability = useMemo(
     () => inspectAgentConversationBatchDeletionCapability(runtime),
     [runtime]
@@ -48,13 +47,9 @@ export function useAgentGUIConversationRailQuery({
   );
   const activeConversationIdRef = useRef(activeConversationId);
   activeConversationIdRef.current = activeConversationId;
-  const baseRailRuntime = useMemo(
-    () => createAgentGUIConversationRailRuntimeAdapter(runtime),
-    [runtime]
-  );
   const railRuntime = useMemo(
-    () => adaptConversationRailRuntime(baseRailRuntime),
-    [adaptConversationRailRuntime, baseRailRuntime]
+    () => createAgentGUIConversationRailRuntimeAdapter(runtime, nodeId),
+    [nodeId, runtime]
   );
   const controller = useMemo(
     () =>
@@ -178,7 +173,8 @@ function identitySnapshot(
 }
 
 function createAgentGUIConversationRailRuntimeAdapter(
-  runtime: AgentActivityRuntime
+  runtime: AgentActivityRuntime,
+  nodeId: string | null | undefined
 ): ConversationRailQueryRuntime {
   const adapter: ConversationRailQueryRuntime = {};
   const listPinnedSessionsPage = runtime.listPinnedSessionsPage?.bind(runtime);
@@ -199,7 +195,15 @@ function createAgentGUIConversationRailRuntimeAdapter(
   }
   const reportDiagnostic = runtime.reportDiagnostic?.bind(runtime);
   if (reportDiagnostic) {
-    adapter.reportDiagnostic = reportDiagnostic;
+    const normalizedNodeId = nodeId?.trim() || null;
+    adapter.reportDiagnostic = (input) =>
+      reportDiagnostic({
+        ...input,
+        details: {
+          ...input.details,
+          nodeId: normalizedNodeId
+        }
+      });
   }
   return adapter;
 }

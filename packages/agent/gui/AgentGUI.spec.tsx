@@ -3,12 +3,9 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentGUI, type AgentGUIProps } from "./AgentGUI";
 
-const { agentGuiNodeSpy, conversationRailRuntimeAdapterSpy } = vi.hoisted(
-  () => ({
-    agentGuiNodeSpy: vi.fn(),
-    conversationRailRuntimeAdapterSpy: vi.fn((runtime: object) => runtime)
-  })
-);
+const { agentGuiNodeSpy } = vi.hoisted(() => ({
+  agentGuiNodeSpy: vi.fn()
+}));
 
 interface AgentGUINodeProbeProps {
   hostCapabilities: {
@@ -45,9 +42,6 @@ vi.mock("./agent-gui/agentGuiNode/AgentGUINode", async () => {
   const { useOptionalAgentActivityRuntime } = await vi.importActual<
     typeof import("./agentActivityRuntime")
   >("./agentActivityRuntime");
-  const { useAgentGUIConversationRailRuntimeAdapter } = await vi.importActual<
-    typeof import("./agentConversationRailRuntimeAdapterContext")
-  >("./agentConversationRailRuntimeAdapterContext");
   const { useOptionalTuttiModePlanReviewRuntime } = await vi.importActual<
     typeof import("./workspaceWorkflow")
   >("./workspaceWorkflow");
@@ -60,8 +54,6 @@ vi.mock("./agent-gui/agentGuiNode/AgentGUINode", async () => {
       agentGuiNodeSpy(props);
       const { t } = useTranslation();
       const activityRuntime = useOptionalAgentActivityRuntime();
-      const conversationRailRuntimeAdapter =
-        useAgentGUIConversationRailRuntimeAdapter();
       const workflowRuntime = useOptionalTuttiModePlanReviewRuntime();
       return (
         <>
@@ -73,12 +65,6 @@ vi.mock("./agent-gui/agentGuiNode/AgentGUINode", async () => {
           </div>
           <div data-testid="workspace-workflow-runtime-probe">
             {workflowRuntime ? "provided" : "missing"}
-          </div>
-          <div data-testid="conversation-rail-runtime-adapter-probe">
-            {conversationRailRuntimeAdapter ===
-            conversationRailRuntimeAdapterSpy
-              ? "provided"
-              : "default"}
           </div>
           <div data-testid="agent-gui-disabled-suggestions-probe">
             {JSON.stringify(
@@ -149,23 +135,6 @@ describe("AgentGUI i18n", () => {
     expect(screen.getByTestId("agent-gui-runtime-probe")).toHaveTextContent(
       "provided"
     );
-  });
-
-  it("provides the host conversation Rail runtime adapter", () => {
-    render(
-      <AgentGUI
-        {...createAgentGUIProps("en")}
-        conversationRailRuntimeAdapter={
-          conversationRailRuntimeAdapterSpy as NonNullable<
-            AgentGUIProps["conversationRailRuntimeAdapter"]
-          >
-        }
-      />
-    );
-
-    expect(
-      screen.getByTestId("conversation-rail-runtime-adapter-probe")
-    ).toHaveTextContent("provided");
   });
 
   it("provides the optional workspace workflow runtime to the AgentGUI node", () => {

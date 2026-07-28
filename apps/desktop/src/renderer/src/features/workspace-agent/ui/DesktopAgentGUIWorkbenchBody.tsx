@@ -79,7 +79,6 @@ import { scheduleDesktopAgentGUIWorkbenchHydration } from "./desktopAgentGUIWork
 import { IAgentEnvService } from "../services/agentEnvService.interface.ts";
 import { preloadDesktopAgentGuiMentionBrowse } from "../services/preloadDesktopAgentGuiMentionBrowse.ts";
 import { DESKTOP_AGENT_GUI_CURRENT_USER_ID } from "../services/desktopAgentGuiIdentity.ts";
-import { useDesktopAgentGUIConversationRailRuntimeAdapter } from "./useDesktopAgentGUIConversationRailRuntimeAdapter.ts";
 import {
   AGENT_REFERENCE_PROVENANCE_FILTER_FLAG,
   isFeatureEnabled,
@@ -667,10 +666,6 @@ function DesktopAgentGUISurfaceImpl({
       sidebarFooter: renderSidebarFooter
     }
   });
-  const conversationRailRuntimeAdapter =
-    useDesktopAgentGUIConversationRailRuntimeAdapter(
-      agentGUIHostProps.identity.nodeId
-    );
 
   return (
     <>
@@ -680,7 +675,6 @@ function DesktopAgentGUISurfaceImpl({
         renderAgentsEmpty={renderAgentsEmpty}
         agentActivityRuntime={agentActivityRuntime}
         agentHostApi={agentHostApiWithToast}
-        conversationRailRuntimeAdapter={conversationRailRuntimeAdapter}
         tuttiModePlanReviewRuntime={
           capabilityMenuState?.tuttiMode?.enabled === false
             ? null

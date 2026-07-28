@@ -55,10 +55,6 @@ export interface AgentGUIConversationRailQueryController {
   ): () => void;
 }
 
-export type AgentGUIConversationRailQueryRuntimeAdapter = (
-  runtime: ConversationRailQueryRuntime
-) => ConversationRailQueryRuntime;
-
 const conversationRailQueryCachesByEngine = new WeakMap<
   AgentSessionEngine,
   WorkspaceQueryCache<CachedConversationRailQuery>

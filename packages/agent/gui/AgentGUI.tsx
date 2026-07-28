@@ -24,8 +24,6 @@ import {
   type TuttiModePlanReviewRuntime
 } from "./workspaceWorkflow";
 import { AgentVisibleErrorPresentationProvider } from "./shared/visibleError/AgentVisibleErrorPresentationContext";
-import type { AgentGUIConversationRailQueryRuntimeAdapter } from "./agentConversationRailController";
-import { AgentGUIConversationRailRuntimeAdapterProvider } from "./agentConversationRailRuntimeAdapterContext";
 
 export type { AgentGUIHomeSuggestionId } from "./types";
 export type { ReferenceProvenanceCatalog as AgentGUIReferenceProvenanceFilterCatalog } from "@tutti-os/workspace-file-reference/contracts";
@@ -60,7 +58,6 @@ export interface AgentGUIProps extends Omit<
   renderAgentsEmpty?: AgentGUIAgentsEmptyRenderer;
   agentActivityRuntime: AgentActivityRuntime;
   agentHostApi?: AgentHostInputApi | null;
-  conversationRailRuntimeAdapter?: AgentGUIConversationRailQueryRuntimeAdapter;
   tuttiModePlanReviewRuntime?: TuttiModePlanReviewRuntime | null;
   /** Starter entries to hide below the empty new-session composer. */
   disabled?: readonly AgentGUIHomeSuggestionId[];
@@ -73,7 +70,6 @@ export interface AgentGUIProps extends Omit<
 export const AgentGUI = memo(function AgentGUI({
   agentActivityRuntime,
   agentHostApi,
-  conversationRailRuntimeAdapter,
   tuttiModePlanReviewRuntime,
   agentDirectory,
   handoffAgentDirectory,
@@ -156,26 +152,20 @@ export const AgentGUI = memo(function AgentGUI({
     renderSlots: nodeRenderSlots
   };
   const content = (
-    <AgentGUIConversationRailRuntimeAdapterProvider
-      adapter={conversationRailRuntimeAdapter}
-    >
-      <AgentGuiI18nProvider runtime={i18n} locale={locale}>
-        <TuttiModePlanReviewRuntimeProvider
-          runtime={tuttiModePlanReviewRuntime}
+    <AgentGuiI18nProvider runtime={i18n} locale={locale}>
+      <TuttiModePlanReviewRuntimeProvider runtime={tuttiModePlanReviewRuntime}>
+        <AgentActivityHostProvider
+          agentActivityRuntime={agentActivityRuntime}
+          agentHostApi={agentHostApi}
         >
-          <AgentActivityHostProvider
-            agentActivityRuntime={agentActivityRuntime}
-            agentHostApi={agentHostApi}
+          <AgentVisibleErrorPresentationProvider
+            value={props.hostCapabilities?.visibleErrorPresentationOverrides}
           >
-            <AgentVisibleErrorPresentationProvider
-              value={props.hostCapabilities?.visibleErrorPresentationOverrides}
-            >
-              <AgentGUINode {...nodeProps} />
-            </AgentVisibleErrorPresentationProvider>
-          </AgentActivityHostProvider>
-        </TuttiModePlanReviewRuntimeProvider>
-      </AgentGuiI18nProvider>
-    </AgentGUIConversationRailRuntimeAdapterProvider>
+            <AgentGUINode {...nodeProps} />
+          </AgentVisibleErrorPresentationProvider>
+        </AgentActivityHostProvider>
+      </TuttiModePlanReviewRuntimeProvider>
+    </AgentGuiI18nProvider>
   );
   return (
     <TooltipProvider delayDuration={120} skipDelayDuration={0}>

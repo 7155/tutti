@@ -77,6 +77,10 @@ export type AgentLiveDelivery =
       reconcileKeys: readonly AgentLiveReconcileKey[];
     }
   | {
+      agentSessionId: string;
+      kind: "session_deleted";
+    }
+  | {
       attachment: AgentLiveAttachmentControl;
       kind: "attachment_changed";
     }

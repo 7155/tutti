@@ -75,6 +75,15 @@ type scriptedAppServerConnection struct {
 	closed chan struct{}
 
 	modelList                       []any
+	userAgent                       string
+	forkChildThreadID               string
+	forkedFromThreadID              string
+	omitForkedFromThreadID          bool
+	emptyForkedFromThreadID         bool
+	forkResponseLastTurnID          string
+	forkResponseTurnIDs             []string
+	threadReadTurnIDs               []string
+	forkRPCError                    bool
 	requiresAuth                    bool
 	collaborationModeUnsupported    bool
 	emitPlanItem                    bool
@@ -286,7 +295,7 @@ func (c *scriptedAppServerConnection) Send(data []byte) error {
 			c.sendJSON(map[string]any{
 				"id": message.ID,
 				"result": map[string]any{
-					"userAgent":      "codex/0.137.0",
+					"userAgent":      firstNonEmpty(c.userAgent, "codex/0.137.0"),
 					"codexHome":      "/home/user/.codex",
 					"platformOs":     "macos",
 					"platformFamily": "unix",
@@ -440,6 +449,53 @@ func (c *scriptedAppServerConnection) Send(data []byte) error {
 					"approvalPolicy":  "on-request",
 					"sandbox":         map[string]any{"type": "workspaceWrite"},
 					"modelProvider":   "openai",
+				},
+			})
+		case appServerMethodThreadFork:
+			if c.forkRPCError {
+				c.sendJSON(map[string]any{
+					"id": message.ID,
+					"error": map[string]any{
+						"code":    -32602,
+						"message": "invalid lastTurnId",
+					},
+				})
+				continue
+			}
+			childThreadID := firstNonEmpty(c.forkChildThreadID, "codex-thread-fork")
+			forkedFromThreadID := firstNonEmpty(
+				c.forkedFromThreadID,
+				asString(message.Params["threadId"]),
+			)
+			lastTurnID := firstNonEmpty(
+				c.forkResponseLastTurnID,
+				asString(message.Params["lastTurnId"]),
+			)
+			turnIDs := append([]string(nil), c.forkResponseTurnIDs...)
+			if len(turnIDs) == 0 {
+				turnIDs = []string{lastTurnID}
+			}
+			turns := make([]any, 0, len(turnIDs))
+			for _, turnID := range turnIDs {
+				turns = append(turns, map[string]any{
+					"id": turnID, "status": "completed",
+				})
+			}
+			thread := map[string]any{
+				"id":    childThreadID,
+				"turns": turns,
+			}
+			if !c.omitForkedFromThreadID {
+				if c.emptyForkedFromThreadID {
+					thread["forkedFromId"] = ""
+				} else {
+					thread["forkedFromId"] = forkedFromThreadID
+				}
+			}
+			c.sendJSON(map[string]any{
+				"id": message.ID,
+				"result": map[string]any{
+					"thread": thread,
 				},
 			})
 		case appServerMethodTurnStart:
@@ -652,10 +708,24 @@ func (c *scriptedAppServerConnection) Send(data []byte) error {
 		case appServerMethodThreadRead:
 			c.mu.Lock()
 			nickname := c.childNicknames[asString(message.Params["threadId"])]
+			turnIDs := append([]string(nil), c.threadReadTurnIDs...)
 			c.mu.Unlock()
 			thread := map[string]any{"id": message.Params["threadId"]}
 			if nickname != "" {
 				thread["agentNickname"] = nickname
+			}
+			includeTurns, _ := message.Params["includeTurns"].(bool)
+			if includeTurns {
+				if len(turnIDs) == 0 {
+					turnIDs = []string{"provider-turn-1", "provider-turn-2"}
+				}
+				turns := make([]any, 0, len(turnIDs))
+				for _, turnID := range turnIDs {
+					turns = append(turns, map[string]any{
+						"id": turnID, "status": "completed",
+					})
+				}
+				thread["turns"] = turns
 			}
 			c.sendJSON(map[string]any{"id": message.ID, "result": map[string]any{"thread": thread}})
 		case appServerMethodTurnInterrupt:
@@ -2683,38 +2753,62 @@ func TestCodexAppServerAdapterCancelInterruptsLateUnownedRootTurn(t *testing.T) 
 }
 
 func TestCodexAppServerAdapterCancelInterruptsLateChildWithoutCreatingSession(t *testing.T) {
-	adapter, transport, session := startedAppServerAdapter(t)
-	adapter.markRootTurnCanceled(session.AgentSessionID, "root-turn-1")
-	appSession := adapter.getSession(session.AgentSessionID)
-
-	reduction := newCodexAppServerReducer(adapter).ReduceNotification(appSession.client, session, "root-turn-1", acpMessage{
-		Method: appServerNotifyItemCompleted,
-		Params: mustJSONRawMessage(t, map[string]any{
-			"threadId": session.ProviderSessionID,
-			"turnId":   "provider-turn-1",
-			"item": map[string]any{
+	items := []struct {
+		name string
+		item map[string]any
+	}{
+		{
+			name: "collaboration tool call",
+			item: map[string]any{
 				"type":              "collabAgentToolCall",
 				"id":                "spawn-after-cancel",
 				"tool":              "spawnAgent",
 				"status":            "completed",
 				"receiverThreadIds": []any{"child-after-cancel"},
 			},
-		}),
-	}, newACPTurnNormalizer(), nil)
-	if len(reduction.Events) != 0 {
-		t.Fatalf("late child events = %#v, want none", reduction.Events)
+		},
+		{
+			name: "sub-agent activity",
+			item: map[string]any{
+				"type":          "subAgentActivity",
+				"id":            "spawn-after-cancel",
+				"agentThreadId": "child-after-cancel",
+				"agentPath":     "/root/reviewer",
+				"kind":          "started",
+			},
+		},
 	}
-	if _, ok := adapter.appServerChildThread(session.AgentSessionID, "child-after-cancel"); ok {
-		t.Fatal("late child received a canonical child session context")
-	}
-	waitForCondition(t, func() bool {
-		for _, request := range appServerRequestParamsList(t, transport.conn, appServerMethodTurnInterrupt) {
-			if asString(request["threadId"]) == "child-after-cancel" {
-				return true
+
+	for _, test := range items {
+		t.Run(test.name, func(t *testing.T) {
+			adapter, transport, session := startedAppServerAdapter(t)
+			adapter.markRootTurnCanceled(session.AgentSessionID, "root-turn-1")
+			appSession := adapter.getSession(session.AgentSessionID)
+
+			reduction := newCodexAppServerReducer(adapter).ReduceNotification(appSession.client, session, "root-turn-1", acpMessage{
+				Method: appServerNotifyItemCompleted,
+				Params: mustJSONRawMessage(t, map[string]any{
+					"threadId": session.ProviderSessionID,
+					"turnId":   "provider-turn-1",
+					"item":     test.item,
+				}),
+			}, newACPTurnNormalizer(), nil)
+			if len(reduction.Events) != 0 {
+				t.Fatalf("late child events = %#v, want none", reduction.Events)
 			}
-		}
-		return false
-	})
+			if _, ok := adapter.appServerChildThread(session.AgentSessionID, "child-after-cancel"); ok {
+				t.Fatal("late child received a canonical child session context")
+			}
+			waitForCondition(t, func() bool {
+				for _, request := range appServerRequestParamsList(t, transport.conn, appServerMethodTurnInterrupt) {
+					if asString(request["threadId"]) == "child-after-cancel" {
+						return true
+					}
+				}
+				return false
+			})
+		})
+	}
 }
 
 func TestCodexAppServerAdapterNewCanonicalTurnClearsCancelBoundary(t *testing.T) {

@@ -70,22 +70,19 @@ function isInlinePayloadConsistent(
   event: ObservableAgentActivityUpdatedEvent,
   inlineMessages: readonly AgentActivityMessage[]
 ): boolean {
+  if (!agentActivityEventEnvelopeIsConsistent(event)) {
+    return false;
+  }
   const workspaceId = event.workspaceId.trim();
   const agentSessionId = event.agentSessionId.trim();
   if (
-    !workspaceId ||
-    !agentSessionId ||
-    event.data.workspaceId.trim() !== workspaceId ||
-    event.data.agentSessionId.trim() !== agentSessionId ||
-    event.data.eventType !== event.eventType ||
     inlineMessages.some(
       (message) =>
         message.workspaceId !== workspaceId ||
         message.agentSessionId !== agentSessionId
     )
-  ) {
+  )
     return false;
-  }
 
   if (event.eventType === "session_audit") {
     return inlineMessages.length === 1;
@@ -108,6 +105,40 @@ function isInlinePayloadConsistent(
     Number.isSafeInteger(event.data.latestVersion) &&
     event.data.latestVersion >= 0 &&
     latestInlineVersion === event.data.latestVersion
+  );
+}
+
+export function agentActivityEventEnvelopeIsConsistent(
+  event: AgentActivityUpdatedEvent
+): boolean {
+  const workspaceId = event.workspaceId.trim();
+  const agentSessionId = event.agentSessionId.trim();
+  const data: Record<string, unknown> | null = isRecord(event.data)
+    ? (event.data as unknown as Record<string, unknown>)
+    : null;
+  if (
+    !workspaceId ||
+    !agentSessionId ||
+    !data ||
+    data.workspaceId !== workspaceId ||
+    data.agentSessionId !== agentSessionId ||
+    (event.eventType !== "message_delta" && data.eventType !== event.eventType)
+  ) {
+    return false;
+  }
+  if (
+    event.eventType === "turn_update" &&
+    event.data.turn !== undefined &&
+    (!isRecord(event.data.turn) ||
+      event.data.turn.agentSessionId !== agentSessionId)
+  ) {
+    return false;
+  }
+  return (
+    event.eventType !== "interaction_update" ||
+    event.data.interaction === undefined ||
+    (isRecord(event.data.interaction) &&
+      event.data.interaction.agentSessionId === agentSessionId)
   );
 }
 
@@ -150,4 +181,8 @@ function latestMessageVersion(
     (latest, message) => Math.max(latest, message.version),
     0
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -284,10 +284,14 @@ the host-neutral Rail query/mutation cohort. The sibling
 controller interface, workspace-Engine-scoped query caches, and
 `createAgentGUIConversationRailQueryController` factory. Product hosts provide
 the canonical Rail queries and construct the controller with their workspace
-Engine through that factory; they must not instantiate the package-internal
-implementation or copy query scope, first-page refresh, cursor pagination,
-stale-request fencing, membership reconciliation, Engine ingestion, forwarding
-methods, or cache lifetime into app or renderer composition code.
+Engine through that factory. Full AgentGUI surfaces accept only a narrow
+host-supplied runtime adapter at their composition boundary, so Desktop can add
+diagnostic context while AgentGUI remains the sole caller of the canonical
+factory; Native Mobile calls the same factory directly. Hosts must not
+instantiate the package-internal implementation or copy query scope, first-page
+refresh, cursor pagination, stale-request fencing, membership reconciliation,
+Engine ingestion, forwarding methods, or cache lifetime into app or renderer
+composition code.
 Transport adapters still own HTTP/IPC DTO mapping, authorization, and protocol
 errors. In particular, `listSessionSectionDeletionCandidates` and
 `deleteSessionsBatch` are one atomic batch-deletion capability. AgentGUI disables

@@ -642,7 +642,6 @@ export function AgentGUINodeView({
               <AgentGUIConversationRailController
                 {...conversationRailStoreState}
                 conversations={viewModel.rail.conversations}
-                nodeId={viewModel.shell.nodeId}
                 registerInteractionLockProbe={registerRailInteractionLockProbe}
                 userProjects={viewModel.rail.userProjects}
                 workspaceId={viewModel.shell.workspaceId}

@@ -234,6 +234,11 @@ transport and Session mapping, then retain only host lifecycle, availability,
 polling, diagnostic context, and presentation policy. Do not instantiate the
 internal controller, create a host-local second Rail state machine, or export
 its internal query helpers as public API.
+Full AgentGUI hosts may supply `conversationRailRuntimeAdapter` at the
+`AgentGUI` composition boundary. This adapter may enrich host-owned ports such
+as diagnostic context, but cannot replace controller construction; AgentGUI
+remains the sole caller of the canonical factory. Native consumers without the
+full AgentGUI surface call the canonical factory directly.
 Its public snapshot is presentation-free; Desktop derives localized
 conversation summaries from that snapshot plus Engine state in its adapter.
 The factory owns resolved-query cache reuse per workspace Engine; cache access

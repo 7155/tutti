@@ -14,6 +14,11 @@ import {
   resolveAgentTargetPresentation,
   useAgentTargetPresentations
 } from "../../../shared/AgentTargetPresentationContext";
+import {
+  useAgentTargetInfoRenderer,
+  useAgentTargetInfoTarget
+} from "../../../shared/AgentTargetInfoRendererContext";
+import { AgentTargetInfoTooltip } from "../../../shared/AgentTargetInfoTooltip";
 import type { UiLanguage } from "../../../contexts/settings/domain/agentSettings";
 import type { AgentGUINodeViewModel } from "../model/agentGuiNodeTypes";
 import type { AgentGUIViewLabels } from "../AgentGUINodeView";
@@ -107,13 +112,59 @@ export const AgentGUIConversationRailItem = memo(
     "use memo";
     const pinned = (item.pinnedAtUnixMs ?? 0) > 0;
     const [actionsActivated, setActionsActivated] = useState(false);
+    const [targetInfoOpen, setTargetInfoOpen] = useState(false);
     const agentTargets = useAgentTargetPresentations();
+    const renderAgentTargetInfo = useAgentTargetInfoRenderer();
+    const targetInfoTarget = useAgentTargetInfoTarget(item.agentTargetId);
     const conversationIcon = agentGUIConversationIconPresentation(
       item.provider,
       item.agentTargetId,
       workspaceId,
       agentTargets
     );
+    const conversationIconNode =
+      conversationIcon?.kind === "mask" ? (
+        <span
+          aria-hidden="true"
+          className={cn(
+            styles.conversationProviderIcon,
+            styles.conversationProviderMaskIcon
+          )}
+          style={{
+            WebkitMaskImage: `url("${conversationIcon.url}")`,
+            maskImage: `url("${conversationIcon.url}")`
+          }}
+        />
+      ) : conversationIcon ? (
+        <img
+          alt=""
+          aria-hidden="true"
+          className={cn(
+            styles.conversationProviderIcon,
+            styles.conversationProviderImage
+          )}
+          draggable={false}
+          src={conversationIcon.url}
+        />
+      ) : null;
+    const conversationIconWithTargetInfo =
+      conversationIconNode && renderAgentTargetInfo && targetInfoTarget ? (
+        <AgentTargetInfoTooltip
+          align="start"
+          fallbackLabel={targetInfoTarget.label}
+          onOpenChange={setTargetInfoOpen}
+          open={targetInfoOpen}
+          renderer={renderAgentTargetInfo}
+          side="bottom"
+          sideOffset={6}
+          surface="conversation-rail"
+          target={targetInfoTarget}
+        >
+          {conversationIconNode}
+        </AgentTargetInfoTooltip>
+      ) : (
+        conversationIconNode
+      );
     const setItemElement = useCallback(
       (element: HTMLDivElement | null) => {
         registerItemElement(item.id, element);
@@ -198,36 +249,23 @@ export const AgentGUIConversationRailItem = memo(
           type="button"
           className={styles.conversationSelect}
           onClick={handleSelect}
+          onBlur={
+            renderAgentTargetInfo && targetInfoTarget
+              ? () => setTargetInfoOpen(false)
+              : undefined
+          }
           onDoubleClick={(event) => {
             event.preventDefault();
             handleRequestRename();
           }}
+          onFocus={
+            renderAgentTargetInfo && targetInfoTarget
+              ? () => setTargetInfoOpen(true)
+              : undefined
+          }
         >
           <span className={styles.conversationTitleRow}>
-            {conversationIcon?.kind === "mask" ? (
-              <span
-                aria-hidden="true"
-                className={cn(
-                  styles.conversationProviderIcon,
-                  styles.conversationProviderMaskIcon
-                )}
-                style={{
-                  WebkitMaskImage: `url("${conversationIcon.url}")`,
-                  maskImage: `url("${conversationIcon.url}")`
-                }}
-              />
-            ) : conversationIcon ? (
-              <img
-                alt=""
-                aria-hidden="true"
-                className={cn(
-                  styles.conversationProviderIcon,
-                  styles.conversationProviderImage
-                )}
-                draggable={false}
-                src={conversationIcon.url}
-              />
-            ) : null}
+            {conversationIconWithTargetInfo}
             <span className={styles.conversationTitle}>
               {agentGUIConversationRailTitle(item, labels, uiLanguage)}
             </span>

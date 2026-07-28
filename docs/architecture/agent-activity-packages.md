@@ -279,23 +279,32 @@ sections come from current user projects and session membership comes from
 persisted `rail_section_key`, not frontend cwd grouping or project-root
 filters.
 The published `@tutti-os/agent-gui/conversation-rail-runtime` entrypoint owns
-the complete host-neutral rail capability cohort and its workspace-scoped query
-caches. Product hosts provide one source implementing the six canonical rail
-queries and mutations, then install the result of
-`createAgentConversationRailRuntime` on `AgentActivityRuntime`; they must not
-copy the forwarding methods or cache lifetime into renderer composition code.
+the complete host-neutral rail capability cohort, its workspace-scoped query
+caches, and `AgentGUIConversationRailQueryController`. Product hosts provide
+the canonical Rail queries and construct the controller with their workspace
+Engine; they must not copy query scope, first-page refresh, cursor pagination,
+stale-request fencing, membership reconciliation, Engine ingestion, forwarding
+methods, or cache lifetime into app or renderer composition code.
 Transport adapters still own HTTP/IPC DTO mapping, authorization, and protocol
 errors. In particular, `listSessionSectionDeletionCandidates` and
 `deleteSessionsBatch` are one atomic batch-deletion capability. AgentGUI disables
 the action and reports
 `agent.gui.conversation_batch_delete.capability_incomplete` when a host exposes
 only one half, instead of accepting a click that cannot complete.
-Native Mobile currently owns a narrower Rail controller, but it obeys the same
-entity boundary: the controller retains only section membership, ordered
-Session ids, cursors, totals, and request state. Generated Session DTOs from
-first-page and pagination responses are transient adapter input and are
-immediately upserted into the workspace Engine; they are never retained in a
-second Mobile Rail entity store.
+Desktop and Native Mobile use the same headless Rail controller. Generated
+Session DTOs from first-page and pagination responses are transient adapter
+input and are immediately upserted into the workspace Engine; they are never
+retained in a second host Rail entity store. Hosts retain only transport
+mapping, runtime-availability policy, surface lifecycle, presentation, and
+host-specific refresh cadence such as Mobile disconnected polling.
+The pure Rail contracts are the canonical source for both the controller and
+the compatibility-named `AgentActivityRuntime` Rail aliases. The public
+controller snapshot exposes memberships, ordered ids, pagination, search, and
+request state only; Desktop joins it with Engine state for localized
+conversation summaries outside the headless entrypoint. Resolved cache entries
+are workspace-shared, but in-flight first-page entity payloads stay scoped to
+one attached controller generation so an obsolete mount cannot ingest or cache
+them.
 Every daemon `WorkspaceAgentSession` response carries the persisted membership
 as required `railSectionKey`. The desktop adapter rejects a missing or blank
 value as a protocol contract error; it must not manufacture `conversations` or

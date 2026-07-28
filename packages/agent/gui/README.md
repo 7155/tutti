@@ -223,6 +223,19 @@ Runtime identity is explicit: each consumer resolves the injected engine and
 verifies its `(workspaceId, origin)` identity. Module-global runtime slots and
 hidden origin registries are forbidden.
 
+The `@tutti-os/agent-gui/conversation-rail-runtime` subpath exposes the
+headless `AgentGUIConversationRailQueryController` used by Desktop and Native
+Mobile. It owns Rail query scope, first-page and cursor pagination, cache and
+stale-request handling, membership refresh, and canonical Engine ingestion.
+Hosts supply transport and Session mapping, then retain only host lifecycle,
+availability, polling, and presentation policy. Do not create a host-local
+second Rail state machine or export its internal query helpers as public API.
+Its public snapshot is presentation-free; Desktop derives localized
+conversation summaries from that snapshot plus Engine state in its adapter.
+Only resolved cache data is reusable across controller instances. In-flight
+first-page results are fenced to the attached controller generation so stale
+mounts cannot mutate the Engine or cache.
+
 Run this boundary check after changing AgentGUI data flow:
 
 ```sh

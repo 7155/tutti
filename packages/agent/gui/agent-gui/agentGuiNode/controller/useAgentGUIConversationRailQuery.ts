@@ -7,6 +7,7 @@ import {
   AgentGUIConversationRailQueryController,
   type AgentGUIConversationRailQuerySnapshot
 } from "./AgentGUIConversationRailQueryController";
+import { createConversationRailConversationsSelector } from "./agentGuiConversationRailQuerySnapshot";
 import { resolveConversationRailQueryScope } from "./agentGuiConversationRailQueryTypes";
 import { reportAgentGUIConversationBatchDeletionCapabilityIncomplete } from "./agentGuiController.reporting";
 
@@ -95,6 +96,29 @@ export function useAgentGUIConversationRailQuery({
     identitySnapshot,
     Object.is
   );
+  const projectRailConversations = useMemo(() => {
+    const select = createConversationRailConversationsSelector();
+    let previous: ReturnType<typeof select> = [];
+    return (
+      state: Parameters<typeof select>[0]["engineState"],
+      snapshot: AgentGUIConversationRailQuerySnapshot
+    ) => {
+      previous = select(
+        {
+          engineState: state,
+          interactionLocked: controller.isInteractionLocked(),
+          querySnapshot: snapshot
+        },
+        previous
+      );
+      return previous;
+    };
+  }, [controller]);
+  const runtimeRailConversations = useEngineSelector(
+    engine,
+    (state) => projectRailConversations(state, querySnapshot),
+    Object.is
+  );
   const requestedRailScopeKey = useMemo(
     () =>
       resolveConversationRailQueryScope(workspaceId, {
@@ -123,13 +147,14 @@ export function useAgentGUIConversationRailQuery({
       runtimeRailScopeResolved:
         !querySnapshot.runtimeSectionsEnabled ||
         querySnapshot.runtimeRailResolvedScopeKey === requestedRailScopeKey,
-      runtimeRailConversations: querySnapshot.runtimeRailConversations
+      runtimeRailConversations
     }),
     [
       batchDeletionCapability.available,
       controller,
       querySnapshot,
-      requestedRailScopeKey
+      requestedRailScopeKey,
+      runtimeRailConversations
     ]
   );
 }

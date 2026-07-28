@@ -473,14 +473,38 @@ The busy-session prompt queue is ephemeral durable-intent coordination in the wo
 
 ### 4.5 Rail query and presentation state
 
-The Rail query cache stores section metadata, ordered Session IDs, cursors, and totals only. Session entities always come from the engine.
+The headless `AgentGUIConversationRailQueryController` is the single
+cross-platform owner of Rail query scope, first-page refresh, cursor
+pagination, stale-request fences, membership reconciliation, and Engine
+ingestion. Desktop and Native Mobile both construct this controller from
+`@tutti-os/agent-gui/conversation-rail-runtime`; a host must not recreate that
+state machine in its app layer.
 
-Mobile follows the same ownership rule even though its Native Rail controller is
-host-owned: each first-page or pagination response passes Session DTOs
-transiently through the shared mapper into Engine upserts, while the Rail
-snapshot retains only memberships, ordered IDs, cursors, totals, and loading
-state. Refreshing a bounded Rail page is not deletion evidence and must not
-replace or prune canonical Engine entities.
+The Rail query cache stores section metadata, ordered Session IDs, cursors, and
+totals only. Each first-page or pagination response passes Session DTOs
+transiently through the host mapper into Engine upserts, while the Rail
+snapshot retains only memberships, ordered IDs, cursors, totals, loading, and
+failure state. Refreshing a bounded Rail page is not deletion evidence and
+must not replace or prune canonical Engine entities.
+
+The public headless snapshot contains query and membership state only.
+Desktop-localized conversation summaries are projected from the snapshot plus
+canonical Engine state outside the controller, so the Native entrypoint does
+not depend on Desktop presentation or locale bundles. The public constructor
+accepts only the Engine, canonical runtime queries, workspace identity, and
+small scheduling/page-size ports; cache records, diagnostics, and request
+generation seams remain package internals.
+
+Resolved query results may be reused from the workspace cache. In-flight
+first-page entity payloads are controller-generation scoped and must not be
+shared across mounted controllers: detach, pause, or a scope change must fence
+both Engine ingestion and cache writes from the obsolete request.
+
+Hosts own the transport adapter, DTO mapping, runtime-availability policy, and
+surface lifecycle. For example, Mobile owns disconnected polling and
+foreground/background pause-resume around the shared controller. Native hosts
+also own their renderer, localized status projection, and interaction layout;
+those host concerns must not leak back into the shared query controller.
 
 Cross-platform hosts may reuse the DOM-free canonical Rail summary projection
 from `@tutti-os/agent-gui/conversation-rail-projection`. They must still obtain

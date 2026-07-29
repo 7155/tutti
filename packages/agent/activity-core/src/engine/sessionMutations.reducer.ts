@@ -20,7 +20,6 @@ import type {
 import {
   hasInFlightOverlap,
   invalidResult,
-  isUnresolvedForkObservationAck,
   replaceRecord,
   unchanged,
   withRecord,
@@ -273,20 +272,15 @@ function requestForkThroughTurn(
     sourceSession?.workspaceId !== workspaceId ||
     sourceSession.kind !== "root" ||
     sourceSession.lifecycleCapabilities.forkThroughTurn !== true ||
-    Boolean(sourceSession.activeTurnId?.trim()) ||
-    Object.values(context.interactionsById ?? {}).some(
-      (interaction) =>
-        interaction.agentSessionId === sourceAgentSessionId &&
-        interaction.status === "pending"
-    ) ||
-    turn?.phase !== "settled" ||
+    turn?.providerForkBindingAvailable !== true ||
     context.sessionsById[targetAgentSessionId] !== undefined ||
-    hasInFlightOverlap(state, [sourceAgentSessionId]) ||
-    hasUnresolvedForkObservationAckOverlap(
-      state,
-      workspaceId,
-      sourceAgentSessionId,
-      turnId
+    Object.values(state.byMutationId).some(
+      (record) =>
+        record.kind === "forkThroughTurn" &&
+        record.status === "inFlight" &&
+        record.workspaceId === workspaceId &&
+        record.agentSessionIds[0] === sourceAgentSessionId &&
+        record.turnId === turnId
     )
   ) {
     return unchanged(state);
@@ -510,21 +504,6 @@ function requestDelete(
     ],
     state: withRequestedRecord(state, record)
   };
-}
-
-function hasUnresolvedForkObservationAckOverlap(
-  state: SessionMutationsState,
-  workspaceId: string,
-  sourceAgentSessionId: string,
-  turnId: string
-): boolean {
-  return Object.values(state.byMutationId).some(
-    (record) =>
-      isUnresolvedForkObservationAck(record) &&
-      record.workspaceId === workspaceId &&
-      record.agentSessionIds[0] === sourceAgentSessionId &&
-      record.turnId === turnId
-  );
 }
 
 function observeForkedSession(

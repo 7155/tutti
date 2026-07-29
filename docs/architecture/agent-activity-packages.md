@@ -437,15 +437,27 @@ seconds across controller remounts and repeated target switches. In-flight
 request coalescing remains controller-local; the factory shares only resolved
 entries across controllers. The cache never owns session entities, titles,
 lifecycle, or interaction state.
-Rename, pin, and delete are semantic Engine operations, not direct runtime
-calls from AgentGUI or reducer-protocol assembly in a product host. The Engine
-records the pending mutation, emits one semantic command, and feeds the command
-result back through its reducer loop. Successful Session results and delete
-tombstones enter canonical state as follow-up intents in the same engine drain.
-The product activity facade awaits the semantic Engine method and never
-allocates mutation identity, chooses timeout policy, or reads mutation records.
-Its command port is the only transport executor. Settled mutation records use a
-bounded window; they are workflow evidence, not an unbounded history store.
+Rename, pin, delete, and through-Turn Fork are Engine mutations, not direct
+runtime calls from AgentGUI. Rename, pin, and delete enter through semantic
+Engine operations rather than reducer-protocol assembly in a product host.
+The engine records the pending mutation, emits one semantic command, and feeds
+the command result back through its reducer loop. Successful rename and pin
+Session results plus validated delete tombstones enter canonical state as
+follow-up intents in the same engine drain. The product activity facade awaits
+the semantic rename, pin, and delete methods and never allocates mutation
+identity, chooses timeout policy, or reads mutation records. The command port is
+the only transport executor. Settled mutation records use a bounded window;
+they are workflow evidence, not an unbounded history store.
+Fork is long-lived: an HTTP `202 accepted` keeps the mutation in flight until
+the canonical target Session with matching durable lineage is upserted. The
+Engine disables only another Fork for that exact source Turn. Source activity,
+pending Interactions, and an observation ACK for an already committed child do
+not become Fork availability gates.
+The Desktop activity adapter reconciles an accepted operation through the
+durable operation GET endpoint with capped backoff. It never redispatches the
+provider mutation. A committed result enters the Engine as the canonical child;
+failed or delivery-unknown results terminate the mutation so the action can
+report failure and be retried with the correct identity.
 When one of those canonical commits changes page membership, the rail query
 controller reloads only the affected first pages. Its public snapshot contains
 daemon membership and query publication state, not derived Engine
@@ -1145,12 +1157,26 @@ the normalized event is applied:
 - after a gap, discontinuity, or reconnect, complete an authoritative read and
   reconcile the overlay; use an unconditional overlay reset only when removing
   or rebinding the Session
-- reconcile `turn_update` and `interaction_update` through a full session pull
+- validate each `turn_update` envelope and dispatch one atomic Engine
+  projection that updates the Turn and the cached Session's `activeTurnId`
+  together; a settled Turn may clear only its own active reference, so delayed
+  events cannot clear a newer Turn
+- use canonical Turn versions as the Engine-local fence against stale Session
+  snapshots; event-envelope `occurredAtUnixMs` is transport metadata and must
+  not advance canonical Session timestamps or participate in entity ordering
+- reject inconsistent Turn projections without partially updating canonical
+  state, then converge through a state-only session pull
+- reconcile `turn_update` and `interaction_update` through a session pull to
+  fill fields outside their realtime projections and hydrate an uncached
+  Session; the pull is not the consistency boundary for a cached Turn and
+  Session
 - preserve whether a reconcile was realtime-triggered until its authoritative
   session is applied; if the authoritative fetch fails, restore that provenance
   for the retry rather than silently downgrading it to historical
-- dispatch `session/upserted` before realtime `turn/upserted` so attention can
-  resolve the session identity
+- let the atomic realtime Turn projection drive attention immediately when
+  Session identity is cached, but only from the Turn accepted by canonical
+  lifecycle monotonicity; after hydrating an uncached Session, replay its latest
+  Turn with realtime provenance so attention can resolve identity
 - apply historical list pulls through `session/snapshotReceived`, which never
   creates a new unread completion
 - let identity-dependent reducers observe both authoritative shapes: a pending

@@ -80,16 +80,6 @@ export function isUnresolvedForkCoordination(
   );
 }
 
-export function isUnresolvedForkObservationAck(
-  record: SessionMutationRecord
-): record is SessionForkThroughTurnMutationRecord {
-  return (
-    record.kind === "forkThroughTurn" &&
-    record.ackStatus !== "idle" &&
-    record.ackStatus !== "acknowledged"
-  );
-}
-
 export function unchanged(
   state: SessionMutationsState
 ): EngineReducerResult<SessionMutationsState> {

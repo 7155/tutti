@@ -265,10 +265,12 @@ application/service command reachability and coordinator state from
 
 The coordinator validates each realtime Turn projection and dispatches it as
 one Engine intent. The lifecycle reducer applies the Turn, the owning Session's
-`activeTurnId`, and the Session event version in one state transition. A
+`activeTurnId`, and downstream lifecycle decisions in one state transition. A
 settled Turn may clear only its own active reference, so a delayed completion
-cannot clear a newer active Turn. Invalid projections are not partially
-applied.
+cannot clear a newer active Turn. Cached canonical Turn versions fence stale
+Session snapshots without copying event-envelope time into Session timestamps.
+Invalid projections are not partially applied, and attention observes only the
+Turn accepted by canonical lifecycle monotonicity.
 
 The same intent requests a state-only `session/reconcile` with `live: true`.
 Command adapters preserve that flag on `session/detailSnapshotReceived`; failed

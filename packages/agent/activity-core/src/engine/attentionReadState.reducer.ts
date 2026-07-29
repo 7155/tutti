@@ -10,8 +10,17 @@ import type {
   AttentionReadPartition,
   AttentionReadState
 } from "./attentionReadState.types.ts";
+import type { CanonicalAgentSession } from "./sessionLifecycle.types.ts";
+import { canonicalTurnKey } from "./sessionEntityKeys.ts";
 
 const NO_COMMANDS: readonly EngineCommand[] = [];
+
+interface AttentionReadStateContext {
+  previousSessionsById: Readonly<Record<string, CanonicalAgentSession>>;
+  previousTurnsById: Readonly<Record<string, AgentActivityTurn>>;
+  sessionsById: Readonly<Record<string, { userId?: string }>>;
+  turnsById: Readonly<Record<string, AgentActivityTurn>>;
+}
 
 export function createInitialAttentionReadState(): AttentionReadState {
   return { partitionsByUserId: {} };
@@ -20,9 +29,12 @@ export function createInitialAttentionReadState(): AttentionReadState {
 export function attentionReadStateReducer(
   state: AttentionReadState,
   intent: EngineIntent,
-  context: {
-    sessionsById: Readonly<Record<string, { userId?: string }>>;
-  } = { sessionsById: {} }
+  context: AttentionReadStateContext = {
+    previousSessionsById: {},
+    previousTurnsById: {},
+    sessionsById: {},
+    turnsById: {}
+  }
 ): EngineReducerResult<AttentionReadState> {
   switch (intent.type) {
     case "attention/hydrateRequested":
@@ -52,21 +64,31 @@ export function attentionReadStateReducer(
       }
       return unchanged(state);
     case "turn/projectionReceived":
-    case "turn/upserted":
+    case "turn/upserted": {
+      const turn = acceptedCanonicalTurn(intent.turn, context);
+      if (!turn) return unchanged(state);
       return observeTurn(
         state,
-        context.sessionsById[intent.turn.agentSessionId]?.userId ?? "",
-        intent.turn,
+        context.sessionsById[turn.agentSessionId]?.userId ?? "",
+        turn,
         true
       );
+    }
     case "session/snapshotReceived": {
       let next = state;
       for (const session of intent.sessions) {
-        if (session.latestTurn?.phase === "settled") {
+        if (session.latestTurn) {
+          const turn = acceptedCanonicalTurn(session.latestTurn, context);
+          const id = session.agentSessionId.trim();
+          const key = canonicalTurnKey(id, session.latestTurn.turnId);
+          const snapshotAccepted =
+            context.sessionsById[id] !== context.previousSessionsById[id] ||
+            turn !== context.previousTurnsById[key];
+          if (!turn || !snapshotAccepted) continue;
           next = observeTurn(
             next,
-            session.userId?.trim() ?? "",
-            session.latestTurn,
+            context.sessionsById[turn.agentSessionId]?.userId ?? "",
+            turn,
             false
           ).state;
         }
@@ -92,6 +114,20 @@ export function attentionReadStateReducer(
     default:
       return unchanged(state);
   }
+}
+
+function acceptedCanonicalTurn(
+  incoming: AgentActivityTurn,
+  context: AttentionReadStateContext
+): AgentActivityTurn | null {
+  const key = canonicalTurnKey(incoming.agentSessionId, incoming.turnId);
+  const turn = context.turnsById[key];
+  return turn &&
+    turn.phase === incoming.phase &&
+    turn.outcome === incoming.outcome &&
+    turn.updatedAtUnixMs === incoming.updatedAtUnixMs
+    ? turn
+    : null;
 }
 
 function observeTurn(

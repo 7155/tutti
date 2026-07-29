@@ -2601,9 +2601,10 @@ inline data URL instead`. Claude or standard ACP may instead receive no
 - Quick checks:
   Trace the event path into the activity engine. A realtime `turn_update`
   should enter as one atomic Turn projection. When the Session is cached, the
-  same Engine transition must update the Turn, update or clear
-  `Session.activeTurnId`, advance the Session event version, and drive
-  attention. A delayed settled event may clear only the matching active Turn.
+  same Engine transition must update the Turn and update or clear
+  `Session.activeTurnId` without rewriting Session timestamps from the event
+  envelope. Attention must observe the post-lifecycle canonical Turn, not the
+  raw event. A delayed settled event may clear only the matching active Turn.
   The event should also request a state-only session reconcile with realtime
   provenance. Initial, restored, and imported history should enter through
   `session/snapshotReceived` only. Also confirm the projected desktop session
@@ -2620,6 +2621,9 @@ inline data URL instead`. Claude or standard ACP may instead receive no
   `turn_update` through one intent that atomically projects the Turn and cached
   Session reference. Reject a projection whose live/settled phase disagrees
   with `activeTurnId`; reconcile instead of applying half of the wire fact.
+  Fence stale Session snapshots with canonical Turn versions rather than
+  event-envelope time, and let attention consume only a Turn that the lifecycle
+  reducer accepted.
   Keep the realtime marker on the follow-up reconcile so an uncached Session
   can hydrate and replay the latest Turn with live attention semantics. Use
   inline message events only for message deltas and one shared local identity

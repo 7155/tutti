@@ -1103,9 +1103,12 @@ the normalized event is applied:
   reconcile the overlay; use an unconditional overlay reset only when removing
   or rebinding the Session
 - validate each `turn_update` envelope and dispatch one atomic Engine
-  projection that updates the Turn, the cached Session's `activeTurnId`, and
-  the Session event version together; a settled Turn may clear only its own
-  active reference, so delayed events cannot clear a newer Turn
+  projection that updates the Turn and the cached Session's `activeTurnId`
+  together; a settled Turn may clear only its own active reference, so delayed
+  events cannot clear a newer Turn
+- use canonical Turn versions as the Engine-local fence against stale Session
+  snapshots; event-envelope `occurredAtUnixMs` is transport metadata and must
+  not advance canonical Session timestamps or participate in entity ordering
 - reject inconsistent Turn projections without partially updating canonical
   state, then converge through a state-only session pull
 - reconcile `turn_update` and `interaction_update` through a session pull to
@@ -1116,8 +1119,9 @@ the normalized event is applied:
   session is applied; if the authoritative fetch fails, restore that provenance
   for the retry rather than silently downgrading it to historical
 - let the atomic realtime Turn projection drive attention immediately when
-  Session identity is cached; after hydrating an uncached Session, replay its
-  latest Turn with realtime provenance so attention can resolve identity
+  Session identity is cached, but only from the Turn accepted by canonical
+  lifecycle monotonicity; after hydrating an uncached Session, replay its latest
+  Turn with realtime provenance so attention can resolve identity
 - apply historical list pulls through `session/snapshotReceived`, which never
   creates a new unread completion
 - let identity-dependent reducers observe both authoritative shapes: a pending

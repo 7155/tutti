@@ -370,7 +370,12 @@ export function rootEngineReducer(
   const attentionReadState = attentionReadStateReducer(
     state.attentionReadState,
     intent,
-    { sessionsById: sessionLifecycle.state.sessionsById }
+    {
+      previousSessionsById: state.sessionLifecycle.sessionsById,
+      previousTurnsById: state.sessionLifecycle.turnsById,
+      sessionsById: sessionLifecycle.state.sessionsById,
+      turnsById: sessionLifecycle.state.turnsById
+    }
   );
   const pendingIntents = pendingIntentsReducer(state.pendingIntents, intent, {
     deletedSessionIds: sessionLifecycle.state.deletedSessionIds,

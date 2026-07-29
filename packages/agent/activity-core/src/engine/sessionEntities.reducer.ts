@@ -33,7 +33,12 @@ export function replaceCanonicalSessionSnapshot(
     const incomingSession = canonicalSession(source);
     const useIncoming = shouldUseIncomingSession(current, incomingSession);
     const candidateSession = useIncoming
-      ? preserveLiveTurnOnTimestampTie(current, incomingSession)
+      ? preserveCanonicalActiveTurnProjection(
+          state,
+          current,
+          incomingSession,
+          source
+        )
       : current!;
     sessionsById[id] =
       current && areJsonLikeValuesEqual(current, candidateSession)
@@ -152,7 +157,7 @@ export function upsertCanonicalSession(
   const incoming = canonicalSession(source);
   const useIncoming = shouldUseIncomingSession(current, incoming);
   const candidateSession = useIncoming
-    ? preserveLiveTurnOnTimestampTie(current, incoming)
+    ? preserveCanonicalActiveTurnProjection(state, current, incoming, source)
     : current!;
   const nextSession =
     current && areJsonLikeValuesEqual(current, candidateSession)
@@ -298,16 +303,7 @@ export function upsertCanonicalTurnProjection(
   if (!session) return withTurn;
 
   const activeTurnId = projectedActiveTurnId(withTurn, session, input);
-  if (activeTurnId === undefined) return withTurn;
-
-  const projectionVersion = turnProjectionVersion(input);
-  const lastEventUnixMs = Math.max(session.lastEventUnixMs, projectionVersion);
-  const updatedAtUnixMs = Math.max(session.updatedAtUnixMs, projectionVersion);
-  if (
-    session.activeTurnId === activeTurnId &&
-    session.lastEventUnixMs === lastEventUnixMs &&
-    session.updatedAtUnixMs === updatedAtUnixMs
-  ) {
+  if (activeTurnId === undefined || session.activeTurnId === activeTurnId) {
     return withTurn;
   }
   return {
@@ -316,9 +312,7 @@ export function upsertCanonicalTurnProjection(
       ...withTurn.sessionsById,
       [agentSessionId]: {
         ...session,
-        activeTurnId,
-        lastEventUnixMs,
-        updatedAtUnixMs
+        activeTurnId
       }
     }
   };
@@ -386,7 +380,6 @@ function shouldUseIncomingTurn(
 
 interface CanonicalTurnProjection {
   activeTurnId: string | null;
-  occurredAtUnixMs: number;
   turn: AgentActivityTurn;
 }
 
@@ -396,8 +389,6 @@ function turnProjectionIsConsistent(input: CanonicalTurnProjection): boolean {
   return (
     Boolean(input.turn.agentSessionId.trim()) &&
     Boolean(turnId) &&
-    Number.isSafeInteger(input.occurredAtUnixMs) &&
-    input.occurredAtUnixMs >= 0 &&
     (input.turn.phase === "settled"
       ? activeTurnId === null
       : activeTurnId === turnId)
@@ -416,23 +407,16 @@ function projectedActiveTurnId(
   }
   if (currentActiveTurnId === turnId) return turnId;
 
-  const projectionVersion = turnProjectionVersion(input);
   if (!currentActiveTurnId) {
-    return projectionVersion >= sessionVersion(session) ? turnId : undefined;
+    return turnId;
   }
   const currentActiveTurn =
     state.turnsById[
       canonicalTurnKey(session.agentSessionId, currentActiveTurnId)
     ];
-  const currentVersion = Math.max(
-    sessionVersion(session),
-    currentActiveTurn?.updatedAtUnixMs ?? 0
-  );
-  return projectionVersion > currentVersion ? turnId : undefined;
-}
-
-function turnProjectionVersion(input: CanonicalTurnProjection): number {
-  return Math.max(input.occurredAtUnixMs, input.turn.updatedAtUnixMs);
+  const currentVersion =
+    currentActiveTurn?.updatedAtUnixMs ?? sessionVersion(session);
+  return input.turn.updatedAtUnixMs > currentVersion ? turnId : undefined;
 }
 
 function allowedTurnTransition(current: string, incoming: string): boolean {
@@ -579,18 +563,61 @@ function shouldUseIncomingSession(
   return !current || sessionVersion(incoming) >= sessionVersion(current);
 }
 
-function preserveLiveTurnOnTimestampTie(
+function preserveCanonicalActiveTurnProjection(
+  state: SessionLifecycleState,
   current: CanonicalAgentSession | undefined,
-  incoming: CanonicalAgentSession
+  incoming: CanonicalAgentSession,
+  source: AgentActivitySessionInput
 ): CanonicalAgentSession {
-  if (
-    current?.activeTurnId &&
-    current.activeTurnId !== incoming.activeTurnId &&
-    sessionVersion(current) === sessionVersion(incoming)
-  ) {
-    return { ...incoming, activeTurnId: current.activeTurnId };
+  const currentActiveTurnId = current?.activeTurnId?.trim() ?? null;
+  const incomingActiveTurnId = incoming.activeTurnId?.trim() ?? null;
+  if (incomingActiveTurnId) {
+    const cachedIncomingTurn =
+      state.turnsById[
+        canonicalTurnKey(incoming.agentSessionId, incomingActiveTurnId)
+      ];
+    if (cachedIncomingTurn?.phase === "settled") {
+      return {
+        ...incoming,
+        activeTurnId:
+          currentActiveTurnId === incomingActiveTurnId
+            ? null
+            : currentActiveTurnId
+      };
+    }
   }
-  return incoming;
+  if (currentActiveTurnId === incomingActiveTurnId) {
+    return incoming;
+  }
+  if (!current || !currentActiveTurnId) return incoming;
+
+  const currentTurn =
+    state.turnsById[
+      canonicalTurnKey(incoming.agentSessionId, currentActiveTurnId)
+    ];
+  const currentVersion = Math.max(
+    sessionVersion(current),
+    currentTurn?.updatedAtUnixMs ?? 0
+  );
+  const incomingVersion = Math.max(
+    sessionVersion(incoming),
+    ...[source.activeTurn, source.latestTurn]
+      .filter((turn): turn is AgentActivityTurn => {
+        if (!turn) return false;
+        return (
+          turn.agentSessionId.trim() === incoming.agentSessionId &&
+          (incomingActiveTurnId
+            ? turn.turnId.trim() === incomingActiveTurnId &&
+              turn.phase !== "settled"
+            : turn.phase === "settled" &&
+              turn.turnId.trim() === currentActiveTurnId)
+        );
+      })
+      .map((turn) => turn.updatedAtUnixMs)
+  );
+  return incomingVersion > currentVersion
+    ? incoming
+    : { ...incoming, activeTurnId: currentActiveTurnId };
 }
 
 function sessionVersion(session: CanonicalAgentSession): number {

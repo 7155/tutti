@@ -143,7 +143,6 @@ export interface TurnUpsertedIntent {
 export interface TurnProjectionReceivedIntent {
   type: "turn/projectionReceived";
   activeTurnId: string | null;
-  occurredAtUnixMs: number;
   turn: AgentActivityTurn;
   workspaceId: string;
 }

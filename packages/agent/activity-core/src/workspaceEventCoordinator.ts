@@ -487,7 +487,6 @@ function agentActivityTurnProjectionFromEvent(
   event: Extract<AgentActivityUpdatedEvent, { eventType: "turn_update" }>
 ): {
   activeTurnId: string | null;
-  occurredAtUnixMs: number;
   turn: AgentActivityTurn;
 } | null {
   if (!isRecord(event.data.turn)) return null;
@@ -514,7 +513,6 @@ function agentActivityTurnProjectionFromEvent(
   }
   return {
     activeTurnId,
-    occurredAtUnixMs: event.data.occurredAtUnixMs,
     turn
   };
 }

@@ -1574,7 +1574,6 @@ test("realtime Turn projection atomically clears its owned Session reference", (
 
   state = reduce(state, {
     activeTurnId: null,
-    occurredAtUnixMs: 2,
     turn: {
       ...activeTurn(2),
       outcome: "completed",
@@ -1586,8 +1585,8 @@ test("realtime Turn projection atomically clears its owned Session reference", (
   }).state;
 
   assert.equal(state.sessionsById["session-1"]?.activeTurnId, null);
-  assert.equal(state.sessionsById["session-1"]?.updatedAtUnixMs, 2);
-  assert.equal(state.sessionsById["session-1"]?.lastEventUnixMs, 2);
+  assert.equal(state.sessionsById["session-1"]?.updatedAtUnixMs, 1);
+  assert.equal(state.sessionsById["session-1"]?.lastEventUnixMs, 1);
   assert.equal(
     state.turnsById[canonicalTurnKey("session-1", "turn-1")]?.phase,
     "settled"
@@ -1597,6 +1596,148 @@ test("realtime Turn projection atomically clears its owned Session reference", (
     session: session(activeTurn(1), 1),
     type: "session/upserted"
   }).state;
+  assert.equal(state.sessionsById["session-1"]?.activeTurnId, null);
+
+  state = reduce(state, {
+    session: { ...session(null, 3), title: "Reconciled" },
+    type: "session/upserted"
+  }).state;
+  assert.equal(state.sessionsById["session-1"]?.title, "Reconciled");
+  assert.equal(state.sessionsById["session-1"]?.updatedAtUnixMs, 3);
+});
+
+test("cached Turn projection fences a stale Session loaded afterward", () => {
+  let state = reduce(createInitialSessionLifecycleState(), {
+    activeTurnId: null,
+    turn: {
+      ...activeTurn(2),
+      outcome: "completed",
+      phase: "settled",
+      settledAtUnixMs: 2
+    },
+    type: "turn/projectionReceived",
+    workspaceId: "workspace-1"
+  }).state;
+  assert.equal(state.sessionsById["session-1"], undefined);
+
+  state = reduce(state, {
+    session: session(activeTurn(1), 1),
+    type: "session/upserted"
+  }).state;
+
+  assert.equal(state.sessionsById["session-1"]?.activeTurnId, null);
+  assert.equal(
+    state.turnsById[canonicalTurnKey("session-1", "turn-1")]?.phase,
+    "settled"
+  );
+});
+
+test("a settled Turn cannot clear a different active Turn loaded afterward", () => {
+  let state = reduce(createInitialSessionLifecycleState(), {
+    activeTurnId: null,
+    turn: {
+      ...activeTurn(5),
+      outcome: "completed",
+      phase: "settled",
+      settledAtUnixMs: 5,
+      turnId: "turn-a"
+    },
+    type: "turn/projectionReceived",
+    workspaceId: "workspace-1"
+  }).state;
+  const turnB = { ...activeTurn(5), turnId: "turn-b" };
+
+  state = reduce(state, {
+    session: session(turnB, 5),
+    type: "session/upserted"
+  }).state;
+
+  assert.equal(state.sessionsById["session-1"]?.activeTurnId, "turn-b");
+});
+
+test("a cached settlement fences only the same incoming Turn", () => {
+  let state = reduce(createInitialSessionLifecycleState(), {
+    activeTurnId: null,
+    turn: {
+      ...activeTurn(10),
+      outcome: "completed",
+      phase: "settled",
+      settledAtUnixMs: 10,
+      turnId: "turn-a"
+    },
+    type: "turn/projectionReceived",
+    workspaceId: "workspace-1"
+  }).state;
+  state = reduce(state, {
+    activeTurnId: null,
+    turn: {
+      ...activeTurn(6),
+      outcome: "completed",
+      phase: "settled",
+      settledAtUnixMs: 6,
+      turnId: "turn-b"
+    },
+    type: "turn/projectionReceived",
+    workspaceId: "workspace-1"
+  }).state;
+
+  state = reduce(state, {
+    session: session({ ...activeTurn(5), turnId: "turn-b" }, 5),
+    type: "session/upserted"
+  }).state;
+
+  assert.equal(state.sessionsById["session-1"]?.activeTurnId, null);
+  assert.equal(
+    state.turnsById[canonicalTurnKey("session-1", "turn-b")]?.phase,
+    "settled"
+  );
+});
+
+test("an unrelated settled Turn cannot clear the current active Turn", () => {
+  const turnB = { ...activeTurn(8), turnId: "turn-b" };
+  let state = reduce(createInitialSessionLifecycleState(), {
+    sessions: [session(turnB, 8)],
+    type: "session/snapshotReceived"
+  }).state;
+  const snapshot = session(null, 8);
+  snapshot.latestTurn = {
+    ...activeTurn(10),
+    outcome: "completed",
+    phase: "settled",
+    settledAtUnixMs: 10,
+    turnId: "turn-a"
+  };
+
+  state = reduce(state, {
+    session: snapshot,
+    type: "session/upserted"
+  }).state;
+
+  assert.equal(state.sessionsById["session-1"]?.activeTurnId, "turn-b");
+});
+
+test("same-Turn terminal evidence repairs an inconsistent active pointer", () => {
+  const turnB = { ...activeTurn(1), turnId: "turn-b" };
+  let state = reduce(createInitialSessionLifecycleState(), {
+    sessions: [session(turnB, 1)],
+    type: "session/snapshotReceived"
+  }).state;
+  state = reduce(state, {
+    turn: {
+      ...turnB,
+      outcome: "completed",
+      phase: "settled",
+      settledAtUnixMs: 2,
+      updatedAtUnixMs: 2
+    },
+    type: "turn/upserted"
+  }).state;
+
+  state = reduce(state, {
+    session: session(turnB, 1),
+    type: "session/upserted"
+  }).state;
+
   assert.equal(state.sessionsById["session-1"]?.activeTurnId, null);
 });
 
@@ -1609,7 +1750,6 @@ test("realtime live Turn projection claims an idle Session atomically", () => {
 
   state = reduce(state, {
     activeTurnId: "turn-2",
-    occurredAtUnixMs: 1,
     turn: liveTurn,
     type: "turn/projectionReceived",
     workspaceId: "workspace-1"
@@ -1635,7 +1775,6 @@ test("late Turn projection cannot clear or replace a newer active Turn", () => {
 
   state = reduce(state, {
     activeTurnId: null,
-    occurredAtUnixMs: 2,
     turn: {
       ...activeTurn(2),
       outcome: "completed",
@@ -1657,7 +1796,6 @@ test("late Turn projection cannot clear or replace a newer active Turn", () => {
   }).state;
   state = reduce(state, {
     activeTurnId: "turn-1",
-    occurredAtUnixMs: 3,
     turn: { ...activeTurn(3), turnId: "turn-1" },
     type: "turn/projectionReceived",
     workspaceId: "workspace-1"

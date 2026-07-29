@@ -169,8 +169,6 @@ export class WorkspaceAgentActivityService
       getSession: (workspaceId, agentSessionId, signal) =>
         this.getSession(workspaceId, agentSessionId, signal),
       hostFilesApi: dependencies.hostFilesApi,
-      load: (workspaceId, signal) => this.load(workspaceId, signal),
-      markSessionDeleted: (input) => this.markSessionDeleted(input),
       runtimeApi: dependencies.runtimeApi,
       sessionCommandTarget: (workspaceId) => ({
         adapter: this.entry(workspaceId).adapter

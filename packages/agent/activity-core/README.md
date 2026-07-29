@@ -311,6 +311,10 @@ display prompt, guidance, activation placement, Tutti-mode intent, and
 diagnostics survive the shared projection.
 Goal-on-create and settings command/correlation identities are also retained
 for external hosts that use them for goal setup or idempotency.
+Rename and pin effects return `{ session }` with the authoritative canonical
+Session, while batch delete returns `AgentActivityDeleteSessionsResult`.
+Runtime validation remains fail-closed, but the public port type prevents hosts
+from implementing a different result envelope.
 
 Prompt command ordering is an Engine implementation detail. Consumers implement
 `AgentSessionEffectPort`; the package root does not expose the internal prompt

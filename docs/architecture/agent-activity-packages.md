@@ -205,6 +205,10 @@ It owns:
 
 The public host-effect seam is `AgentSessionEffectPort`; the public
 application-write seam is the semantic `AgentSessionEngine` methods.
+Rename and pin effects return an authoritative Session envelope, and batch
+delete returns the complete typed deletion result. Reducers still validate
+those results before applying canonical state, while the public port prevents
+hosts from inventing a different result shape.
 `dispatchSessionMutation` remains compatibility-only while published consumers
 migrate and must not be used by new product-host code. Prompt precondition
 ordering and its helper port are Engine implementation details and are not

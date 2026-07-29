@@ -171,12 +171,13 @@ an idempotent clear once to resolve a crash window, while unsafe set replay
 remains rejected.
 
 `GetSession` reads canonical session truth plus an optional live runtime
-observation without starting a provider. `GetTurn`, `ListSessionTurns`,
-`ListSessionMessages`, `FindTurnByClientSubmitID`, and
+observation without starting a provider. `GetTurn`, `GetInteraction`,
+`ListSessionTurns`, `ListSessionMessages`, `FindTurnByClientSubmitID`, and
 `GetSessionInteractionSnapshot` expose canonical queries without leaking an
 adapter's concrete store. Turn pages are newest-first, bounded metadata reads
 with stable cursors. Message pages use per-session version cursors and may be
-narrowed to one turn. The interaction
+narrowed to one turn. `GetInteraction` requires the complete
+`(workspaceId, agentSessionId, turnId, requestId)` identity. The interaction
 snapshot contains every interaction on the latest turn and derives its pending
 subset from that same read; older-turn pending rows can never become current
 actionable state. `CreateSessionInput.ClientSubmitID` and
@@ -196,6 +197,16 @@ reported as delivery-unknown and retains the submit claim; it must never cause
 an automatic redispatch. Providers receive only the opaque `ClientSubmitID` as
 a correlation identity. Canonical Turn ids remain Tutti-owned and are not
 projected into provider client-identity fields.
+
+`CaptureHistoricalSessionGraph` and `RestoreHistoricalSessionGraph` are the
+provider-neutral Replay boundary for settled Session, Turn, Message,
+Interaction, Goal, hierarchy, stable settings state, and the narrow portable
+`providerResumeCheckpoint` required to resume an already-initialized protocol
+boundary. The checkpoint is opaque to Host; full provider runtime context is
+not exported. Restore is for a fresh isolated Workspace before normal Host
+recovery. It is idempotent for identical content, rejects conflicts, and never
+starts or resumes a Provider.
+
 Runtime adapters preserve explicit downstream failures as `ProviderError` so
 Host consumers can distinguish provider-owned rejection from preparation,
 canonical-store, timeout, and other local failures with `errors.As`. The

@@ -2,6 +2,7 @@ import type {
   AgentActivityDisplayStatus,
   AgentActivityMessage,
   AgentActivitySubmitDiagnostics,
+  AgentActivityTurn,
   CanonicalAgentSession
 } from "@tutti-os/agent-activity-core";
 import { toast } from "@tutti-os/ui-system";
@@ -17,6 +18,7 @@ import {
   type AgentGUIInteractivePrompt
 } from "../model/agentGuiConversationModel";
 import {
+  agentGUIActivityTurnDiagnosticDetails,
   agentGUIConversationDiagnosticDetails,
   agentGUIRuntimeSessionDiagnosticDetails,
   agentGUISessionStateDiagnosticDetails,
@@ -265,6 +267,9 @@ export function reportAgentGUIRenderStateDiagnostic(input: {
   activeConversation: AgentGUIConversationSummary | null;
   activeConversationBusy: boolean;
   activeConversationId: string | null;
+  activeEngineActiveTurn: AgentActivityTurn | null;
+  activeEngineAvailability: "available" | "blocked" | "missing";
+  activeEngineLatestTurn: AgentActivityTurn | null;
   activeHasPendingSubmittedTurn: boolean;
   activeLiveState: "inactive" | "activating" | "active" | "failed";
   activeRuntimeSession: CanonicalAgentSession | null;
@@ -289,10 +294,18 @@ export function reportAgentGUIRenderStateDiagnostic(input: {
     void Promise.resolve(
       reportDiagnostic.call(input.runtime, {
         details: {
+          temporaryMarker: "[TEMP:agent-session-premature-complete]",
           activeActivityDisplayStatus: input.activeActivityDisplayStatus,
           activeConversationBusy: input.activeConversationBusy,
           activeConversationId: input.activeConversationId,
           activeConversationStatus: input.activeConversation?.status ?? null,
+          activeEngineActiveTurn: agentGUIActivityTurnDiagnosticDetails(
+            input.activeEngineActiveTurn
+          ),
+          activeEngineAvailability: input.activeEngineAvailability,
+          activeEngineLatestTurn: agentGUIActivityTurnDiagnosticDetails(
+            input.activeEngineLatestTurn
+          ),
           activeHasPendingSubmittedTurn: input.activeHasPendingSubmittedTurn,
           activeLiveState: input.activeLiveState,
           activeSubmitBlocked: input.activeSubmitBlocked,

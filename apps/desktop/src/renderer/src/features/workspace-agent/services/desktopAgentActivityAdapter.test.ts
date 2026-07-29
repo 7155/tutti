@@ -560,6 +560,139 @@ test("desktop agent activity adapter accepts typed goal input without a Turn", a
   assert.equal(result.goal?.objective, "ship it");
 });
 
+test("desktop goal control marks the HTTP request as renderer Engine-originated", async () => {
+  const receivedOptions: unknown[] = [];
+  const controller = new AbortController();
+  const adapter = createDesktopAgentActivityAdapter({
+    tuttidClient: createTuttidClient({
+      async goalControlWorkspaceAgentSession(
+        _workspaceId,
+        agentSessionId,
+        _request,
+        options
+      ) {
+        receivedOptions.push(options);
+        return {
+          goal: null,
+          operationId: "goal-op-1",
+          session: createSession({ id: agentSessionId })
+        };
+      }
+    }),
+    runtimeApi: createRuntimeApi()
+  });
+
+  const input = {
+    action: "pause" as const,
+    agentSessionId: "agent-session-1",
+    clientSubmitId: "goal-submit-1",
+    signal: controller.signal,
+    workspaceId
+  };
+  await adapter.goalControl(input, {
+    commandId: "goal-command-1",
+    origin: "engine"
+  });
+  await adapter.goalControl(input);
+
+  assert.deepEqual(receivedOptions, [
+    {
+      agentCommandOrigin: "renderer-engine",
+      signal: controller.signal
+    },
+    { signal: controller.signal }
+  ]);
+});
+
+test("desktop lifecycle adapters preserve Engine provenance and omit it for direct calls", async () => {
+  const received: Array<{ kind: string; options: unknown }> = [];
+  const adapter = createDesktopAgentActivityAdapter({
+    tuttidClient: createTuttidClient({
+      async createWorkspaceAgentSession(_workspaceId, request, options) {
+        received.push({ kind: "create", options });
+        return createSession({ id: request.agentSessionId });
+      },
+      async sendWorkspaceAgentSessionInput(
+        _workspaceId,
+        agentSessionId,
+        _request,
+        options
+      ) {
+        received.push({ kind: "send", options });
+        return createSendInputResponse(
+          createSession({ id: agentSessionId, status: "running" })
+        );
+      },
+      async submitWorkspaceAgentInteractive(
+        _workspaceId,
+        agentSessionId,
+        _requestId,
+        _request,
+        options
+      ) {
+        received.push({ kind: "respond", options });
+        return createSession({ id: agentSessionId });
+      }
+    }),
+    runtimeApi: createRuntimeApi()
+  });
+  const engineOptions = {
+    commandId: "engine-command-1",
+    origin: "engine" as const
+  };
+
+  const createInput = {
+    agentSessionId: "agent-session-1",
+    agentTargetId: "local:codex",
+    clientSubmitId: "submit-create",
+    workspaceId
+  };
+  const sendInput = {
+    agentSessionId: "agent-session-1",
+    clientSubmitId: "submit-send",
+    content: [{ text: "continue", type: "text" as const }],
+    workspaceId
+  };
+  const responseInput = {
+    action: "accept",
+    agentSessionId: "agent-session-1",
+    requestId: "request-1",
+    turnId: "turn-1",
+    workspaceId
+  };
+
+  await adapter.createSession(createInput, engineOptions);
+  await adapter.sendInput(sendInput, engineOptions);
+  await adapter.submitInteractive(responseInput, engineOptions);
+  await adapter.createSession(createInput);
+  await adapter.sendInput(sendInput);
+  await adapter.submitInteractive(responseInput);
+
+  assert.deepEqual(
+    received.map(({ kind, options }) => ({
+      kind,
+      origin: (options as { agentCommandOrigin?: string }).agentCommandOrigin
+    })),
+    [
+      {
+        kind: "create",
+        origin: "renderer-engine"
+      },
+      {
+        kind: "send",
+        origin: "renderer-engine"
+      },
+      {
+        kind: "respond",
+        origin: "renderer-engine"
+      },
+      { kind: "create", origin: undefined },
+      { kind: "send", origin: undefined },
+      { kind: "respond", origin: undefined }
+    ]
+  );
+});
+
 test("desktop agent activity adapter marks empty-cwd creates as no-project", async () => {
   let createBody: unknown = null;
   const adapter = createDesktopAgentActivityAdapter({

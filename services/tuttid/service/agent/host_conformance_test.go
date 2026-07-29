@@ -2,8 +2,10 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -13,6 +15,7 @@ import (
 	agenthost "github.com/tutti-os/tutti/packages/agent/host"
 	hostconformance "github.com/tutti-os/tutti/packages/agent/host/conformance"
 	agentactivitybiz "github.com/tutti-os/tutti/packages/agent/store-sqlite"
+	"github.com/tutti-os/tutti/packages/agent/store-sqlite/canonical"
 	agenttargetbiz "github.com/tutti-os/tutti/services/tuttid/biz/agenttarget"
 	workspacebiz "github.com/tutti-os/tutti/services/tuttid/biz/workspace"
 	workspacedata "github.com/tutti-os/tutti/services/tuttid/data/workspace"
@@ -39,6 +42,22 @@ func TestDirectHostApplicationCoreConformance(t *testing.T) {
 		t.Run(scenario.Name, func(t *testing.T) {
 			driver := &legacyHostConformanceDriver{t: t, directHost: true}
 			if err := hostconformance.Run(context.Background(), driver, scenario); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestHostHistoricalStateConformance(t *testing.T) {
+	for _, scenario := range hostconformance.HistoricalStateScenarios() {
+		scenario := scenario
+		t.Run(scenario.Name, func(t *testing.T) {
+			driver := &legacyHostConformanceDriver{t: t, directHost: true}
+			if err := hostconformance.RunHistoricalState(
+				context.Background(),
+				driver,
+				scenario,
+			); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -248,6 +267,7 @@ type legacyHostConformanceDriver struct {
 	deletionStore   *conformanceDeletionStore
 	deletionGuard   *conformanceDeletionGuard
 	deletionEvents  *[]string
+	historicalState *conformanceHistoricalStateStore
 }
 
 func (d *legacyHostConformanceDriver) Reset(_ context.Context, fixture hostconformance.Fixture) error {
@@ -298,10 +318,26 @@ func (d *legacyHostConformanceDriver) Reset(_ context.Context, fixture hostconfo
 	if fixture.DisableGoalInbox {
 		d.service.GoalReconcileInboxStore = nil
 	}
-	d.service.SetApplicationHost(newApplicationHost(d.service, conformanceWorktreeGarbageCollector{
-		steps: &steps,
-		err:   fixture.WorktreeGCSweepErr,
-	}))
+	d.historicalState = &conformanceHistoricalStateStore{driver: d}
+	hostStore := serviceHostStore{service: d.service}
+	hostSupport := hostSupportPortsForService(
+		d.service,
+		nil,
+		conformanceWorktreeGarbageCollector{
+			steps: &steps,
+			err:   fixture.WorktreeGCSweepErr,
+		},
+	)
+	d.service.SetApplicationHost(composeApplicationHost(
+		hostSupport,
+		hostStore,
+		hostStore,
+		hostStore,
+		nil,
+		d.historicalState,
+		serviceHostRuntime{service: d.service},
+		serviceHostGoalRuntime{service: d.service},
+	))
 	deletionEvents := make([]string, 0)
 	d.deletionEvents = &deletionEvents
 	baseDeletionStore := serviceHostStore{service: d.service}
@@ -661,6 +697,138 @@ func (d *legacyHostConformanceDriver) SendInput(
 	return observation, nil
 }
 
+func (d *legacyHostConformanceDriver) ResetHistoricalState(ctx context.Context) error {
+	return d.Reset(ctx, hostconformance.Fixture{})
+}
+
+func (d *legacyHostConformanceDriver) RestoreHistoricalSessionGraph(
+	ctx context.Context,
+	workspaceID string,
+	graph agenthost.HistoricalSessionGraph,
+) error {
+	return d.service.ApplicationHost().RestoreHistoricalSessionGraph(
+		ctx,
+		workspaceID,
+		graph,
+	)
+}
+
+func (d *legacyHostConformanceDriver) CaptureHistoricalSessionGraph(
+	ctx context.Context,
+	ref agenthost.SessionRef,
+) (agenthost.HistoricalSessionGraph, error) {
+	return d.service.ApplicationHost().CaptureHistoricalSessionGraph(ctx, ref)
+}
+
+func (d *legacyHostConformanceDriver) EnsureHistoricalSession(
+	ctx context.Context,
+	ref agenthost.SessionRef,
+) error {
+	_, err := d.EnsureSession(ctx, ref)
+	return err
+}
+
+func (d *legacyHostConformanceDriver) SendHistoricalInput(
+	ctx context.Context,
+	ref agenthost.SessionRef,
+	input agenthost.SendInput,
+) error {
+	_, err := d.SendInput(ctx, ref, input)
+	return err
+}
+
+func (d *legacyHostConformanceDriver) HistoricalStateMetrics() hostconformance.HistoricalStateMetrics {
+	metrics := hostconformance.HistoricalStateMetrics{
+		ProviderStartCalls:  len(d.runtime.startCalls),
+		ProviderResumeCalls: len(d.runtime.resumeCalls),
+		ProviderExecCalls:   len(d.runtime.execCalls),
+	}
+	if len(d.runtime.resumeCalls) > 0 {
+		runtimeContext := d.runtime.resumeCalls[len(d.runtime.resumeCalls)-1].RuntimeContext
+		checkpoint, _ := runtimeContext[canonical.ProviderResumeCheckpointRuntimeContextKey].(map[string]any)
+		metrics.LastResumeProviderCheckpoint = clonePayload(checkpoint)
+	}
+	return metrics
+}
+
+type conformanceHistoricalStateStore struct {
+	driver      *legacyHostConformanceDriver
+	workspaceID string
+	graph       *agenthost.HistoricalSessionGraph
+}
+
+func (s *conformanceHistoricalStateStore) RestoreHistoricalSessionGraph(
+	_ context.Context,
+	workspaceID string,
+	graph agenthost.HistoricalSessionGraph,
+) error {
+	if s.graph != nil {
+		if s.workspaceID == workspaceID && reflect.DeepEqual(*s.graph, graph) {
+			return nil
+		}
+		return agenthost.ErrHistoricalStateConflict
+	}
+	copied := graph
+	s.workspaceID = workspaceID
+	s.graph = &copied
+	for _, historical := range graph.Sessions {
+		settingsRaw, err := json.Marshal(historical.Settings)
+		if err != nil {
+			return err
+		}
+		var settings ComposerSettings
+		if err := json.Unmarshal(settingsRaw, &settings); err != nil {
+			return err
+		}
+		key := workspaceID + ":" + historical.ID
+		s.driver.sessions.sessions[key] = PersistedSession{
+			ID: historical.ID, WorkspaceID: workspaceID, Kind: historical.Kind,
+			Origin: historical.Origin, Provider: historical.Provider,
+			AgentTargetID:     historical.AgentTargetID,
+			ProviderSessionID: historical.ProviderSessionID,
+			RailSectionKind:   "conversations", RailSectionKey: "conversations",
+			Settings: settings, Title: historical.Title,
+			InternalRuntimeContext: map[string]any{
+				canonical.ProviderResumeCheckpointRuntimeContextKey: clonePayload(
+					historical.ProviderResumeCheckpoint,
+				),
+			},
+			Metadata: agentactivitybiz.SessionMetadata{
+				Visible: true, Capabilities: []string{},
+			},
+			CreatedAtUnixMS: 1, UpdatedAtUnixMS: 1, LastEventUnixMS: 1,
+		}
+		s.driver.turns.sessions[historical.ID] = agentactivitybiz.Session{
+			ID: historical.ID, WorkspaceID: workspaceID, Kind: historical.Kind,
+			Provider:          historical.Provider,
+			ProviderSessionID: historical.ProviderSessionID,
+			Title:             historical.Title,
+		}
+		for _, turn := range historical.Turns {
+			s.driver.turns.turns[historical.ID+":"+turn.ID] = agentactivitybiz.Turn{
+				WorkspaceID: workspaceID, AgentSessionID: historical.ID,
+				TurnID: turn.ID, Phase: turn.Phase, Outcome: turn.Outcome,
+				Origin: turn.Origin, RootProviderTurnID: turn.RootProviderTurnID,
+				StartedAtUnixMS: 1, SettledAtUnixMS: 1,
+			}
+		}
+	}
+	s.driver.service.TurnStore = s.driver.turns
+	return nil
+}
+
+func (s *conformanceHistoricalStateStore) CaptureHistoricalSessionGraph(
+	_ context.Context,
+	workspaceID string,
+	rootSessionID string,
+) (agenthost.HistoricalSessionGraph, error) {
+	if s.graph == nil || s.workspaceID != workspaceID ||
+		s.graph.RootSessionID != rootSessionID {
+		return agenthost.HistoricalSessionGraph{}, agenthost.ErrHistoricalStateUnavailable
+	}
+	return *s.graph, nil
+}
+
 func (d *legacyHostConformanceDriver) CancelTurn(ctx context.Context, input agenthost.CancelTurnInput) (hostconformance.CancelObservation, error) {
 	if d.directHost {
 		result, err := d.service.ApplicationHost().CancelTurn(ctx, input)
@@ -859,7 +1027,14 @@ func (d *legacyHostConformanceDriver) GoalControl(ctx context.Context, input age
 		result, err := d.service.ApplicationHost().GoalControl(ctx, input)
 		return hostGoalControlObservation(result), err
 	}
-	result, err := d.service.goalControl(ctx, input.WorkspaceID, input.AgentSessionID, input.Action, input.Objective, input.ClientSubmitID, input.SubmissionMetadata)
+	result, err := d.service.GoalControl(ctx, GoalControlInput{
+		WorkspaceID:        input.WorkspaceID,
+		AgentSessionID:     input.AgentSessionID,
+		Action:             input.Action,
+		Objective:          input.Objective,
+		ClientSubmitID:     input.ClientSubmitID,
+		SubmissionMetadata: input.SubmissionMetadata,
+	})
 	if err != nil {
 		return hostconformance.GoalObservation{}, err
 	}

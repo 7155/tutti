@@ -218,6 +218,7 @@ export {
   selectEngineActiveTurn,
   selectEngineCancelState,
   selectEngineCancelPending,
+  selectEngineGoalControl,
   selectEngineHasPendingInteractions,
   selectEngineInteractionsForSession,
   selectEngineInteraction,
@@ -296,7 +297,8 @@ export {
   selectEnginePromptQueueError,
   selectEnginePromptQueue,
   selectEngineQueuedPrompt,
-  selectEngineQueuedPrompts
+  selectEngineQueuedPrompts,
+  selectEngineSubmitWouldBeVisibleInQueue
 } from "./engine/promptQueue.selectors.ts";
 export type {
   EngineQueuedPrompt,

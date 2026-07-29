@@ -325,6 +325,8 @@ export interface EngineClock {
 }
 
 export interface EngineEffectOptions {
+  commandId: string;
+  origin: "engine";
   signal?: AbortSignal;
 }
 
@@ -379,11 +381,11 @@ export type AgentSessionActivateEffectResult =
 export interface AgentSessionEffectPort {
   activateSession(
     input: AgentSessionActivateEffectInput,
-    options?: EngineEffectOptions
+    options: EngineEffectOptions
   ): Promise<AgentSessionActivateEffectResult>;
   cancelTurn(
     input: AgentActivityCancelTurnInput,
-    options?: EngineEffectOptions
+    options: EngineEffectOptions
   ): Promise<unknown>;
   controlGoal?(
     input: AgentSessionGoalControlEffectInput,
@@ -395,7 +397,7 @@ export interface AgentSessionEffectPort {
   ): Promise<AgentActivityDeleteSessionsResult>;
   respondToInteraction(
     input: AgentActivitySubmitInteractiveInput,
-    options?: EngineEffectOptions
+    options: EngineEffectOptions
   ): Promise<unknown>;
   renameSession(
     input: Omit<AgentActivityRenameSessionInput, "signal">,
@@ -403,7 +405,7 @@ export interface AgentSessionEffectPort {
   ): Promise<{ session: AgentActivitySession }>;
   sendInput(
     input: AgentActivitySendInput,
-    options?: EngineEffectOptions
+    options: EngineEffectOptions
   ): Promise<unknown>;
   setSessionPinned(
     input: Omit<AgentActivitySetSessionPinnedInput, "signal">,
@@ -417,7 +419,7 @@ export interface AgentSessionEffectPort {
       settings: AgentActivitySessionSettings;
       workspaceId: string;
     },
-    options?: EngineEffectOptions
+    options: EngineEffectOptions
   ): Promise<unknown>;
 }
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	activityshared "github.com/tutti-os/tutti/packages/agent/daemon/activity/events"
+	sessionreplay "github.com/tutti-os/tutti/packages/agent/session-replay"
 )
 
 var ErrLiveSessionBusy = errors.New("agent live session is busy")
@@ -16,6 +17,7 @@ type ProcessSpec struct {
 	RootAgentSessionID string
 	RoomID             string
 	CWD                string
+	ProtocolCWD        string
 	Command            []string
 	Env                []string
 	DirectStart        bool
@@ -31,10 +33,13 @@ type ExecutableIdentity struct {
 }
 
 type ProcessFrame struct {
-	Stdout   []byte
-	Stderr   []byte
-	ExitCode *int
-	Message  string
+	Stdout       []byte
+	Stderr       []byte
+	ExitCode     *int
+	Message      string
+	RecordingID  string
+	ConnectionID string
+	ChunkSeq     uint64
 }
 
 type ProcessConnection interface {
@@ -43,12 +48,60 @@ type ProcessConnection interface {
 	Close() error
 }
 
+// ProcessCassetteCheckpointConnection is implemented by replay connections so
+// provider adapters can distinguish a cold process tape from capture attached
+// to an already initialized live provider connection.
+type ProcessCassetteCheckpointConnection interface {
+	ProcessConnection
+	ProcessCassetteCaptureOrigin() ProcessCassetteCaptureOrigin
+}
+
+func processCassetteCaptureOrigin(
+	connection ProcessConnection,
+) ProcessCassetteCaptureOrigin {
+	checkpoint, ok := connection.(ProcessCassetteCheckpointConnection)
+	if !ok {
+		return ""
+	}
+	return checkpoint.ProcessCassetteCaptureOrigin()
+}
+
 // ContextProcessConnection lets protocol readers stop waiting for output
 // without terminating the provider process. Long-lived provider startups use
 // this to detach a UI request timeout from the process lifecycle.
 type ContextProcessConnection interface {
 	ProcessConnection
 	RecvContext(context.Context) (ProcessFrame, error)
+}
+
+// ProviderInputUnitCompletion is the decoder-to-transport barrier. Recording
+// uses it to anchor semantic observations to transport positions. Replay uses
+// it to hold a connection after a complete input unit has been handled.
+type ProviderInputUnitCompletion interface {
+	CompleteProviderInputUnit(context.Context, ProviderInputUnit) error
+}
+
+type ProviderInputUnit struct {
+	RecordingID string
+	Position    sessionreplay.ProviderUnitPosition
+	Kind        sessionreplay.ProviderInputUnitKind
+}
+
+type providerInputUnitContextKey struct{}
+
+func contextWithProviderInputUnit(
+	ctx context.Context,
+	unit ProviderInputUnit,
+) context.Context {
+	return context.WithValue(ctx, providerInputUnitContextKey{}, unit)
+}
+
+func ProviderInputUnitFromContext(ctx context.Context) (ProviderInputUnit, bool) {
+	if ctx == nil {
+		return ProviderInputUnit{}, false
+	}
+	unit, ok := ctx.Value(providerInputUnitContextKey{}).(ProviderInputUnit)
+	return unit, ok
 }
 
 type GracefulProcessConnection interface {

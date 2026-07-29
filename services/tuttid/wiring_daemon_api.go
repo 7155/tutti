@@ -29,19 +29,7 @@ import (
 	agenttargetservice "github.com/tutti-os/tutti/services/tuttid/service/agenttarget"
 	automationruleservice "github.com/tutti-os/tutti/services/tuttid/service/automationrule"
 	browsersvc "github.com/tutti-os/tutti/services/tuttid/service/browser"
-	cliservice "github.com/tutti-os/tutti/services/tuttid/service/cli"
 	appclicli "github.com/tutti-os/tutti/services/tuttid/service/cli/appcli"
-	agentcontextcli "github.com/tutti-os/tutti/services/tuttid/service/cli/providers/agentcontext"
-	browsercli "github.com/tutti-os/tutti/services/tuttid/service/cli/providers/browser"
-	computercli "github.com/tutti-os/tutti/services/tuttid/service/cli/providers/computer"
-	diagnosticscli "github.com/tutti-os/tutti/services/tuttid/service/cli/providers/diagnostics"
-	issuemanagercli "github.com/tutti-os/tutti/services/tuttid/service/cli/providers/issuemanager"
-	managedmodelscli "github.com/tutti-os/tutti/services/tuttid/service/cli/providers/managedmodels"
-	referencescli "github.com/tutti-os/tutti/services/tuttid/service/cli/providers/references"
-	tuttigoalreviewcli "github.com/tutti-os/tutti/services/tuttid/service/cli/providers/tuttigoalreview"
-	tuttimodeactivationcli "github.com/tutti-os/tutti/services/tuttid/service/cli/providers/tuttimodeactivation"
-	tuttimodeplancli "github.com/tutti-os/tutti/services/tuttid/service/cli/providers/tuttimodeplan"
-	workbenchappscli "github.com/tutti-os/tutti/services/tuttid/service/cli/providers/workbenchapps"
 	collabrunservice "github.com/tutti-os/tutti/services/tuttid/service/collabrun"
 	computersvc "github.com/tutti-os/tutti/services/tuttid/service/computer"
 	eventstreamservice "github.com/tutti-os/tutti/services/tuttid/service/eventstream"
@@ -228,7 +216,7 @@ func buildDaemonAPI(
 	if err != nil {
 		return tuttiapi.DaemonAPI{}, nil, nil, nil, err
 	}
-	sessionRecordingTransport, err := buildSessionRecordingProcessTransport()
+	agentProcessComposition, err := buildAgentProcessComposition()
 	if err != nil {
 		return tuttiapi.DaemonAPI{}, nil, nil, nil, err
 	}
@@ -239,7 +227,7 @@ func buildDaemonAPI(
 	}
 	agentTargetSetup := agentextensionservice.NewSetupService(context.Background())
 	agentTargetSetup.Plans = agentTargetInstallPlans
-	agentTargetSetup.Transport = sessionRecordingTransport
+	agentTargetSetup.Transport = agentProcessComposition.transport
 	agentTargetSetup.Host = agentHostMetadata
 	agentTargetSetup.Actions = agentextensiondata.NewFileSetupActionStore(agentExtensionStateDir)
 	agentTargetSetup.Discovery = agentSetupDiscovery
@@ -249,10 +237,10 @@ func buildDaemonAPI(
 			DurableActivityReporter: agentActivityProjection,
 			store:                   runOutcomes,
 		},
-		ProcessTransport: sessionRecordingTransport,
+		ProcessTransport: agentProcessComposition.transport,
 		HostMetadata:     agentHostMetadata,
 		AdapterResolver: agentextensionservice.RuntimeResolver{
-			Manager: agentExtensionManager, Transport: sessionRecordingTransport, Host: agentHostMetadata,
+			Manager: agentExtensionManager, Transport: agentProcessComposition.transport, Host: agentHostMetadata,
 		},
 		ProviderCommandResolver:    agentProviderCommandResolver(&agentStatusService),
 		CommandNetworkAccessPolicy: tuttiDesktopCommandNetworkAccessPolicy,
@@ -300,13 +288,6 @@ func buildDaemonAPI(
 		}
 		sessionDeletionGuard = sourceDeletionGuard
 	}
-	agentSessionRecordingService, err := buildAgentSessionRecordingService(
-		store, sessionRecordingTransport,
-	)
-	if err != nil {
-		return tuttiapi.DaemonAPI{}, nil, nil, nil, err
-	}
-	configureAgentSessionRecordingObservers(agentActivityProjection, agentRuntimeController, agentSessionRecordingService)
 	goalReconcileInbox, ok := agentActivityRepo.(interface {
 		agentservice.GoalReconcileInboxStore
 		agentservice.GoalReconcileInboxWriter
@@ -343,6 +324,7 @@ func buildDaemonAPI(
 	if !ok || canonicalStoreProvider.AgentCanonicalStore() == nil {
 		return tuttiapi.DaemonAPI{}, nil, nil, nil, fmt.Errorf("canonical agent store is unavailable")
 	}
+	historicalStateStore := canonicalStoreProvider.AgentCanonicalStore()
 	canonicalHostStore := &agenthost.SQLiteWorkspaceStore{
 		StoreForWorkspace: func(string) *agentstoresqlite.Store {
 			return canonicalStoreProvider.AgentCanonicalStore()
@@ -357,6 +339,7 @@ func buildDaemonAPI(
 	configureWorkspaceAgentProjection(agentActivityProjection, workspaceAgentsStore)
 	sourceActivityObservers := &agentservice.TuttiModeSourceActivityObservers{}
 	turnCancelObservers := &agentservice.TurnCancelObservers{}
+	commitObservers := newAgentCommitObserverRelay(agentActivityProjection)
 	agentSessionConfig := agentservice.ServiceConfig{
 		Runtime: agentservice.ServiceRuntimeConfig{
 			Preparer:                 agentRuntimePreparation,
@@ -408,7 +391,7 @@ func buildDaemonAPI(
 		},
 		Observers: agentservice.ServiceObserverConfig{
 			AnalyticsReporter:              analyticsReporter,
-			CommitObserver:                 agentCommitObservers{agentActivityProjection},
+			CommitObserver:                 commitObservers,
 			RuntimeOperationEventPublisher: agentActivityProjection,
 			TuttiModeActivations:           tuttiModeActivations,
 			TuttiModeSourceActivity:        sourceActivityObservers,
@@ -427,6 +410,7 @@ func buildDaemonAPI(
 		agentServiceComponents.HostSupportPorts(),
 		canonicalHostStore,
 		canonicalStoreProvider.AgentCanonicalStore(),
+		historicalStateStore,
 		agentHostRuntime,
 	)
 	if agentHost == nil {
@@ -444,6 +428,36 @@ func buildDaemonAPI(
 	automationExecutor := &automationruleservice.DaemonExecutor{Agents: agentSessionService, Ledger: automationRulesStore}
 	automationRules.Executor = automationExecutor
 	automationRules.Sources = automationExecutor
+	agentSessionRecordingService, err := buildAgentSessionRecordingService(
+		store,
+		agentProcessComposition.recorder,
+		agentSessionService,
+	)
+	if err != nil {
+		return tuttiapi.DaemonAPI{}, nil, nil, nil, err
+	}
+	commitObservers.Add(agentSessionRecordingService)
+	configureAgentSessionRecordingObservers(
+		agentActivityProjection,
+		agentRuntimeController,
+		agentSessionRecordingService,
+	)
+	sqliteWorkspaceStore, ok := store.(*workspacedata.SQLiteStore)
+	if !ok {
+		return tuttiapi.DaemonAPI{}, nil, nil, nil, fmt.Errorf(
+			"agent session replay semantic store is unavailable",
+		)
+	}
+	replaySemanticRuntime, err := prepareReplaySemanticRuntime(ctx, sqliteWorkspaceStore, agentHost, agentProcessComposition.replayRegistrations)
+	if err != nil {
+		return tuttiapi.DaemonAPI{}, nil, nil, nil, err
+	}
+	agentRuntime.Controller().SetProviderObservationObserver(
+		agentProviderObservationObservers{
+			agentSessionRecordingService,
+			replaySemanticRuntime,
+		},
+	)
 	// Host fixes startup order: durable runtime operations first, then goal
 	// operations and reconcile inbox work, and only then stale turns.
 	if err := agentHost.Recover(ctx); err != nil {
@@ -714,49 +728,21 @@ func buildDaemonAPI(
 	if installTuttiModeWatchdog != nil {
 		installTuttiModeWatchdog(tuttiModeWatchdogWorker)
 	}
-	cliProviders := []cliservice.Provider{
-		diagnosticscli.NewProvider(),
-		managedmodelscli.NewProvider(managedCredentials),
-		issuemanagercli.NewProvider(workspaceService, issueService, appCenterService),
-		referencescli.NewProvider(workspaceService, appCenterService, issueService),
-		workbenchappscli.NewProvider(
-			workspaceService,
-			appCenterService,
-			eventstreamservice.WorkbenchNodeLaunchPublisher{Service: events},
-		),
-		agentcontextcli.NewProviderWithAgentTargets(
-			workspaceService,
-			agentSessionService,
-			eventstreamservice.AgentGUILaunchPublisher{Service: events},
-			agentTargets,
-			preferences,
-		),
-		tuttimodeplancli.NewProviderWithExecutionSnapshot(
-			workspaceService, tuttiModePlans, agentSessionService,
-			&issueService, &issueService, tuttiModeExecutions,
-			&issueService, tuttiModeExecutions, tuttiModeExecutions,
-		).WithTuttiModeActivations(tuttiModeActivations),
-		tuttigoalreviewcli.NewProvider(
-			tuttiModeExecutions,
-			agentSessionService,
-		),
-		tuttimodeactivationcli.NewProvider(tuttiModeActivations),
-	}
-	if browserService != nil {
-		cliProviders = append(cliProviders, browsercli.NewProvider(workspaceService, browserService))
-	}
-	if computerService != nil {
-		cliProviders = append(cliProviders, computercli.NewProvider(workspaceService, computerService))
-	}
-	cliRegistry, err := cliservice.NewRegistryFromProviders(cliProviders...)
+	cliRegistry, err := buildDaemonCLIRegistry(daemonCLIRegistryInput{
+		Workspaces: workspaceService, Issues: &issueService,
+		Apps: appCenterService, Events: events,
+		ManagedCredentials: managedCredentials,
+		AgentSessions:      agentSessionService, AgentTargets: agentTargets,
+		Preferences: preferences, TuttiModePlans: tuttiModePlans,
+		TuttiModeExecutions:  tuttiModeExecutions,
+		TuttiModeActivations: tuttiModeActivations,
+		Browser:              browserService, Computer: computerService,
+		AppCommands: appCLIRegistry,
+	})
 	if err != nil {
 		agentRuntime.Close()
 		return tuttiapi.DaemonAPI{}, nil, nil, nil, fmt.Errorf("create cli registry: %w", err)
 	}
-	cliRegistry.AgentSessionCapabilities = agentSessionCLIProjectionResolver{
-		Sessions: agentSessionService,
-	}
-	cliRegistry.AppCommands = appCLIRegistry
 	agentRuntimePreparer.CommandCatalog = runtimePrepCommandCatalog{Catalog: cliRegistry}
 
 	terminalService := &workspaceservice.TerminalService{}
@@ -805,7 +791,26 @@ func buildDaemonAPI(
 		AgentSessionService:          agentSessionService,
 		AgentSessionRecordingService: agentSessionRecordingService,
 		AgentSessionReplayVerifier: agentReplayTransportVerifier{
-			enabled: replayComposition, transport: sessionRecordingTransport,
+			enabled:     replayComposition,
+			transport:   agentProcessComposition.replay,
+			verifyState: replaySemanticRuntime.Verify,
+			verifyCheckpoint: func(
+				ctx context.Context,
+				cassetteID string,
+				checkpointIndex int,
+			) (tuttiapi.AgentSessionReplayCheckpointState, error) {
+				state, err := replaySemanticRuntime.VerifyCheckpoint(
+					ctx,
+					cassetteID,
+					checkpointIndex,
+				)
+				return tuttiapi.AgentSessionReplayCheckpointState{
+					TriggerMatched:                  state.TriggerMatched,
+					ReadinessSatisfied:              state.ReadinessSatisfied,
+					CanonicalSessionUpdatedAtUnixMS: state.CanonicalSessionUpdatedAtUnixMS,
+					CanonicalMessageVersion:         state.CanonicalMessageVersion,
+				}, err
+			},
 		},
 		AgentStatusService:         &agentStatusService,
 		TuttiAgentReadiness:        tuttiAgentReadiness,

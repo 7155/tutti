@@ -1,4 +1,9 @@
-import type { AgentSessionEngineStateBase } from "./types.ts";
+import { promptVisibleInQueueAdmission } from "./promptQueue.admission.ts";
+import { deriveCanonicalSubmitAvailability } from "./sessionLifecycle.availability.ts";
+import type {
+  AgentSessionEngineState,
+  AgentSessionEngineStateBase
+} from "./types.ts";
 import type {
   EngineQueuedPrompt,
   PromptQueueRecord
@@ -10,6 +15,22 @@ export function selectEnginePromptQueue(
 ): PromptQueueRecord | null {
   const id = agentSessionId?.trim() ?? "";
   return state.promptQueue.recordsBySessionId[id] ?? null;
+}
+
+/**
+ * Mirrors the visible-queue admission decision in enqueueSubmit: true when an
+ * ordinary auto submit would remain in the composer queue instead of draining
+ * into an immediate send.
+ */
+export function selectEngineSubmitWouldBeVisibleInQueue(
+  state: AgentSessionEngineState,
+  agentSessionId: string | null | undefined
+): boolean {
+  const id = agentSessionId?.trim() ?? "";
+  return promptVisibleInQueueAdmission(
+    state.promptQueue.recordsBySessionId[id],
+    deriveCanonicalSubmitAvailability(state.sessionLifecycle, id).state
+  );
 }
 
 export function selectEngineQueuedPrompts(

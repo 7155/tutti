@@ -2,22 +2,143 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	agentdaemon "github.com/tutti-os/tutti/packages/agent/daemon"
+	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
 	agentruntime "github.com/tutti-os/tutti/packages/agent/daemon/runtime"
+	tuttitypes "github.com/tutti-os/tutti/services/tuttid/types"
 )
 
 const (
-	agentCassetteModeEnv = "TUTTI_AGENT_CASSETTE_MODE"
-	agentCassettePathEnv = "TUTTI_AGENT_CASSETTE_PATH"
+	agentCassetteModeEnv               = "TUTTI_AGENT_CASSETTE_MODE"
+	agentCassettePathEnv               = "TUTTI_AGENT_CASSETTE_PATH"
+	agentSessionReplayRegistrationsEnv = "TUTTI_AGENT_SESSION_REPLAY_REGISTRATIONS"
 
 	agentCassetteModeRecord = "record"
 	agentCassetteModeReplay = "replay"
 )
+
+type agentProcessComposition struct {
+	transport           agentdaemon.ProcessTransport
+	recorder            *agentdaemon.SessionRecordingProcessTransport
+	replay              *agentdaemon.SessionReplayProcessTransport
+	replayRegistrations []agentSessionReplayRegistration
+}
+
+type agentSessionReplayRegistration struct {
+	CassetteID         string `json:"cassetteId"`
+	RootAgentSessionID string `json:"rootAgentSessionId"`
+	CassetteDirectory  string `json:"cassetteDirectory"`
+	ArtifactDirectory  string `json:"artifactDirectory"`
+	WorkspaceID        string `json:"workspaceId"`
+}
+
+func buildAgentProcessComposition() (agentProcessComposition, error) {
+	mode := strings.TrimSpace(os.Getenv(agentCassetteModeEnv))
+	if mode == agentCassetteModeReplay {
+		var registrations []agentSessionReplayRegistration
+		if err := json.Unmarshal(
+			[]byte(strings.TrimSpace(os.Getenv(agentSessionReplayRegistrationsEnv))),
+			&registrations,
+		); err != nil {
+			return agentProcessComposition{}, fmt.Errorf(
+				"decode %s: %w",
+				agentSessionReplayRegistrationsEnv,
+				err,
+			)
+		}
+		transportRegistrations := make(
+			[]agentdaemon.SessionReplayProcessRegistration,
+			0,
+			len(registrations),
+		)
+		for _, registration := range registrations {
+			transportRegistrations = append(
+				transportRegistrations,
+				agentdaemon.SessionReplayProcessRegistration{
+					CassetteID:         registration.CassetteID,
+					RootAgentSessionID: registration.RootAgentSessionID,
+					CassetteDirectory:  registration.CassetteDirectory,
+				},
+			)
+		}
+		replay, err := agentdaemon.NewSessionReplayProcessTransport(transportRegistrations)
+		if err != nil {
+			return agentProcessComposition{}, fmt.Errorf(
+				"create Agent Session Replay transport: %w",
+				err,
+			)
+		}
+		return agentProcessComposition{
+			transport: &agentReplayProviderHomeTransport{
+				base: replay, stateDir: tuttitypes.DefaultStateDir(),
+			},
+			replay: replay, replayRegistrations: registrations,
+		}, nil
+	}
+	recorder, err := buildSessionRecordingProcessTransport()
+	if err != nil {
+		return agentProcessComposition{}, err
+	}
+	return agentProcessComposition{transport: recorder, recorder: recorder}, nil
+}
+
+type agentReplayProviderHomeTransport struct {
+	base     agentdaemon.ProcessTransport
+	stateDir string
+}
+
+func (t *agentReplayProviderHomeTransport) Start(
+	ctx context.Context,
+	spec agentruntime.ProcessSpec,
+) (agentruntime.ProcessConnection, error) {
+	if t == nil || t.base == nil {
+		return nil, errors.New("agent session replay process transport is unavailable")
+	}
+	descriptor, found := providerregistry.Find(spec.Provider)
+	if found &&
+		descriptor.Runtime.Endpoint.ConfigKind == providerregistry.EndpointConfigKindCodexCLI {
+		sessionID := strings.TrimSpace(spec.AgentSessionID)
+		if sessionID == "" || filepath.Base(sessionID) != sessionID ||
+			strings.ContainsAny(sessionID, `/\\`) {
+			return nil, errors.New("agent session replay Codex home requires a safe Session identity")
+		}
+		stateDir := filepath.Clean(strings.TrimSpace(t.stateDir))
+		if stateDir == "." || !filepath.IsAbs(stateDir) {
+			return nil, errors.New("agent session replay state directory must be absolute")
+		}
+		spec.Env = replaceProcessEnv(
+			spec.Env,
+			"CODEX_HOME",
+			filepath.Join(
+				stateDir,
+				"agent",
+				"runs",
+				sessionID,
+				"codex-home",
+			),
+		)
+	}
+	return t.base.Start(ctx, spec)
+}
+
+func replaceProcessEnv(env []string, key, value string) []string {
+	result := make([]string, 0, len(env)+1)
+	for _, entry := range env {
+		name, _, found := strings.Cut(entry, "=")
+		if found && strings.EqualFold(strings.TrimSpace(name), key) {
+			continue
+		}
+		result = append(result, entry)
+	}
+	return append(result, key+"="+value)
+}
 
 func buildAgentProcessTransport() (agentdaemon.ProcessTransport, error) {
 	return newAgentProcessTransport(

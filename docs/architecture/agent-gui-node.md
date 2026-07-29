@@ -263,9 +263,9 @@ AgentGUI render slots. AgentGUI contains no recording/replay API, controller,
 state, provider branch, component, or copy.
 
 `services/tuttid/service/agentsessionreplay` is the application owner for both
-Recording and Replay Run state. Desktop reads its authoritative recording list
+Recording state. Desktop reads its authoritative recording list
 after mounting and projects commands; React state is never the source of an
-active Recording or Replay Run. `packages/agent/daemon/runtime` retains only
+active Recording. `packages/agent/daemon/runtime` retains only
 the concrete recording and scripted replay transport mechanics.
 
 A Recording captures a time window over the root SessionGraph. Root Turn
@@ -285,8 +285,26 @@ toolbar, recording list, replay-window controls, feature gating, product copy,
 and daemon client adapter. Recording names default to their UTC creation
 timestamp. A completed row supports inline rename; the daemon writes the name
 into `cassette.json`, recalculates the manifest hash, and commits matching
-Recording and Cassette metadata. A completed recording exposes Play directly
-in its list row; selecting a recording is not a domain or UI state. The primary
+Recording and Cassette metadata. The list header can import one or more portable
+Cassette directories through a native Desktop file selection. `tuttid`
+validates every manifest, file inventory, hash, portable state, identity, and
+size limit before copying the batch into daemon-owned storage and projecting
+each valid Cassette as a completed Recording in the current Workspace. Invalid
+or conflicting members report per-Cassette failures without rolling back other
+successful imports; source directories are never mutated. The Desktop Replay
+feature service owns the native import adapter call, loading and error state,
+and the authoritative Recording refresh after any successful member. React
+dispatches that semantic command and renders its localized outcome toast; it
+does not compose preload and refresh operations. A completed recording exposes
+Play directly in its list row. When at
+least two distinct root Sessions are available, the
+list may enter temporary batch-selection mode and submit their exact Cassette
+IDs in one Replay Workspace launch. Selecting one Recording disables other
+Recordings for the same root Session; this selection disappears when the list
+closes and is never Recording or Cassette domain state. The primary workspace
+recording list exposes Delete for inactive rows and requires a
+portaled destructive confirmation dialog before removing the Recording and its
+Cassette. Active rows remain protected by the daemon workflow. The primary
 workspace window never renders Replay pause or checkpoint controls. Those
 controls belong only to the isolated Replay Electron surface and become enabled
 only when the daemon core exposes the corresponding stable commands; the UI
@@ -301,52 +319,71 @@ recorded cause are discarded. Desktop flushes this ordered stream through the
 recording API before asking the daemon to complete the Recording, and drops the
 buffer after a successful cancellation. AgentGUI remains unaware of recording
 and replay contracts.
-The isolated Replay surface may reuse the Workspace window composition.
-Desktop mounts status observation and playback controls through AgentGUI's
-composer footer slot, while Replay runtime state keeps it empty in normal windows.
-Replay speed is a daemon-owned command. The isolated surface reads and updates
-it through Desktop IPC; ordinary Workspace and standalone Agent windows hide
-the control when the daemon reports that Replay playback is unavailable.
+The isolated Replay Workspace reuses the Workspace window composition and
+mounts one AgentGUI Workbench Node per Replay Cassette. Desktop installs one
+Workspace replay binding, not one binding per Node. The binding maps generated
+Engine `commandId` values to the exact Cassette; command results never fall back to
+recorded correlation IDs across Cassettes.
+
+Desktop mounts Cassette-scoped status observation and playback controls through
+each AgentGUI Node's composer footer slot, while Replay runtime state keeps
+them empty in normal windows. AgentGUI lays this accessory slot out as a
+full-width wrapping row below the primary composer controls so Replay transport
+does not compete with handoff, model, or reasoning controls in narrow Nodes.
+Replay speed is a daemon-owned command. The
+isolated Node resolves its Cassette from exact Node identity before reading or
+updating playback through Desktop IPC.
+Replay status remains visible independently of provider transport readiness:
+the footer renders with disabled transport controls until playback becomes
+active, and terminal completion produces a success toast in the isolated
+Electron window.
+The primary recording list asks for automatic or manual playback when Play is
+selected. Automatic mode preserves continuous playback. Manual mode enters the
+isolated runtime paused at the first inspectable checkpoint, so no initial
+Activity interval can race a later renderer Pause command.
 Pause, resume, and checkpoint movement use a versioned
 `replay-control.json` handoff at
 `TUTTI_AGENT_SESSION_REPLAY_CONTROL_PATH`, because pausing only the provider
 transport would still allow the runner to dispatch later business stimuli.
-The runner publishes the reached checkpoint and playback mode beside phase in
-`replay-status.json`; Desktop observes that file but does not manufacture
-playback state in React.
-The primary window owns only Replay launch feedback. The cassette runner writes
-Replay, verification, success, or failure status into its isolated runtime, and
-the isolated Electron surface reads that status through Desktop IPC. A failure
-after the target Session is visible keeps the isolated window open; the primary
-window does not render its completion or verification result. That failed
-surface continues accepting restart, previous-checkpoint, and Cassette
-replacement commands. Pause, next-checkpoint, and speed remain disabled because
-there is no active playback transport to control.
+The runner publishes daemon-confirmed semantic checkpoint state and playback
+mode beside phase in `replay-status.json`; Desktop observes that file but does
+not manufacture playback state in React. A checkpoint becomes inspectable only
+after the exact Node is mounted, its logical Session is selected, current
+detail is hydrated, and the renderer has observed the satisfying canonical
+version. Controls remain forward-only;
+Desktop does not expose previous-checkpoint or restart.
+The primary window owns only Replay launch feedback. Main supervises the
+runner by `(launchId, cassetteId)` and keeps Cassette milestones in memory plus
+the temporary Surface-status handoff. It does not persist playback execution,
+checkpoint, completion, failure, or cancellation into the primary daemon. The
+cassette runner writes Cassette-scoped replay, verification, success, or failure
+events, and a failure in one Surface keeps the Replay Workspace open while
+other Cassettes continue.
 
 The runner uses isolated daemon state and Electron `userData`. CDP opens
 AgentGUI, selects the provider and exact Session, and verifies the rendered
 result. Recorded business stimuli are sent through the isolated daemon HTTP
 contract; they are not reconstructed from composer clicks. Cassette transport
 selection is daemon composition and does not change Session, Turn, Interaction,
-Goal, or runtime-operation lifecycle ownership in Host. The isolated Workbench
-snapshot records onboarding as already auto-opened without restoring any nodes,
-so the runner can open only AgentGUI. Create-session stimuli persist the
+Goal, or runtime-operation lifecycle ownership in Host. The semantic Replay
+runtime creates the isolated Workbench snapshot with onboarding already
+auto-opened and no restored nodes, so the runner can open only AgentGUI.
+Create-session stimuli persist the
 effective launch settings returned by the recorded Session; Replay must not
 recompute model, reasoning, permission, or speed defaults from the current
 machine. The runner preserves lifecycle ordering by waiting for the canonical
 Session to become idle before dispatching each recorded `session.send`; HTTP
 status retries are not lifecycle authority.
 
-Managed Replay launch has two distinct milestones. `surface-ready` means the
-isolated AgentGUI has selected the exact replay Session; it closes launch
-feedback but does not complete the Replay Run. `replay-complete` is emitted only
-after every stimulus, transport check, and expected-state check succeeds, and
-only that milestone may move the Replay Run to `complete`. A create-session
-Replay restores its recorded rail Project into the isolated User Project
-catalog, waits for the create command to return, reloads the AgentGUI
-projection, and selects the exact canonical conversation row before later
-stimuli run. It does not wait for the first Turn's outcome or its notification
-before exposing the created Session.
+Managed Replay launch has two Cassette-scoped milestones. `surface-ready` requires
+the exact Node to be mounted, its root Session selected, and that Session's
+detail hydrated; it closes launch feedback but does not complete the Cassette.
+`replay-complete` is emitted only after that Cassette's stimuli, transport check,
+and expected-state check succeed, and only that milestone resolves the
+Cassette's local completion as `complete`. A create-session Replay restores its
+recorded rail Project, waits
+for the create command, and selects the exact canonical Session without
+reloading the page.
 
 ## 3. Domain model
 
@@ -502,6 +539,15 @@ silently reuse the previous answer when a caller omits fields, and it does not
 retry delivery-unknown responses. Plan-implementation actions remain their
 specialized plan-decision workflow rather than masquerading as ordinary
 Interaction responses.
+
+Free-text approval feedback is a non-terminal rejection. When an approval
+offers both `deny` and a terminal `deny_and_stop`/abort option, the feedback
+surface submits the non-terminal deny option and preserves the full feedback
+payload; abort remains a separate stop action. A provider adapter first
+acknowledges that exact approval response, then carries the feedback through
+the provider's active-turn guidance protocol using the exact provider thread
+and Turn identities. Waiting for that guidance acknowledgement must not turn a
+successfully answered Interaction into a failed runtime operation.
 
 ### 3.4 Goal and operations
 
@@ -763,7 +809,7 @@ disable submission, but must not change editor editability.
   construct raw `submit/requested` fields or rebuild admission from selectors.
   New-Session initial content continues to travel with activation.
   Platform-only commands remain in each host's `EngineExtensionCommand`
-  adapter. Every effect propagates the Engine-owned AbortSignal to its
+  adapter. Every effect propagates its typed Engine origin and Engine-owned AbortSignal to its
   transport. Rename, pin, and delete settle through the shared Session-mutation
   state. Rename and pin may update canonical Session state only from a validated
   authoritative Session result. Delete may remove canonical Sessions only from

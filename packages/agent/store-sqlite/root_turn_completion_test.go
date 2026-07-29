@@ -416,8 +416,18 @@ func TestLateRootProviderCompletionUpdatesProjectionWithoutChangingCanceledCanon
 	if err != nil {
 		t.Fatalf("report late provider completion: %v", err)
 	}
-	if result.TurnAccepted || result.RootTurnAccepted {
+	if result.TurnAccepted || result.RootTurnAccepted || !result.RootProviderTurnAccepted {
 		t.Fatalf("late provider completion changed canonical turn: %#v", result)
+	}
+	providerMutationCommitted := false
+	for _, mutation := range result.CommitDelta.Mutations {
+		if mutation.EntityKind == MutationEntityTurn && mutation.EntityID == "root-turn" {
+			providerMutationCommitted = true
+			break
+		}
+	}
+	if !providerMutationCommitted {
+		t.Fatalf("late provider completion has no root turn mutation: %#v", result.CommitDelta)
 	}
 	turn, found, err := store.GetTurn(ctx, "ws-1", "root", "root-turn")
 	if err != nil || !found {

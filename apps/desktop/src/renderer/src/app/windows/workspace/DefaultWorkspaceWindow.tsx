@@ -23,6 +23,7 @@ export function DefaultWorkspaceWindow({
           <LazyWorkspaceWorkbench
             enableWindowCloseGuard={environmentMode === "desktop"}
             headerSlot={<AppUpdateStatus />}
+            runtimeApi={containerInput.desktopApi.runtime}
             workspaceAppExternalApi={workspaceAppExternalApi}
             workspaceID={workspaceID}
           />

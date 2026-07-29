@@ -402,6 +402,14 @@ test("desktop agent activity runtime delegates canonical session synchronization
 function createWorkspaceAgentActivityService(): IWorkspaceAgentActivityService {
   return {
     _serviceBrand: undefined,
+    armNextSessionRecording() {},
+    clearNextSessionRecording() {},
+    startSessionActivityEventRecording() {},
+    async sealSessionActivityEventRecording() {},
+    discardSessionActivityEventRecording() {},
+    addSessionEngineActivityObserver() {
+      return () => {};
+    },
     getSessionEngine() {
       throw new Error("not implemented");
     },

@@ -16,7 +16,10 @@ import {
   selectEngineSessionSettingsUpdate
 } from "./sessionLifecycle.selectors.ts";
 import { selectPendingSubmitsForSession } from "./pendingIntents.selectors.ts";
-import { selectEngineHasVisibleQueuedSubmit } from "./promptQueue.selectors.ts";
+import {
+  selectEngineHasVisibleQueuedSubmit,
+  selectEngineSubmitWouldBeVisibleInQueue
+} from "./promptQueue.selectors.ts";
 import {
   dispatchSessionMutationWithCancellation,
   type SessionMutationCancellation
@@ -536,6 +539,14 @@ export function createAgentSessionEngine({
     }
     const requestedAtUnixMs = clock.nowUnixMs();
     const displayPrompt = input.displayPrompt?.trim() || undefined;
+    const routing = input.routing ?? "auto";
+    // Stamp queue admission on the intent before observers record it. The GUI
+    // trace starts with queued:false; without this rewrite, Session Replay
+    // cassettes treat busy-queue submits as immediate sends and deadlock.
+    const queued =
+      routing !== "immediate" &&
+      routing !== "send_now" &&
+      selectEngineSubmitWouldBeVisibleInQueue(publicSnapshot, agentSessionId);
     dispatch({
       agentSessionId,
       ...(input.capabilityRefs?.length
@@ -554,7 +565,7 @@ export function createAgentSessionEngine({
         ? { requiredSettingsPatch: { ...input.requiredSettingsPatch } }
         : {}),
       requestedAtUnixMs,
-      routing: input.routing ?? "auto",
+      routing,
       ...(input.runtimeContent
         ? {
             runtimeContent: input.runtimeContent.map((block) => ({
@@ -562,9 +573,10 @@ export function createAgentSessionEngine({
             }))
           }
         : {}),
-      ...(input.submitDiagnostics
-        ? { submitDiagnostics: { ...input.submitDiagnostics } }
-        : {}),
+      submitDiagnostics: {
+        ...(input.submitDiagnostics ?? {}),
+        queued
+      },
       type: "submit/requested",
       workspaceId: engineIdentity.workspaceId
     });

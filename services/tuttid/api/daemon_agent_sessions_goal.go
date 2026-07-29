@@ -7,6 +7,7 @@ import (
 	agentactivitybiz "github.com/tutti-os/tutti/packages/agent/store-sqlite"
 	tuttigenerated "github.com/tutti-os/tutti/services/tuttid/api/generated"
 	"github.com/tutti-os/tutti/services/tuttid/apierrors"
+	agentservice "github.com/tutti-os/tutti/services/tuttid/service/agent"
 )
 
 func (api DaemonAPI) GoalControlWorkspaceAgentSession(ctx context.Context, request tuttigenerated.GoalControlWorkspaceAgentSessionRequestObject) (tuttigenerated.GoalControlWorkspaceAgentSessionResponseObject, error) {
@@ -30,14 +31,13 @@ func (api DaemonAPI) GoalControlWorkspaceAgentSession(ctx context.Context, reque
 	if request.Body.ClientSubmitId != nil {
 		clientSubmitID = *request.Body.ClientSubmitId
 	}
-	result, err := api.AgentSessionService.GoalControl(
-		ctx,
-		string(request.WorkspaceID),
-		string(request.AgentSessionID),
-		string(request.Body.Action),
-		objective,
-		clientSubmitID,
-	)
+	result, err := api.AgentSessionService.GoalControl(ctx, agentservice.GoalControlInput{
+		WorkspaceID:    string(request.WorkspaceID),
+		AgentSessionID: string(request.AgentSessionID),
+		Action:         string(request.Body.Action),
+		Objective:      objective,
+		ClientSubmitID: clientSubmitID,
+	})
 	if err != nil {
 		return writeGoalControlWorkspaceAgentSessionError(err), nil
 	}
@@ -57,11 +57,15 @@ func (api DaemonAPI) GoalControlWorkspaceAgentSession(ctx context.Context, reque
 		state := generatedAgentSessionGoalState(*result.GoalState)
 		response.State = &state
 	}
-	api.recordAgentStimulus(ctx, "goal.control", string(request.WorkspaceID), string(request.AgentSessionID), map[string]any{
-		"action":         request.Body.Action,
-		"clientSubmitId": request.Body.ClientSubmitId,
-		"objective":      request.Body.Objective,
-	})
+	if !isRendererEngineCommandOrigin(
+		request.Params.XTuttiAgentCommandOrigin,
+	) {
+		api.recordAgentStimulus(ctx, "goal.control", string(request.WorkspaceID), string(request.AgentSessionID), map[string]any{
+			"action":         request.Body.Action,
+			"clientSubmitId": clientSubmitID,
+			"objective":      request.Body.Objective,
+		})
+	}
 	return response, nil
 }
 

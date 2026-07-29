@@ -1,9 +1,4 @@
 import type {
-  AgentSessionEngine,
-  EngineExternalCommand,
-  EngineIntent
-} from "@tutti-os/agent-activity-core";
-import type {
   AgentActivityRuntime,
   AgentGUIProps,
   AgentHostInputApi,
@@ -67,13 +62,6 @@ export interface DesktopAgentGUIWorkbenchHostInput {
   agentActivityRuntime: AgentActivityRuntime;
   agentHostApi: AgentHostInputApi;
   agentSessionReplayService: AgentSessionReplayService;
-  agentSessionActivityReplay: {
-    addObserver(observer: {
-      observeCommand(command: EngineExternalCommand): void;
-      observeIntent(intent: EngineIntent): void;
-    }): () => void;
-    engine: AgentSessionEngine;
-  };
   tuttiModePlanReviewRuntime: TuttiModePlanReviewRuntime;
   contextMentionProviders: readonly AgentContextMentionProvider[];
   trackAgentProviderChatReady: (input: { provider: string }) => Promise<void>;
@@ -274,27 +262,29 @@ export function createDesktopAgentGUIWorkbenchHostInput({
     createDesktopAgentExternalPromptEntryResolver({ platformApi });
   const agentSessionReplayService = new AgentSessionReplayService({
     armNextSessionRecording: (recordingId) =>
-      workspaceAgentActivityService.armNextSessionRecording?.(
+      workspaceAgentActivityService.armNextSessionRecording(
         workspaceId,
         recordingId
       ),
     clearNextSessionRecording: (recordingId) =>
-      workspaceAgentActivityService.clearNextSessionRecording?.(
+      workspaceAgentActivityService.clearNextSessionRecording(
         workspaceId,
         recordingId
       ),
     discardActivityEventRecording: (recordingId) =>
-      workspaceAgentActivityService.discardSessionActivityEventRecording?.(
+      workspaceAgentActivityService.discardSessionActivityEventRecording(
         workspaceId,
         recordingId
       ),
+    importCassettes: () =>
+      runtimeApi.importAgentSessionReplayCassettes({ workspaceId }),
     sealActivityEventRecording: (recordingId) =>
-      workspaceAgentActivityService.sealSessionActivityEventRecording?.(
+      workspaceAgentActivityService.sealSessionActivityEventRecording(
         workspaceId,
         recordingId
-      ) ?? Promise.resolve(),
+      ),
     startActivityEventRecording: (recordingId) =>
-      workspaceAgentActivityService.startSessionActivityEventRecording?.(
+      workspaceAgentActivityService.startSessionActivityEventRecording(
         workspaceId,
         recordingId
       ),
@@ -304,16 +294,6 @@ export function createDesktopAgentGUIWorkbenchHostInput({
   return {
     agentActivityRuntime,
     agentHostApi: resolvedAgentHostApi,
-    agentSessionActivityReplay: {
-      addObserver: (observer) =>
-        workspaceAgentActivityService.addSessionEngineActivityObserver?.(
-          workspaceId,
-          observer
-        ) ?? (() => {}),
-      get engine() {
-        return workspaceAgentActivityService.getSessionEngine(workspaceId);
-      }
-    },
     agentSessionReplayService,
     tuttiModePlanReviewRuntime: createDesktopTuttiModePlanReviewRuntime({
       composerOptionsRuntime: agentActivityRuntime,

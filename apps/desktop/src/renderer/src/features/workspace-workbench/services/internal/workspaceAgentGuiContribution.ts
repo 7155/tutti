@@ -164,8 +164,6 @@ export function createWorkspaceAgentGuiContribution(input: {
     return createElement(DesktopWorkspaceAgentGUIWorkbenchBody, {
       agentActivityRuntime: agentGUIWorkbenchHostInput.agentActivityRuntime,
       agentHostApi: agentGUIWorkbenchHostInput.agentHostApi,
-      agentSessionActivityReplay:
-        agentGUIWorkbenchHostInput.agentSessionActivityReplay,
       agentSessionReplayService:
         agentGUIWorkbenchHostInput.agentSessionReplayService,
       agentStatusSource: workspaceAgentStatusSource,
@@ -329,8 +327,14 @@ function resolveWorkspaceAgentGuiProviderAvailability(
 ): Partial<Record<AgentGuiWorkbenchProvider, boolean>> {
   const availability: Partial<Record<AgentGuiWorkbenchProvider, boolean>> = {};
   for (const status of service.getSnapshot().statuses) {
-    if (isAgentGuiWorkbenchProvider(status.provider)) {
-      availability[status.provider] = status.availability.status === "ready";
+    if (!isAgentGuiWorkbenchProvider(status.provider)) {
+      continue;
+    }
+    // Only pin ready providers. Contribution rebuilds freeze this map; marking
+    // in-flight probes as false blocks dock launch until the next revision and
+    // Agent Session Replay clicks often land in that window.
+    if (status.availability.status === "ready") {
+      availability[status.provider] = true;
     }
   }
   return availability;

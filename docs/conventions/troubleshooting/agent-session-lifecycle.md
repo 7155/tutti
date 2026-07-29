@@ -80,6 +80,150 @@ incomplete`, while a newly created session can still launch.
   [AgentGoalControlRow.tsx](../../../packages/agent/gui/shared/agentConversation/components/AgentGoalControlRow.tsx)
   [AgentMessageActions.tsx](../../../packages/agent/gui/shared/agentConversation/components/AgentMessageActions.tsx)
 
+### Replay startup reports only `building isolated tuttid`
+
+- **Symptom:** Replay fails before the isolated Workspace becomes ready, but
+  the toast shows only the runner's first progress line instead of the daemon
+  startup failure.
+- **Quick checks:** Inspect the managed Replay failure status. New builds store
+  `errorCause.code` and `errorCause.message`; the outer `errorMessage` remains
+  the supervision summary.
+- **Root cause:** The former UI formatter selected the first line from one
+  combined process-log string. The actionable daemon stderr appeared on a
+  later line and was discarded.
+- **Fix:** Preserve daemon startup stderr as a structured `{code, message}`
+  cause across Desktop startup, the Replay runner event, and primary Desktop
+  status. Render the structured cause before the outer summary.
+- **Validation:** Make isolated `tuttid` reject a Cassette during startup and
+  require the toast to show the daemon rejection while logs retain both the
+  outer startup error and structured cause.
+
+### Replay Workspace stays on the starting toast
+
+- **Symptom:** The source Desktop keeps showing the Replay Workspace starting
+  toast. The isolated Desktop may appear only after the daemon startup timeout.
+- **Quick checks:** Inspect the isolated runtime under
+  `.tmp/agent-session-replay-workspace-*`. The listener must appear at
+  `state/run/tuttid.listener.json`; inspect `logs/desktop.log` and the managed
+  child output before debugging renderer readiness.
+- **Root cause:** The runner waited for the obsolete
+  `state/cassette/tuttid.listener.json` path after the daemon moved its listener
+  metadata into the canonical runtime `run` directory.
+- **Fix:** Resolve Replay daemon discovery through
+  `state/run/tuttid.listener.json`, matching every other managed daemon
+  consumer. Keep the path in one runner helper and cover it directly.
+- **Validation:** Launch a managed Replay Workspace and prove its isolated
+  daemon becomes discoverable without waiting for the startup timeout.
+
+### Replay starts but the first Turn never becomes idle
+
+- **Symptom:** The isolated Replay Workspace is ready, but playback waits on the
+  first Session until transport verification reports unconsumed connections.
+- **Quick checks:** Query the Cassette-scoped transport playback state and
+  verification endpoint. If the provider tape still has outbound frames while
+  the current UI no longer emits the recorded probe sequence, the Cassette is
+  incompatible with the current strict transport contract.
+- **Root cause:** Session Replay intentionally validates provider traffic in
+  order. Benign-looking UI probe or request-order changes can therefore make an
+  older Cassette unable to reach its recorded completion frame.
+- **Fix:** Record a new Cassette with the current architecture. Do not weaken
+  transport ordering or add a compatibility fallback unless the product
+  contract explicitly changes.
+- **Validation:** The new Cassette must consume every recorded provider
+  connection, reach the expected stable checkpoints, and pass final transport
+  verification.
+
+### Replay checkpoint waits forever with `observation:null` while the session detail is visible
+
+- **Symptom:** Replay playback dispatches intents and streams provider frames
+  normally, but a checkpoint wait stalls on
+  `{"ready":false,"observation":null,"hasDetail":true}` and the coordinator
+  binding reports `mounted:true, selectedAgentSessionId:null,
+detailHydrated:false`.
+- **Quick checks:** Enumerate `[data-workbench-window-id]` elements over CDP.
+  If two AgentGUI nodes exist — one showing the replayed session and one empty —
+  the cassette binding is attached to the wrong node.
+- **Root cause:** Something launched an AgentGUI surface before the Replay
+  Workspace bootstrap (for example a dock-launch preparation step). The replay
+  driver then interacts with the pre-launched node through the DOM while the
+  canonical-observation binding waits on the coordinator-launched node, which
+  never selects a session.
+- **Fix:** In replay mode, never open AgentGUI surfaces outside
+  `bridge.bootstrap`. The coordinator-launched node must be the only AgentGUI
+  node; the runner waits for its composer after bootstrap instead of
+  dock-launching first.
+- **Validation:** During replay, exactly one AgentGUI node exists, its binding
+  reports the selected session, and the checkpoint wait resolves within the
+  recorded timing.
+
+### Replay fails because a recorded SQLite column does not exist
+
+- **Symptom:** Replay startup fails with an error such as
+  `table tutti_mode_turn_snapshots has no column named speed`.
+- **Quick checks:** Confirm the Cassette schema. Schema v5 contains
+  `initial-state.json`/`expected-state.json`; it never contains table rows or
+  SQL column names.
+- **Root cause:** An obsolete row-fixture experiment recorded `SELECT *`
+  output from a database migrated by a different checkout. Import coupled
+  Replay to that checkout's physical SQLite schema.
+- **Fix:** Re-record with the current schema. Do not add column projection, a
+  legacy reader, or a migration fallback. The daemon restores typed semantic
+  state before Host recovery.
+- **Validation:** Add or reorder an unrelated SQLite column and prove semantic
+  capture bytes and Replay behavior are unchanged.
+
+### Managed Replay leaves an orphan Desktop that crashes with `EPIPE`
+
+- **Symptom:** Closing or replacing a managed Replay run leaves an isolated
+  Electron process behind. It later shows an Electron main-process JavaScript
+  error with `Error: write EPIPE` from the desktop log sink.
+- **Quick checks:** Inspect the Electron process parent PID and open files.
+  `PPID=1`, a Replay workspace log under
+  `.tmp/agent-session-replay-workspace-*`, and disconnected stdout/stderr
+  identify an orphaned managed Replay process. Map the built stack location
+  back to `apps/desktop/src/main/logging.ts` before attributing the crash to
+  cassette data or renderer code.
+- **Root cause:** The multi-cassette managed Replay path launched a detached
+  Desktop with piped output but did not bind the existing managed shutdown
+  lifecycle. When the owner exited, Electron and its managed daemon survived
+  while their output pipe had no reader. A later log write emitted an
+  unhandled `EPIPE`.
+- **Fix:** Bind every managed Replay Desktop to the original owner PID and stop
+  its process tree when that owner disappears or its output pipe breaks. Treat
+  desktop and forwarded daemon console output as best effort so a closed
+  diagnostic pipe cannot crash the Electron main process.
+- **Validation:** Prove the shutdown binding stops Desktop once when the owner
+  is gone, coalesces a concurrent `EPIPE`, and removes its listeners on
+  disposal. Exercise the process log sink with a writable stream that emits
+  `EPIPE`, then verify later writes are ignored without an uncaught exception.
+- **References:**
+  [run-agent-session-replay.mjs](../../../tools/scripts/run-agent-session-replay.mjs),
+  [logging.ts](../../../apps/desktop/src/main/logging.ts),
+  [tuttidManager.ts](../../../apps/desktop/src/main/daemon/tuttidManager.ts)
+
+### Replay shows the user prompt but never releases assistant output
+
+- **Symptom:** Replay creates the Session and persists the user prompt, but the
+  provider tape stops before `turn/started` or assistant notifications.
+- **Quick checks:** Compare the next outbound provider frame with daemon RPC
+  logs. If the tape expects `thread/read` or `thread/goal/get`, check whether
+  that observer query was issued in this renderer lifecycle. Also compare
+  recorded and replay JSON-RPC request IDs separately from method and params.
+- **Root cause:** Observer-only provider queries and their auxiliary probe
+  connections are timing-dependent. Treating them as causal byte-stream frames
+  deadlocks replay when the current renderer observes at a different moment.
+  Earlier skipped queries can also shift later request IDs.
+- **Fix:** Keep causal method/params matching strict, map recorded request IDs
+  to replay request IDs, and allow only the declared observer RPCs and
+  query-only auxiliary connections to be absent. Suppress only their paired
+  responses; preserve interleaved provider notifications. If a causal
+  provider response arrives while replay is waiting briefly for a declared
+  observer RPC, skip that observer immediately and match the causal response
+  against the next recorded frame.
+- **Validation:** Replay a real three-Turn Cassette through a fresh Replay
+  Workspace, verify every checkpoint and assistant response, require transport
+  exhaustion, and compare final durable state.
+
 ### One hung provider startup blocks unrelated Agent sessions
 
 - **Symptom:** One provider process starts but never reaches runtime-ready, then
@@ -1708,6 +1852,38 @@ inline data URL instead`. Claude or standard ACP may instead receive no
   [runtime_operations.go](../../../packages/agent/host/runtime_operations.go)
   [migrations_runtime_operations_v4.go](../../../packages/agent/store-sqlite/migrations_runtime_operations_v4.go)
   [tutti-cli-contract.md](../tutti-cli-contract.md)
+
+### Approval feedback stops the Turn or reports a failed response
+
+- Symptom:
+  Entering feedback on a denied approval aborts the provider Turn, loses the
+  feedback text, or lets the provider continue while the response API reports
+  `interactive request is no longer live`.
+- Quick checks:
+  Inspect the canonical Interaction options and response. Confirm feedback uses
+  the non-terminal deny option, retains `payload.denyMessage`, and targets the
+  exact child Session and Turn. For Codex, confirm the approval response is
+  `decline` and the following `turn/steer` uses the child's provider thread and
+  provider Turn IDs.
+- Root cause:
+  Treating abort as an ordinary feedback-capable deny ends the Turn before text
+  can be delivered. Dropping the payload at the adapter boundary has the same
+  visible result. Blocking Interaction completion on the provider's steer
+  acknowledgement can also race request cleanup and falsely fail an already
+  answered approval.
+- Fix:
+  Keep deny and abort distinct in presentation. Preserve the payload through
+  the runtime adapter. Complete the approval response as answered, then deliver
+  feedback through provider-native active-turn guidance without replacing it
+  with a new root or child `Exec`.
+- Validation:
+  Cover option selection, payload preservation, exact child provider
+  thread/Turn steering, a delayed steer acknowledgement, and a real
+  record-audit-replay cassette whose tool is rejected and whose child reports
+  the feedback.
+- References:
+  [interactivePromptPresentation.tsx](../../../packages/agent/gui/shared/agentConversation/components/interactivePromptPresentation.tsx)
+  [codex_appserver_event_interactive.go](../../../packages/agent/daemon/runtime/codex_appserver_event_interactive.go)
 
 ### Historical AgentGUI permission changes time out or stop responding
 
@@ -3522,6 +3698,68 @@ convergence deadline`.
   [daemon_agent_sessions_goal.go](../../../services/tuttid/api/daemon_agent_sessions_goal.go)
   [sessionGoalControl.validation.ts](../../../packages/agent/activity-core/src/engine/sessionGoalControl.validation.ts)
 
+### Goal loops after pause/resume and never reaches complete
+
+- Symptom:
+  Pause and resume succeed, the Goal keeps producing continuation Turns, and the
+  model may even emit the final marker text, but `thread/goal/updated` never
+  reaches `status=complete`. Logs show a `continuation_nudge` after a brief
+  inter-turn idle, then an unbounded stream of adopted Goal Turns.
+- Quick checks:
+  Compare the nudge `thread/goal/set` params with the original set. If the nudge
+  re-sends `objective`, Codex may restart Goal work instead of letting the
+  current generation settle. Confirm pause/resume ops completed and the durable
+  generation fingerprint is still owned by the set/adoption operation.
+- Root cause:
+  Pause/resume intentionally keep generation ownership on the set-time
+  fingerprint while advancing the live operation identity. Provider
+  `status=complete` for that fingerprint was classified as superseded
+  (`binding.identity != current`), so local goal state stayed `active`. The
+  per-turn continuation nudge then re-sent `thread/goal/set` with
+  `status=active` and revived the finished Goal.
+- Fix:
+  Treat provider progress for the session's current generation fingerprint as
+  known-current after pause/resume (while the Goal is still present). Keep
+  nudges status-only, do not re-bind generation on pause/resume/nudge, and do
+  not schedule a delayed nudge from Resume itself.
+- Validation:
+  Record a short one-digit-per-turn Goal, pause after the first digit, resume,
+  and verify the provider reaches `complete` with the final marker and no
+  post-complete continuation storm.
+- References:
+  [codex_appserver_goal.go](../../../packages/agent/daemon/runtime/codex_appserver_goal.go)
+  [codex_appserver_adapter_goal_lifecycle_test.go](../../../packages/agent/daemon/runtime/codex_appserver_adapter_goal_lifecycle_test.go)
+
+### Goal resume fails with permanently ambiguous generation fingerprint
+
+- Symptom:
+  Pause succeeds and the banner shows Resume, but clicking Resume fails. Logs
+  show `persist goal provenance: provider goal generation fingerprint is
+permanently ambiguous`. Provider status may already be `active` while the
+  Host operation stays failed and no continuation Turn starts.
+- Quick checks:
+  Correlate the pause and resume durable operation IDs with
+  `workspace_agent_goal_generation_fences` for the same fingerprint. Confirm the
+  set/adoption that created the Goal already owns that fingerprint. Inspect
+  Codex `thread/goal/set` pause/resume responses for a returned Goal payload.
+- Root cause:
+  Pause and resume are status-only controls that reuse the set-time provider
+  generation. Re-binding that fingerprint to the pause/resume operation id
+  collides with the set binding and marks the fingerprint permanently
+  ambiguous, failing closed before the local status mirror and continuation
+  nudge run.
+- Fix:
+  Keep generation binding on durable set/adoption only. For pause/resume, mirror
+  the provider or local Goal status without calling `bindGoalGeneration`.
+- Validation:
+  With a durable provenance sink, set → pause → resume with distinct operation
+  ids and the same generation fingerprint. Resume must succeed, status must be
+  `active`, and the fingerprint must remain owned by the set operation.
+- References:
+  [codex_appserver_goal.go](../../../packages/agent/daemon/runtime/codex_appserver_goal.go)
+  [codex_appserver_goal_provenance.go](../../../packages/agent/daemon/runtime/codex_appserver_goal_provenance.go)
+  [codex_appserver_adapter_goal_recovery_test.go](../../../packages/agent/daemon/runtime/codex_appserver_adapter_goal_recovery_test.go)
+
 ### Goal disappears after pause or resume
 
 - Symptom:
@@ -3656,6 +3894,39 @@ convergence deadline`.
   [agentTranscriptModel.ts](../../../packages/agent/gui/shared/agentConversation/components/agentTranscriptModel.ts)
   [AgentTranscriptView.tsx](../../../packages/agent/gui/shared/agentConversation/components/AgentTranscriptView.tsx)
 
+### Recording fails when a tool message contains its runtime CWD
+
+- Symptom:
+  Recording finalization fails with `expected_state_export_failed` and reports
+  an absolute path at `$.agent.sessions[*].messages[*].payload.input.cwd`.
+  The provider tape may already be complete.
+- Quick checks:
+  Inspect the failed Recording row and the matching canonical tool message.
+  Distinguish the normalized tool envelope's direct `input.cwd` from a
+  tool-owned nested argument.
+- Root cause:
+  The provider tape tokenizes the Session CWD, but the semantic-state adapter
+  previously copied the canonical tool message unchanged. The direct
+  `input.cwd` is provider runtime context, not part of Tutti's portable
+  semantic state.
+- Fix:
+  Project the Agent graph before semantic-state validation. Remove only the
+  runtime `input.cwd` fields from normalized `tool_call` messages and
+  Interaction envelopes, including the normalized
+  `toolCall.input.cwd`. Convert an absolute executable prefix in normalized
+  command/title display fields to its basename. Do not branch on tool name,
+  recursively remove tool-owned arguments, mutate canonical messages, or
+  weaken the absolute-path validator.
+- Validation:
+  Capture a tool message and matching Interaction with absolute normalized
+  runtime CWDs and executable prefixes, plus a nested relative
+  `arguments.cwd`. Require capture and validation to succeed, retain the
+  tool-owned nested argument, and prove the source Agent graph remains
+  unchanged.
+- References:
+  [state.go](../../../services/tuttid/biz/agentsessionreplay/state.go)
+  [agent_session_replay_state.go](../../../services/tuttid/data/workspace/agent_session_replay_state.go)
+
 ### Cassette replay loses the provider session before the second stimulus
 
 - Symptom:
@@ -3685,30 +3956,94 @@ convergence deadline`.
   [process_transport_replay.go](../../../packages/agent/daemon/runtime/process_transport_replay.go)
   [process_transport_cassette_test.go](../../../packages/agent/daemon/runtime/process_transport_cassette_test.go)
 
+### Continue-session replay sends initialize before the recorded turn
+
+- Symptom:
+  A restored replay Session reaches prompt dispatch, then fails with
+  `process cassette outbound mismatch`: the expected request is `turn/start`
+  or `session/prompt`, while the actual request is `initialize`. A second form
+  has the same expected and actual `turn/start`, but the actual request is
+  missing a provider-derived field such as Codex `collaborationMode`.
+- Quick checks:
+  Inspect `provider/manifest.json` and the first outbound frame for the failed
+  connection. If recording started on a Session that was already live, its
+  `captureOrigin` must be `attached-live-connection`.
+- Root cause:
+  Continue-session recording attached to an initialized provider connection,
+  so its tape correctly began at the next business request. Replay started a
+  new virtual connection but treated every tape as `process-start`, causing the
+  adapter to repeat initialization and provider-session resume traffic that
+  was outside the captured boundary. If initialization is already skipped but
+  a provider-derived field is missing, the semantic `initial-state.json`
+  dropped the protocol checkpoint while projecting the canonical historical
+  Session graph.
+- Fix:
+  Persist the connection capture origin in provider tape schema v3. For an
+  attached live connection, restore the provider adapter's protocol checkpoint
+  through the historical Session's narrow `providerResumeCheckpoint` and skip
+  only the initialization and provider-session bootstrap. Do not export the
+  full private runtime context and do not infer missing state from the first
+  tape frame. Keep strict matching on the first captured business request.
+- Validation:
+  Record a Codex and Cursor Turn after arming capture on an existing live
+  connection. Recreate each adapter over replay transport, resume the
+  historical Session, execute the same Turn, and require complete tape
+  consumption. The regression must cross semantic state JSON capture and Host
+  restore; a test that copies an in-memory runtime context directly into the
+  replay Session does not cover the product boundary. Also keep new-session
+  cold bootstrap tests passing.
+- References:
+  [process_cassette.go](../../../packages/agent/daemon/runtime/process_cassette.go)
+  [codex_appserver_session.go](../../../packages/agent/daemon/runtime/codex_appserver_session.go)
+  [standard_acp_session.go](../../../packages/agent/daemon/runtime/standard_acp_session.go)
+
 ### Cassette replay reports a false final Session state mismatch
 
 - Symptom:
-  Every recorded stimulus succeeds, but final replay validation reports that
-  `workspace_agent_sessions` or `workspace_agent_turns` differs. The isolated
-  replay database contains the same child Sessions and Turns under new ids.
+  Every recorded stimulus succeeds, but final replay validation reports an
+  exact path such as `$.agent.sessions[0].messages[0].id` or a Tutti Mode
+  snapshot `turnId`.
 - Quick checks:
-  Compare child Sessions by provider, provider Session id, target, and Session
-  kind instead of the generated Tutti id. Then compare each Session's Turns in
-  order. If those normalized rows match, the cassette state is not corrupt.
+  Inspect `expected-state.json` and capture the actual typed semantic state.
+  Confirm that Turns and Messages were captured in canonical sequence rather
+  than UUID order, and that every reference points to the corresponding
+  structural object.
 - Root cause:
-  Replay creates new Tutti ids for provider-discovered child Sessions and their
-  canonical Turns. A validator that maps only the root Session and submitted
-  root Turns queries child rows with recorded ids, then mistakes missing rows
-  for durable state drift.
+  Replay legitimately regenerates Turn, assistant Message, interaction, and
+  product-object IDs. Comparing those raw values, or ordering related arrays by
+  random UUID, mistakes alpha-equivalent semantic graphs for drift. Message
+  payload `seq` is also runtime timing metadata rather than a semantic oracle.
 - Fix:
-  Normalize child Session ids by an unambiguous stable provider identity before
-  querying final fixtures. Map remaining Turn ids by order within the already
-  mapped Session. Do not guess when either side has duplicate stable identities
-  or mismatched Turn counts.
+  Keep original IDs in `initial-state.json` so Host can restore resumable
+  history. For final verification, alpha-normalize structural IDs and all their
+  references after ordering entities by canonical sequence; omit runtime-only
+  payload sequence values. Continue to compare semantic content exactly.
 - Validation:
-  Cover regenerated child Session and Turn ids, ambiguous provider identities,
-  and the original multi-child cassette. The unambiguous cassette must pass;
-  ambiguous or count-mismatched fixtures must still fail closed.
+  Cover regenerated Turn and Message IDs, changed payload sequence values, and
+  a real semantic content mismatch. Run both create-session and continue-session
+  current-build record/replay loops.
+- References:
+  [run-agent-session-replay.mjs](../../../tools/scripts/run-agent-session-replay.mjs)
+  [run-agent-session-replay.test.mjs](../../../tools/scripts/run-agent-session-replay.test.mjs)
+
+### Replay aborts with `Promise was collected (-32000)`
+
+- Symptom:
+  A renderer intent has already started, but the temporary CDP runner aborts
+  while awaiting its result. Provider replay then reports a partially consumed
+  connection during shutdown.
+- Root cause:
+  Chromium may collect the remote Promise backing `Runtime.evaluate` while the
+  renderer operation is still running. Retrying the renderer command directly
+  can duplicate a non-idempotent intent.
+- Fix:
+  Register the invocation in the renderer by method and Activity Event ID
+  before dispatch. On this CDP error, evaluate the same lookup again and await
+  the stored result instead of invoking the command twice.
+- Validation:
+  Make the first CDP evaluation fail with `Promise was collected`; the second
+  evaluation must reuse the identical invocation expression and complete the
+  event exactly once.
 - References:
   [run-agent-session-replay.mjs](../../../tools/scripts/run-agent-session-replay.mjs)
   [run-agent-session-replay.test.mjs](../../../tools/scripts/run-agent-session-replay.test.mjs)
@@ -3777,3 +4112,194 @@ convergence deadline`.
   [workspaceAgentActivityReconcileBridge.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/internal/workspaceAgentActivityReconcileBridge.ts)
   [sessionReconcileExecutor.ts](../../../packages/agent/activity-core/src/sessionReconcileExecutor.ts)
   [pendingIntents.authoritativeHistory.ts](../../../packages/agent/activity-core/src/engine/pendingIntents.authoritativeHistory.ts)
+
+### Goal-mode recording stalls waiting for a `/goal` palette option
+
+- Symptom:
+  A Session-Replay recording scenario (or any UI driver) waits forever for
+  `agent-gui-composer-slash-command-goal` after typing `/goal` into the
+  composer, while typing `/` shows only skill options.
+- Quick checks:
+  Inspect `goalDraftObjectiveFromPrompt` in `composerDraftUtils.ts` and the
+  `isGoalModeActive` guard in `useComposerPaletteCatalog.ts`. Programmatic
+  probes that overwrite the draft via `execCommand('insertText')` can leave the
+  React palette draft stuck on a previous `/goal` prefix, which hides all
+  command entries and makes the palette look broken for unrelated queries.
+- Root cause:
+  `/goal` is a prefix syntax, not a palette command. The moment the draft
+  matches `^\s*\/goal(\s+…)?$`, `isGoalModeActive` becomes true, the slash
+  query is nulled, and the command section of the palette closes. A palette
+  option for the full token can never appear.
+- Fix:
+  Drive goal mode by typing the whole `/goal <objective>` draft, waiting for
+  the goal badge (`[data-agent-goal-badge="true"]`) plus an enabled send
+  button, then clicking send (`submitGoalPrompt` in the record-scenario CDP
+  helpers). Never wait for a `/goal` palette option.
+- Validation:
+  `pnpm e2e:agent-gui -- --record … --scenario l01` proceeds past goal
+  activation (goal turn starts) instead of stalling on the palette wait.
+- References:
+  [cdp-helpers.mjs](../../../tools/scripts/agent-session-replay-record-scenarios/cdp-helpers.mjs)
+  [composerDraftUtils.ts](../../../packages/agent/gui/agent-gui/agentGuiNode/composer/composerDraftUtils.ts)
+  [useComposerPaletteCatalog.ts](../../../packages/agent/gui/agent-gui/agentGuiNode/composer/useComposerPaletteCatalog.ts)
+
+### Replay transport mismatch on `attachmentId`
+
+- Symptom:
+  Replay fails with 409 `agent_session_replay_transport_mismatch` at a state
+  path like `$.agent.sessions[i].messages[j].payload.content[k].attachmentId`.
+- Root cause:
+  Attachment identifiers are runtime-generated. Replay re-uploads prompt
+  attachments and receives fresh IDs, so byte-equality against the recorded
+  state can never hold.
+- Fix:
+  Register message-content `attachmentId` values as alpha-equivalent
+  identities in `registerReplayIDs` (`services/tuttid/biz/agentsessionreplay/state.go`),
+  like session/turn/message IDs.
+- Validation:
+  `TestCompareTuttiReplayStateTreatsAttachmentIDsAsAlphaEquivalent` in
+  `state_test.go`; a full record→replay of an image-input cassette passes.
+- References:
+  [state.go](../../../services/tuttid/biz/agentsessionreplay/state.go)
+
+### Replay transport mismatch on Goal Control `operationId`
+
+- Symptom:
+  Goal cassette record and UI/provider playback succeed, but final transport
+  verification fails with 409 at
+  `$.agent.sessions[i].messages[j].payload.operationId` on the
+  `goal-control:*` session_audit row.
+- Root cause:
+  Goal Control operation identities are minted per run. Replay creates a new
+  durable operation while replaying the same `/goal` activation, so the audit
+  payload's `operationId` cannot match byte-for-byte.
+- Fix:
+  Register message-payload `operationId` values as alpha-equivalent identities
+  in `registerReplayIDs`, alongside session/turn/message/attachment IDs.
+- Validation:
+  `TestCompareTuttiReplayStateTreatsGoalControlOperationIDsAsAlphaEquivalent`;
+  record→audit→replay of `l01_codex` (`l01`) passes.
+- References:
+  [state.go](../../../services/tuttid/biz/agentsessionreplay/state.go)
+  [l01.mjs](../../../tools/scripts/agent-session-replay-record-scenarios/l01.mjs)
+
+### Project-session replay never shows the restored session in the rail
+
+- Symptom:
+  Replaying a project-session cassette stalls waiting for
+  `agent-gui-conversation-item-<sessionId>`; the conversation rail is empty.
+- Root cause:
+  Recording seeds the project into `user_projects` before driving the UI, but
+  replay bootstrap did not. Sessions whose `railPlacement.kind` is `project`
+  render only under a project rail section, and that section only exists when
+  the project row is present.
+- Fix:
+  During replay preparation, detect a `railPlacement.kind === "project"`
+  activity payload and seed the same project (`seedRecordingUserProject`)
+  before launching the desktop; enter the project surface before replaying the
+  activation intent.
+- References:
+  [run-agent-session-replay.mjs](../../../tools/scripts/run-agent-session-replay.mjs)
+  [recording.mjs](../../../tools/scripts/agent-session-replay-runner/recording.mjs)
+
+### Interaction replay times out at an `interaction.pending` checkpoint
+
+- Symptom:
+  Replaying a cassette with an approval/question interaction fails with
+  `checkpoint_readiness_timeout` right before the
+  `interaction/responseRequested` intent; provider frames stop at the chunk
+  preceding the recorded decision write-back. A concurrent
+  `agent_session.process_start` log with empty `room_id`/`agent_session_id`
+  is the periodic provider availability probe, not a session relaunch — do
+  not chase it.
+- Root cause:
+  Checkpoint readiness predicates compared recorded activity-layer vocabulary
+  (`turn.phase == "waiting_approval"`, `call.status == "running"`) against
+  the canonical store vocabulary (`waiting`, `waiting_approval`) by string
+  equality, so interaction-wait checkpoints could never become ready.
+- Fix:
+  Fold both sides to canonical vocabulary before comparing
+  (`semantic_readiness.go`), and record canonical values into new checkpoint
+  plans (`checkpoint_provider_candidates.go`). Old cassettes stay compatible
+  through the replay-side fold.
+- Validation:
+  `TestCanonicalTurnPhaseFoldsActivityVocabulary` and
+  `TestDescribeProviderEventFoldsTurnPhaseToCanonicalVocabulary`; replaying
+  approval, question, and child-approval cassettes passes.
+- References:
+  [semantic_readiness.go](../../../services/tuttid/service/agentsessionreplay/semantic_readiness.go)
+  [checkpoint_provider_candidates.go](../../../services/tuttid/service/agentsessionreplay/checkpoint_provider_candidates.go)
+
+### Replay times out waiting for idle before a busy-queue `submit/requested`
+
+- Symptom:
+  Replaying a cassette that enqueues prompts while a turn is still running
+  (queue edit / remove / automatic drain) fails with
+  `timed out waiting for replay Session … to become idle` on a
+  `submit/requested` activity event. The session's `activeTurn.phase` stays
+  `running` because the filler turn only settles after later tape actions.
+- Quick checks:
+  Inspect `activity-events.jsonl` around the failing sequence. Busy-queue
+  submits have no `queue/sendPrompt` / `session/activate` effect with
+  `causedByEventId` equal to that submit's `eventId` (they are later canceled
+  or drained after the active turn settles). Older cassettes may still show
+  `submitDiagnostics.queued: false` on those intents.
+- Root cause:
+  The temporary runner treated every `submit/requested` with
+  `submitDiagnostics.queued === false` as an immediate send and waited for
+  session idle first. The GUI trace starts with `queued: false`, and until the
+  engine stamped real queue admission onto the intent, busy-queue submits were
+  recorded with that stale false. Waiting for idle deadlocks behind the turn
+  that caused the queue in the first place.
+- Fix:
+  Stamp `submitDiagnostics.queued` from engine queue admission before the
+  intent is observed (`selectEngineSubmitWouldBeVisibleInQueue`). On replay,
+  wait for idle only when the submit caused a send/activate effect (and skip
+  for `queued: true`, `send_now`, and `immediate`). Re-record queue scenarios
+  so new tapes carry the correct diagnostic; older tapes replay via effect
+  causation.
+- Validation:
+  `submit idle wait skips busy-queue submits and honors send causation`;
+  `semantic prompt submission reports visible queue admission for a busy Session`;
+  record and replay queue-only `c04_codex`; record and replay native-guidance
+  `c06_codex` separately.
+- References:
+  [run-agent-session-replay.mjs](../../../tools/scripts/run-agent-session-replay.mjs)
+  [createAgentSessionEngine.ts](../../../packages/agent/activity-core/src/engine/createAgentSessionEngine.ts)
+  [promptQueue.admission.ts](../../../packages/agent/activity-core/src/engine/promptQueue.admission.ts)
+
+### Replay deadlocks at a `turn.canceled` checkpoint of a canceled compaction
+
+- Symptom:
+  Replay fails with `checkpoint_readiness_timeout` at the checkpoint after a
+  canceled `/compact` turn, and the transport reports a deterministic
+  `connection ... consumed N of M chunks` where the next unconsumed chunk is
+  the inbound frame right before the recorded `turn/interrupt` outbound. The
+  canceled turn settles only after Host's cancel grace timeout (~2 minutes),
+  the live connection is torn down, and the retry turn fails on a provider
+  relaunch that has no recorded connection.
+- Root cause:
+  Activity-boundary checkpoint cursors were taken from the observation lane
+  (last provider unit that carried checkpoint observation events). A
+  compaction turn's interrupted `turn/completed` settles canonical state
+  without emitting observations, so the recorded `turn.canceled` cursor
+  stopped before the interrupt round trip its own readiness
+  (`turn.status == "canceled"`) requires. At replay the input barrier parks
+  the reader at that cursor, the daemon's `turn/interrupt` send waits behind
+  the unreleased inbound chunk, and readiness can never hold — an
+  unsatisfiable plan, not a replay-transport bug.
+- Fix:
+  The recording transport already reports every completed provider input
+  unit; fold that handled lane into the checkpoint recorder
+  (`ObserveProviderInputUnit`) and record activity-boundary cursors as the
+  per-connection max of the observation lane and the handled lane
+  (`activityBoundaryCursor`). Provider-observation checkpoint cursors keep
+  using the observation lane only. Cassettes recorded with the stale cursor
+  must be re-recorded.
+- Validation:
+  `TestActivityBoundaryCursorCoversHandledUnitsBeyondObservationLane`;
+  re-recording and replaying the compaction-cancel-retry cassette passes, and
+  the cancel-and-resend cassette replay stays green.
+- References:
+  [checkpoint_provider_candidates.go](../../../services/tuttid/service/agentsessionreplay/checkpoint_provider_candidates.go)
+  [checkpoint_activity_boundaries.go](../../../services/tuttid/service/agentsessionreplay/checkpoint_activity_boundaries.go)

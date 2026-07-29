@@ -1619,7 +1619,7 @@ func TestSessionForkAllowsRootTurnPatchFromChildReport(t *testing.T) {
 	defer func() {
 		_ = tx.Rollback()
 	}()
-	if _, _, err := store.applyRootProviderTurnTransitionTx(
+	if _, _, _, err := store.applyRootProviderTurnTransitionTx(
 		ctx,
 		tx,
 		RootProviderTurnTransition{

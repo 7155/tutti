@@ -1,182 +1,607 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
+import { createAgentSessionReplayControlWriter } from "../../apps/desktop/src/main/agentSessionReplayStatus.ts";
+import { recordScenarioDefinitions } from "./agent-session-replay-record-scenarios/definitions.mjs";
 import {
-  assertNoDuplicateEngineSends,
   cassettePolicy,
+  materializeReplayWorkspaceBlobs,
+  parseActivityEvents,
+  replayActionFromManifest,
+  verifyCassette
+} from "./agent-session-replay-runner/cassette.mjs";
+import {
+  replayListenerInfoPath,
+  replayWorkbenchSnapshot
+} from "./agent-session-replay-runner/runtime.mjs";
+import {
+  resolveRecordScenarioProject,
+  seedRecordingUserProject,
+  verifyRecordedProjectBindingArtifacts
+} from "./agent-session-replay-runner/recording.mjs";
+import {
+  activateRendererReplayWorkspaceCassette,
+  assertNoDuplicateEngineSends,
+  bootstrapRendererReplayWorkspace,
+  bootstrapReplayWorkspace,
+  bindManagedReplayShutdown,
   createRendererActivityDriver,
   createReplayActivityClock,
   createReplayPlaybackController,
-  mapReplaySessionIdentities,
-  mapReplayTurnIdentitiesBySessionOrder,
-  materializeCassetteBlobs,
-  normalizeReplayFixtureRecord,
-  parseActivityEvents,
+  createReplayWorkspaceSurfaceReadyQueue,
+  validateReplayCheckpointPlan,
+  assertReplayWorkspaceSucceeded,
   parseArgs,
-  parseReplayCheckpoints,
-  replayActionFromScenario,
+  resolveDesktopHeadless,
+  replayCheckpointScreenshotPath,
+  replayControlRouter,
+  replayPendingInteraction,
   replayStimuli,
   replayStimulusPrecondition,
   replayStimulusRetryableStatus,
   replayStimulusRequest,
-  replayUserProjectPaths,
-  replayWorkbenchSnapshot,
+  replayTurnIdentityPlan,
+  replayWorkspaceTransportRegistrations,
+  readReplayTotalDurationMs,
+  replayWorkspaceInitialTargetCheckpoint,
+  managedReplayFailure,
+  submitRequestedRequiresSessionIdle,
   validateAction,
-  verifyCassette
+  validateReplayWorkspaceManifest,
+  verifyReplayWorkspaceTransports
 } from "./run-agent-session-replay.mjs";
 
-test("ignores runtime-discovered Session fields during final verification", () => {
-  const stable = {
-    agent_session_id: "session-1",
-    model: "gpt-5.6-terra",
-    settings_json: JSON.stringify({
-      model: "gpt-5.6-terra",
-      reasoningEffort: "high"
-    })
-  };
-  const expected = normalizeReplayFixtureRecord("workspace_agent_sessions", {
-    ...stable,
-    internal_runtime_context_json: JSON.stringify({
-      sessionRuntimeSnapshot: {
-        effectiveConfig: { reasoningEffort: "high" }
-      }
-    }),
-    session_metadata_json: JSON.stringify({
-      capabilities: ["browserUse"],
-      imported: false,
-      usage: { contextWindow: { usedTokens: 20_321 } },
-      visible: true
-    })
-  });
-  const actual = normalizeReplayFixtureRecord("workspace_agent_sessions", {
-    ...stable,
-    internal_runtime_context_json: JSON.stringify({
-      sessionRuntimeSnapshot: {
-        effectiveConfig: {
-          planMode: false,
-          reasoningEffort: "high",
-          speed: "standard"
-        }
-      }
-    }),
-    session_metadata_json: JSON.stringify({
-      capabilities: [],
-      imported: false,
-      usage: { contextWindow: { usedTokens: 19_868 } },
-      visible: true
-    })
-  });
+const replayCassetteAID = "277377ed-af34-454f-a8b9-1047b4064e74";
+const replayCassetteBID = "628c61c4-cbcb-4445-83f7-718bbbd414bd";
 
-  assert.deepEqual(actual, expected);
-  assert.equal(actual.model, "gpt-5.6-terra");
-  assert.deepEqual(actual.session_metadata_json, {
-    imported: false,
-    visible: true
-  });
-});
-
-test("still compares durable Session settings", () => {
-  const expected = normalizeReplayFixtureRecord("workspace_agent_sessions", {
-    model: "gpt-5.6-terra",
-    settings_json: JSON.stringify({ reasoningEffort: "high" })
-  });
-  const actual = normalizeReplayFixtureRecord("workspace_agent_sessions", {
-    model: "gpt-5.6-sol",
-    settings_json: JSON.stringify({ reasoningEffort: "low" })
-  });
-
-  assert.notDeepEqual(actual, expected);
-});
-
-test("maps replay-generated child Session and Turn identities", () => {
-  const identityMap = new Map([["recorded-root", "replayed-root"]]);
-  const expectedSessions = [
-    {
-      agent_session_id: "recorded-root",
-      agent_target_id: "local:codex",
-      provider: "codex",
-      provider_session_id: "provider-root",
-      session_kind: "root"
-    },
-    {
-      agent_session_id: "recorded-child",
-      agent_target_id: "local:codex",
-      parent_agent_session_id: "recorded-root",
-      provider: "codex",
-      provider_session_id: "provider-child",
-      session_kind: "child"
-    }
-  ];
-  const actualSessions = [
-    {
-      agent_session_id: "replayed-root",
-      agent_target_id: "local:codex",
-      provider: "codex",
-      provider_session_id: "provider-root",
-      session_kind: "root"
-    },
-    {
-      agent_session_id: "replayed-child",
-      agent_target_id: "local:codex",
-      parent_agent_session_id: "replayed-root",
-      provider: "codex",
-      provider_session_id: "provider-child",
-      session_kind: "child"
-    }
-  ];
-
-  mapReplaySessionIdentities(expectedSessions, actualSessions, identityMap);
-  mapReplayTurnIdentitiesBySessionOrder(
-    [
-      {
-        agent_session_id: "recorded-child",
-        turn_id: "recorded-child-turn"
-      }
-    ],
-    [
-      {
-        agent_session_id: "replayed-child",
-        turn_id: "replayed-child-turn"
-      }
-    ],
-    identityMap
+function respondToCheckpointVerification(request, response) {
+  const match = request.url?.match(
+    /\/checkpoints\/(?<checkpointIndex>\d+)\/verify$/u
   );
+  if (request.method !== "POST" || !match?.groups) return false;
+  response.setHeader("content-type", "application/json");
+  response.end(
+    JSON.stringify({
+      canonicalMessageVersion: 1,
+      canonicalSessionUpdatedAtUnixMs: 1,
+      checkpointIndex: Number(match.groups.checkpointIndex),
+      readinessSatisfied: true,
+      triggerMatched: true
+    })
+  );
+  return true;
+}
 
-  assert.equal(identityMap.get("recorded-child"), "replayed-child");
-  assert.equal(identityMap.get("recorded-child-turn"), "replayed-child-turn");
+test("managed Replay failure preserves a structured startup cause", () => {
   assert.deepEqual(
-    normalizeReplayFixtureRecord(
-      "workspace_agent_sessions",
-      expectedSessions[1],
-      identityMap
+    managedReplayFailure(
+      replayCassetteAID,
+      new Error("tuttid exited before publishing listener info", {
+        cause: {
+          code: "managed_process_stderr",
+          message: "unsupported process cassette schema version 2"
+        }
+      })
     ),
-    normalizeReplayFixtureRecord("workspace_agent_sessions", actualSessions[1])
+    {
+      cassetteId: replayCassetteAID,
+      cause: {
+        code: "managed_process_stderr",
+        message: "unsupported process cassette schema version 2"
+      },
+      error: "tuttid exited before publishing listener info"
+    }
   );
 });
 
-test("does not guess an ambiguous replay child Session identity", () => {
-  const identityMap = new Map();
-  const expected = {
-    agent_session_id: "recorded-child",
-    agent_target_id: "local:codex",
-    provider: "codex",
-    provider_session_id: "provider-child",
-    session_kind: "child"
-  };
-  mapReplaySessionIdentities(
-    [expected],
-    [
-      { ...expected, agent_session_id: "replayed-child-1" },
-      { ...expected, agent_session_id: "replayed-child-2" }
-    ],
-    identityMap
+test("Replay Turn identity plan excludes restored historical Turns", () => {
+  const session = (turnIds) => ({
+    id: "session-1",
+    turns: turnIds.map((id) => ({ id }))
+  });
+
+  assert.deepEqual(
+    replayTurnIdentityPlan(
+      { agent: { sessions: [session(["turn-old", "turn-new"])] } },
+      { agent: { sessions: [session(["turn-old"])] } }
+    ),
+    {
+      "session-1": {
+        initialTurnIds: ["turn-old"],
+        recordedTurnIds: ["turn-new"]
+      }
+    }
   );
-  assert.equal(identityMap.has("recorded-child"), false);
+});
+
+test("Replay Turn identity plan keeps child Session lineage", () => {
+  assert.deepEqual(
+    replayTurnIdentityPlan({
+      agent: {
+        sessions: [
+          {
+            id: "root-recorded",
+            kind: "root",
+            turns: [{ id: "root-turn-recorded" }]
+          },
+          {
+            id: "child-recorded",
+            kind: "child",
+            rootSessionId: "root-recorded",
+            rootTurnId: "root-turn-recorded",
+            parentSessionId: "root-recorded",
+            parentTurnId: "root-turn-recorded",
+            parentToolCallId: "call-stable",
+            turns: [{ id: "child-turn-recorded" }]
+          }
+        ]
+      }
+    }),
+    {
+      "root-recorded": {
+        initialTurnIds: [],
+        recordedTurnIds: ["root-turn-recorded"]
+      },
+      "child-recorded": {
+        initialTurnIds: [],
+        recordedTurnIds: ["child-turn-recorded"],
+        kind: "child",
+        initialSession: false,
+        rootSessionId: "root-recorded",
+        rootTurnId: "root-turn-recorded",
+        parentSessionId: "root-recorded",
+        parentTurnId: "root-turn-recorded",
+        parentToolCallId: "call-stable"
+      }
+    }
+  );
+});
+
+test("managed Replay stops its Desktop when the owner process exits", async () => {
+  const runtime = new EventEmitter();
+  runtime.stdout = new EventEmitter();
+  runtime.stderr = new EventEmitter();
+  let checkParent = null;
+  let stopCount = 0;
+  const dispose = bindManagedReplayShutdown(
+    {},
+    {
+      clearInterval() {},
+      isProcessAlive: () => false,
+      parentPid: "123",
+      processRuntime: runtime,
+      setInterval(check) {
+        checkParent = check;
+        return { unref() {} };
+      },
+      async stopDesktop() {
+        stopCount += 1;
+      }
+    }
+  );
+
+  checkParent();
+  runtime.stdout.emit(
+    "error",
+    Object.assign(new Error("write EPIPE"), { code: "EPIPE" })
+  );
+  await Promise.resolve();
+
+  assert.equal(stopCount, 1);
+  dispose();
+  assert.equal(runtime.listenerCount("SIGINT"), 0);
+  assert.equal(runtime.stdout.listenerCount("error"), 0);
+});
+
+test("Replay Workspace confirms final Surface readiness serially", async () => {
+  const events = [];
+  let releaseFirst;
+  const firstReady = new Promise((resolve) => {
+    releaseFirst = resolve;
+  });
+  const reportReady = createReplayWorkspaceSurfaceReadyQueue(
+    async (cassette) => {
+      events.push(`start:${cassette.cassetteId}`);
+      if (cassette.cassetteId === "cassette-1") {
+        await firstReady;
+      }
+      events.push(`ready:${cassette.cassetteId}`);
+    }
+  );
+
+  const first = reportReady({ cassetteId: "cassette-1" });
+  const second = reportReady({ cassetteId: "cassette-2" });
+  await Promise.resolve();
+
+  assert.deepEqual(events, ["start:cassette-1"]);
+  releaseFirst();
+  await Promise.all([first, second]);
+  assert.deepEqual(events, [
+    "start:cassette-1",
+    "ready:cassette-1",
+    "start:cassette-2",
+    "ready:cassette-2"
+  ]);
+});
+
+test("Replay Workspace continues Surface readiness after one failure", async () => {
+  const events = [];
+  const reportReady = createReplayWorkspaceSurfaceReadyQueue(
+    async (cassette) => {
+      events.push(cassette.cassetteId);
+      if (cassette.cassetteId === "cassette-1") {
+        throw new Error("first Surface failed");
+      }
+    }
+  );
+
+  const first = reportReady({ cassetteId: "cassette-1" });
+  const second = reportReady({ cassetteId: "cassette-2" });
+
+  await assert.rejects(first, /first Surface failed/u);
+  await second;
+  assert.deepEqual(events, ["cassette-1", "cassette-2"]);
+});
+
+test("replay rebases recorded Turn identities before Engine intents", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-replay-turn-identity-"));
+  const listenerDirectory = join(root, "run");
+  await mkdir(listenerDirectory, { recursive: true });
+  const requests = [];
+  const dispatched = [];
+  let activeTurnId = null;
+  const playbackStartedAt = Date.now();
+  const server = createServer((request, response) => {
+    requests.push(`${request.method} ${request.url}`);
+    response.setHeader("content-type", "application/json");
+    if (respondToCheckpointVerification(request, response)) return;
+    if (
+      request.method === "GET" &&
+      request.url ===
+        `/v1/agent-session-replay/cassettes/${replayCassetteAID}/transport/playback`
+    ) {
+      response.end(
+        JSON.stringify({
+          drained: false,
+          paused: false,
+          playbackElapsedMs: Date.now() - playbackStartedAt,
+          providerConnections: [],
+          speed: 1,
+          timingMode: "realtime"
+        })
+      );
+      return;
+    }
+    if (
+      request.method === "POST" &&
+      request.url ===
+        "/v1/workspaces/workspace-1/agent-sessions/session-1/input"
+    ) {
+      activeTurnId = "turn-replay";
+      response.statusCode = 201;
+      response.end("{}");
+      return;
+    }
+    response.end(
+      JSON.stringify({
+        session: {
+          activeTurnId,
+          latestTurn: { id: "turn-replay" },
+          status: activeTurnId ? "working" : "idle"
+        }
+      })
+    );
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen)
+  );
+  try {
+    const address = server.address();
+    assert.notEqual(address, null);
+    assert.equal(typeof address, "object");
+    await writeFile(
+      join(listenerDirectory, "tuttid.listener.json"),
+      JSON.stringify({
+        addr: `127.0.0.1:${address.port}`,
+        auth: { token: "test-token" }
+      })
+    );
+    const base = {
+      agentSessionId: "session-1",
+      workspaceId: "workspace-1"
+    };
+    await replayStimuli(
+      root,
+      {
+        ...base,
+        activityEvents: [
+          {
+            ...base,
+            kind: "direct-stimulus",
+            occurredAtUnixMs: 1,
+            payload: { content: [{ type: "text", text: "start" }] },
+            sequence: 1,
+            type: "session.send"
+          },
+          {
+            ...base,
+            kind: "intent",
+            occurredAtUnixMs: 2,
+            payload: {
+              action: "implement",
+              commandId: "plan-command",
+              idempotencyKey:
+                "plan-implementation:workspace-recorded:session-1:turn-recorded",
+              promptKind: "plan-implementation",
+              requestId: "turn-recorded",
+              turnId: "turn-recorded"
+            },
+            sequence: 2,
+            type: "plan/decisionRequested"
+          }
+        ],
+        turnIdentityPlan: {
+          "session-1": {
+            initialTurnIds: [],
+            recordedTurnIds: ["turn-recorded"]
+          }
+        }
+      },
+      2_000,
+      {
+        cassetteId: replayCassetteAID,
+        rendererDriver: {
+          dispatchIntent(event) {
+            dispatched.push(event);
+            activeTurnId = null;
+          },
+          async verifyEffect() {}
+        },
+        checkpoints: [
+          {
+            index: 0,
+            kind: "bootstrap",
+            trigger: { source: "bootstrap" },
+            cursor: { activityEventSequence: 0, providerConnections: [] },
+            schemaVersion: cassettePolicy.schemaVersion
+          },
+          {
+            index: 1,
+            kind: "after-activity-event",
+            trigger: {
+              source: "activity-boundary",
+              afterActivityEventSequence: 2
+            },
+            cursor: { activityEventSequence: 2, providerConnections: [] },
+            schemaVersion: cassettePolicy.schemaVersion
+          }
+        ]
+      }
+    );
+    assert.equal(dispatched[0].payload.turnId, "turn-replay");
+    assert.equal(dispatched[0].payload.requestId, "turn-replay");
+    assert.equal(
+      requests.some((request) => request.includes("turn-recorded")),
+      false
+    );
+  } finally {
+    await new Promise((resolveClose, rejectClose) =>
+      server.close((error) => (error ? rejectClose(error) : resolveClose()))
+    );
+  }
+});
+
+test("replay rebases child Session and Turn identities from lineage", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-replay-child-identity-"));
+  const listenerDirectory = join(root, "run");
+  await mkdir(listenerDirectory, { recursive: true });
+  const dispatched = [];
+  const verified = [];
+  let rootActiveTurnId = "root-turn-live";
+  const playbackStartedAt = Date.now();
+  const server = createServer((request, response) => {
+    response.setHeader("content-type", "application/json");
+    if (respondToCheckpointVerification(request, response)) return;
+    if (
+      request.method === "GET" &&
+      request.url ===
+        `/v1/agent-session-replay/cassettes/${replayCassetteAID}/transport/playback`
+    ) {
+      response.end(
+        JSON.stringify({
+          drained: false,
+          paused: false,
+          playbackElapsedMs: Date.now() - playbackStartedAt,
+          providerConnections: [],
+          speed: 1,
+          timingMode: "realtime"
+        })
+      );
+      return;
+    }
+    if (
+      request.method === "GET" &&
+      request.url ===
+        "/v1/workspaces/workspace-1/agent-sessions/root-recorded?projection=messageHydration"
+    ) {
+      response.end(
+        JSON.stringify({
+          session: {
+            id: "root-recorded",
+            kind: "root",
+            activeTurnId: rootActiveTurnId,
+            latestTurn: { id: "root-turn-live" }
+          },
+          childSessions: [
+            {
+              id: "child-live",
+              kind: "child",
+              rootAgentSessionId: "root-recorded",
+              rootTurnId: "root-turn-live",
+              parentAgentSessionId: "root-recorded",
+              parentTurnId: "root-turn-live",
+              parentToolCallId: "call-stable",
+              activeTurnId: "child-turn-live",
+              latestTurn: { id: "child-turn-live" }
+            }
+          ]
+        })
+      );
+      return;
+    }
+    if (
+      request.method === "GET" &&
+      request.url === "/v1/workspaces/workspace-1/agent-sessions/root-recorded"
+    ) {
+      response.end(
+        JSON.stringify({
+          session: {
+            activeTurnId: rootActiveTurnId,
+            latestTurn: { id: "root-turn-live" },
+            status: rootActiveTurnId ? "working" : "idle"
+          }
+        })
+      );
+      return;
+    }
+    response.end("{}");
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen)
+  );
+  try {
+    const address = server.address();
+    assert.notEqual(address, null);
+    assert.equal(typeof address, "object");
+    await writeFile(
+      join(listenerDirectory, "tuttid.listener.json"),
+      JSON.stringify({
+        addr: `127.0.0.1:${address.port}`,
+        auth: { token: "test-token" }
+      })
+    );
+    const rootEvent = {
+      agentSessionId: "root-recorded",
+      workspaceId: "workspace-1"
+    };
+    const childEvent = {
+      agentSessionId: "child-recorded",
+      workspaceId: "workspace-1"
+    };
+    await replayStimuli(
+      root,
+      {
+        ...rootEvent,
+        activityEvents: [
+          {
+            ...rootEvent,
+            kind: "effect",
+            occurredAtUnixMs: 1,
+            payload: {},
+            sequence: 1,
+            type: "session/activate"
+          },
+          {
+            ...childEvent,
+            kind: "intent",
+            occurredAtUnixMs: 2,
+            payload: {
+              requestId: "request-1",
+              turnId: "child-turn-recorded"
+            },
+            sequence: 2,
+            type: "interaction/responseRequested"
+          },
+          {
+            ...childEvent,
+            correlationId: "recorded-correlation",
+            kind: "effect",
+            occurredAtUnixMs: 3,
+            payload: {
+              requestId: "request-1",
+              turnId: "child-turn-recorded"
+            },
+            sequence: 3,
+            type: "interaction/respond"
+          }
+        ],
+        turnIdentityPlan: {
+          "root-recorded": {
+            initialTurnIds: [],
+            recordedTurnIds: ["root-turn-recorded"]
+          },
+          "child-recorded": {
+            initialTurnIds: [],
+            recordedTurnIds: ["child-turn-recorded"],
+            kind: "child",
+            initialSession: false,
+            rootSessionId: "root-recorded",
+            rootTurnId: "root-turn-recorded",
+            parentSessionId: "root-recorded",
+            parentTurnId: "root-turn-recorded",
+            parentToolCallId: "call-stable"
+          }
+        }
+      },
+      2_000,
+      {
+        cassetteId: replayCassetteAID,
+        rendererDriver: {
+          async dispatchIntent(event) {
+            dispatched.push(event);
+          },
+          async verifyEffect(event) {
+            verified.push(event);
+            if (event.type === "interaction/respond") {
+              rootActiveTurnId = null;
+            }
+          }
+        },
+        checkpoints: [
+          {
+            index: 0,
+            kind: "bootstrap",
+            trigger: { source: "bootstrap" },
+            cursor: { activityEventSequence: 0, providerConnections: [] },
+            schemaVersion: cassettePolicy.schemaVersion
+          },
+          {
+            index: 1,
+            kind: "after-activity-event",
+            trigger: {
+              source: "activity-boundary",
+              afterActivityEventSequence: 3
+            },
+            cursor: { activityEventSequence: 3, providerConnections: [] },
+            schemaVersion: cassettePolicy.schemaVersion
+          }
+        ]
+      }
+    );
+    assert.equal(dispatched[0].agentSessionId, "child-live");
+    assert.equal(dispatched[0].payload.turnId, "child-turn-live");
+    assert.equal(verified[1].agentSessionId, "child-live");
+    assert.equal(verified[1].payload.turnId, "child-turn-live");
+    assert.match(verified[1].correlationId, /^10:child-live/u);
+  } finally {
+    await new Promise((resolveClose, rejectClose) =>
+      server.close((error) => (error ? rejectClose(error) : resolveClose()))
+    );
+  }
+});
+
+test("resolves the tuttid listener from the daemon run directory", () => {
+  assert.equal(
+    replayListenerInfoPath("/tmp/replay-state"),
+    "/tmp/replay-state/run/tuttid.listener.json"
+  );
 });
 
 test("isolated replay workbench suppresses onboarding without preopening AgentGUI", () => {
@@ -216,8 +641,101 @@ test("replay retries only lifecycle readiness conflicts", () => {
   assert.equal(replayStimulusRetryableStatus("session.send", 502), false);
   assert.equal(
     replayStimulusRetryableStatus("interactive.response", 404),
-    true
+    false
   );
+  assert.deepEqual(
+    replayPendingInteraction(
+      {
+        pendingInteractions: [
+          { requestId: "request-1", status: "pending", turnId: "turn-live" }
+        ]
+      },
+      "request-1"
+    ),
+    { requestId: "request-1", status: "pending", turnId: "turn-live" }
+  );
+  assert.equal(
+    replayPendingInteraction(
+      {
+        pendingInteractions: [
+          { requestId: "request-1", status: "answered", turnId: "turn-live" }
+        ]
+      },
+      "request-1"
+    ),
+    null
+  );
+});
+
+test("submit idle wait skips busy-queue submits and honors send causation", () => {
+  const queuedSubmit = {
+    kind: "intent",
+    type: "submit/requested",
+    eventId: "intent-queued",
+    correlationId: "submit-queued",
+    payload: {
+      routing: "auto",
+      submitDiagnostics: { queued: false }
+    }
+  };
+  const drainedSubmit = {
+    kind: "intent",
+    type: "submit/requested",
+    eventId: "intent-drained",
+    correlationId: "submit-drained",
+    payload: {
+      routing: "auto",
+      submitDiagnostics: { queued: false }
+    }
+  };
+  const explicitQueued = {
+    kind: "intent",
+    type: "submit/requested",
+    eventId: "intent-explicit",
+    payload: {
+      routing: "auto",
+      submitDiagnostics: { queued: true }
+    }
+  };
+  const sendNow = {
+    kind: "intent",
+    type: "submit/requested",
+    eventId: "intent-send-now",
+    payload: {
+      routing: "send_now",
+      submitDiagnostics: { queued: false }
+    }
+  };
+  const tape = [
+    queuedSubmit,
+    drainedSubmit,
+    {
+      kind: "effect",
+      type: "queue/sendPrompt",
+      eventId: "effect-1",
+      causedByEventId: "intent-drained",
+      correlationId: "submit-drained",
+      payload: { outcome: "succeeded" }
+    },
+    {
+      kind: "intent",
+      type: "queue/sendNowRequested",
+      eventId: "intent-send-now-req",
+      correlationId: "submit-queued"
+    },
+    {
+      kind: "effect",
+      type: "queue/sendPrompt",
+      eventId: "effect-2",
+      causedByEventId: "intent-send-now-req",
+      correlationId: "submit-queued",
+      payload: { outcome: "succeeded" }
+    }
+  ];
+  assert.equal(submitRequestedRequiresSessionIdle(queuedSubmit, tape), false);
+  assert.equal(submitRequestedRequiresSessionIdle(drainedSubmit, tape), true);
+  assert.equal(submitRequestedRequiresSessionIdle(explicitQueued, tape), false);
+  assert.equal(submitRequestedRequiresSessionIdle(sendNow, tape), false);
 });
 
 test("replay waits for the previous Turn before each queued send", async () => {
@@ -229,9 +747,11 @@ test("replay waits for the previous Turn before each queued send", async () => {
   const sent = [];
   const accepted = [];
   const server = createServer((request, response) => {
+    if (respondToCheckpointVerification(request, response)) return;
     if (
       request.method === "GET" &&
-      request.url === "/v1/agent-session-replay/transport/playback"
+      request.url ===
+        `/v1/agent-session-replay/cassettes/${replayCassetteAID}/transport/playback`
     ) {
       response.setHeader("content-type", "application/json");
       response.end(
@@ -239,6 +759,7 @@ test("replay waits for the previous Turn before each queued send", async () => {
           drained: false,
           paused: false,
           playbackElapsedMs: 0,
+          providerConnections: [],
           speed: 1,
           timingMode: "realtime"
         })
@@ -304,21 +825,13 @@ test("replay waits for the previous Turn before each queued send", async () => {
             kind: "direct-stimulus",
             sequence: 1,
             occurredAtUnixMs: 1,
-            type: "session.create",
-            payload: { agentTargetId: "local:codex", content: [] }
-          },
-          {
-            ...base,
-            kind: "direct-stimulus",
-            sequence: 2,
-            occurredAtUnixMs: 1,
             type: "session.send",
             payload: { content: [{ type: "text", text: "second" }] }
           },
           {
             ...base,
             kind: "direct-stimulus",
-            sequence: 3,
+            sequence: 2,
             occurredAtUnixMs: 1,
             type: "session.send",
             payload: { content: [{ type: "text", text: "third" }] }
@@ -332,26 +845,138 @@ test("replay waits for the previous Turn before each queued send", async () => {
             schemaVersion: cassettePolicy.schemaVersion,
             index: 0,
             kind: "bootstrap",
-            afterActivityEventSequence: 0
+            trigger: { source: "bootstrap" },
+            cursor: { activityEventSequence: 0, providerConnections: [] }
           },
           {
             schemaVersion: cassettePolicy.schemaVersion,
             index: 1,
             kind: "after-activity-event",
-            afterActivityEventSequence: 3
+            trigger: {
+              source: "activity-boundary",
+              afterActivityEventSequence: 2
+            },
+            cursor: { activityEventSequence: 2, providerConnections: [] }
           }
         ],
         onStimulusAccepted(stimulus) {
           accepted.push(stimulus.type);
-        }
+        },
+        cassetteId: replayCassetteAID
       }
     );
     assert.equal(sent.length, 2);
-    assert.deepEqual(accepted, [
-      "session.create",
-      "session.send",
-      "session.send"
-    ]);
+    assert.deepEqual(accepted, ["session.send", "session.send"]);
+  } finally {
+    await new Promise((resolveClose, rejectClose) =>
+      server.close((error) => (error ? rejectClose(error) : resolveClose()))
+    );
+  }
+});
+
+test("replay diagnoses a 502 through the exact Cassette transport", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-replay-transport-error-"));
+  const listenerDirectory = join(root, "run");
+  await mkdir(listenerDirectory, { recursive: true });
+  const requests = [];
+  const server = createServer((request, response) => {
+    if (respondToCheckpointVerification(request, response)) return;
+    requests.push(`${request.method} ${request.url}`);
+    if (
+      request.method === "GET" &&
+      request.url ===
+        `/v1/agent-session-replay/cassettes/${replayCassetteAID}/transport/playback`
+    ) {
+      response.setHeader("content-type", "application/json");
+      response.end(
+        JSON.stringify({
+          drained: false,
+          paused: false,
+          playbackElapsedMs: 0,
+          providerConnections: [],
+          speed: 1,
+          timingMode: "realtime"
+        })
+      );
+      return;
+    }
+    if (
+      request.method === "POST" &&
+      request.url ===
+        `/v1/agent-session-replay/cassettes/${replayCassetteAID}/transport/verify`
+    ) {
+      response.statusCode = 409;
+      response.end("recorded outbound frame mismatch");
+      return;
+    }
+    if (request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(
+        JSON.stringify({
+          session: { activeTurnId: null, status: "idle" }
+        })
+      );
+      return;
+    }
+    response.statusCode = 502;
+    response.end("provider transport failed");
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen)
+  );
+  try {
+    const address = server.address();
+    assert.notEqual(address, null);
+    assert.equal(typeof address, "object");
+    await writeFile(
+      join(listenerDirectory, "tuttid.listener.json"),
+      JSON.stringify({
+        addr: `127.0.0.1:${address.port}`,
+        auth: { token: "test-token" }
+      })
+    );
+    const base = {
+      agentSessionId: "session-1",
+      workspaceId: "workspace-1"
+    };
+    await assert.rejects(
+      replayStimuli(
+        root,
+        {
+          ...base,
+          activityEvents: [
+            {
+              ...base,
+              kind: "direct-stimulus",
+              occurredAtUnixMs: 1,
+              payload: { content: [{ type: "text", text: "fail" }] },
+              sequence: 1,
+              type: "session.send"
+            }
+          ]
+        },
+        2_000,
+        {
+          checkpoints: [
+            {
+              index: 0,
+              kind: "bootstrap",
+              trigger: { source: "bootstrap" },
+              cursor: { activityEventSequence: 0, providerConnections: [] },
+              schemaVersion: cassettePolicy.schemaVersion
+            }
+          ],
+          cassetteId: replayCassetteAID
+        }
+      ),
+      /recorded outbound frame mismatch/u
+    );
+    assert.equal(
+      requests.includes(
+        `POST /v1/agent-session-replay/cassettes/${replayCassetteAID}/transport/verify`
+      ),
+      true
+    );
   } finally {
     await new Promise((resolveClose, rejectClose) =>
       server.close((error) => (error ? rejectClose(error) : resolveClose()))
@@ -366,9 +991,11 @@ test("replay drives intents and verifies effects without sending HTTP", async ()
   const requests = [];
   const playbackStartedAt = Date.now();
   const server = createServer((request, response) => {
+    if (respondToCheckpointVerification(request, response)) return;
     if (
       request.method === "GET" &&
-      request.url === "/v1/agent-session-replay/transport/playback"
+      request.url ===
+        `/v1/agent-session-replay/cassettes/${replayCassetteAID}/transport/playback`
     ) {
       response.setHeader("content-type", "application/json");
       response.end(
@@ -376,13 +1003,14 @@ test("replay drives intents and verifies effects without sending HTTP", async ()
           drained: false,
           paused: false,
           playbackElapsedMs: Date.now() - playbackStartedAt,
+          providerConnections: [],
           speed: 1,
           timingMode: "realtime"
         })
       );
       return;
     }
-    requests.push(request.method);
+    requests.push(`${request.method} ${request.url}`);
     response.setHeader("content-type", "application/json");
     response.end(
       JSON.stringify({ session: { activeTurnId: null, status: "idle" } })
@@ -446,13 +1074,18 @@ test("replay drives intents and verifies effects without sending HTTP", async ()
             schemaVersion: cassettePolicy.schemaVersion,
             index: 0,
             kind: "bootstrap",
-            afterActivityEventSequence: 0
+            trigger: { source: "bootstrap" },
+            cursor: { activityEventSequence: 0, providerConnections: [] }
           },
           {
             schemaVersion: cassettePolicy.schemaVersion,
             index: 1,
             kind: "after-activity-event",
-            afterActivityEventSequence: 2
+            trigger: {
+              source: "activity-boundary",
+              afterActivityEventSequence: 2
+            },
+            cursor: { activityEventSequence: 2, providerConnections: [] }
           }
         ],
         rendererDriver: {
@@ -464,7 +1097,8 @@ test("replay drives intents and verifies effects without sending HTTP", async ()
             calls.push(`effect:${event.payload.outcome}`);
             callTimes.push(Date.now());
           }
-        }
+        },
+        cassetteId: replayCassetteAID
       }
     );
     assert.deepEqual(calls, [
@@ -472,7 +1106,14 @@ test("replay drives intents and verifies effects without sending HTTP", async ()
       "effect:succeeded"
     ]);
     assert.ok(callTimes[1] - callTimes[0] >= 60);
-    assert.deepEqual(requests, ["GET"]);
+    assert.equal(
+      requests.some((request) => request.startsWith("POST /v1/workspaces/")),
+      false
+    );
+    assert.equal(
+      requests.some((request) => request.startsWith("GET /v1/workspaces/")),
+      true
+    );
   } finally {
     await new Promise((resolveClose, rejectClose) =>
       server.close((error) => (error ? rejectClose(error) : resolveClose()))
@@ -480,56 +1121,52 @@ test("replay drives intents and verifies effects without sending HTTP", async ()
   }
 });
 
-test("renderer activity driver calls the replay bridge through CDP", async () => {
-  const evaluations = [];
+test("renderer activity driver scopes bridge calls to one Replay Cassette", async () => {
+  const expressions = [];
   const driver = createRendererActivityDriver(
     {
-      async send(method, parameters) {
-        evaluations.push({ method, parameters });
+      async send(_method, parameters) {
+        expressions.push(parameters.expression);
         return { result: { value: { accepted: true } } };
       }
     },
-    2_000
+    2_000,
+    replayCassetteAID
   );
-  const intent = {
-    kind: "intent",
-    type: "submit/requested",
-    eventId: "intent-1",
-    payload: { content: [] }
-  };
-  const effect = {
-    kind: "effect",
-    type: "session.send",
-    eventId: "effect-1",
-    causedByEventId: "intent-1",
-    payload: { outcome: "succeeded" }
-  };
-  await driver.dispatchIntent(intent);
-  await driver.verifyEffect(effect);
-  assert.deepEqual(
-    evaluations.map(({ method, parameters }) => ({
-      method,
-      awaitPromise: parameters.awaitPromise,
-      returnByValue: parameters.returnByValue,
-      calls: parameters.expression.includes("dispatchIntent")
-        ? "dispatchIntent"
-        : "verifyEffect"
-    })),
-    [
-      {
-        method: "Runtime.evaluate",
-        awaitPromise: true,
-        returnByValue: true,
-        calls: "dispatchIntent"
-      },
-      {
-        method: "Runtime.evaluate",
-        awaitPromise: true,
-        returnByValue: true,
-        calls: "verifyEffect"
+  await driver.dispatchIntent({ type: "submit/requested" });
+  await driver.verifyEffect({ type: "session.send" });
+  assert.equal(expressions.length, 2);
+  assert.match(expressions[0], /dispatchCassetteIntent/u);
+  assert.match(expressions[0], new RegExp(replayCassetteAID, "u"));
+  assert.match(expressions[1], /verifyCassetteEffect/u);
+  assert.match(expressions[1], new RegExp(replayCassetteAID, "u"));
+});
+
+test("renderer activity driver resumes an exactly-once invocation after CDP collects its Promise", async () => {
+  const expressions = [];
+  let calls = 0;
+  const driver = createRendererActivityDriver(
+    {
+      async send(_method, parameters) {
+        expressions.push(parameters.expression);
+        calls += 1;
+        if (calls === 1) {
+          throw new Error("Promise was collected (-32000)");
+        }
+        return { result: { value: { accepted: true } } };
       }
-    ]
+    },
+    2_000,
+    replayCassetteAID
   );
+  await driver.dispatchIntent({
+    type: "submit/requested",
+    eventId: "intent-exactly-once"
+  });
+  assert.equal(calls, 2);
+  assert.equal(expressions[0], expressions[1]);
+  assert.match(expressions[0], /__tuttiAgentSessionReplayInvocations/u);
+  assert.match(expressions[0], /intent-exactly-once/u);
 });
 
 test("rejects a direct session.send correlated with a renderer intent", () => {
@@ -554,7 +1191,6 @@ test("rejects a direct session.send correlated with a renderer intent", () => {
 test("parses ordered activity events and requires effects to follow intents", () => {
   const base = {
     schemaVersion: cassettePolicy.schemaVersion,
-    scopeId: "workspace-1",
     agentSessionId: "session-1",
     occurredAtUnixMs: 1
   };
@@ -615,6 +1251,7 @@ test("activity replay clock follows daemon elapsed time and playback state", asy
   let playback = {
     paused: false,
     playbackElapsedMs: 0,
+    providerConnections: [],
     speed: 1,
     timingMode: "realtime"
   };
@@ -673,35 +1310,71 @@ test("activity replay clock follows daemon elapsed time and playback state", asy
   assert.equal(waits.length, fastForwardWaitStart);
 });
 
-test("validates stable replay checkpoints against stimulus sequences", () => {
-  const activityEvents = [{ sequence: 1 }, { sequence: 3 }];
-  const contents = [
+test("uses portable checkpoint plan instead of deriving activity boundaries", () => {
+  const checkpoints = validateReplayCheckpointPlan(
     {
-      schemaVersion: cassettePolicy.schemaVersion,
-      index: 0,
-      kind: "bootstrap",
-      afterActivityEventSequence: 0
+      schemaVersion: 2,
+      cassetteSchemaVersion: cassettePolicy.schemaVersion,
+      observationSchemaVersion: 2,
+      checkpoints: [
+        {
+          id: "checkpoint-0000",
+          index: 0,
+          kind: "replay.bootstrap",
+          tags: ["replay.bootstrap"],
+          cursor: {
+            activityEventSequence: 0,
+            providerConnections: []
+          },
+          trigger: { source: "bootstrap" }
+        },
+        {
+          id: "checkpoint-0001",
+          index: 1,
+          kind: "submission.accepted",
+          tags: ["submission.accepted"],
+          cursor: {
+            activityEventSequence: 2,
+            providerConnections: []
+          },
+          trigger: {
+            source: "activity-boundary",
+            afterActivityEventSequence: 2,
+            boundaryKind: "intent-effects"
+          }
+        }
+      ]
     },
-    {
-      schemaVersion: cassettePolicy.schemaVersion,
-      index: 1,
-      kind: "after-activity-event",
-      afterActivityEventSequence: 3
-    }
-  ]
-    .map(JSON.stringify)
-    .join("\n");
-  assert.equal(parseReplayCheckpoints(contents, activityEvents).length, 2);
+    [
+      { sequence: 1, kind: "intent", eventId: "intent-1" },
+      {
+        sequence: 2,
+        kind: "effect",
+        eventId: "effect-1",
+        causedByEventId: "intent-1"
+      },
+      { sequence: 3, kind: "direct-stimulus", eventId: "send-1" }
+    ]
+  );
+  assert.deepEqual(
+    checkpoints.map((checkpoint) => checkpoint.cursor.activityEventSequence),
+    [0, 2]
+  );
+});
+
+test("rejects checkpoint plan v1 without a compatibility fallback", () => {
   assert.throws(
     () =>
-      parseReplayCheckpoints(
-        contents.replace(
-          '"afterActivityEventSequence":3',
-          '"afterActivityEventSequence":2'
-        ),
-        activityEvents
+      validateReplayCheckpointPlan(
+        {
+          schemaVersion: 1,
+          cassetteSchemaVersion: cassettePolicy.schemaVersion,
+          observationSchemaVersion: 1,
+          checkpoints: []
+        },
+        []
       ),
-    /invalid stimulus/u
+    /checkpoint_plan_invalid: unsupported plan schema/
   );
 });
 
@@ -710,14 +1383,18 @@ test("next checkpoint fast-forwards without skipping the stable boundary", async
   const controlPath = join(root, "replay-control.json");
   const statusPath = join(root, "replay-status.json");
   const commands = [];
+  const requestPaths = [];
   const transportPlayback = {
     drained: false,
     paused: false,
     playbackElapsedMs: 0,
+    providerConnections: [],
     speed: 1,
     timingMode: "realtime"
   };
   const server = createServer(async (request, response) => {
+    requestPaths.push(request.url);
+    if (respondToCheckpointVerification(request, response)) return;
     if (request.method === "GET") {
       response.setHeader("content-type", "application/json");
       response.end(JSON.stringify(transportPlayback));
@@ -747,18 +1424,23 @@ test("next checkpoint fast-forwards without skipping the stable boundary", async
         schemaVersion: cassettePolicy.schemaVersion,
         index: 0,
         kind: "bootstrap",
-        afterActivityEventSequence: 0
+        trigger: { source: "bootstrap" },
+        cursor: { activityEventSequence: 0, providerConnections: [] }
       },
       {
         schemaVersion: cassettePolicy.schemaVersion,
         index: 1,
         kind: "after-activity-event",
-        afterActivityEventSequence: 2
+        trigger: {
+          source: "activity-boundary",
+          afterActivityEventSequence: 2
+        },
+        cursor: { activityEventSequence: 2, providerConnections: [] }
       }
     ];
     await writeFile(
       controlPath,
-      JSON.stringify({ schemaVersion: 1, revision: 0, command: "resume" })
+      JSON.stringify(replayControlRouter(replayCassetteAID, 0, "resume"))
     );
     const reached = [];
     let replacement = null;
@@ -773,28 +1455,36 @@ test("next checkpoint fast-forwards without skipping the stable boundary", async
       onReplacement(value) {
         replacement = value;
       },
+      cassetteId: replayCassetteAID,
       statusPath,
+      targetCheckpoint: null,
       timeoutMs: 2_000
     });
     await playback.initialize();
     await writeFile(
       controlPath,
-      JSON.stringify({
-        schemaVersion: 1,
-        revision: 1,
-        command: "next-checkpoint"
-      })
+      JSON.stringify(
+        replayControlRouter(replayCassetteAID, 1, "next-checkpoint")
+      )
     );
     await playback.waitUntilRunnable();
     assert.equal(playback.checkpointAfter(2).index, 1);
+    await playback.activityAdvanced(2);
     await playback.reach(checkpoints[1]);
     assert.deepEqual(reached, [1]);
     assert.deepEqual(commands, [
+      { command: "set-provider-cursor", providerConnections: [] },
       { command: "set-timing-mode", timingMode: "fast-forward" },
       { command: "resume" },
       { command: "set-timing-mode", timingMode: "realtime" },
       { command: "pause" }
     ]);
+    assert.equal(
+      requestPaths.includes(
+        `/v1/agent-session-replay/cassettes/${replayCassetteAID}/checkpoints/1/verify`
+      ),
+      true
+    );
     assert.deepEqual(JSON.parse(await readFile(statusPath, "utf8")), {
       currentCheckpoint: 1,
       totalCheckpoints: 2,
@@ -805,7 +1495,7 @@ test("next checkpoint fast-forwards without skipping the stable boundary", async
 
     await writeFile(
       controlPath,
-      JSON.stringify({ schemaVersion: 1, revision: 2, command: "resume" })
+      JSON.stringify(replayControlRouter(replayCassetteAID, 2, "resume"))
     );
     await playback.waitUntilRunnable();
     assert.deepEqual(commands.at(-1), { command: "resume" });
@@ -815,14 +1505,14 @@ test("next checkpoint fast-forwards without skipping the stable boundary", async
       await delay(20);
       await writeFile(
         controlPath,
-        JSON.stringify({ schemaVersion: 1, revision: 3, command: "pause" })
+        JSON.stringify(replayControlRouter(replayCassetteAID, 3, "pause"))
       );
       await delay(70);
       assert.equal(slowOperationSettled, false);
       assert.deepEqual(commands.at(-1), { command: "pause" });
       await writeFile(
         controlPath,
-        JSON.stringify({ schemaVersion: 1, revision: 4, command: "resume" })
+        JSON.stringify(replayControlRouter(replayCassetteAID, 4, "resume"))
       );
     })();
     await Promise.all([
@@ -833,23 +1523,23 @@ test("next checkpoint fast-forwards without skipping the stable boundary", async
         }),
       controlSlowOperation
     ]);
-    assert.deepEqual(commands.slice(-2), [
+    assert.deepEqual(commands.slice(-3), [
       { command: "pause" },
+      { command: "clear-provider-cursor" },
       { command: "resume" }
     ]);
 
     await writeFile(
       controlPath,
-      JSON.stringify({
-        schemaVersion: 1,
-        revision: 5,
-        command: "switch-cassette",
-        cassetteId: "cassette-2"
-      })
+      JSON.stringify(
+        replayControlRouter(replayCassetteAID, 5, "switch-cassette", {
+          cassetteId: "cassette-2"
+        })
+      )
     );
     await assert.rejects(
       playback.waitForReplacement(() => true),
-      /Replay Run replacement requested/u
+      /Replay Cassette replacement requested/u
     );
     assert.deepEqual(replacement, {
       command: "switch-cassette",
@@ -863,19 +1553,493 @@ test("next checkpoint fast-forwards without skipping the stable boundary", async
   }
 });
 
+test("manual next holds activity after landing a shared-actSeq checkpoint", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-replay-shared-actseq-"));
+  const controlPath = join(root, "replay-control.json");
+  const statusPath = join(root, "replay-status.json");
+  const commands = [];
+  const transportPlayback = {
+    drained: false,
+    paused: false,
+    playbackElapsedMs: 0,
+    providerConnections: [],
+    speed: 1,
+    timingMode: "realtime"
+  };
+  const server = createServer(async (request, response) => {
+    if (respondToCheckpointVerification(request, response)) return;
+    if (request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(transportPlayback));
+      return;
+    }
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    const command = JSON.parse(body);
+    commands.push(command);
+    if (command.command === "pause") transportPlayback.paused = true;
+    if (command.command === "resume") transportPlayback.paused = false;
+    if (command.command === "set-timing-mode") {
+      transportPlayback.timingMode = command.timingMode;
+    }
+    if (command.command === "set-provider-cursor") {
+      transportPlayback.providerConnections = command.providerConnections ?? [];
+    }
+    if (command.command === "clear-provider-cursor") {
+      transportPlayback.providerConnections = [];
+    }
+    response.setHeader("content-type", "application/json");
+    response.end("{}");
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen)
+  );
+  try {
+    const address = server.address();
+    assert.notEqual(address, null);
+    assert.equal(typeof address, "object");
+    const providerAt = (chunkSeq) => [
+      { connectionId: "connection-1", chunkSeq, unitIndex: 1 }
+    ];
+    const checkpoints = [
+      {
+        schemaVersion: cassettePolicy.schemaVersion,
+        index: 0,
+        kind: "bootstrap",
+        trigger: { source: "bootstrap" },
+        cursor: { activityEventSequence: 0, providerConnections: [] }
+      },
+      {
+        schemaVersion: cassettePolicy.schemaVersion,
+        index: 1,
+        kind: "tool.started",
+        trigger: {
+          source: "provider-observation",
+          type: "call.started"
+        },
+        cursor: {
+          activityEventSequence: 2,
+          providerConnections: providerAt(54)
+        }
+      },
+      {
+        schemaVersion: cassettePolicy.schemaVersion,
+        index: 2,
+        kind: "interaction.pending",
+        trigger: {
+          source: "provider-observation",
+          type: "interaction.requested"
+        },
+        cursor: {
+          activityEventSequence: 2,
+          providerConnections: providerAt(55)
+        }
+      },
+      {
+        schemaVersion: cassettePolicy.schemaVersion,
+        index: 3,
+        kind: "interaction.resolved",
+        trigger: {
+          source: "activity-boundary",
+          afterActivityEventSequence: 3
+        },
+        cursor: {
+          activityEventSequence: 3,
+          providerConnections: providerAt(55)
+        }
+      }
+    ];
+    const reached = [];
+    const writeControl = createAgentSessionReplayControlWriter(controlPath);
+    const playback = createReplayPlaybackController({
+      baseURL: `http://127.0.0.1:${address.port}`,
+      checkpoints,
+      controlPath,
+      headers: { "content-type": "application/json" },
+      onCheckpoint(checkpoint) {
+        reached.push(checkpoint);
+      },
+      cassetteId: replayCassetteAID,
+      statusPath,
+      targetCheckpoint: 1,
+      timeoutMs: 2_000
+    });
+    await playback.initialize();
+    await playback.activityAdvanced(2);
+    await playback.runWhilePolling(async () => {
+      while (!reached.includes(1)) {
+        await playback.reach(checkpoints[1]);
+        await delay(10);
+      }
+    });
+    assert.deepEqual(reached, [1]);
+
+    const setProviderCountAfterFirstLand = commands.filter(
+      (command) => command.command === "set-provider-cursor"
+    ).length;
+
+    await writeControl({
+      command: "next-checkpoint",
+      cassetteId: replayCassetteAID
+    });
+    // Duplicate next while seeking must only ack the revision.
+    await writeControl({
+      command: "next-checkpoint",
+      cassetteId: replayCassetteAID
+    });
+    await playback.runWhilePolling(async () => {
+      while (!reached.includes(2)) {
+        await playback.reach(checkpoints[2]);
+        await delay(10);
+      }
+    });
+    assert.deepEqual(reached, [1, 2]);
+    assert.equal(
+      commands.filter((command) => command.command === "set-provider-cursor")
+        .length,
+      setProviderCountAfterFirstLand + 1
+    );
+
+    let activityReleased = false;
+    const waiting = playback.waitBeforeActivity(3).then(() => {
+      activityReleased = true;
+    });
+    await playback.runWhilePolling(() => delay(80));
+    assert.equal(activityReleased, false);
+
+    await writeControl({
+      command: "next-checkpoint",
+      cassetteId: replayCassetteAID
+    });
+    await playback.runWhilePolling(() => waiting);
+    assert.equal(activityReleased, true);
+  } finally {
+    await new Promise((resolveClose, rejectClose) =>
+      server.close((error) => (error ? rejectClose(error) : resolveClose()))
+    );
+  }
+});
+
+test("Replay Workspace routes Desktop control DTOs to only their Cassette controller", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-replay-control-router-"));
+  const controlPath = join(root, "replay-control.json");
+  const commands = [];
+  const server = createServer(async (request, response) => {
+    if (request.method === "GET") {
+      response.setHeader("content-type", "application/json");
+      response.end(
+        JSON.stringify({
+          drained: false,
+          paused: false,
+          playbackElapsedMs: 0,
+          providerConnections: [],
+          speed: 1,
+          timingMode: "realtime"
+        })
+      );
+      return;
+    }
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    const cassetteId = decodeURIComponent(
+      request.url.split("/cassettes/")[1].split("/transport/")[0]
+    );
+    commands.push({ cassetteId, command: JSON.parse(body) });
+    response.setHeader("content-type", "application/json");
+    response.end("{}");
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen)
+  );
+  try {
+    const address = server.address();
+    assert.notEqual(address, null);
+    assert.equal(typeof address, "object");
+    const input = {
+      baseURL: `http://127.0.0.1:${address.port}`,
+      checkpoints: [
+        {
+          schemaVersion: cassettePolicy.schemaVersion,
+          index: 0,
+          kind: "bootstrap",
+          trigger: { source: "bootstrap" },
+          cursor: { activityEventSequence: 0, providerConnections: [] }
+        },
+        {
+          schemaVersion: cassettePolicy.schemaVersion,
+          index: 1,
+          kind: "after-activity-event",
+          trigger: {
+            source: "activity-boundary",
+            afterActivityEventSequence: 1
+          },
+          cursor: { activityEventSequence: 1, providerConnections: [] }
+        }
+      ],
+      controlPath,
+      headers: { "content-type": "application/json" },
+      targetCheckpoint: null,
+      timeoutMs: 2_000
+    };
+    const controllerA = createReplayPlaybackController({
+      ...input,
+      cassetteId: replayCassetteAID
+    });
+    const controllerB = createReplayPlaybackController({
+      ...input,
+      cassetteId: replayCassetteBID
+    });
+    await Promise.all([controllerA.initialize(), controllerB.initialize()]);
+    const writeControl = createAgentSessionReplayControlWriter(controlPath);
+
+    await writeControl({ command: "pause", cassetteId: replayCassetteAID });
+    await Promise.all([
+      controllerA.runWhilePolling(() => delay(80)),
+      controllerB.runWhilePolling(() => delay(80))
+    ]);
+    assert.deepEqual(commands, [
+      {
+        cassetteId: replayCassetteAID,
+        command: { command: "pause" }
+      }
+    ]);
+
+    await writeControl({
+      command: "next-checkpoint",
+      cassetteId: replayCassetteBID
+    });
+    await Promise.all([
+      controllerA.runWhilePolling(() => delay(80)),
+      controllerB.runWhilePolling(() => delay(80))
+    ]);
+    assert.deepEqual(commands.slice(1), [
+      {
+        cassetteId: replayCassetteBID,
+        command: {
+          command: "set-provider-cursor",
+          providerConnections: []
+        }
+      },
+      {
+        cassetteId: replayCassetteBID,
+        command: {
+          command: "set-timing-mode",
+          timingMode: "fast-forward"
+        }
+      },
+      {
+        cassetteId: replayCassetteBID,
+        command: { command: "resume" }
+      }
+    ]);
+    assert.deepEqual(JSON.parse(await readFile(controlPath, "utf8")), {
+      schemaVersion: 2,
+      cassettes: {
+        [replayCassetteAID]: { command: "pause", revision: 1 },
+        [replayCassetteBID]: {
+          command: "next-checkpoint",
+          revision: 1
+        }
+      }
+    });
+  } finally {
+    await new Promise((resolveClose, rejectClose) =>
+      server.close((error) => (error ? rejectClose(error) : resolveClose()))
+    );
+  }
+});
+
 test("record arguments default to headed mode", () => {
   const options = parseArgs([
     "--record",
     ".tmp/cassettes/example",
+    "--scenario",
+    "c01",
     "--timeout-ms",
     "1234"
   ]);
   assert.equal(options.mode, "record");
   assert.equal(options.headless, undefined);
+  assert.equal(resolveDesktopHeadless(options), false);
+  assert.equal(options.scenario, "c01");
   assert.equal(options.timeoutMs, 1234);
+  assert.equal(options.stallTimeoutMs, 60_000);
   assert.match(
     options.cassetteDirectory,
     /[/\\]\.tmp[/\\]cassettes[/\\]example$/u
+  );
+});
+
+test("headless flag hides the Electron window", () => {
+  const options = parseArgs([
+    "--replay",
+    ".tmp/cassettes/example",
+    "--headless"
+  ]);
+  assert.equal(options.headless, true);
+  assert.equal(resolveDesktopHeadless(options), true);
+});
+
+test("managed replay stays headed even with --headless", () => {
+  const options = parseArgs([
+    "--replay",
+    ".tmp/cassettes/example",
+    "--cassette-id",
+    "example",
+    "--managed",
+    "--headless"
+  ]);
+  assert.equal(options.managed, true);
+  assert.equal(options.headless, true);
+  assert.equal(resolveDesktopHeadless(options), false);
+});
+
+test("stall timeout accepts an override and zero disables it", () => {
+  const options = parseArgs([
+    "--replay",
+    ".tmp/cassettes/example",
+    "--stall-timeout-ms",
+    "5000"
+  ]);
+  assert.equal(options.stallTimeoutMs, 5000);
+  const disabled = parseArgs([
+    "--replay",
+    ".tmp/cassettes/example",
+    "--stall-timeout-ms",
+    "0"
+  ]);
+  assert.equal(disabled.stallTimeoutMs, 0);
+  assert.throws(
+    () =>
+      parseArgs([
+        "--replay",
+        ".tmp/cassettes/example",
+        "--stall-timeout-ms",
+        "-1"
+      ]),
+    /--stall-timeout-ms must be a non-negative integer/
+  );
+});
+
+test("screenshot checkpoints are opt-in for replay only", () => {
+  const options = parseArgs([
+    "--replay",
+    ".tmp/cassettes/example",
+    "--screenshot-checkpoints"
+  ]);
+  assert.equal(options.screenshotCheckpoints, true);
+  const workspace = parseArgs([
+    "--replay-workspace-manifest",
+    ".tmp/replay-workspace.json",
+    "--screenshot-checkpoints"
+  ]);
+  assert.equal(workspace.screenshotCheckpoints, true);
+  assert.throws(
+    () =>
+      parseArgs([
+        "--record",
+        ".tmp/cassettes/example",
+        "--scenario",
+        "c01",
+        "--screenshot-checkpoints"
+      ]),
+    /--screenshot-checkpoints is only supported with replay/
+  );
+});
+
+test("checkpoint screenshot paths stay Cassette-scoped in a Replay Workspace", () => {
+  const checkpoints = [{ id: "checkpoint-0000" }, { id: "checkpoint-0004" }];
+  assert.equal(
+    replayCheckpointScreenshotPath({
+      artifactDirectory: "/tmp/artifacts",
+      checkpointIndex: 4,
+      checkpoints: [{ id: "checkpoint-0000" }]
+    }),
+    join("/tmp/artifacts", "checkpoint-0004.png")
+  );
+  assert.equal(
+    replayCheckpointScreenshotPath({
+      artifactDirectory: "/tmp/artifacts",
+      cassetteId: "cassette-a",
+      checkpointIndex: 1,
+      checkpoints
+    }),
+    join("/tmp/artifacts", "cassette-a", "checkpoint-0004.png")
+  );
+});
+
+test("record arguments accept every supported CDP scenario", () => {
+  for (const scenario of [
+    "c01",
+    "c02",
+    "c03",
+    "c04",
+    "c05",
+    "c06",
+    "i01",
+    "i02",
+    "i03",
+    "i04",
+    "i05",
+    "i06",
+    "i07",
+    "i08",
+    "i09",
+    "i10",
+    "r01",
+    "r02",
+    "r03",
+    "r04",
+    "r05",
+    "r06",
+    "r07",
+    "l01",
+    "l02",
+    "l03",
+    "l04",
+    "l05",
+    "l06",
+    "p01",
+    "p02",
+    "p03",
+    "p04"
+  ]) {
+    const options = parseArgs([
+      "--record",
+      ".tmp/cassettes/example",
+      "--scenario",
+      scenario
+    ]);
+    assert.equal(options.scenario, scenario);
+  }
+});
+
+test("record scenarios require a known scenario and reject raw prompt overrides", () => {
+  assert.throws(
+    () => parseArgs(["--record", ".tmp/cassettes/example"]),
+    /--scenario is required/u
+  );
+  assert.throws(
+    () =>
+      parseArgs([
+        "--record",
+        ".tmp/cassettes/example",
+        "--scenario",
+        "unknown"
+      ]),
+    /unsupported record scenario/u
+  );
+  assert.throws(
+    () =>
+      parseArgs([
+        "--record",
+        ".tmp/cassettes/example",
+        "--scenario",
+        "i01",
+        "--prompt",
+        "override"
+      ]),
+    /unknown option: --prompt/u
   );
 });
 
@@ -892,11 +2056,390 @@ test("record and replay modes are mutually exclusive", () => {
   );
 });
 
-test("managed replay requires the daemon-owned Replay Run id", () => {
+test("managed replay requires the daemon-owned Replay Cassette id", () => {
   assert.throws(
     () => parseArgs(["--replay", ".tmp/cassette", "--managed"]),
-    /--run-id is required/u
+    /--cassette-id is required/u
   );
+});
+
+test("Replay Workspace arguments accept one fixed batch manifest", () => {
+  const options = parseArgs([
+    "--replay-workspace-manifest",
+    ".tmp/replay-workspace.json",
+    "--managed"
+  ]);
+  assert.equal(options.mode, "replay-workspace");
+  assert.equal(options.managed, true);
+  assert.match(
+    options.replayWorkspaceManifestPath,
+    /[/\\]\.tmp[/\\]replay-workspace\.json$/u
+  );
+  assert.throws(
+    () =>
+      parseArgs([
+        "--replay-workspace-manifest",
+        ".tmp/replay-workspace.json",
+        "--cassette-id",
+        replayCassetteAID
+      ]),
+    /--cassette-id is not supported/u
+  );
+});
+
+test("Replay Workspace manifest rejects duplicate cassette and root Session", () => {
+  const cassette = (cassetteId, rootAgentSessionId) => ({
+    cassetteId,
+    cassetteDirectory: `.tmp/${cassetteId}`,
+    rootAgentSessionId
+  });
+  assert.throws(
+    () =>
+      validateReplayWorkspaceManifest({
+        playbackMode: "unexpected",
+        cassettes: [cassette(replayCassetteAID, "root-a")]
+      }),
+    /playback mode is invalid/u
+  );
+  assert.throws(
+    () =>
+      validateReplayWorkspaceManifest({
+        playbackMode: "automatic",
+        workspaceId: "workspace-a",
+        cassettes: [
+          cassette(replayCassetteAID, "root-a"),
+          cassette(replayCassetteAID, "root-b")
+        ]
+      }),
+    /duplicate Replay Workspace cassette/u
+  );
+  assert.throws(
+    () =>
+      validateReplayWorkspaceManifest({
+        playbackMode: "automatic",
+        workspaceId: "workspace-a",
+        cassettes: [
+          cassette(replayCassetteAID, "root-a"),
+          cassette(replayCassetteBID, "root-a")
+        ]
+      }),
+    /duplicate Replay Workspace root Session/u
+  );
+  assert.deepEqual(
+    validateReplayWorkspaceManifest({
+      playbackMode: "manual",
+      cassettes: [{ cassetteDirectory: ".tmp/portable-cassette" }]
+    }),
+    {
+      cassettes: [
+        {
+          cassetteDirectory: join(process.cwd(), ".tmp", "portable-cassette"),
+          cassetteId: "",
+          rootAgentSessionId: ""
+        }
+      ],
+      playbackMode: "manual",
+      workspaceId: null
+    }
+  );
+});
+
+test("manual Replay Workspace starts at its first inspectable checkpoint", () => {
+  assert.equal(
+    replayWorkspaceInitialTargetCheckpoint(
+      {
+        action: { type: "continue-session" },
+        cassetteId: replayCassetteAID,
+        checkpoints: [{}]
+      },
+      "manual"
+    ),
+    0
+  );
+  assert.equal(
+    replayWorkspaceInitialTargetCheckpoint(
+      {
+        action: { type: "create-session" },
+        cassetteId: replayCassetteBID,
+        checkpoints: [{}, {}]
+      },
+      "manual"
+    ),
+    1
+  );
+  assert.equal(
+    replayWorkspaceInitialTargetCheckpoint(
+      {
+        action: { type: "create-session" },
+        cassetteId: replayCassetteBID,
+        checkpoints: [{}]
+      },
+      "automatic"
+    ),
+    null
+  );
+});
+
+test("Replay Workspace rejects duplicate identities derived from artifacts", async () => {
+  let runtimeCreates = 0;
+  await assert.rejects(
+    bootstrapReplayWorkspace(
+      {
+        playbackMode: "automatic",
+        cassettes: [
+          { cassetteDirectory: ".tmp/cassette-a" },
+          { cassetteDirectory: ".tmp/cassette-b" }
+        ]
+      },
+      {
+        createWorkspaceId: () => "replay-workspace",
+        async loadCassette(cassette) {
+          return {
+            ...cassette,
+            cassetteId: replayCassetteAID,
+            rootAgentSessionId: "root-a"
+          };
+        },
+        async createRuntime() {
+          runtimeCreates += 1;
+          return {};
+        }
+      }
+    ),
+    /duplicate Replay Workspace cassette/u
+  );
+  assert.equal(runtimeCreates, 0);
+});
+
+test("Replay Workspace leaves Workspace creation to the semantic runtime", async () => {
+  const calls = [];
+  const manifest = {
+    playbackMode: "automatic",
+    workspaceId: "workspace-a",
+    cassettes: [
+      {
+        cassetteId: replayCassetteAID,
+        cassetteDirectory: ".tmp/cassette-a",
+        rootAgentSessionId: "root-a"
+      },
+      {
+        cassetteId: replayCassetteBID,
+        cassetteDirectory: ".tmp/cassette-b",
+        rootAgentSessionId: "root-b"
+      }
+    ]
+  };
+  const bootstrap = await bootstrapReplayWorkspace(manifest, {
+    async loadCassette(cassette) {
+      calls.push(`load:${cassette.cassetteId}`);
+      return {
+        ...cassette,
+        action: { activityEvents: [], workspaceId: "workspace-a" },
+        mode: "create-session"
+      };
+    },
+    async createRuntime(mode) {
+      calls.push(`create:${mode}`);
+      return {
+        directory: "/runtime",
+        stateDirectory: "/runtime/state"
+      };
+    },
+    async initializeDatabase() {
+      calls.push("database");
+    },
+    async materializeBlobs() {
+      calls.push("blobs");
+    },
+    async removeRuntime() {
+      calls.push("remove");
+    }
+  });
+  assert.deepEqual(calls, [
+    `load:${replayCassetteAID}`,
+    `load:${replayCassetteBID}`,
+    "create:replay-workspace",
+    "blobs"
+  ]);
+  assert.equal(bootstrap.runtime.directory, "/runtime");
+  assert.deepEqual(
+    bootstrap.registrations,
+    replayWorkspaceTransportRegistrations(bootstrap.cassettes)
+  );
+});
+
+test("Replay Workspace does not create a runtime when any cassette is invalid", async () => {
+  let runtimeCreates = 0;
+  await assert.rejects(
+    bootstrapReplayWorkspace(
+      {
+        playbackMode: "automatic",
+        workspaceId: "workspace-a",
+        cassettes: [
+          {
+            cassetteId: replayCassetteAID,
+            cassetteDirectory: ".tmp/cassette-a",
+            rootAgentSessionId: "root-a"
+          },
+          {
+            cassetteId: replayCassetteBID,
+            cassetteDirectory: ".tmp/cassette-b",
+            rootAgentSessionId: "root-b"
+          }
+        ]
+      },
+      {
+        async loadCassette(cassette) {
+          if (cassette.cassetteId === replayCassetteBID) {
+            throw new Error("tampered cassette");
+          }
+          return cassette;
+        },
+        async createRuntime() {
+          runtimeCreates += 1;
+          return {};
+        }
+      }
+    ),
+    /tampered cassette/u
+  );
+  assert.equal(runtimeCreates, 0);
+});
+
+test("Replay Workspace verifies every Cassette through its cassette-scoped endpoint", async () => {
+  const calls = [];
+  const results = await verifyReplayWorkspaceTransports(
+    "/runtime/state",
+    [{ cassetteId: replayCassetteAID }, { cassetteId: replayCassetteBID }],
+    1234,
+    async (stateDirectory, cassetteId, timeoutMs) => {
+      calls.push({ stateDirectory, cassetteId, timeoutMs });
+      if (cassetteId === replayCassetteAID) throw new Error("leftover frame");
+    }
+  );
+  assert.deepEqual(calls, [
+    {
+      stateDirectory: "/runtime/state",
+      cassetteId: replayCassetteAID,
+      timeoutMs: 1234
+    },
+    {
+      stateDirectory: "/runtime/state",
+      cassetteId: replayCassetteBID,
+      timeoutMs: 1234
+    }
+  ]);
+  assert.deepEqual(results, [
+    {
+      cassetteId: replayCassetteAID,
+      verified: false,
+      error: "leftover frame"
+    },
+    { cassetteId: replayCassetteBID, verified: true }
+  ]);
+});
+
+test("non-managed Replay Workspace propagates Cassette failures", () => {
+  assert.throws(
+    () =>
+      assertReplayWorkspaceSucceeded(
+        [
+          { cassetteId: replayCassetteAID, succeeded: true },
+          { cassetteId: replayCassetteBID, succeeded: false }
+        ],
+        false
+      ),
+    new RegExp(replayCassetteBID, "u")
+  );
+  assert.doesNotThrow(() =>
+    assertReplayWorkspaceSucceeded(
+      [{ cassetteId: replayCassetteBID, succeeded: false }],
+      true
+    )
+  );
+});
+
+test("Replay Workspace bootstrap calls the renderer bridge once with all Cassettes", async () => {
+  const evaluations = [];
+  const snapshot = { ready: false, cassettes: [] };
+  const result = await bootstrapRendererReplayWorkspace(
+    {
+      async send(method, parameters) {
+        evaluations.push({ method, parameters });
+        return { result: { value: snapshot } };
+      }
+    },
+    [
+      {
+        action: { agentTargetId: "local:codex" },
+        cassetteId: replayCassetteAID,
+        rootAgentSessionId: "root-a",
+        mode: "create-session",
+        ignored: true
+      },
+      {
+        action: { agentTargetId: "local:claude-code" },
+        cassetteId: replayCassetteBID,
+        rootAgentSessionId: "root-b",
+        mode: "continue-session",
+        ignored: true
+      }
+    ],
+    2_000
+  );
+  assert.equal(result, snapshot);
+  assert.equal(evaluations.length, 1);
+  assert.equal(evaluations[0].method, "Runtime.evaluate");
+  assert.match(
+    evaluations[0].parameters.expression,
+    /__tuttiAgentSessionReplayWorkspace/u
+  );
+  assert.match(
+    evaluations[0].parameters.expression,
+    new RegExp(replayCassetteAID, "u")
+  );
+  assert.match(evaluations[0].parameters.expression, /local:codex/u);
+  assert.match(
+    evaluations[0].parameters.expression,
+    new RegExp(replayCassetteBID, "u")
+  );
+  assert.match(evaluations[0].parameters.expression, /create-session/u);
+  assert.match(evaluations[0].parameters.expression, /continue-session/u);
+  assert.doesNotMatch(evaluations[0].parameters.expression, /ignored/u);
+});
+
+test("Replay Workspace reactivates a created Session before continuing", async () => {
+  const evaluations = [];
+  await activateRendererReplayWorkspaceCassette(
+    {
+      async send(method, parameters) {
+        evaluations.push({ method, parameters });
+        if (evaluations.length === 1) {
+          return { result: { value: { ready: false } } };
+        }
+        return {
+          result: {
+            value: {
+              ready: true,
+              cassette: { cassetteId: replayCassetteAID, ready: true }
+            }
+          }
+        };
+      }
+    },
+    replayCassetteAID,
+    2_000
+  );
+  assert.match(evaluations[0].parameters.expression, /\.activate\(/u);
+  assert.equal(evaluations.length, 2);
+});
+
+test("Replay runner never reloads the page when a Session is created", async () => {
+  const source = await readFile(
+    new URL("./run-agent-session-replay.mjs", import.meta.url),
+    "utf8"
+  );
+  assert.doesNotMatch(source, /Page\.reload/u);
 });
 
 test("managed replacement accepts a stable target checkpoint", () => {
@@ -904,8 +2447,8 @@ test("managed replacement accepts a stable target checkpoint", () => {
     "--replay",
     ".tmp/cassette",
     "--managed",
-    "--run-id",
-    "run-2",
+    "--cassette-id",
+    "cassette-2",
     "--target-checkpoint",
     "3"
   ]);
@@ -913,6 +2456,29 @@ test("managed replacement accepts a stable target checkpoint", () => {
   assert.throws(
     () => parseArgs(["--replay", ".tmp/cassette", "--target-checkpoint", "-1"]),
     /non-negative integer/u
+  );
+});
+
+test("Replay duration includes provider frames and later activity", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-replay-duration-"));
+  const providerDirectory = dirname(
+    join(root, cassettePolicy.files.providerManifest.path)
+  );
+  await mkdir(providerDirectory, { recursive: true });
+  await writeFile(
+    join(providerDirectory, "frames.jsonl"),
+    [
+      JSON.stringify({ elapsedMs: 1_000 }),
+      JSON.stringify({ elapsedMs: 8_000 })
+    ].join("\n")
+  );
+
+  assert.equal(
+    await readReplayTotalDurationMs(root, 10_000, [
+      { occurredAtUnixMs: 11_000 },
+      { occurredAtUnixMs: 19_500 }
+    ]),
+    9_500
   );
 });
 
@@ -982,12 +2548,101 @@ test("materializes verified content-addressed attachment blobs", async () => {
       ]
     })
   );
-  await materializeCassetteBlobs(cassette, state);
+  await materializeReplayWorkspaceBlobs(
+    [{ cassetteDirectory: cassette }],
+    state
+  );
   assert.deepEqual(
     await readFile(
       join(state, "agent", "attachments", "session-1", "attachment-1.png")
     ),
     data
+  );
+});
+
+test("materializes verified generated image blobs into Codex home", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-replay-generated-image-"));
+  const cassette = join(root, "cassette");
+  const state = join(root, "state");
+  const data = Buffer.from("generated image bytes");
+  const digest = createHash("sha256").update(data).digest("hex");
+  await mkdir(join(cassette, "blobs", "sha256"), { recursive: true });
+  await writeFile(join(cassette, "blobs", "sha256", digest), data);
+  await writeFile(
+    join(cassette, "blobs", "manifest.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      blobs: [
+        {
+          kind: "agent-generated-image",
+          sha256: digest,
+          sizeBytes: data.byteLength,
+          agentSessionId: "session-1",
+          relativePath: "generated_images/call-1/image.png",
+          mimeType: "image/png"
+        }
+      ]
+    })
+  );
+  await materializeReplayWorkspaceBlobs(
+    [{ cassetteDirectory: cassette }],
+    state
+  );
+  assert.deepEqual(
+    await readFile(
+      join(
+        state,
+        "agent",
+        "runs",
+        "session-1",
+        "codex-home",
+        "generated_images",
+        "call-1",
+        "image.png"
+      )
+    ),
+    data
+  );
+});
+
+test("Replay Workspace rejects conflicting blobs before materialization", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-replay-blob-conflict-"));
+  const state = join(root, "state");
+  const cassettes = [];
+  for (const [name, contents] of [
+    ["cassette-a", "one"],
+    ["cassette-b", "two"]
+  ]) {
+    const cassette = join(root, name);
+    const digest = createHash("sha256").update(contents).digest("hex");
+    await mkdir(join(cassette, "blobs", "sha256"), { recursive: true });
+    await writeFile(join(cassette, "blobs", "sha256", digest), contents);
+    await writeFile(
+      join(cassette, "blobs", "manifest.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        blobs: [
+          {
+            kind: "agent-prompt-attachment",
+            sha256: digest,
+            sizeBytes: contents.length,
+            agentSessionId: "session-a",
+            attachmentId: "attachment-a",
+            mimeType: "image/png"
+          }
+        ]
+      })
+    );
+    cassettes.push({ cassetteDirectory: cassette });
+  }
+  await assert.rejects(
+    materializeReplayWorkspaceBlobs(cassettes, state),
+    /conflicting Replay Workspace blob target/u
+  );
+  await assert.rejects(
+    readFile(
+      join(state, "agent", "attachments", "session-a", "attachment-a.png")
+    )
   );
 });
 
@@ -1018,15 +2673,20 @@ test("rejects a tampered attachment blob", async () => {
     })
   );
   await assert.rejects(
-    materializeCassetteBlobs(cassette, join(root, "state")),
+    materializeReplayWorkspaceBlobs(
+      [{ cassetteDirectory: cassette }],
+      join(root, "state")
+    ),
     /integrity mismatch/u
   );
 });
 
-test("verifies cassette inventory and rejects unrelated files", async () => {
+test("ignores Finder metadata and rejects other unrelated files", async () => {
   const root = await mkdtemp(join(tmpdir(), "agent-replay-inventory-"));
   const cassette = join(root, "cassette");
   await writeValidCassette(cassette);
+  await assert.doesNotReject(verifyCassette(cassette));
+  await writeFile(join(cassette, ".DS_Store"), "finder metadata");
   await assert.doesNotReject(verifyCassette(cassette));
   await writeFile(join(cassette, "debug.log"), "unrelated");
   await assert.rejects(verifyCassette(cassette), /unrelated file/u);
@@ -1036,7 +2696,10 @@ test("rejects a cassette file integrity mismatch", async () => {
   const root = await mkdtemp(join(tmpdir(), "agent-replay-integrity-"));
   const cassette = join(root, "cassette");
   await writeValidCassette(cassette);
-  await writeFile(join(cassette, "scenario.json"), "tampered");
+  await writeFile(
+    join(cassette, cassettePolicy.files.expectedState.path),
+    "tampered"
+  );
   await assert.rejects(verifyCassette(cassette), /integrity mismatch/u);
 });
 
@@ -1076,14 +2739,23 @@ async function writeValidCassette(cassette) {
     join(cassette, cassettePolicy.files.cassetteManifest.path),
     JSON.stringify({
       schemaVersion: cassettePolicy.schemaVersion,
+      stateFormat: "tutti.agent-session-replay-state.v1",
+      id: replayCassetteAID,
+      name: "Valid Cassette",
+      sourceRecordingId: replayCassetteBID,
+      agentTargetId: "local:codex",
+      replayPrerequisites: replayPrerequisitesForTest(),
+      rootAgentSessionId: "root-a",
+      mode: "create-session",
       maxTotalBytes: cassettePolicy.limits.maxCassetteBytes,
+      createdAtUnixMs: 1,
       totalBytes,
       files
     })
   );
 }
 
-test("maps every supported external stimulus to its daemon request", () => {
+test("maps API-origin direct stimuli while Engine events stay renderer-owned", () => {
   const base = {
     workspaceId: "workspace 1",
     agentSessionId: "session/1"
@@ -1136,10 +2808,14 @@ test("maps every supported external stimulus to its daemon request", () => {
       {
         ...base,
         type: "goal.control",
-        payload: { action: "set", objective: "ship" }
+        payload: {
+          action: "set",
+          clientSubmitId: "goal-submit-1",
+          objective: "ship"
+        }
       },
       "/goal",
-      "set"
+      "goal-submit-1"
     ],
     [
       {
@@ -1161,60 +2837,310 @@ test("maps every supported external stimulus to its daemon request", () => {
       );
     }
   }
-  const create = replayStimulusRequest(cases[0][0]);
-  assert.deepEqual(create.body.initialContent, []);
-  assert.equal(create.body.content, undefined);
   assert.equal(
     replayStimulusRequest({ ...base, type: "internal.worker" }),
     null
   );
+  for (const type of [
+    "activation/requested",
+    "interaction/responseRequested",
+    "plan/decisionRequested",
+    "session/cancelRequested",
+    "session/settingsUpdateRequested"
+  ]) {
+    assert.equal(replayStimulusRequest({ ...base, type }), null, type);
+  }
 });
 
-test("maps portable Scope identity to the Tutti Workspace adapter", () => {
-  const scenario = {
-    schemaVersion: 1,
+test("injects the transient Replay Workspace at the product event boundary", () => {
+  const manifest = {
+    schemaVersion: cassettePolicy.schemaVersion,
     mode: "create-session",
-    scopeId: "workspace-1",
-    workspaceId: "workspace-1",
     agentTargetId: "local:codex",
+    replayPrerequisites: replayPrerequisitesForTest(),
     rootAgentSessionId: "session-1"
   };
-  const action = replayActionFromScenario(scenario, [
-    {
-      schemaVersion: cassettePolicy.schemaVersion,
-      sequence: 1,
-      kind: "direct-stimulus",
-      type: "session.create",
-      eventId: "create-1",
-      scopeId: "workspace-1",
-      agentSessionId: "session-1",
-      payload: { displayPrompt: "hello" }
-    }
-  ]);
-  assert.equal(action.workspaceId, "workspace-1");
-  assert.equal(action.activityEvents[0].workspaceId, "workspace-1");
-});
-
-test("seeds replay User Projects from recorded create-session placement", () => {
+  const sourceWorkspaceId = "11111111-1111-4111-8111-111111111111";
+  const replayWorkspaceId = "22222222-2222-4222-8222-222222222222";
+  const action = replayActionFromManifest(
+    manifest,
+    [
+      {
+        schemaVersion: cassettePolicy.schemaVersion,
+        sequence: 1,
+        kind: "direct-stimulus",
+        type: "session.create",
+        eventId: "create-1",
+        agentSessionId: "session-1",
+        payload: { displayPrompt: sourceWorkspaceId }
+      }
+    ],
+    replayWorkspaceId
+  );
+  assert.equal(action.workspaceId, replayWorkspaceId);
+  assert.equal(action.activityEvents[0].scopeId, replayWorkspaceId);
+  assert.equal(action.activityEvents[0].workspaceId, replayWorkspaceId);
+  assert.equal(
+    action.activityEvents[0].payload.displayPrompt,
+    sourceWorkspaceId
+  );
   assert.deepEqual(
-    replayUserProjectPaths({
-      activityEvents: [
-        {
-          payload: {
-            cwd: "/workspace/project",
-            railPlacement: {
-              kind: "project",
-              projectPath: "/workspace/project"
-            }
-          }
-        },
-        {
-          payload: {
-            cwd: " /workspace/other "
-          }
-        }
-      ]
-    }),
-    ["/workspace/project", "/workspace/other"]
+    action.activityEvents[0].payload.settings,
+    manifest.replayPrerequisites.composerDefaults
   );
 });
+
+test("resolves portable recording paths for Engine activation", () => {
+  const manifest = {
+    schemaVersion: cassettePolicy.schemaVersion,
+    mode: "create-session",
+    agentTargetId: "local:codex",
+    replayPrerequisites: replayPrerequisitesForTest(),
+    rootAgentSessionId: "session-1"
+  };
+  const action = replayActionFromManifest(
+    manifest,
+    [
+      {
+        schemaVersion: cassettePolicy.schemaVersion,
+        sequence: 1,
+        kind: "intent",
+        type: "activation/requested",
+        eventId: "create-1",
+        agentSessionId: "session-1",
+        payload: {
+          cwd: "${REPLAY_CWD}",
+          displayPrompt: "keep ${REPLAY_CWD} as user text",
+          settings: { planMode: true },
+          railPlacement: {
+            projectPath: "${REPLAY_CWD}/packages/agent",
+            sectionKey: "project:${REPLAY_CWD}/packages/agent"
+          },
+          railSectionKey: "project:${REPLAY_CWD}/packages/agent"
+        }
+      }
+    ],
+    "22222222-2222-4222-8222-222222222222"
+  );
+  const payload = action.activityEvents[0].payload;
+  assert.equal(payload.cwd.endsWith("tutti-agent-session-replay-mvp"), true);
+  assert.equal(
+    payload.railPlacement.projectPath.endsWith(
+      "tutti-agent-session-replay-mvp/packages/agent"
+    ),
+    true
+  );
+  assert.equal(payload.railPlacement.sectionKey.startsWith("project:"), true);
+  assert.equal(
+    payload.railPlacement.sectionKey.endsWith(
+      "tutti-agent-session-replay-mvp/packages/agent"
+    ),
+    true
+  );
+  assert.equal(
+    payload.railPlacement.sectionKey.includes("${REPLAY_CWD}"),
+    false
+  );
+  assert.equal(payload.railSectionKey, payload.railPlacement.sectionKey);
+  assert.equal(payload.displayPrompt, "keep ${REPLAY_CWD} as user text");
+  assert.deepEqual(payload.settings, {
+    ...manifest.replayPrerequisites.composerDefaults,
+    planMode: true
+  });
+});
+
+test("materializes portable Composer defaults into creation intent and effect", () => {
+  const manifest = {
+    schemaVersion: cassettePolicy.schemaVersion,
+    mode: "create-session",
+    agentTargetId: "local:codex",
+    replayPrerequisites: replayPrerequisitesForTest(),
+    rootAgentSessionId: "session-1"
+  };
+  const action = replayActionFromManifest(
+    manifest,
+    [
+      {
+        schemaVersion: cassettePolicy.schemaVersion,
+        sequence: 1,
+        kind: "intent",
+        type: "activation/requested",
+        eventId: "create-1",
+        agentSessionId: "session-1",
+        payload: { cwd: "", settings: {} }
+      },
+      {
+        schemaVersion: cassettePolicy.schemaVersion,
+        sequence: 2,
+        kind: "effect",
+        type: "session/activate",
+        eventId: "create-2",
+        causedByEventId: "create-1",
+        agentSessionId: "session-1",
+        payload: { cwd: "", settings: {} }
+      }
+    ],
+    "22222222-2222-4222-8222-222222222222"
+  );
+  for (const event of action.activityEvents) {
+    assert.deepEqual(
+      event.payload.settings,
+      manifest.replayPrerequisites.composerDefaults
+    );
+  }
+});
+
+test("does not apply create-session Composer defaults while continuing a Session", () => {
+  const action = replayActionFromManifest(
+    {
+      schemaVersion: cassettePolicy.schemaVersion,
+      mode: "continue-session",
+      agentTargetId: "local:codex",
+      replayPrerequisites: replayPrerequisitesForTest(),
+      rootAgentSessionId: "session-1"
+    },
+    [
+      {
+        schemaVersion: cassettePolicy.schemaVersion,
+        sequence: 1,
+        kind: "intent",
+        type: "activation/requested",
+        eventId: "activate-1",
+        agentSessionId: "session-1",
+        payload: { cwd: "", settings: {} }
+      }
+    ],
+    "22222222-2222-4222-8222-222222222222"
+  );
+  assert.deepEqual(action.activityEvents[0].payload.settings, {});
+});
+
+test("P01 selects an in-cwd project and requires portable binding artifacts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-replay-project-binding-"));
+  const project = resolveRecordScenarioProject(
+    recordScenarioDefinitions.p01.project,
+    root
+  );
+  assert.equal(project.path, root);
+  assert.equal(project.label, "Replay Project");
+  assert.equal(project.portablePath, "${REPLAY_CWD}");
+  assert.throws(
+    () =>
+      resolveRecordScenarioProject(
+        { label: "Outside", relativePath: ".." },
+        root
+      ),
+    /must be inside replay cwd/u
+  );
+  const databasePath = join(root, "project-seed.db");
+  await execFileAsync("sqlite3", [
+    databasePath,
+    `CREATE TABLE user_projects (
+      id TEXT PRIMARY KEY,
+      path TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL,
+      created_at_unix_ms INTEGER NOT NULL,
+      updated_at_unix_ms INTEGER NOT NULL,
+      last_used_at_unix_ms INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      pinned_at_unix_ms INTEGER NOT NULL DEFAULT 0
+    );`
+  ]);
+  await seedRecordingUserProject(databasePath, project);
+  const seeded = await execFileAsync("sqlite3", [
+    databasePath,
+    "SELECT path || '|' || label FROM user_projects;"
+  ]);
+  assert.equal(seeded.stdout.trim(), `${root}|Replay Project`);
+
+  await writeFile(
+    join(root, cassettePolicy.files.activityEvents.path),
+    `${JSON.stringify({
+      agentSessionId: "session-1",
+      correlationId: "request-1",
+      eventId: "intent-1",
+      kind: "intent",
+      occurredAtUnixMs: 1,
+      payload: {
+        cwd: "${REPLAY_CWD}",
+        mode: "new",
+        railPlacement: {
+          kind: "project",
+          projectPath: "${REPLAY_CWD}",
+          sectionKey: "project:${REPLAY_CWD}"
+        },
+        requestId: "request-1"
+      },
+      schemaVersion: cassettePolicy.schemaVersion,
+      sequence: 1,
+      type: "activation/requested"
+    })}\n${JSON.stringify({
+      agentSessionId: "session-1",
+      causedByEventId: "intent-1",
+      correlationId: "request-1",
+      eventId: "effect-1",
+      kind: "effect",
+      occurredAtUnixMs: 2,
+      payload: {
+        cwd: "${REPLAY_CWD}",
+        mode: "new",
+        outcome: "succeeded",
+        railPlacement: {
+          kind: "project",
+          projectPath: "${REPLAY_CWD}",
+          sectionKey: "project:${REPLAY_CWD}"
+        }
+      },
+      schemaVersion: cassettePolicy.schemaVersion,
+      sequence: 2,
+      type: "session/activate"
+    })}\n`
+  );
+  await writeFile(
+    join(root, cassettePolicy.files.checkpointPlan.path),
+    JSON.stringify({
+      checkpoints: [
+        {
+          kind: "project.binding-ready",
+          readiness: {
+            all: [
+              {
+                equals: "recorded",
+                subject: 0,
+                type: "project.binding"
+              }
+            ]
+          }
+        }
+      ],
+      schemaVersion: cassettePolicy.schemaVersion
+    })
+  );
+
+  await verifyRecordedProjectBindingArtifacts(root, "${REPLAY_CWD}");
+});
+
+function execFileAsync(command, args) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    execFile(command, args, (error, stdout, stderr) => {
+      if (error) {
+        rejectPromise(
+          new Error(`${command} failed: ${stderr || error.message}`)
+        );
+        return;
+      }
+      resolvePromise({ stderr, stdout });
+    });
+  });
+}
+
+function replayPrerequisitesForTest() {
+  return {
+    composerDefaults: {
+      model: "gpt-5.4",
+      permissionModeId: "default",
+      reasoningEffort: "medium",
+      speed: "normal"
+    }
+  };
+}

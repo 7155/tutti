@@ -351,7 +351,7 @@ test("WorkspaceAgentActivityService.activateSession creates target-backed sessio
   });
 });
 
-test("Desktop Engine applies activation results without a host-side Session dispatch", async () => {
+test("Desktop Engine applies activation results through its authoritative projection", async () => {
   const observedIntentTypes: string[] = [];
   const service = new WorkspaceAgentActivityService({
     tuttidClient: {
@@ -383,7 +383,7 @@ test("Desktop Engine applies activation results without a host-side Session disp
   assert.ok(selectEngineSession(engine.getSnapshot(), "session-1"));
   assert.ok(observedIntentTypes.includes("activation/requested"));
   assert.ok(observedIntentTypes.includes("engine/commandResult"));
-  assert.equal(observedIntentTypes.includes("session/upserted"), false);
+  assert.equal(observedIntentTypes.includes("session/upserted"), true);
 });
 
 test("Desktop Engine activation reports a failed conversation provider from the shared create effect", async (t) => {
@@ -4098,5 +4098,106 @@ test("WorkspaceAgentActivityService retries a transient edit-retry projection fa
       .sessionMessagesById["session-1"]?.map((message) => message.messageId),
     ["replacement-answer"]
   );
+  service.dispose();
+});
+
+function activityRecorderHarness() {
+  const appended: { recordingId: string; types: string[] }[] = [];
+  const service = new WorkspaceAgentActivityService({
+    tuttidClient: {
+      appendAgentSessionRecordingActivityEvents: async (
+        _workspaceId: string,
+        recordingId: string,
+        body: { events: { type: string }[] }
+      ) => {
+        appended.push({
+          recordingId,
+          types: body.events.map((event) => event.type)
+        });
+      },
+      listWorkspaceAgentSessions: async () => ({
+        hasMore: false,
+        sessions: [],
+        workspaceId: "ws-1"
+      })
+    } as unknown as TuttidClient,
+    runtimeApi: { logTerminalDiagnostic: async () => {} }
+  });
+  const recorders = (
+    service as unknown as {
+      sessionActivityEventRecorders: Map<string, unknown>;
+    }
+  ).sessionActivityEventRecorders;
+  return { appended, recorders, service };
+}
+
+test("WorkspaceAgentActivityService keeps the engine observer path recorder-free without a recording", async () => {
+  const { appended, recorders, service } = activityRecorderHarness();
+  const observedIntentTypes: string[] = [];
+  const removeObserver = service.addSessionEngineActivityObserver("ws-1", {
+    observeCommand: () => {},
+    observeIntent: (intent) => {
+      observedIntentTypes.push(intent.type);
+    }
+  });
+  const engine = service.getSessionEngine("ws-1");
+  await service.load("ws-1");
+
+  engine.dispatch({
+    agentSessionId: "session-1",
+    promptId: "prompt-idle",
+    type: "queue/removed"
+  });
+
+  assert.equal(recorders.size, 0);
+  assert.equal(observedIntentTypes.includes("queue/removed"), true);
+  assert.deepEqual(appended, []);
+  removeObserver();
+  service.dispose();
+});
+
+test("WorkspaceAgentActivityService constructs the recorder at start and drops it after seal or discard", async () => {
+  const { appended, recorders, service } = activityRecorderHarness();
+  const engine = service.getSessionEngine("ws-1");
+  await service.load("ws-1");
+
+  engine.dispatch({
+    agentSessionId: "session-1",
+    promptId: "prompt-before",
+    type: "queue/removed"
+  });
+  assert.equal(recorders.size, 0);
+
+  service.startSessionActivityEventRecording("ws-1", "recording-1");
+  assert.equal(recorders.size, 1);
+  engine.dispatch({
+    agentSessionId: "session-1",
+    promptId: "prompt-recorded",
+    type: "queue/removed"
+  });
+  await service.sealSessionActivityEventRecording("ws-1", "recording-1");
+
+  assert.equal(recorders.size, 0);
+  assert.deepEqual(
+    appended.flatMap((batch) => batch.types),
+    ["queue/removed"]
+  );
+  assert.equal(
+    appended.every((batch) => batch.recordingId === "recording-1"),
+    true
+  );
+
+  service.startSessionActivityEventRecording("ws-1", "recording-2");
+  assert.equal(recorders.size, 1);
+  service.discardSessionActivityEventRecording("ws-1", "recording-2");
+  assert.equal(recorders.size, 0);
+
+  engine.dispatch({
+    agentSessionId: "session-1",
+    promptId: "prompt-after",
+    type: "queue/removed"
+  });
+  assert.equal(recorders.size, 0);
+  assert.equal(appended.length, 1);
   service.dispose();
 });

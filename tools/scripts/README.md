@@ -73,6 +73,32 @@ Current examples include:
 
 Core product behavior should graduate into Go services or first-class tools rather than remain in shell scripts indefinitely.
 
+## Agent Session Replay recording
+
+One record entrypoint accepts a Base case ID. Every command performs one fresh
+Provider recording, deterministic cassette audit, and isolated Replay.
+It keeps diagnostic runtimes under `.tmp/` and publishes the cassette only when
+all three stages pass.
+
+```bash
+pnpm record:agent-gui c01
+pnpm record:agent-gui i01
+pnpm record:agent-gui r05
+```
+
+`record-agent-session-replay-case.mjs` validates the supplied ID and runs
+record → audit → replay. Each defined case owns its deterministic scenario
+definition under `agent-session-replay-record-scenarios/<id>.mjs`.
+`run-agent-session-replay.mjs` owns only CLI mode selection and record/replay
+orchestration. Cassette validation and artifacts, isolated runtime setup, and
+recording project preparation live in `agent-session-replay-runner/`.
+Shared CDP helpers stay in
+`agent-session-replay-record-scenarios/cdp-helpers.mjs`. Most listed cases use
+`gpt-5.3-codex-spark` with medium reasoning. Image cases R04-R06 use `gpt-5.5`
+with medium reasoning; R04 and R05 share the checked-in real PNG fixture, while
+R06 requires the native image-generation tool and a rendered generated-image
+artifact.
+
 Example desktop trace capture:
 
 ```bash

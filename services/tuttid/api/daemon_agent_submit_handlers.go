@@ -112,7 +112,10 @@ func (api DaemonAPI) CreateWorkspaceAgentSession(ctx context.Context, request tu
 		return writeCreateWorkspaceAgentSessionError(err), nil
 	}
 	logCreateAgentSubmitTrace("api.create.completed", string(request.WorkspaceID), agentSessionID, clientSubmitID, metadata, session.Provider, agentSessionTurnPhase(session), nil)
-	if recordingID != "" {
+	if recordingID != "" &&
+		!isRendererEngineCommandOrigin(
+			request.Params.XTuttiAgentCommandOrigin,
+		) {
 		stimulusPayload := map[string]any{
 			"agentTargetId":              agentTargetID,
 			"browserUse":                 request.Body.BrowserUse,
@@ -250,7 +253,11 @@ func (api DaemonAPI) SendWorkspaceAgentSessionInput(ctx context.Context, request
 	// Desktop AgentGUI submissions are recorded from the workspace activity
 	// engine so queue and steer semantics survive replay. Transport callers
 	// without renderer submit diagnostics remain direct stimuli.
-	if api.AgentSessionRecordingService != nil && shouldRecordDirectSessionSend(request.Body.SubmitDiagnostics) {
+	if api.AgentSessionRecordingService != nil &&
+		shouldRecordDirectSessionSend(
+			request.Body.SubmitDiagnostics,
+			request.Params.XTuttiAgentCommandOrigin,
+		) {
 		api.recordAgentStimulus(
 			ctx,
 			"session.send",
@@ -303,8 +310,10 @@ func (api DaemonAPI) SendWorkspaceAgentSessionInput(ctx context.Context, request
 
 func shouldRecordDirectSessionSend(
 	diagnostics *tuttigenerated.AgentSubmitDiagnostics,
+	origin *tuttigenerated.SendWorkspaceAgentSessionInputParamsXTuttiAgentCommandOrigin,
 ) bool {
-	return diagnostics == nil
+	return diagnostics == nil &&
+		!isRendererEngineCommandOrigin(origin)
 }
 
 func capabilityReferencesFromGenerated(input *[]tuttigenerated.WorkspaceAgentCapabilityReference) ([]agentservice.CapabilityReference, *apierrors.ProtocolError) {

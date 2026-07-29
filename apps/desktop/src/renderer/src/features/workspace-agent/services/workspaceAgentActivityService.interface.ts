@@ -140,21 +140,24 @@ export interface WorkspaceAgentComposerDefaultsInvalidatedEvent {
 export interface IWorkspaceAgentActivityService {
   readonly _serviceBrand: undefined;
 
-  armNextSessionRecording?(workspaceId: string, recordingId: string): void;
-  clearNextSessionRecording?(workspaceId: string, recordingId?: string): void;
-  startSessionActivityEventRecording?(
+  armNextSessionRecording(workspaceId: string, recordingId: string): void;
+  clearNextSessionRecording(workspaceId: string, recordingId?: string): void;
+  // The activity event recorder tap exists only between start and the
+  // matching seal/discard; outside a recording the engine observer path is a
+  // no-op and constructs nothing.
+  startSessionActivityEventRecording(
     workspaceId: string,
     recordingId: string
   ): void;
-  sealSessionActivityEventRecording?(
+  sealSessionActivityEventRecording(
     workspaceId: string,
     recordingId: string
   ): Promise<void>;
-  discardSessionActivityEventRecording?(
+  discardSessionActivityEventRecording(
     workspaceId: string,
     recordingId: string
   ): void;
-  addSessionEngineActivityObserver?(
+  addSessionEngineActivityObserver(
     workspaceId: string,
     observer: {
       observeCommand(command: EngineExternalCommand): void;
@@ -162,7 +165,9 @@ export interface IWorkspaceAgentActivityService {
     }
   ): () => void;
 
-  activateSession: AgentActivityRuntime["activateSession"];
+  activateSession(
+    input: Parameters<AgentActivityRuntime["activateSession"]>[0]
+  ): ReturnType<AgentActivityRuntime["activateSession"]>;
   cancelTurn?(
     input: AgentActivityCancelTurnInput
   ): Promise<

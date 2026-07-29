@@ -162,6 +162,20 @@ function projectSessionGoalControlPresentation(
       status: operation.status
     };
   }
+  // A succeeded clear stays authoritative until a later Goal operation
+  // replaces it. Stale Session snapshots must not resurrect the banner.
+  if (
+    operation &&
+    operation.status === "succeeded" &&
+    operation.action === "clear"
+  ) {
+    return {
+      agentSessionId: id || null,
+      goal: null,
+      optimistic: false,
+      status: operation.status
+    };
+  }
   if (
     activation?.mode === "new" &&
     activation.initialGoalControl &&
@@ -305,6 +319,9 @@ function addCanonicalGoalCandidates(
       break;
     case "session/upserted":
       addSessionInputs(candidates, [intent.session]);
+      break;
+    case "session/metadataPatched":
+      addSessionID(candidates, intent.agentSessionId);
       break;
     case "session/detailSnapshotReceived":
     case "session/historyAuthoritativeSnapshotReceived":

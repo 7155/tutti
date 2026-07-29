@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
   isLikelyTuttidProcess,
+  managedTuttidStartupError,
   resolveBrowserMcpDaemonEnv,
   resolveClaudeSDKSidecarDaemonEnv,
   resolveLaunchSpec,
@@ -24,6 +25,27 @@ import {
 const repoRoot = resolve(
   fileURLToPath(new URL("../../../../..", import.meta.url))
 );
+
+test("preserves managed tuttid stderr as a structured startup cause", () => {
+  const failure = managedTuttidStartupError(
+    new Error("tuttid exited before it published its listener info."),
+    "unsupported process cassette schema version 2\n"
+  );
+
+  assert.equal(
+    failure.message,
+    "tuttid exited before it published its listener info."
+  );
+  assert.deepEqual(failure.cause, {
+    code: "managed_process_stderr",
+    message: "unsupported process cassette schema version 2"
+  });
+});
+
+test("preserves the original startup error without a daemon diagnostic", () => {
+  const original = new Error("listener timeout");
+  assert.equal(managedTuttidStartupError(original, ""), original);
+});
 
 test("resolveLaunchSpec prefers the development tuttid binary when present", async (t) => {
   const previousEnv = { ...process.env };

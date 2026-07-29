@@ -133,6 +133,31 @@ test("desktop agent GUI workbench host input reuses workspace runtime services",
   );
 });
 
+test("desktop agent GUI workbench host injects cassette import into the replay service", async () => {
+  const requests: Parameters<
+    DesktopRuntimeApi["importAgentSessionReplayCassettes"]
+  >[0][] = [];
+  const hostInput = createDesktopAgentGUIWorkbenchHostInput({
+    hostFilesApi: createHostFilesApi(),
+    tuttidClient: createTuttidClient(),
+    platformApi: createPlatformApi(),
+    richTextAtService: createRichTextAtService({ providers: [] }),
+    runtimeApi: createRuntimeApi({
+      async importAgentSessionReplayCassettes(input) {
+        requests.push(input);
+        return { canceled: false, failedCount: 2, importedCount: 0 };
+      }
+    }),
+    workspaceAgentActivityService: createWorkspaceAgentActivityService([]),
+    workspaceId
+  });
+
+  const result = await hostInput.agentSessionReplayService.importCassettes();
+
+  assert.deepEqual(requests, [{ workspaceId }]);
+  assert.equal(result.outcome, "failed");
+});
+
 test("desktop agent GUI references paths and prepares in-memory external files", async () => {
   const droppedFileA = new File(["a"], "report.pdf", {
     type: "application/pdf"
@@ -1451,6 +1476,7 @@ function createPlatformApi(
 
 function createRuntimeApi(
   input: {
+    importAgentSessionReplayCassettes?: DesktopRuntimeApi["importAgentSessionReplayCassettes"];
     terminalDiagnostics?: Array<
       Parameters<DesktopRuntimeApi["logTerminalDiagnostic"]>[0]
     >;
@@ -1461,6 +1487,7 @@ function createRuntimeApi(
       return {
         active: false,
         paused: false,
+        playbackElapsedMs: 0,
         speed: 1,
         timingMode: "realtime"
       };
@@ -1468,13 +1495,25 @@ function createRuntimeApi(
     async getAgentSessionReplayStatus() {
       return { active: false };
     },
-    async launchAgentSessionReplay() {
-      return { runId: "replay-run-1" };
+    async importAgentSessionReplayCassettes(request) {
+      if (input.importAgentSessionReplayCassettes) {
+        return input.importAgentSessionReplayCassettes(request);
+      }
+      return { canceled: true, failedCount: 0, importedCount: 0 };
     },
+    async launchAgentSessionReplay(input) {
+      return {
+        launchId: input.launchId,
+        cassetteIds: ["replay-cassette-1"],
+        workspaceId: "workspace-1"
+      };
+    },
+    async revealAgentSessionReplayCassette() {},
     async setAgentSessionReplayPlayback() {
       return {
         active: false,
         paused: false,
+        playbackElapsedMs: 0,
         speed: 1,
         timingMode: "realtime"
       };
@@ -1483,7 +1522,7 @@ function createRuntimeApi(
       return;
     },
     async waitForAgentSessionReplay() {
-      return { runId: "replay-run-1" };
+      return { cassetteId: "replay-cassette-1" };
     },
     async getBackendConfig() {
       return {
@@ -1637,6 +1676,14 @@ function createWorkspaceAgentActivityService(
   };
   return {
     _serviceBrand: undefined,
+    armNextSessionRecording() {},
+    clearNextSessionRecording() {},
+    startSessionActivityEventRecording() {},
+    async sealSessionActivityEventRecording() {},
+    discardSessionActivityEventRecording() {},
+    addSessionEngineActivityObserver() {
+      return () => {};
+    },
     getSessionEngine() {
       throw new Error("not implemented");
     },

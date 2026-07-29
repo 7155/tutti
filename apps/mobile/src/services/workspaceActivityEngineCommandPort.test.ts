@@ -18,6 +18,10 @@ function unexpectedGoalControlMapping(): never {
   throw new Error("unexpected Goal Control mapping");
 }
 
+function engineEffectOptions(signal?: AbortSignal) {
+  return { commandId: "command-1", origin: "engine" as const, signal };
+}
+
 describe("createWorkspaceActivityEffectPort", () => {
   test("filters unsupported settings from composer options requests", async () => {
     const stopAfterCapture = new Error("stop after composer request capture");
@@ -166,7 +170,7 @@ describe("createWorkspaceActivityEffectPort", () => {
         },
         async reconcileSession() {},
         async reconcileWorkspace() {}
-      })).sendInput(input, { signal: controller.signal })
+      })).sendInput(input, engineEffectOptions(controller.signal))
     ).rejects.toBe(sendFailure);
 
     expect(requests).toEqual([
@@ -226,7 +230,7 @@ describe("createWorkspaceActivityEffectPort", () => {
         objective: "ship it",
         workspaceId: "workspace-1"
       },
-      { signal: controller.signal }
+      engineEffectOptions(controller.signal)
     );
 
     expect(goalControlWorkspaceAgentSession).toHaveBeenCalledWith(
@@ -292,7 +296,7 @@ describe("createWorkspaceActivityEffectPort", () => {
         },
         async reconcileSession() {},
         async reconcileWorkspace() {}
-      })).activateSession(input)
+      })).activateSession(input, engineEffectOptions())
     ).rejects.toBe(stopAfterCapture);
 
     expect(createRequest).toEqual(
@@ -343,16 +347,19 @@ describe("createWorkspaceActivityEffectPort", () => {
         },
         async reconcileSession() {},
         async reconcileWorkspace() {}
-      })).activateSession({
-        agentSessionId: "session-1",
-        agentTargetId: "target-1",
-        clientSubmitId: "goal-submit-1",
-        initialContent: [{ text: "/goal ship it", type: "text" }],
-        initialGoalControl: { action: "set", objective: "ship it" },
-        mode: "new",
-        visible: true,
-        workspaceId: "workspace-1"
-      })
+      })).activateSession(
+        {
+          agentSessionId: "session-1",
+          agentTargetId: "target-1",
+          clientSubmitId: "goal-submit-1",
+          initialContent: [{ text: "/goal ship it", type: "text" }],
+          initialGoalControl: { action: "set", objective: "ship it" },
+          mode: "new",
+          visible: true,
+          workspaceId: "workspace-1"
+        },
+        engineEffectOptions()
+      )
     ).rejects.toBe(stopAfterCapture);
 
     expect(createRequest).toEqual(
@@ -391,7 +398,7 @@ describe("createWorkspaceActivityEffectPort", () => {
           visible: true,
           workspaceId: "workspace-1"
         },
-        { signal: controller.signal }
+        engineEffectOptions(controller.signal)
       )
     ).rejects.toBe(stopAfterCapture);
 
@@ -426,11 +433,14 @@ describe("createWorkspaceActivityEffectPort", () => {
       mapSessionDetail,
       async reconcileSession() {},
       async reconcileWorkspace() {}
-    })).activateSession({
-      agentSessionId: "session-1",
-      mode: "existing",
-      workspaceId: "workspace-1"
-    });
+    })).activateSession(
+      {
+        agentSessionId: "session-1",
+        mode: "existing",
+        workspaceId: "workspace-1"
+      },
+      engineEffectOptions()
+    );
 
     expect(mapSessionDetail).toHaveBeenCalledWith("session-1", rawDetail);
     expect(result).toEqual({
@@ -471,7 +481,7 @@ describe("createWorkspaceActivityEffectPort", () => {
         },
         workspaceId: "workspace-1"
       },
-      { signal: controller.signal }
+      engineEffectOptions(controller.signal)
     );
 
     expect(updateWorkspaceAgentSessionSettings).toHaveBeenCalledWith(
@@ -518,7 +528,7 @@ describe("createWorkspaceActivityEffectPort", () => {
         turnId: "turn-1",
         workspaceId: "workspace-1"
       },
-      { signal: controller.signal }
+      engineEffectOptions(controller.signal)
     );
     await port.respondToInteraction(
       {
@@ -527,7 +537,7 @@ describe("createWorkspaceActivityEffectPort", () => {
         turnId: "turn-1",
         workspaceId: "workspace-1"
       },
-      { signal: controller.signal }
+      engineEffectOptions(controller.signal)
     );
 
     expect(cancelWorkspaceAgentTurn).toHaveBeenCalledWith(
@@ -586,7 +596,7 @@ describe("createWorkspaceActivityEffectPort", () => {
         pinned: true,
         workspaceId: "workspace-1"
       },
-      { signal: controller.signal }
+      engineEffectOptions(controller.signal)
     );
     const renameResult = await port.renameSession(
       {
@@ -594,14 +604,14 @@ describe("createWorkspaceActivityEffectPort", () => {
         title: "Renamed session",
         workspaceId: "workspace-1"
       },
-      { signal: controller.signal }
+      engineEffectOptions(controller.signal)
     );
     const deleteResult = await port.deleteSessions(
       {
         agentSessionIds: ["session-1", "session-2"],
         workspaceId: "workspace-1"
       },
-      { signal: controller.signal }
+      engineEffectOptions(controller.signal)
     );
 
     expect(updateWorkspaceAgentSessionPin).toHaveBeenCalledWith(

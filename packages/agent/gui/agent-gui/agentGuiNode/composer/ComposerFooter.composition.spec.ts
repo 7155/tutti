@@ -66,6 +66,15 @@ describe("ComposerFooter trigger composition", () => {
     expect(slotIndex).toBeLessThan(planIndex);
   });
 
+  it("places the footer accessory on its own row after the primary controls", () => {
+    const rightControlsIndex = source.indexOf(
+      "composerStyles.footerGroupRight"
+    );
+    const accessoryIndex = source.indexOf("styles.composerFooterAccessory");
+
+    expect(accessoryIndex).toBeGreaterThan(rightControlsIndex);
+  });
+
   it("places the Tutti Mode chip between the mention trigger and handoff", () => {
     const mentionIndex = source.indexOf(
       'data-testid="agent-gui-composer-mention-trigger"'

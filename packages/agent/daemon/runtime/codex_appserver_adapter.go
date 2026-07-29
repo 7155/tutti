@@ -152,6 +152,7 @@ type CodexAppServerAdapter struct {
 	interactiveDispositionSink InteractiveDispositionSink
 	commandSink                CommandSnapshotSink
 	eventSink                  SessionEventSink
+	inputUnits                 providerInputUnitTracker
 	goalReconcileSink          GoalReconcileDurableSink
 	goalProvenanceSink         GoalProvenanceDurableSink
 	providerGoalAdoptionSink   ProviderGoalAdoptionSink
@@ -206,9 +207,12 @@ type codexAppServerSession struct {
 	client     *codexAppServerClient
 	threadID   string
 	serverInfo map[string]any
-	account    map[string]any
-	rateLimits map[string]any
-	goal       map[string]any
+	// resumeRuntimeContext preserves the historical adapter projection only
+	// when replay attaches at an already-initialized connection checkpoint.
+	resumeRuntimeContext map[string]any
+	account              map[string]any
+	rateLimits           map[string]any
+	goal                 map[string]any
 	// goalOperationID/revision identify the latest durable desired-goal write.
 	// They gate future scheduling; accepted Turns retain their own identity.
 	goalOperationID string

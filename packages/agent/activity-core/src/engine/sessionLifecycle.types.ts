@@ -124,7 +124,12 @@ export interface SessionUpsertedIntent {
 export type CanonicalSessionMetadataPatch = Partial<
   Pick<
     CanonicalAgentSession,
-    "cwd" | "pinnedAtUnixMs" | "resumable" | "title" | "updatedAtUnixMs"
+    | "cwd"
+    | "goal"
+    | "pinnedAtUnixMs"
+    | "resumable"
+    | "title"
+    | "updatedAtUnixMs"
   >
 >;
 

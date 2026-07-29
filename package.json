@@ -60,6 +60,7 @@
     "dev:web": "node ./tools/scripts/dev-web.mjs",
     "dev:ui-storyboard": "pnpm --filter @tutti-os/ui-storyboard dev",
     "e2e:agent-gui": "node ./tools/scripts/run-agent-session-replay.mjs",
+    "record:agent-gui": "node ./tools/scripts/record-agent-session-replay-case.mjs",
     "pretest:ts": "pnpm prewarm:electron",
     "preview:desktop": "pnpm --filter @tutti-os/desktop preview",
     "perf:agent-gui": "node ./tools/scripts/run-agent-gui-performance.mjs",

@@ -9,12 +9,14 @@ import (
 
 	agentsessionstore "github.com/tutti-os/tutti/packages/agent/daemon/activity"
 	activityshared "github.com/tutti-os/tutti/packages/agent/daemon/activity/events"
+	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
 	"github.com/tutti-os/tutti/packages/agent/store-sqlite/canonical"
 )
 
 func (c *Controller) enqueueSessionReport(ctx context.Context, session Session, events []activityshared.Event) {
 	report := reportActivityInput(session, events)
 	c.enrichReportStatePatchesWithSessionMetadata(session, &report)
+	c.observeProviderObservations(ctx, session, report.ProviderObservations)
 	if len(report.GoalReconcileRequests) > 0 {
 		control := report
 		control.TimelineItems = nil
@@ -25,6 +27,45 @@ func (c *Controller) enqueueSessionReport(ctx context.Context, session Session, 
 		_ = c.reportGoalReconcileControl(ctx, control)
 	}
 	c.enqueueReport(ctx, report)
+}
+
+func (c *Controller) SetProviderObservationObserver(observer ProviderObservationObserver) {
+	if c == nil {
+		return
+	}
+	c.providerObservationMu.Lock()
+	c.providerObservationObserver = observer
+	c.providerObservationMu.Unlock()
+}
+
+func (c *Controller) observeProviderObservations(
+	ctx context.Context,
+	session Session,
+	observations []replay.ProviderObservationBatch,
+) {
+	if c == nil || len(observations) == 0 {
+		return
+	}
+	c.providerObservationMu.RLock()
+	observer := c.providerObservationObserver
+	c.providerObservationMu.RUnlock()
+	if observer == nil {
+		return
+	}
+	if err := observer.ObserveProviderObservations(
+		ctx,
+		session.RoomID,
+		session.AgentSessionID,
+		observations,
+	); err != nil {
+		slog.Warn(
+			"record provider observation candidate failed",
+			"event", "agent_session.provider_observation.record_failed",
+			"room_id", session.RoomID,
+			"agent_session_id", session.AgentSessionID,
+			"error", err,
+		)
+	}
 }
 
 // reportSubmittedTurnDurable is the acceptance barrier for a user submission.

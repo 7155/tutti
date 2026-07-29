@@ -262,32 +262,46 @@ The developer-only runner records and replays an Agent SessionGraph capture
 window:
 
 ```sh
-pnpm e2e:agent-gui -- --record .tmp/cassettes/codex-three-turns
-pnpm e2e:agent-gui -- --replay .tmp/cassettes/codex-three-turns
+pnpm e2e:agent-gui -- --record .tmp/cassettes/c01_codex --scenario c01
+pnpm e2e:agent-gui -- --replay .tmp/cassettes/c01_codex
 ```
 
-Record mode starts from a newly migrated empty database, creates one temporary
-Workspace, and submits three Turns by default. Existing Sessions use
-`continue-session`: recording resolves the canonical root and exports only
-that recursive SessionGraph dependency closure to `seed/state.jsonl`. New
-Sessions use `create-session` and have no seed rows. Turn settlement and child
-creation never stop capture. The user presses the square stop control, then
-finalization exports `expected/state.jsonl`.
+Record mode requires a named scenario. The scenario declares its preparation,
+browser actions, and assertions; the runner only creates the isolated runtime,
+starts and stops capture, validates the cassette, and invokes the scenario.
+The C01 scenario starts from a newly migrated empty database, creates one
+temporary Workspace, and submits three Turns. Cassette `create-session` and
+`continue-session` actions remain portable artifact semantics: the latter
+captures canonical prior state in `initial-state.json`. Turn settlement and
+child creation never stop capture. The user presses the square stop control,
+then finalization captures `expected-state.json`.
 
-External inputs are an ordered `stimuli.jsonl` stream. They include Session
-create/send/guidance, Turn cancel, interactive response, plan decision, Goal
-control, and Session settings changes. Provider-created child Sessions, Goal
-continuation Turns, and Host worker activity are state changes, not stimuli,
-and are never executed twice.
+C04 is the queue-only scenario: it records visible enqueue, edit, remove, and
+automatic drain into a distinct next Turn. C06 owns Codex native guidance: a
+composer Send now steers the active Turn without rendering a queued-prompt row
+or creating a second Turn. Keep these scenarios separate so replay evidence
+does not conflate queue lifecycle with provider guidance semantics.
+
+External inputs are represented in the ordered `activity-events.jsonl` stream.
+Intent events drive the real activity engine, effect events verify commands
+produced by that engine, and direct-stimulus events drive recorded API/CLI
+caller paths that did not traverse the activity engine. Engine-origin requests
+carry provenance and do not emit duplicate direct events. Provider-created
+child Sessions, Goal continuation Turns, and Host worker activity are state
+changes, not external inputs, and are never executed twice.
+`checkpoint-plan.json` stores the stable playback
+boundaries. Intent and its correlated effects form one indivisible Activity
+boundary; Provider-observation boundaries use decoded Provider Input Unit
+cursors.
 
 `provider/manifest.json` identifies each connection by recorded Session,
 provider, and Session-local launch ordinal. `provider/frames.jsonl` carries
 connection-local and diagnostic global sequence numbers; the manifest records
 the final frame count and SHA-256 digest. Replay matches by that identity
-instead of global launch order. It maps only declared runtime identities and
-path fields, and fails on changed outbound bytes, missing inbound frames, extra
-connections, leftover frames, or tape-integrity mismatch. Replay compares the
-normalized full SessionGraph fixture, not only assistant text.
+instead of global launch order. It fails on changed outbound bytes, missing inbound frames, extra
+connections, leftover frames, or tape-integrity mismatch. Replay asks the
+daemon to compare the actual typed Tutti Replay State with the expected state,
+not only assistant text.
 Inbound provider frames honor their recorded elapsed time at the Replay
 surface's selected speed. Matching an outbound frame advances the playback
 clock to that recorded boundary, so time spent typing or waiting before a user
@@ -306,26 +320,33 @@ verifies their size and digest, then restores only those attachment targets
 under its isolated state directory. Recording never scans or copies the whole
 Workspace.
 
-The cassette has no `baseline.db`, `action.json`, single Turn field, or copied
-Workspace. Replay migrates a new database, imports the optional seed, performs
-stimuli, and does not read the source user database. See [Local State
-Storage](./local-state-storage.md#developer-agent-session-cassettes).
-For a project-backed Session, Replay seeds the isolated User Project catalog
-from the recorded `cwd` and rail placement before starting Electron. The
-cassette remains read-only. CDP drives surface navigation and verification;
-recorded business stimuli use the isolated daemon HTTP API.
+The cassette has no `baseline.db`, raw database rows, scenario/environment
+sidecars, or copied Workspace. Replay starts a fresh daemon, which restores the
+optional semantic initial state before Host recovery, performs the recorded
+Activity Events, and never reads the source user database. See
+[Local State Storage](./local-state-storage.md#developer-agent-session-cassettes).
+Every Replay Workspace gets a fresh transient Workspace ID. Portable artifacts
+contain no source Workspace ID, so Cassettes captured from different
+Workspaces can run together. State restore binds the transient Workspace only
+inside daemon persistence, and event playback injects only the product
+envelope; user payload strings are never recursively rewritten. The Cassette
+remains read-only. CDP drives surface navigation and verification;
+recorded direct-stimulus activity events use the isolated daemon HTTP API.
 
 `TUTTI_AGENT_CASSETTE_MODE` and `TUTTI_AGENT_CASSETTE_PATH` remain
-developer-only static transport controls used by replay and lower-level
-diagnostics. UI recording does not set them. Dynamic capture covers live and
-future connections in the selected root SessionGraph; provider probes and
-setup processes continue through the local transport.
+developer-only static controls for recording and lower-level diagnostics.
+Replay Workspace supplies its fixed Cassette/root-Session/directory bindings
+through `TUTTI_AGENT_SESSION_REPLAY_REGISTRATIONS`. UI recording does not set
+replay composition. Dynamic capture covers live and future connections in the
+selected root SessionGraph; provider probes and setup processes continue
+through the local transport.
 
 With the developer recording feature enabled, Desktop injects recording and
 replay controls through AgentGUI's generic composer-footer accessory slot.
-AgentGUI contains no recording/replay domain state or copy. Playing a completed
-recording prepares a daemon-owned Replay Run and opens a separate managed
-Electron instance without a terminal.
+AgentGUI contains no recording/replay domain state or copy. Playing one or
+more completed recordings atomically prepares Replay Cassettes and opens one
+managed Replay Workspace containing one Agent Session Replay Surface per
+Cassette.
 
 ## Agent Daemon Blocking Gate
 

@@ -546,6 +546,9 @@ func TestInteractiveDenyFollowUpSkipsClaudeSDKAdapter(t *testing.T) {
 	if adapterShouldReceiveInteractiveDenyFollowUp(NewClaudeCodeSDKAdapter(nil)) {
 		t.Fatal("Claude SDK adapter should consume deny feedback without daemon follow-up")
 	}
+	if adapterShouldReceiveInteractiveDenyFollowUp(NewCodexAppServerAdapter(nil)) {
+		t.Fatal("Codex app-server adapter should steer deny feedback without daemon follow-up")
+	}
 	if !adapterShouldReceiveInteractiveDenyFollowUp(newBlockingExecAdapter()) {
 		t.Fatal("ACP-style adapter should keep daemon deny follow-up")
 	}

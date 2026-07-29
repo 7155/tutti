@@ -162,6 +162,49 @@ test("before quit waits for managed tuttid stop before quitting the app", async 
   assert.equal(events.at(-1), "app:quit");
 });
 
+test("before quit settles desktop services before stopping managed tuttid", async () => {
+  const events: string[] = [];
+  const shutdownSignal: { resolve: null | (() => void) } = { resolve: null };
+  const shutdownPromise = new Promise<void>((resolve) => {
+    shutdownSignal.resolve = resolve;
+  });
+  const handlers = createDesktopAppLifecycleHandlers(
+    {
+      disposables: [
+        {
+          dispose() {},
+          async shutdown() {
+            events.push("replay:shutdown:start");
+            await shutdownPromise;
+            events.push("replay:shutdown:done");
+          }
+        }
+      ],
+      logger: createLogger(events),
+      tuttid: createTuttidManager(async () => {
+        events.push("tuttid:stop");
+      }),
+      updateService: createUpdateService(events),
+      workspaceLaunch: createWorkspaceLaunch()
+    },
+    createRuntime(events)
+  );
+
+  handlers.beforeQuit({ preventDefault() {} });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(events.includes("replay:shutdown:start"), true);
+  assert.equal(events.includes("tuttid:stop"), false);
+
+  shutdownSignal.resolve?.();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(
+    events.filter(
+      (event) => event.startsWith("replay:") || event === "tuttid:stop"
+    ),
+    ["replay:shutdown:start", "replay:shutdown:done", "tuttid:stop"]
+  );
+});
+
 test("before quit waits for managed tuttid stop when update install is pending", async () => {
   const events: string[] = [];
   const handlers = createDesktopAppLifecycleHandlers(

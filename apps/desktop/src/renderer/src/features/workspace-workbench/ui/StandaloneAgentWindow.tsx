@@ -819,9 +819,6 @@ export function StandaloneAgentWindow({
               agentSessionReplayService={
                 agentGuiHostInput.agentSessionReplayService
               }
-              agentSessionActivityReplay={
-                agentGuiHostInput.agentSessionActivityReplay
-              }
               tuttiModePlanReviewRuntime={
                 agentGuiHostInput.tuttiModePlanReviewRuntime
               }

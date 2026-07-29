@@ -8,6 +8,7 @@ import {
 const inactivePlayback = {
   active: false,
   paused: false,
+  playbackElapsedMs: 0,
   speed: 1,
   timingMode: "realtime"
 } as const;
@@ -48,6 +49,7 @@ test("does not publish unchanged polling snapshots", () => {
     playback: {
       active: true,
       paused: true,
+      playbackElapsedMs: 2_000,
       speed: 2,
       timingMode: "realtime"
     } as const,
@@ -58,6 +60,7 @@ test("does not publish unchanged polling snapshots", () => {
       phase: "replaying",
       targetCheckpoint: null,
       timingMode: "realtime",
+      totalDurationMs: 10_000,
       totalCheckpoints: 4
     } as const
   };
@@ -73,6 +76,20 @@ test("does not publish unchanged polling snapshots", () => {
     areAgentSessionReplayPlaybackSnapshotsEqual(snapshot, {
       playback: { ...snapshot.playback },
       status: { ...snapshot.status, currentCheckpoint: 3 }
+    }),
+    false
+  );
+  assert.equal(
+    areAgentSessionReplayPlaybackSnapshotsEqual(snapshot, {
+      playback: { ...snapshot.playback, playbackElapsedMs: 2_250 },
+      status: { ...snapshot.status }
+    }),
+    false
+  );
+  assert.equal(
+    areAgentSessionReplayPlaybackSnapshotsEqual(snapshot, {
+      playback: { ...snapshot.playback },
+      status: { ...snapshot.status, totalDurationMs: 12_000 }
     }),
     false
   );

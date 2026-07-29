@@ -9,6 +9,7 @@ import {
   type AgentSessionActivateEffectResult,
   type AgentSessionEngine,
   type AgentActivitySnapshot,
+  type EngineEffectOptions,
   type EngineExternalCommand,
   type EngineIntent
 } from "@tutti-os/agent-activity-core";
@@ -41,11 +42,11 @@ import {
   agentActivitySessionReconcileDiagnosticDetails,
   normalizeWorkspaceId
 } from "./workspaceAgentActivityDiagnostics.ts";
-import { reportAgentSubmitTraceDiagnostic } from "../desktopAgentRuntimeSubmitDiagnostics.ts";
 import { WorkspaceAgentActivityAnalytics } from "./workspaceAgentActivityAnalytics.ts";
 import { WorkspaceAgentActivityQueryOperations } from "./workspaceAgentActivityQueryOperations.ts";
 import { WorkspaceAgentActivityImportOperations } from "./workspaceAgentActivityImportOperations.ts";
 import { WorkspaceAgentActivityMutationOperations } from "./workspaceAgentActivityMutationOperations.ts";
+import { reportAgentSubmitTraceDiagnostic } from "../desktopAgentRuntimeSubmitDiagnostics.ts";
 import { AgentSessionRecordingBinding } from "../../../agent-session-replay/services/agentSessionRecordingBinding.ts";
 import {
   AgentSessionActivityEventRecorder,
@@ -152,7 +153,7 @@ export class WorkspaceAgentActivityService
     this.mutationOperations = new WorkspaceAgentActivityMutationOperations({
       runtimeApi: dependencies.runtimeApi,
       sessionCommandTarget: (workspaceId) => ({
-        adapter: this.entry(workspaceId).adapter
+        adapter: this.entry(workspaceId).commandAdapter
       }),
       tuttidClient: dependencies.tuttidClient,
       upsertAuthoritativeSession: (session, source) =>
@@ -168,33 +169,67 @@ export class WorkspaceAgentActivityService
     this.sessionRecordingBinding.clear(workspaceId, recordingId);
   }
 
+  // Recorder lifecycle: an AgentSessionActivityEventRecorder exists only
+  // between a successful start and the matching seal/discard. Outside that
+  // window the per-workspace map stays empty so the engine hot path reduces
+  // to a null check.
   startSessionActivityEventRecording(
     workspaceId: string,
     recordingId: string
   ): void {
     const normalizedWorkspaceId = normalizeWorkspaceId(workspaceId);
-    this.sessionActivityEventRecorder(normalizedWorkspaceId).start({
+    const existing = this.sessionActivityEventRecorders.get(
+      normalizedWorkspaceId
+    );
+    const recorder =
+      existing ??
+      new AgentSessionActivityEventRecorder({
+        appender: createTuttidAgentSessionActivityEventAppender({
+          tuttidClient: this.dependencies.tuttidClient,
+          workspaceId: normalizedWorkspaceId
+        })
+      });
+    // Retain the recorder only after start accepts the recording, so a
+    // rejected start leaves no idle recorder on the hot path.
+    recorder.start({
       recordingId,
       scopeId: normalizedWorkspaceId
     });
+    if (!existing) {
+      this.sessionActivityEventRecorders.set(normalizedWorkspaceId, recorder);
+    }
   }
 
-  sealSessionActivityEventRecording(
+  async sealSessionActivityEventRecording(
     workspaceId: string,
     recordingId: string
   ): Promise<void> {
-    return this.sessionActivityEventRecorder(
-      normalizeWorkspaceId(workspaceId)
-    ).seal(recordingId);
+    const normalizedWorkspaceId = normalizeWorkspaceId(workspaceId);
+    const recorder = this.sessionActivityEventRecorders.get(
+      normalizedWorkspaceId
+    );
+    if (!recorder) return;
+    // On seal failure the recorder keeps its pending batch so the caller can
+    // retry seal; drop the instance only after the flush succeeded.
+    await recorder.seal(recordingId);
+    if (
+      this.sessionActivityEventRecorders.get(normalizedWorkspaceId) === recorder
+    ) {
+      this.sessionActivityEventRecorders.delete(normalizedWorkspaceId);
+    }
   }
 
   discardSessionActivityEventRecording(
     workspaceId: string,
     recordingId: string
   ): void {
-    this.sessionActivityEventRecorder(
-      normalizeWorkspaceId(workspaceId)
-    ).discard(recordingId);
+    const normalizedWorkspaceId = normalizeWorkspaceId(workspaceId);
+    const recorder = this.sessionActivityEventRecorders.get(
+      normalizedWorkspaceId
+    );
+    if (!recorder) return;
+    recorder.discard(recordingId);
+    this.sessionActivityEventRecorders.delete(normalizedWorkspaceId);
   }
 
   addSessionEngineActivityObserver(
@@ -472,10 +507,16 @@ export class WorkspaceAgentActivityService
   }
 
   private async executeCreateSessionEffect(
-    input: Parameters<AgentActivityAdapter["createSession"]>[0]
+    input: Parameters<AgentActivityAdapter["createSession"]>[0],
+    options?: EngineEffectOptions
   ): Promise<AgentActivitySession> {
     try {
-      return await this.mutationOperations.createSession(input);
+      return options
+        ? await this.mutationOperations.executeEngineCreateSession(
+            input,
+            options
+          )
+        : await this.mutationOperations.createSession(input);
     } catch (error) {
       this.analytics.trackSessionCreateFailure({
         agentTargetId: input.agentTargetId
@@ -500,7 +541,8 @@ export class WorkspaceAgentActivityService
   }
 
   private async executeSessionActivationEffect(
-    input: Parameters<AgentActivityRuntime["activateSession"]>[0]
+    input: Parameters<AgentActivityRuntime["activateSession"]>[0],
+    options?: EngineEffectOptions
   ): Promise<AgentSessionActivateEffectResult> {
     const workspaceId = normalizeWorkspaceId(input.workspaceId);
     const requestedAgentSessionId = input.agentSessionId.trim();
@@ -575,34 +617,37 @@ export class WorkspaceAgentActivityService
             input.initialTuttiModeActivation != null
         }
       });
-      session = await this.executeCreateSessionEffect({
-        clientSubmitId: input.clientSubmitId,
-        workspaceId,
-        agentSessionId: requestedAgentSessionId,
-        agentTargetId: input.agentTargetId,
-        capabilityRefs: input.capabilityRefs ?? null,
-        cwd: resolvedCwd?.cwd ?? null,
-        initialGoalControl: input.initialGoalControl ?? null,
-        initialContent: input.initialContent ?? [],
-        initialDisplayPrompt: input.initialDisplayPrompt ?? null,
-        initialTuttiModeActivation: input.initialTuttiModeActivation ?? null,
-        submitDiagnostics: input.submitDiagnostics,
-        ...(typeof input.settings?.browserUse === "boolean"
-          ? { browserUse: input.settings.browserUse }
-          : {}),
-        model: input.settings?.model ?? null,
-        planMode: input.settings?.planMode ?? null,
-        permissionModeId: resolveComposerPermissionMode(input.settings),
-        reasoningEffort: input.settings?.reasoningEffort ?? null,
-        ...(resolvedCwd?.noProject ? { noProject: true } : {}),
-        ...(input.railPlacement
-          ? { railPlacement: { ...input.railPlacement } }
-          : {}),
-        speed: input.settings?.speed ?? null,
-        title: input.title ?? null,
-        visible: input.visible ?? true,
-        signal: input.signal
-      });
+      session = await this.executeCreateSessionEffect(
+        {
+          clientSubmitId: input.clientSubmitId,
+          workspaceId,
+          agentSessionId: requestedAgentSessionId,
+          agentTargetId: input.agentTargetId,
+          capabilityRefs: input.capabilityRefs ?? null,
+          cwd: resolvedCwd?.cwd ?? null,
+          initialGoalControl: input.initialGoalControl ?? null,
+          initialContent: input.initialContent ?? [],
+          initialDisplayPrompt: input.initialDisplayPrompt ?? null,
+          initialTuttiModeActivation: input.initialTuttiModeActivation ?? null,
+          submitDiagnostics: input.submitDiagnostics,
+          ...(typeof input.settings?.browserUse === "boolean"
+            ? { browserUse: input.settings.browserUse }
+            : {}),
+          model: input.settings?.model ?? null,
+          planMode: input.settings?.planMode ?? null,
+          permissionModeId: resolveComposerPermissionMode(input.settings),
+          reasoningEffort: input.settings?.reasoningEffort ?? null,
+          ...(resolvedCwd?.noProject ? { noProject: true } : {}),
+          ...(input.railPlacement
+            ? { railPlacement: { ...input.railPlacement } }
+            : {}),
+          speed: input.settings?.speed ?? null,
+          title: input.title ?? null,
+          visible: input.visible ?? true,
+          signal: input.signal
+        },
+        options
+      );
       reportAgentSubmitTraceDiagnostic(this.dependencies.runtimeApi, {
         agentSessionId: session.agentSessionId,
         clientSubmitId: input.clientSubmitId,
@@ -651,7 +696,8 @@ export class WorkspaceAgentActivityService
   }
 
   private async executeSendInputEffect(
-    input: Parameters<AgentActivityAdapter["sendInput"]>[0]
+    input: Parameters<AgentActivityAdapter["sendInput"]>[0],
+    options?: EngineEffectOptions
   ): ReturnType<IWorkspaceAgentActivityService["sendInput"]> {
     const workspaceId = normalizeWorkspaceId(input.workspaceId);
     const agentSessionId = input.agentSessionId.trim();
@@ -670,10 +716,10 @@ export class WorkspaceAgentActivityService
       submitDiagnostics: input.submitDiagnostics,
       workspaceId
     });
-    const result = await entry.adapter.sendInput({
-      ...input,
-      workspaceId
-    });
+    const normalizedInput = { ...input, workspaceId };
+    const result = options
+      ? await entry.commandAdapter.sendInput(normalizedInput, options)
+      : await entry.adapter.sendInput(normalizedInput);
     reportAgentSubmitTraceDiagnostic(this.dependencies.runtimeApi, {
       agentSessionId,
       clientSubmitId: input.clientSubmitId,
@@ -950,11 +996,13 @@ export class WorkspaceAgentActivityService
 
   protected createEntry(workspaceId: string): WorkspaceAgentActivityEntry {
     return createWorkspaceAgentSessionEngineHost({
+      // Hot path for every engine intent/command: when neither recording nor
+      // replay observation is active, both lookups miss and nothing else runs.
       activityEventObserver: {
         observeCommand: (command) => {
-          this.sessionActivityEventRecorder(workspaceId).observeCommand(
-            command
-          );
+          this.sessionActivityEventRecorders
+            .get(workspaceId)
+            ?.observeCommand(command);
           this.notifySessionEngineActivityObservers(
             workspaceId,
             "observeCommand",
@@ -962,7 +1010,9 @@ export class WorkspaceAgentActivityService
           );
         },
         observeIntent: (intent) => {
-          this.sessionActivityEventRecorder(workspaceId).observeIntent(intent);
+          this.sessionActivityEventRecorders
+            .get(workspaceId)
+            ?.observeIntent(intent);
           this.notifySessionEngineActivityObservers(
             workspaceId,
             "observeIntent",
@@ -970,12 +1020,18 @@ export class WorkspaceAgentActivityService
           );
         }
       },
-      activateSession: async (input) => {
-        const activation = await this.executeSessionActivationEffect(input);
+      executeEngineActivateSession: async (input, options) => {
+        const activation = await this.executeSessionActivationEffect(
+          input,
+          options
+        );
         this.analytics.trackEngineActivation(input, activation);
         return activation;
       },
-      cancelTurn: (input) => this.cancelTurn(input),
+      executeEngineCancelTurn: (input, options) =>
+        this.mutationOperations.executeEngineCancelTurn(input, options),
+      executeEngineGoalControl: (input, options) =>
+        this.mutationOperations.executeEngineGoalControl(input, options),
       reconcileSession: (command, signal) =>
         this.executeSessionReconcileCommand(command, signal),
       runtimeApi: this.dependencies.runtimeApi,
@@ -983,37 +1039,28 @@ export class WorkspaceAgentActivityService
         this.takeNextSessionRecording(workspaceId),
       restorePendingSessionRecording: (workspaceId, recordingId) =>
         this.restoreNextSessionRecording(workspaceId, recordingId),
-      sendInput: async (input) => {
-        const result = await this.executeSendInputEffect(input);
+      executeEngineSendInput: async (input, options) => {
+        const result = await this.executeSendInputEffect(input, options);
         this.analytics.trackEngineSend(input, result);
         return result;
       },
-      submitInteractive: (input) => this.submitInteractive(input),
-      submitPlanDecision: (input) => this.submitPlanDecision(input),
+      executeEngineSubmitInteractive: (input, options) =>
+        this.mutationOperations.executeEngineSubmitInteractive(input, options),
+      executeEngineSubmitPlanDecision: (input, options) =>
+        this.mutationOperations.executeEngineSubmitPlanDecision(input, options),
       subscribeSessionEvents: (workspaceId, listener) =>
         this.onSessionEvent(workspaceId, listener),
       tuttidClient: this.dependencies.tuttidClient,
       unactivateSession: (input) => this.unactivateSession(input),
-      updateSessionSettings: (input) => this.updateSessionSettings(input),
+      executeEngineUpdateSessionSettings: (input, options) =>
+        this.mutationOperations.executeEngineUpdateSessionSettings(
+          input,
+          options
+        ),
       updateTuttiModeActivation: (input) =>
         this.updateTuttiModeActivation(input),
       workspaceId
     });
-  }
-
-  private sessionActivityEventRecorder(
-    workspaceId: string
-  ): AgentSessionActivityEventRecorder {
-    const existing = this.sessionActivityEventRecorders.get(workspaceId);
-    if (existing) return existing;
-    const recorder = new AgentSessionActivityEventRecorder({
-      appender: createTuttidAgentSessionActivityEventAppender({
-        tuttidClient: this.dependencies.tuttidClient,
-        workspaceId
-      })
-    });
-    this.sessionActivityEventRecorders.set(workspaceId, recorder);
-    return recorder;
   }
 
   private notifySessionEngineActivityObservers(

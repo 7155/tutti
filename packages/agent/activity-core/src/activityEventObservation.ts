@@ -7,7 +7,7 @@ import type { SessionActivityObservedIntent } from "./engine/sessionReconcile.ty
 
 type ObservableAgentActivityUpdatedEvent = Exclude<
   AgentActivityUpdatedEvent,
-  { eventType: "message_delta" | "session_deleted" }
+  { eventType: "message_delta" | "session_deleted" | "turn_update" }
 >;
 
 export interface InlineMessageVersionContinuity {
@@ -29,8 +29,9 @@ export interface AgentActivityEventObservation {
  *
  * Hosts may apply continuous inline messages before dispatching `intent`.
  * The engine remains responsible for choosing the authoritative reconcile
- * scope. Message deltas and deletion tombstones have separate stateful host
- * handling and are deliberately excluded from this helper.
+ * scope. Turn projections, message deltas, and deletion tombstones have
+ * separate stateful host handling and are deliberately excluded from this
+ * helper.
  */
 export function analyzeAgentActivityEventObservation(input: {
   cachedMessages: readonly AgentActivityMessage[];

@@ -1102,12 +1102,22 @@ the normalized event is applied:
 - after a gap, discontinuity, or reconnect, complete an authoritative read and
   reconcile the overlay; use an unconditional overlay reset only when removing
   or rebinding the Session
-- reconcile `turn_update` and `interaction_update` through a full session pull
+- validate each `turn_update` envelope and dispatch one atomic Engine
+  projection that updates the Turn, the cached Session's `activeTurnId`, and
+  the Session event version together; a settled Turn may clear only its own
+  active reference, so delayed events cannot clear a newer Turn
+- reject inconsistent Turn projections without partially updating canonical
+  state, then converge through a state-only session pull
+- reconcile `turn_update` and `interaction_update` through a session pull to
+  fill fields outside their realtime projections and hydrate an uncached
+  Session; the pull is not the consistency boundary for a cached Turn and
+  Session
 - preserve whether a reconcile was realtime-triggered until its authoritative
   session is applied; if the authoritative fetch fails, restore that provenance
   for the retry rather than silently downgrading it to historical
-- dispatch `session/upserted` before realtime `turn/upserted` so attention can
-  resolve the session identity
+- let the atomic realtime Turn projection drive attention immediately when
+  Session identity is cached; after hydrating an uncached Session, replay its
+  latest Turn with realtime provenance so attention can resolve identity
 - apply historical list pulls through `session/snapshotReceived`, which never
   creates a new unread completion
 - let identity-dependent reducers observe both authoritative shapes: a pending

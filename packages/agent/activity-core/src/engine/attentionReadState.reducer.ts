@@ -51,6 +51,7 @@ export function attentionReadStateReducer(
         return settlePersistenceWrite(state, intent);
       }
       return unchanged(state);
+    case "turn/projectionReceived":
     case "turn/upserted":
       return observeTurn(
         state,

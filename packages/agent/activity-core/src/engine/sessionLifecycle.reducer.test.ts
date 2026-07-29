@@ -1566,6 +1566,105 @@ test("delete tombstone rejects late orphan turn and interaction upserts", () => 
   assert.equal(Object.keys(state.interactionsById).length, 0);
 });
 
+test("realtime Turn projection atomically clears its owned Session reference", () => {
+  let state = reduce(createInitialSessionLifecycleState(), {
+    sessions: [session(activeTurn(1), 1)],
+    type: "session/snapshotReceived"
+  }).state;
+
+  state = reduce(state, {
+    activeTurnId: null,
+    occurredAtUnixMs: 2,
+    turn: {
+      ...activeTurn(2),
+      outcome: "completed",
+      phase: "settled",
+      settledAtUnixMs: 2
+    },
+    type: "turn/projectionReceived",
+    workspaceId: "workspace-1"
+  }).state;
+
+  assert.equal(state.sessionsById["session-1"]?.activeTurnId, null);
+  assert.equal(state.sessionsById["session-1"]?.updatedAtUnixMs, 2);
+  assert.equal(state.sessionsById["session-1"]?.lastEventUnixMs, 2);
+  assert.equal(
+    state.turnsById[canonicalTurnKey("session-1", "turn-1")]?.phase,
+    "settled"
+  );
+
+  state = reduce(state, {
+    session: session(activeTurn(1), 1),
+    type: "session/upserted"
+  }).state;
+  assert.equal(state.sessionsById["session-1"]?.activeTurnId, null);
+});
+
+test("realtime live Turn projection claims an idle Session atomically", () => {
+  let state = reduce(createInitialSessionLifecycleState(), {
+    sessions: [session(null, 1)],
+    type: "session/snapshotReceived"
+  }).state;
+  const liveTurn = { ...activeTurn(1), turnId: "turn-2" };
+
+  state = reduce(state, {
+    activeTurnId: "turn-2",
+    occurredAtUnixMs: 1,
+    turn: liveTurn,
+    type: "turn/projectionReceived",
+    workspaceId: "workspace-1"
+  }).state;
+
+  assert.equal(state.sessionsById["session-1"]?.activeTurnId, "turn-2");
+  assert.deepEqual(
+    state.turnsById[canonicalTurnKey("session-1", "turn-2")],
+    liveTurn
+  );
+});
+
+test("late Turn projection cannot clear or replace a newer active Turn", () => {
+  const newerTurn = { ...activeTurn(4), turnId: "turn-2" };
+  let state = reduce(createInitialSessionLifecycleState(), {
+    sessions: [session(newerTurn, 4)],
+    type: "session/snapshotReceived"
+  }).state;
+  state = reduce(state, {
+    turn: activeTurn(1),
+    type: "turn/upserted"
+  }).state;
+
+  state = reduce(state, {
+    activeTurnId: null,
+    occurredAtUnixMs: 2,
+    turn: {
+      ...activeTurn(2),
+      outcome: "completed",
+      phase: "settled",
+      settledAtUnixMs: 2
+    },
+    type: "turn/projectionReceived",
+    workspaceId: "workspace-1"
+  }).state;
+  assert.equal(state.sessionsById["session-1"]?.activeTurnId, "turn-2");
+  assert.equal(
+    state.turnsById[canonicalTurnKey("session-1", "turn-1")]?.phase,
+    "settled"
+  );
+
+  state = reduce(createInitialSessionLifecycleState(), {
+    sessions: [session(newerTurn, 4)],
+    type: "session/snapshotReceived"
+  }).state;
+  state = reduce(state, {
+    activeTurnId: "turn-1",
+    occurredAtUnixMs: 3,
+    turn: { ...activeTurn(3), turnId: "turn-1" },
+    type: "turn/projectionReceived",
+    workspaceId: "workspace-1"
+  }).state;
+  assert.equal(state.sessionsById["session-1"]?.activeTurnId, "turn-2");
+});
+
 test("settled turn is terminal against newer live phases and outcome changes", () => {
   let state = reduce(createInitialSessionLifecycleState(), {
     type: "turn/upserted",

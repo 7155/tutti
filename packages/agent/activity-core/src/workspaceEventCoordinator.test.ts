@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createAgentActivitySnapshotProjector } from "./engine/agentActivitySnapshot.projector.ts";
 import { createAgentSessionEngine } from "./engine/createAgentSessionEngine.ts";
+import { canonicalTurnKey } from "./engine/sessionEntityKeys.ts";
 import type { EngineExternalCommand } from "./engine/types.ts";
+import { normalizeAgentActivitySession } from "./sessionNormalization.ts";
+import type {
+  AgentActivityTurn,
+  AgentActivityTurnUpdatedEvent
+} from "./types.ts";
 import { createAgentActivityWorkspaceEventCoordinator } from "./workspaceEventCoordinator.ts";
 
 function createHarness() {
@@ -82,6 +88,97 @@ test("projects message deltas and clears them on authoritative deletion", () => 
       .sessionMessagesById["session-1"],
     undefined
   );
+  harness.coordinator.dispose();
+  harness.engine.dispose();
+});
+
+test("applies a settled Turn and its cleared Session reference atomically", () => {
+  const harness = createHarness();
+  const runningTurn = turn("running", 1);
+  harness.engine.dispatch({
+    session: session(runningTurn, 1),
+    type: "session/upserted"
+  });
+  const observations: Array<{
+    activeTurnId: string | null;
+    turnPhase: AgentActivityTurn["phase"] | null;
+  }> = [];
+  const unsubscribe = harness.engine.subscribe((state) => {
+    observations.push({
+      activeTurnId:
+        state.sessionLifecycle.sessionsById["session-1"]?.activeTurnId ?? null,
+      turnPhase:
+        state.sessionLifecycle.turnsById[
+          canonicalTurnKey("session-1", "turn-1")
+        ]?.phase ?? null
+    });
+  });
+
+  const result = harness.coordinator.ingestEvent(turnUpdateEvent("settled", 2));
+  const lifecycle = harness.engine.getSnapshot().sessionLifecycle;
+
+  assert.equal(result.accepted, true);
+  assert.equal(lifecycle.sessionsById["session-1"]?.activeTurnId, null);
+  assert.equal(
+    lifecycle.turnsById[canonicalTurnKey("session-1", "turn-1")]?.phase,
+    "settled"
+  );
+  assert.equal(
+    harness.engine.getSnapshot().attentionReadState.partitionsByUserId["user-1"]
+      ?.recordsBySessionId["session-1"]?.isUnread,
+    true
+  );
+  assert.ok(
+    observations.every(
+      (observation) =>
+        observation.turnPhase !== "settled" || observation.activeTurnId === null
+    )
+  );
+  assert.ok(
+    harness.commands.some(
+      (command) =>
+        command.type === "session/reconcile" &&
+        command.agentSessionId === "session-1" &&
+        command.live &&
+        command.scope === "state"
+    )
+  );
+
+  unsubscribe();
+  harness.coordinator.dispose();
+  harness.engine.dispose();
+});
+
+test("rejects an inconsistent Turn projection and reconciles state", () => {
+  const harness = createHarness();
+  const runningTurn = turn("running", 1);
+  harness.engine.dispatch({
+    session: session(runningTurn, 1),
+    type: "session/upserted"
+  });
+  const inconsistent = turnUpdateEvent("settled", 2);
+  inconsistent.data.activeTurnId = "turn-1";
+
+  const result = harness.coordinator.ingestEvent(inconsistent);
+  const lifecycle = harness.engine.getSnapshot().sessionLifecycle;
+
+  assert.equal(result.accepted, false);
+  assert.equal(result.reason, "invalid_turn");
+  assert.equal(
+    lifecycle.turnsById[canonicalTurnKey("session-1", "turn-1")]?.phase,
+    "running"
+  );
+  assert.equal(lifecycle.sessionsById["session-1"]?.activeTurnId, "turn-1");
+  assert.ok(
+    harness.commands.some(
+      (command) =>
+        command.type === "session/reconcile" &&
+        command.agentSessionId === "session-1" &&
+        command.live &&
+        command.scope === "state"
+    )
+  );
+
   harness.coordinator.dispose();
   harness.engine.dispose();
 });
@@ -226,6 +323,75 @@ function message(agentSessionId: string, messageId: string, text: string) {
     kind: "text",
     payload: { text },
     occurredAtUnixMs: 1
+  };
+}
+
+function session(turnValue: AgentActivityTurn | null, updatedAtUnixMs: number) {
+  return normalizeAgentActivitySession({
+    activeTurn: turnValue,
+    activeTurnId: turnValue?.turnId ?? null,
+    agentSessionId: "session-1",
+    cwd: "/workspace",
+    latestTurn: turnValue,
+    latestTurnInteractions: [],
+    pendingInteractions: [],
+    provider: "codex",
+    title: "Session",
+    updatedAtUnixMs,
+    userId: "user-1",
+    workspaceId: "workspace-1"
+  });
+}
+
+function turn(
+  phase: AgentActivityTurn["phase"],
+  updatedAtUnixMs: number,
+  turnId = "turn-1"
+): AgentActivityTurn {
+  return {
+    agentSessionId: "session-1",
+    ...(phase === "settled"
+      ? {
+          completedCommand: null,
+          error: null,
+          fileChanges: null,
+          outcome: "completed" as const,
+          settledAtUnixMs: updatedAtUnixMs
+        }
+      : {}),
+    origin: "user_prompt",
+    phase,
+    startedAtUnixMs: 1,
+    turnId,
+    updatedAtUnixMs
+  };
+}
+
+function turnUpdateEvent(
+  phase: AgentActivityTurn["phase"],
+  updatedAtUnixMs: number,
+  turnId = "turn-1"
+): AgentActivityTurnUpdatedEvent {
+  const turnValue = turn(phase, updatedAtUnixMs, turnId);
+  return {
+    agentSessionId: "session-1",
+    data: {
+      activeTurnId: phase === "settled" ? null : turnId,
+      agentSessionId: "session-1",
+      eventType: "turn_update",
+      occurredAtUnixMs: updatedAtUnixMs,
+      turn: {
+        ...turnValue,
+        completedCommand: null,
+        error: turnValue.error ?? null,
+        fileChanges: turnValue.fileChanges ?? null,
+        outcome: turnValue.outcome ?? null,
+        settledAtUnixMs: turnValue.settledAtUnixMs ?? null
+      },
+      workspaceId: "workspace-1"
+    },
+    eventType: "turn_update",
+    workspaceId: "workspace-1"
   };
 }
 

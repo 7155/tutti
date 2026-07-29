@@ -118,20 +118,34 @@ export interface SessionUpsertedIntent {
   session: AgentActivitySessionInput;
 }
 
+export type CanonicalSessionMetadataPatch = Partial<
+  Pick<
+    CanonicalAgentSession,
+    "cwd" | "pinnedAtUnixMs" | "resumable" | "title" | "updatedAtUnixMs"
+  >
+>;
+
 export interface SessionMetadataPatchedIntent {
   type: "session/metadataPatched";
   agentSessionId: string;
-  patch: Partial<
-    Pick<
-      CanonicalAgentSession,
-      "cwd" | "pinnedAtUnixMs" | "resumable" | "title" | "updatedAtUnixMs"
-    >
-  >;
+  patch: CanonicalSessionMetadataPatch;
 }
 
 export interface TurnUpsertedIntent {
   type: "turn/upserted";
   turn: AgentActivityTurn;
+}
+
+/**
+ * One authoritative realtime Turn projection. The Turn and the Session's
+ * active-turn reference are one wire fact and must enter the Engine atomically.
+ */
+export interface TurnProjectionReceivedIntent {
+  type: "turn/projectionReceived";
+  activeTurnId: string | null;
+  occurredAtUnixMs: number;
+  turn: AgentActivityTurn;
+  workspaceId: string;
 }
 
 export interface InteractionUpsertedIntent {
@@ -249,6 +263,7 @@ export type SessionLifecycleIntent =
   | SessionSnapshotReceivedIntent
   | SessionStopRequestedIntent
   | SessionUpsertedIntent
+  | TurnProjectionReceivedIntent
   | TurnUpsertedIntent;
 
 export interface TurnCancelCommand {

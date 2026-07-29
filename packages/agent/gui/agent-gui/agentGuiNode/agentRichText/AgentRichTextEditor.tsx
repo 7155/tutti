@@ -410,15 +410,22 @@ export const AgentRichTextEditor = forwardRef<
         paste: (_view, event) => {
           const { imageFiles, regularFiles } =
             classifyAgentRichTextExternalFiles(event.clipboardData);
+          const canPasteImagesAsFiles =
+            imageFiles.length > 0 &&
+            !promptImagesSupportedRef.current &&
+            Boolean(onPasteFilesRef.current);
           if (
             imageFiles.length > 0 ||
             (regularFiles.length > 0 && onPasteFilesRef.current)
           ) {
             event.preventDefault();
-            if (regularFiles.length > 0) {
-              onPasteFilesRef.current?.(regularFiles);
+            const filesForExternalPreparation = canPasteImagesAsFiles
+              ? [...regularFiles, ...imageFiles]
+              : regularFiles;
+            if (filesForExternalPreparation.length > 0) {
+              onPasteFilesRef.current?.(filesForExternalPreparation);
             }
-            if (imageFiles.length > 0) {
+            if (imageFiles.length > 0 && !canPasteImagesAsFiles) {
               if (!promptImagesSupportedRef.current) {
                 onPromptImagesUnsupportedRef.current?.();
               } else {
@@ -527,10 +534,15 @@ export const AgentRichTextEditor = forwardRef<
           const canDropRegularSystemFiles =
             systemFileDragInfo.hasRegularFiles &&
             Boolean(onDropFilesRef.current);
+          const canDropImagesAsFiles =
+            systemFileDragInfo.hasImageFiles &&
+            !promptImagesSupportedRef.current &&
+            Boolean(onDropFilesRef.current);
           if (systemFileDragInfo.hasImageFiles || canDropRegularSystemFiles) {
             event.preventDefault();
             dataTransfer.dropEffect =
               canDropRegularSystemFiles ||
+              canDropImagesAsFiles ||
               (systemFileDragInfo.hasImageFiles &&
                 promptImagesSupportedRef.current)
                 ? "copy"
@@ -559,6 +571,13 @@ export const AgentRichTextEditor = forwardRef<
             dataTransfer
           ).filter((file) => !imageFileSet.has(file));
           const canHandleRegularFiles = Boolean(onDropFilesRef.current);
+          const canDropImagesAsFiles =
+            imageFiles.length > 0 &&
+            !promptImagesSupportedRef.current &&
+            canHandleRegularFiles;
+          const filesForExternalPreparation = canDropImagesAsFiles
+            ? [...regularFiles, ...imageFiles]
+            : regularFiles;
           if (
             imageFiles.length > 0 ||
             (regularFiles.length > 0 && canHandleRegularFiles)
@@ -566,7 +585,7 @@ export const AgentRichTextEditor = forwardRef<
             event.preventDefault();
             const currentEditor = editorRef.current;
             if (
-              regularFiles.length > 0 &&
+              filesForExternalPreparation.length > 0 &&
               onDropFilesRef.current &&
               currentEditor &&
               !currentEditor.isDestroyed
@@ -588,9 +607,9 @@ export const AgentRichTextEditor = forwardRef<
                 .focus()
                 .setTextSelection(insertPosition)
                 .run();
-              onDropFilesRef.current(regularFiles);
+              onDropFilesRef.current(filesForExternalPreparation);
             }
-            if (imageFiles.length === 0) {
+            if (imageFiles.length === 0 || canDropImagesAsFiles) {
               return true;
             }
             if (!promptImagesSupportedRef.current) {

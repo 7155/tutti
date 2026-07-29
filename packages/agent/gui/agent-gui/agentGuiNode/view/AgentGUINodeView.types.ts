@@ -527,11 +527,11 @@ export type AgentGUIConversationRailLabels = Pick<
   | "unpinSession"
   | "untitledConversationTitle"
 >;
-
 export interface AgentGUINodeViewProps {
   viewModel: AgentGUINodeViewModel;
   referenceProvenanceFilters?: AgentComposerReferenceProvenanceFilters | null;
   sessionInputHistoryEnabled?: boolean;
+  sessionForkEnabled?: boolean;
   /** Host-owned presentation for exact Agent targets; tooltip behavior stays AgentGUI-owned. */
   renderAgentTargetInfo?: AgentGUIAgentTargetInfoRenderer;
   renderProjectDirectoryPickerHeaderActions?: ReferenceSourcePickerProps["renderHeaderActions"];
@@ -714,7 +714,6 @@ export interface AgentGUINodeViewProps {
   workspaceAppIcons?: readonly AgentMessageMarkdownWorkspaceAppIcon[];
   renderComposerFooterAccessory?: AgentGUIComposerFooterAccessoryRenderer;
 }
-
 export interface AgentGUIDetailPaneProps {
   shell: AgentGUINodeViewModel["shell"];
   rail: AgentGUINodeViewModel["rail"];
@@ -726,6 +725,7 @@ export interface AgentGUIDetailPaneProps {
   homeTargetProjection: AgentGUIManagedHomeTargetProjection;
   referenceProvenanceFilters?: AgentComposerProps["referenceProvenanceFilters"];
   sessionInputHistoryEnabled?: boolean;
+  sessionForkEnabled?: boolean;
   composerEngagement?: AgentGUIComposerEngagement;
   actions: AgentGUINodeViewProps["actions"];
   labels: AgentGUIViewLabels;

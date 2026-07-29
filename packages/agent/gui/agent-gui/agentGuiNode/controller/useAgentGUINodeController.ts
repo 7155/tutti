@@ -584,9 +584,9 @@ export function useAgentGUINodeController({
 
   const { loadDraftComposerOptions, reloadComposerOptionsForTarget } =
     useAgentGUIComposerOptionsSync({
-      activeAgentTargetId: activeEngineSession?.agentTargetId ?? null,
       activeConversationId,
       activeConversationIdRef,
+      activeSessionTarget: activeEngineSession,
       agentActivityRuntime,
       composerTargetData,
       conversationFilter,

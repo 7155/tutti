@@ -49,7 +49,6 @@ import { reportAgentSubmitTraceDiagnostic } from "../desktopAgentRuntimeSubmitDi
 import { WorkspaceAgentActivityAnalytics } from "./workspaceAgentActivityAnalytics.ts";
 import { WorkspaceAgentActivityQueryOperations } from "./workspaceAgentActivityQueryOperations.ts";
 import { WorkspaceAgentActivityImportOperations } from "./workspaceAgentActivityImportOperations.ts";
-import { loadWorkspaceAgentComposerOptions } from "./workspaceAgentComposerOptions.ts";
 import { WorkspaceAgentActivityMutationOperations } from "./workspaceAgentActivityMutationOperations.ts";
 import { AgentSessionRecordingBinding } from "../../../agent-session-replay/services/agentSessionRecordingBinding.ts";
 import {
@@ -134,7 +133,6 @@ export class WorkspaceAgentActivityService
       observeIntent(intent: EngineIntent): void;
     }>
   >();
-  private composerOptionsCommandSequence = 1;
   // Collaboration-run/model-plan requests are not part of the TuttidClient
   // wrapper yet, so they call the generated SDK directly. The client is
   // re-resolved from the backend config on every call (cached per endpoint)
@@ -901,16 +899,13 @@ export class WorkspaceAgentActivityService
     const provider = resolveDesktopAgentGUIProvider(input.provider);
     const workspaceId = normalizeWorkspaceId(input.workspaceId);
     const entry = this.entry(workspaceId);
-    return loadWorkspaceAgentComposerOptions({
-      agentTargetId: input.agentTargetId,
-      commandId: `composer-options:${this.composerOptionsCommandSequence++}`,
-      engine: entry.engine,
-      provider,
+    return entry.engine.loadComposerOptions({
       cwd: input.cwd,
       force: input.force,
+      provider,
       settings: normalizeComposerSettings(input.settings),
       signal: input.signal,
-      workspaceId
+      targetKey: input.agentTargetId
     });
   }
 

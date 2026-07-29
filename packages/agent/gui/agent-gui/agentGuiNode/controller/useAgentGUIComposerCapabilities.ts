@@ -40,8 +40,8 @@ export function useAgentGUIComposerCapabilities(
     new Map<string, AgentActivityUsage>()
   );
   const composerTargetData = composerTargetDataForConversation({
-    activeAgentTargetId: input.activeEngineSession?.agentTargetId,
     activeConversationId: input.activeConversationId,
+    activeSessionTarget: input.activeEngineSession,
     data: input.data,
     optimisticTarget: null,
     selectedTarget: input.selectedComposerTargetData

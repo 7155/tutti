@@ -33,7 +33,7 @@ type CodexCLIModelLister struct {
 	ProviderCommands ProviderCommandResolver
 	Timeout          time.Duration
 	Environ          func() []string
-	PrepareEnv       func([]string) ([]string, error)
+	PrepareEnv       func(context.Context, []string) ([]string, error)
 	HomeDir          func() (string, error)
 	IsExecutableFile func(string) bool
 	LookPath         func(string) (string, error)
@@ -100,7 +100,7 @@ func (l CodexCLIModelLister) ListModels(ctx context.Context) (AgentModelListResu
 	env := resolver.Env(envOverrides)
 	if l.PrepareEnv != nil {
 		var err error
-		env, err = l.PrepareEnv(env)
+		env, err = l.PrepareEnv(processCtx, env)
 		if err != nil {
 			return AgentModelListResult{}, err
 		}

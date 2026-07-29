@@ -273,11 +273,11 @@ func defaultTuttiAgentModelLister(provider string, providerCommands ProviderComm
 	}
 }
 
-func prepareTuttiAgentModelListEnv(env []string) ([]string, error) {
+func prepareTuttiAgentModelListEnv(ctx context.Context, env []string) ([]string, error) {
 	env = append([]string(nil), env...)
 	env = withoutEnvKeys(env, "TUTTI_AGENT_HOME", "CODEX_HOME")
 	tuttiAgentHome := filepath.Join(tuttitypes.DefaultStateDir(), "agent-model-catalog", "tutti-agent-home")
-	tuttiagentservice.BootstrapTuttiAgentUserAuth(context.Background())
+	tuttiagentservice.BootstrapTuttiAgentUserAuth(ctx)
 	if err := tuttiagentservice.PrepareHome(tuttiAgentHome); err != nil {
 		return nil, err
 	}

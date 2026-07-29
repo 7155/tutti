@@ -15,10 +15,13 @@ import (
 const tuttiAgentAuthLockRetryDelay = 25 * time.Millisecond
 
 type tuttiAgentAuthSnapshot struct {
-	path   string
-	data   []byte
-	mode   os.FileMode
-	exists bool
+	path       string
+	entryPath  string
+	linkTarget string
+	data       []byte
+	mode       os.FileMode
+	exists     bool
+	wasSymlink bool
 }
 
 func captureTuttiAgentAuthSnapshot() (tuttiAgentAuthSnapshot, error) {
@@ -26,11 +29,23 @@ func captureTuttiAgentAuthSnapshot() (tuttiAgentAuthSnapshot, error) {
 	if !ok {
 		return tuttiAgentAuthSnapshot{}, fmt.Errorf("resolve tutti-agent auth path")
 	}
+	snapshot := tuttiAgentAuthSnapshot{entryPath: authPath}
+	entryInfo, entryErr := os.Lstat(authPath)
+	if entryErr != nil && !errors.Is(entryErr, os.ErrNotExist) {
+		return tuttiAgentAuthSnapshot{}, fmt.Errorf("inspect tutti-agent auth entry: %w", entryErr)
+	}
+	if entryErr == nil && entryInfo.Mode()&os.ModeSymlink != 0 {
+		snapshot.linkTarget, entryErr = os.Readlink(authPath)
+		if entryErr != nil {
+			return tuttiAgentAuthSnapshot{}, fmt.Errorf("read tutti-agent auth symlink: %w", entryErr)
+		}
+		snapshot.wasSymlink = true
+	}
 	authPath, err := resolveTuttiAgentAuthFileTarget(authPath)
 	if err != nil {
 		return tuttiAgentAuthSnapshot{}, fmt.Errorf("resolve tutti-agent auth target: %w", err)
 	}
-	snapshot := tuttiAgentAuthSnapshot{path: authPath}
+	snapshot.path = authPath
 	info, err := os.Stat(authPath)
 	if errors.Is(err, os.ErrNotExist) {
 		return snapshot, nil
@@ -52,16 +67,48 @@ func (s tuttiAgentAuthSnapshot) Restore() error {
 		if err := os.Remove(s.path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("remove failed tutti-agent auth write: %w", err)
 		}
+	} else {
+		current, readErr := os.ReadFile(s.path)
+		if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+			return fmt.Errorf("read current tutti-agent auth: %w", readErr)
+		}
+		if readErr != nil || !bytes.Equal(current, s.data) {
+			if err := writeTuttiAgentAuthSafely(s.path, s.data, s.mode); err != nil {
+				return err
+			}
+		}
+	}
+	return s.restoreSymlinkEntry()
+}
+
+func (s tuttiAgentAuthSnapshot) restoreSymlinkEntry() error {
+	if !s.wasSymlink {
 		return nil
 	}
-	current, readErr := os.ReadFile(s.path)
-	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
-		return fmt.Errorf("read current tutti-agent auth: %w", readErr)
-	}
-	if readErr == nil && bytes.Equal(current, s.data) {
+	info, err := os.Lstat(s.entryPath)
+	if err == nil {
+		if info.Mode()&os.ModeSymlink == 0 {
+			return fmt.Errorf("restore tutti-agent auth symlink: entry is no longer a symlink")
+		}
+		currentTarget, readErr := os.Readlink(s.entryPath)
+		if readErr != nil {
+			return fmt.Errorf("read current tutti-agent auth symlink: %w", readErr)
+		}
+		if currentTarget != s.linkTarget {
+			return fmt.Errorf("restore tutti-agent auth symlink: link target changed")
+		}
 		return nil
 	}
-	return writeTuttiAgentAuthSafely(s.path, s.data, s.mode)
+	if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect current tutti-agent auth entry: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(s.entryPath), 0o700); err != nil {
+		return fmt.Errorf("create tutti-agent auth symlink directory: %w", err)
+	}
+	if err := os.Symlink(s.linkTarget, s.entryPath); err != nil {
+		return fmt.Errorf("restore tutti-agent auth symlink: %w", err)
+	}
+	return nil
 }
 
 func writeTuttiAgentAuthSafely(path string, data []byte, mode os.FileMode) error {

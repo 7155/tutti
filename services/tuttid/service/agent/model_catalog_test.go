@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofrs/flock"
 	agentstatusservice "github.com/tutti-os/tutti/services/tuttid/service/agentstatus"
 )
 
@@ -391,7 +392,7 @@ func TestDefaultTuttiAgentModelListerUsesTuttiHomeAndClearsCodexHome(t *testing.
 	}
 
 	lister := defaultTuttiAgentModelLister("tutti-agent", nil)
-	env, err := lister.PrepareEnv([]string{
+	env, err := lister.PrepareEnv(t.Context(), []string{
 		"TUTTI_AGENT_HOME=" + filepath.Join(home, "ignored-agent-home"),
 		"CODEX_HOME=" + filepath.Join(home, "codex-home"),
 	})
@@ -495,7 +496,7 @@ func TestDefaultTuttiAgentModelListerBootstrapsExpiredTuttiAgentAuth(t *testing.
 	installFakeTuttiAgentModelListBinary(t)
 
 	lister := defaultTuttiAgentModelLister("tutti-agent", nil)
-	if _, err := lister.PrepareEnv(nil); err != nil {
+	if _, err := lister.PrepareEnv(t.Context(), nil); err != nil {
 		t.Fatalf("PrepareEnv() error = %v", err)
 	}
 
@@ -584,6 +585,49 @@ done
 	}
 	if len(result.Models) != 1 || result.Models[0].ID != "glm-5.2" {
 		t.Fatalf("models = %#v, want managed-Node model/list result", result.Models)
+	}
+}
+
+func TestPrepareTuttiAgentModelListEnvHonorsCancellationWhileAuthLocked(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	stateDir := filepath.Join(home, "state")
+	t.Setenv("TUTTI_STATE_DIR", stateDir)
+
+	userAgentHome := filepath.Join(home, ".tutti-agent")
+	if err := os.MkdirAll(userAgentHome, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	authPath := filepath.Join(userAgentHome, "auth.json")
+	authJSON := `{"tutti_llm":{"access_token":"expired","access_token_expires_at":"2000-01-01T00:00:00Z","refresh_token":"refresh"}}`
+	if err := os.WriteFile(authPath, []byte(authJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	accountAuthDir := filepath.Join(stateDir, "account")
+	if err := os.MkdirAll(accountAuthDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(accountAuthDir, "auth.json"), []byte(`{"cookie":"session_id=session_test"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	authLock := flock.New(authPath + ".refresh.lock")
+	if err := authLock.Lock(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = authLock.Unlock() }()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	startedAt := time.Now()
+	if _, err := prepareTuttiAgentModelListEnv(ctx, nil); err != nil {
+		t.Fatalf("prepareTuttiAgentModelListEnv() error = %v", err)
+	}
+	if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		t.Fatalf("context error = %v, want deadline exceeded", ctx.Err())
+	}
+	if elapsed := time.Since(startedAt); elapsed > time.Second {
+		t.Fatalf("PrepareEnv ignored cancellation; elapsed = %s", elapsed)
 	}
 }
 

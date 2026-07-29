@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	workspaceissues "github.com/tutti-os/tutti/packages/workspace/issues"
 	executionbiz "github.com/tutti-os/tutti/services/tuttid/biz/tuttimodeexecution"
 	workflowbiz "github.com/tutti-os/tutti/services/tuttid/biz/workspaceworkflow"
 	workspacedata "github.com/tutti-os/tutti/services/tuttid/data/workspace"
@@ -75,6 +76,7 @@ func TestProviderExposesAgentPlanAndExecutionCommands(t *testing.T) {
 		"tutti-mode-plan.plan.issue.schedule",
 		"tutti-mode-plan.plan.issue.acknowledge",
 		"tutti-mode-plan.plan.issue.complete",
+		"tutti-mode-plan.plan.issue.stop",
 	}
 	if len(commands) != len(wantIDs) {
 		t.Fatalf("commands = %#v", commands)
@@ -115,6 +117,32 @@ type recordingIssueMutator struct {
 	workspaceID string
 	input       workspaceservice.MutateTuttiModeIssueInput
 	err         error
+}
+
+type recordingIssueDetails struct {
+	detail workspaceissues.IssueDetail
+	err    error
+}
+
+func (reader *recordingIssueDetails) GetIssueDetail(
+	_ context.Context,
+	_ string,
+	_ string,
+) (workspaceissues.IssueDetail, error) {
+	return reader.detail, reader.err
+}
+
+type recordingExecutionReads struct {
+	aggregate executionbiz.Aggregate
+	err       error
+}
+
+func (reader *recordingExecutionReads) GetByIssue(
+	_ context.Context,
+	_ string,
+	_ string,
+) (executionbiz.Aggregate, error) {
+	return reader.aggregate, reader.err
 }
 
 func (mutator *recordingIssueMutator) MutateTuttiModeIssue(
@@ -172,7 +200,7 @@ func (scheduler *recordingIssueScheduler) ScheduleTuttiModeIssue(
 
 func TestProviderExposesSourceScopedIssueScheduleCommand(t *testing.T) {
 	commands := NewProvider(nil, &recordingPlans{}, nil, &recordingIssueScheduler{}).Commands()
-	if len(commands) != 7 {
+	if len(commands) != 8 {
 		t.Fatalf("commands = %#v, want schedule and acknowledge commands", commands)
 	}
 	command := commands[4]
@@ -213,6 +241,34 @@ func TestProviderExposesSourceScopedIssueMutateCommand(t *testing.T) {
 	}
 }
 
+func TestProviderExposesSourceScopedIssueExecutionSnapshot(t *testing.T) {
+	provider := NewProviderWithExecutionSnapshot(
+		nil,
+		&recordingPlans{},
+		nil,
+		&recordingIssueScheduler{},
+		&recordingIssueMutator{},
+		&recordingIssueAcknowledger{},
+		&recordingIssueDetails{},
+		&recordingExecutionReads{},
+	)
+	commands := provider.Commands()
+	if len(commands) != 9 {
+		t.Fatalf("commands = %#v, want execution snapshot command", commands)
+	}
+	command := commands[8]
+	if command.Capability.ID != "tutti-mode-plan.plan.issue.get" {
+		t.Fatalf("execution snapshot command id = %q", command.Capability.ID)
+	}
+	properties := command.Capability.InputSchema["properties"].(map[string]any)
+	if _, ok := properties["issue-id"]; !ok {
+		t.Fatalf("execution snapshot properties = %#v", properties)
+	}
+	if _, exists := properties["source-session-id"]; exists {
+		t.Fatalf("execution snapshot exposes untrusted source-session-id: %#v", properties)
+	}
+}
+
 func TestProviderExposesSourceScopedIssueAcknowledgeCommand(t *testing.T) {
 	acknowledger := &recordingIssueAcknowledger{}
 	provider := NewProviderWithExecution(
@@ -224,7 +280,7 @@ func TestProviderExposesSourceScopedIssueAcknowledgeCommand(t *testing.T) {
 		acknowledger,
 	)
 	commands := provider.Commands()
-	if len(commands) != 7 {
+	if len(commands) != 8 {
 		t.Fatalf("commands = %#v, want acknowledge command", commands)
 	}
 	command := commands[5]
@@ -249,7 +305,7 @@ func TestProviderExposesSourceScopedIssueAcknowledgeCommand(t *testing.T) {
 
 func TestProviderExposesSourceScopedGoalReviewCompleteCommand(t *testing.T) {
 	commands := NewProvider(nil, &recordingPlans{}, nil).Commands()
-	if len(commands) != 7 {
+	if len(commands) != 8 {
 		t.Fatalf("commands = %#v, want source-main complete command", commands)
 	}
 	command := commands[6]
@@ -274,9 +330,119 @@ func TestProviderExposesSourceScopedGoalReviewCompleteCommand(t *testing.T) {
 	}
 }
 
+func TestProviderExposesSourceScopedIssueStopCommand(t *testing.T) {
+	commands := NewProvider(nil, &recordingPlans{}, nil).Commands()
+	command := commands[7]
+	if command.Capability.ID != "tutti-mode-plan.plan.issue.stop" {
+		t.Fatalf("stop command id = %q", command.Capability.ID)
+	}
+	properties := command.Capability.InputSchema["properties"].(map[string]any)
+	for _, name := range []string{
+		"issue-id", "checkpoint-id", "expected-graph-revision",
+		"request-id", "reason",
+	} {
+		if _, ok := properties[name]; !ok {
+			t.Fatalf("stop properties = %#v, missing %q", properties, name)
+		}
+	}
+	if _, exists := properties["source-session-id"]; exists {
+		t.Fatalf("stop exposes untrusted source-session-id: %#v", properties)
+	}
+}
+
 type recordingIssueCompleter struct {
 	input tuttimodeexecutionservice.CompleteInput
 	err   error
+}
+
+type recordingIssueArchiver struct {
+	input tuttimodeexecutionservice.ArchiveInput
+	err   error
+}
+
+func (archiver *recordingIssueArchiver) Archive(
+	_ context.Context,
+	input tuttimodeexecutionservice.ArchiveInput,
+) (executionbiz.ArchiveOperation, error) {
+	archiver.input = input
+	if archiver.err != nil {
+		return executionbiz.ArchiveOperation{}, archiver.err
+	}
+	return executionbiz.ArchiveOperation{
+		ExecutionID: "execution-1", IssueID: input.IssueID,
+		OperationID: "archive:execution-1:" + input.RequestID,
+		RequestID:   input.RequestID, Status: executionbiz.ArchiveStatusCompleted,
+		RequestedBy: input.SourceSessionID, Reason: input.Reason,
+	}, nil
+}
+
+func TestRunIssueStopDerivesTrustedCallerAndReturnsStructuredResult(t *testing.T) {
+	archiver := &recordingIssueArchiver{}
+	result, err := (Provider{archives: archiver}).runIssueStop(
+		context.Background(),
+		framework.InvokeContext{
+			WorkspaceID: "workspace-1",
+			Request: cliservice.InvokeRequest{Context: cliservice.InvokeContext{
+				AgentSessionID: " source-session ",
+			}},
+		},
+		issueStopInput{
+			IssueID: "issue-1", CheckpointID: "checkpoint-1",
+			ExpectedGraphRevision: 7, RequestID: "stop-1",
+			Reason: "superseded by replacement plan",
+		},
+	)
+	if err != nil {
+		t.Fatalf("runIssueStop() error = %v", err)
+	}
+	if archiver.input.WorkspaceID != "workspace-1" ||
+		archiver.input.SourceSessionID != "source-session" ||
+		archiver.input.IssueID != "issue-1" ||
+		archiver.input.CheckpointID != "checkpoint-1" ||
+		archiver.input.ExpectedGraphRevision != 7 ||
+		archiver.input.RequestID != "stop-1" ||
+		archiver.input.Reason != "superseded by replacement plan" ||
+		archiver.input.RequestedBy != "" {
+		t.Fatalf("Archive input = %#v", archiver.input)
+	}
+	value := result.(map[string]any)
+	if value["executionId"] != "execution-1" ||
+		value["issueId"] != "issue-1" ||
+		value["operationId"] != "archive:execution-1:stop-1" ||
+		value["status"] != string(executionbiz.ArchiveStatusCompleted) ||
+		value["reason"] != "superseded by replacement plan" {
+		t.Fatalf("stop result = %#v", value)
+	}
+}
+
+func TestRunIssueStopMapsFenceErrorsWithoutLeakingDetails(t *testing.T) {
+	for _, contractErr := range []error{
+		executionbiz.ErrInvalidExecution,
+		executionbiz.ErrExecutionNotFound,
+		executionbiz.ErrExecutionConflict,
+	} {
+		archiver := &recordingIssueArchiver{
+			err: fmt.Errorf("%w: secret durable row", contractErr),
+		}
+		_, err := (Provider{archives: archiver}).runIssueStop(
+			context.Background(),
+			framework.InvokeContext{
+				WorkspaceID: "workspace-1",
+				Request: cliservice.InvokeRequest{Context: cliservice.InvokeContext{
+					AgentSessionID: "source-session",
+				}},
+			},
+			issueStopInput{
+				IssueID: "issue-1", CheckpointID: "checkpoint-1",
+				ExpectedGraphRevision: 7, RequestID: "stop-errors",
+				Reason: "replaced",
+			},
+		)
+		if !errors.Is(err, cliservice.ErrInvalidInput) ||
+			strings.Contains(err.Error(), "secret durable row") {
+			t.Fatalf("stop error %v mapped to %v", contractErr, err)
+		}
+	}
 }
 
 func (completer *recordingIssueCompleter) Complete(
@@ -423,8 +589,9 @@ func TestRunIssueMutateDerivesCallerAndReturnsNewRevision(t *testing.T) {
 		issueMutateInput{
 			IssueID: "issue-1", CheckpointID: "checkpoint-1",
 			ExpectedGraphRevision: 3,
-			OperationsJSON:        `[{"kind":"add","task":{"TaskID":"task-c","Title":"Task C"}}]`,
-			RequestID:             "mutate-1",
+			OperationsJSON: `[{"kind":"add","task":{"taskId":"task-c","title":"Task C",` +
+				`"agentTargetId":"codex"}}]`,
+			RequestID: "mutate-1",
 		},
 	)
 	if err != nil {
@@ -441,6 +608,29 @@ func TestRunIssueMutateDerivesCallerAndReturnsNewRevision(t *testing.T) {
 	value := result.(map[string]any)
 	if value["graphRevision"] != int64(4) || value["replayed"] != true {
 		t.Fatalf("mutation result = %#v", value)
+	}
+}
+
+func TestParseMutationOperationsPreservesExplicitZeroValues(t *testing.T) {
+	operations, err := parseMutationOperationsJSON(
+		`[{"kind":"update","taskId":"task-a","task":{` +
+			`"title":"","dependencyTaskIds":[],"parallelizable":false,"autoAccept":false}}]`,
+	)
+	if err != nil {
+		t.Fatalf("parseMutationOperationsJSON() error = %v", err)
+	}
+	if len(operations) != 1 {
+		t.Fatalf("operations = %#v", operations)
+	}
+	operation := operations[0]
+	if !operation.TaskFields.Title ||
+		!operation.TaskFields.DependencyTaskIDs ||
+		!operation.TaskFields.Parallelizable ||
+		!operation.TaskFields.AutoAccept ||
+		operation.Task.Title != "" ||
+		operation.Task.Parallelizable ||
+		operation.Task.AutoAccept {
+		t.Fatalf("presence-aware operation = %#v", operation)
 	}
 }
 
@@ -473,6 +663,60 @@ func TestIssueMutateRejectsInvalidJSONAndMapsFenceErrors(t *testing.T) {
 		if !errors.Is(err, cliservice.ErrInvalidInput) {
 			t.Fatalf("mutation error %v mapped to %v", contractError, err)
 		}
+	}
+}
+
+func TestIssueMutateRejectsOpAliasBeforeCallingMutator(t *testing.T) {
+	mutator := &recordingIssueMutator{}
+	provider := Provider{mutations: mutator}
+	_, err := provider.runIssueMutate(
+		context.Background(),
+		framework.InvokeContext{
+			WorkspaceID: "workspace-1",
+			Request: cliservice.InvokeRequest{Context: cliservice.InvokeContext{
+				AgentSessionID: "source-session",
+			}},
+		},
+		issueMutateInput{
+			IssueID: "issue-1", CheckpointID: "checkpoint-1",
+			ExpectedGraphRevision: 3,
+			OperationsJSON:        `[{"op":"supersede","taskId":"task-a"}]`,
+			RequestID:             "mutate-invalid-op",
+		},
+	)
+	if !errors.Is(err, cliservice.ErrInvalidInput) || !strings.Contains(err.Error(), `"kind"`) {
+		t.Fatalf("op alias error = %v, want actionable kind validation", err)
+	}
+	if !reflect.DeepEqual(mutator.input, workspaceservice.MutateTuttiModeIssueInput{}) {
+		t.Fatalf("invalid operation reached mutation service: %#v", mutator.input)
+	}
+}
+
+func TestIssueMutateRejectsReplacementAliasBeforeCallingMutator(t *testing.T) {
+	mutator := &recordingIssueMutator{}
+	provider := Provider{mutations: mutator}
+	_, err := provider.runIssueMutate(
+		context.Background(),
+		framework.InvokeContext{
+			WorkspaceID: "workspace-1",
+			Request: cliservice.InvokeRequest{Context: cliservice.InvokeContext{
+				AgentSessionID: "source-session",
+			}},
+		},
+		issueMutateInput{
+			IssueID: "issue-1", CheckpointID: "checkpoint-1",
+			ExpectedGraphRevision: 3,
+			OperationsJSON:        `[{"kind":"rework","taskId":"task-a","replacement":{"taskId":"task-b"}}]`,
+			RequestID:             "mutate-invalid-replacement",
+		},
+	)
+	if !errors.Is(err, cliservice.ErrInvalidInput) ||
+		!strings.Contains(err.Error(), `"replacement"`) ||
+		!strings.Contains(err.Error(), `"task" object with "taskId"`) {
+		t.Fatalf("replacement alias error = %v, want actionable task validation", err)
+	}
+	if !reflect.DeepEqual(mutator.input, workspaceservice.MutateTuttiModeIssueInput{}) {
+		t.Fatalf("invalid operation reached mutation service: %#v", mutator.input)
 	}
 }
 
@@ -569,7 +813,7 @@ func TestRunIssueAcknowledgeMapsMissingExecutionWithoutScheduleCopy(t *testing.T
 		},
 	)
 	if !errors.Is(err, cliservice.ErrInvalidInput) ||
-		!strings.Contains(strings.ToLower(err.Error()), "acknowledge") ||
+		!strings.Contains(strings.ToLower(err.Error()), "execution") ||
 		strings.Contains(strings.ToLower(err.Error()), "schedule") {
 		t.Fatalf("missing execution acknowledge error = %v", err)
 	}
@@ -609,6 +853,156 @@ func TestRunScheduleDerivesCallerOnlyFromInvokeContext(t *testing.T) {
 		value["checkpointId"] != "checkpoint-1" ||
 		value["graphRevision"] != int64(3) {
 		t.Fatalf("schedule result = %#v", value)
+	}
+}
+
+func TestRunIssueGetReturnsAuthoritativeRecoverySnapshot(t *testing.T) {
+	reader := &recordingExecutionReads{aggregate: executionbiz.Aggregate{
+		Execution: executionbiz.Execution{
+			ID:                 "execution-1",
+			IssueID:            "issue-1",
+			SourceSessionID:    "source-session",
+			Status:             executionbiz.StatusAwaitingMain,
+			GraphRevision:      4,
+			ActiveCheckpointID: "checkpoint-canceled",
+			ReviewMode:         executionbiz.ReviewModeSelf,
+		},
+		Checkpoints: []executionbiz.Checkpoint{{
+			ID:             "checkpoint-canceled",
+			Kind:           executionbiz.CheckpointKindTaskCanceled,
+			Status:         executionbiz.CheckpointStatusActive,
+			Sequence:       2,
+			GraphRevision:  4,
+			SubjectTaskID:  "task-a",
+			SubjectRunID:   "run-a",
+			CreationReason: "run_canceled",
+		}},
+	}}
+	details := &recordingIssueDetails{detail: workspaceissues.IssueDetail{
+		Tasks: []workspaceissues.Task{
+			{
+				TaskID: "task-a", Status: workspaceissues.StatusCanceled,
+				SupersededAtUnixMS: 1, SupersededByTaskID: "task-a-retry",
+			},
+			{
+				TaskID: "task-a-retry", Status: workspaceissues.StatusNotStarted,
+				AgentTargetID: "local:codex", Model: "gpt-5.4-codex",
+			},
+			{
+				TaskID: "task-b", Status: workspaceissues.StatusNotStarted,
+				AgentTargetID: "local:codex", DependencyTaskIDs: []string{"task-a-retry"},
+			},
+		},
+	}}
+	provider := Provider{issueDetails: details, executionReads: reader}
+	result, err := provider.runIssueGet(
+		context.Background(),
+		framework.InvokeContext{
+			WorkspaceID: "workspace-1",
+			Request: cliservice.InvokeRequest{Context: cliservice.InvokeContext{
+				AgentSessionID: " source-session ",
+			}},
+		},
+		issueGetInput{IssueID: "issue-1"},
+	)
+	if err != nil {
+		t.Fatalf("runIssueGet() error = %v", err)
+	}
+	value := result.(map[string]any)
+	execution := value["execution"].(map[string]any)
+	active := value["activeCheckpoint"].(map[string]any)
+	ready := value["readyTaskIds"].([]string)
+	tasks := value["tasks"].([]map[string]any)
+	if execution["graphRevision"] != int64(4) ||
+		active["checkpointId"] != "checkpoint-canceled" ||
+		!reflect.DeepEqual(ready, []string{"task-a-retry"}) ||
+		tasks[0]["blockerReason"] != "task_superseded" ||
+		tasks[1]["agentTargetId"] != "local:codex" ||
+		tasks[2]["blockerReason"] != "dependency_unsatisfied" ||
+		!strings.Contains(value["recoveryHint"].(string), "new taskId") {
+		t.Fatalf("execution snapshot = %#v", value)
+	}
+}
+
+func TestRunIssueGetRejectsDifferentSourceSessionWithStableReason(t *testing.T) {
+	provider := Provider{
+		issueDetails: &recordingIssueDetails{},
+		executionReads: &recordingExecutionReads{aggregate: executionbiz.Aggregate{
+			Execution: executionbiz.Execution{
+				IssueID: "issue-1", SourceSessionID: "other-session",
+			},
+		}},
+	}
+	_, err := provider.runIssueGet(
+		context.Background(),
+		framework.InvokeContext{
+			WorkspaceID: "workspace-1",
+			Request: cliservice.InvokeRequest{Context: cliservice.InvokeContext{
+				AgentSessionID: "source-session",
+			}},
+		},
+		issueGetInput{IssueID: "issue-1"},
+	)
+	if !errors.Is(err, cliservice.ErrInvalidInput) ||
+		cliservice.InvokeErrorReason(err) != string(executionbiz.RejectionWrongSourceSession) {
+		t.Fatalf("runIssueGet() error = %v, reason = %q", err, cliservice.InvokeErrorReason(err))
+	}
+}
+
+func TestIssueExecutionSnapshotProjectsReviewedSettlementForReadiness(t *testing.T) {
+	value := issueExecutionSnapshotJSON(
+		executionbiz.Aggregate{
+			Execution: executionbiz.Execution{
+				ID:                 "execution-1",
+				IssueID:            "issue-1",
+				Status:             executionbiz.StatusAwaitingMain,
+				GraphRevision:      2,
+				ActiveCheckpointID: "checkpoint-settled",
+			},
+			Checkpoints: []executionbiz.Checkpoint{{
+				ID:            "checkpoint-settled",
+				Kind:          executionbiz.CheckpointKindTaskSettled,
+				Status:        executionbiz.CheckpointStatusActive,
+				GraphRevision: 2,
+				SubjectTaskID: "task-a",
+			}},
+		},
+		workspaceissues.IssueDetail{Tasks: []workspaceissues.Task{
+			{
+				TaskID: "task-a", Status: workspaceissues.StatusPendingAcceptance,
+				AgentTargetID: "local:codex",
+			},
+			{
+				TaskID: "task-b", Status: workspaceissues.StatusNotStarted,
+				AgentTargetID: "local:codex", DependencyTaskIDs: []string{"task-a"},
+			},
+		}},
+	)
+	if ready := value["readyTaskIds"].([]string); !reflect.DeepEqual(
+		ready, []string{"task-b"},
+	) {
+		t.Fatalf("readyTaskIds = %#v", ready)
+	}
+	tasks := value["tasks"].([]map[string]any)
+	if tasks[0]["status"] != string(workspaceissues.StatusPendingAcceptance) ||
+		tasks[1]["ready"] != true {
+		t.Fatalf("tasks = %#v", tasks)
+	}
+}
+
+func TestScheduleRejectionCarriesStableReasonAndHint(t *testing.T) {
+	err := agentScheduleError(
+		executionbiz.Reject(
+			executionbiz.ErrScheduleRejected,
+			executionbiz.RejectionMissingAgentTarget,
+			"task-a",
+		),
+		"issue-1",
+	)
+	if !errors.Is(err, cliservice.ErrInvalidInput) ||
+		cliservice.InvokeErrorReason(err) != string(executionbiz.RejectionMissingAgentTarget) ||
+		!strings.Contains(err.Error(), "agentTargetId") {
+		t.Fatalf("agentScheduleError() = %v, reason = %q", err, cliservice.InvokeErrorReason(err))
 	}
 }
 

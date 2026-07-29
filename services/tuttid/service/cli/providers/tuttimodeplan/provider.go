@@ -6,6 +6,7 @@ package tuttimodeplan
 import (
 	"context"
 
+	workspaceissues "github.com/tutti-os/tutti/packages/workspace/issues"
 	executionbiz "github.com/tutti-os/tutti/services/tuttid/biz/tuttimodeexecution"
 	cliservice "github.com/tutti-os/tutti/services/tuttid/service/cli"
 	tuttimodeexecutionservice "github.com/tutti-os/tutti/services/tuttid/service/tuttimodeexecution"
@@ -49,6 +50,13 @@ type IssueCompletions interface {
 	) (tuttimodeexecutionservice.CompleteResult, error)
 }
 
+type IssueArchives interface {
+	Archive(
+		context.Context,
+		tuttimodeexecutionservice.ArchiveInput,
+	) (executionbiz.ArchiveOperation, error)
+}
+
 type IssueMutations interface {
 	MutateTuttiModeIssue(
 		context.Context,
@@ -57,14 +65,33 @@ type IssueMutations interface {
 	) (executionbiz.MutationResult, error)
 }
 
+type IssueDetails interface {
+	GetIssueDetail(
+		context.Context,
+		string,
+		string,
+	) (workspaceissues.IssueDetail, error)
+}
+
+type IssueExecutionReads interface {
+	GetByIssue(
+		context.Context,
+		string,
+		string,
+	) (executionbiz.Aggregate, error)
+}
+
 type Provider struct {
 	workspaces       cliservice.WorkspaceCatalog
 	plans            Plans
 	turns            ActiveTurns
+	issueDetails     IssueDetails
+	executionReads   IssueExecutionReads
 	schedules        IssueSchedules
 	mutations        IssueMutations
 	acknowledgements IssueAcknowledgements
 	completions      IssueCompletions
+	archives         IssueArchives
 }
 
 func NewProvider(
@@ -101,7 +128,35 @@ func NewProviderWithExecution(
 	provider.acknowledgements = acknowledgements
 	if len(completions) > 0 {
 		provider.completions = completions[0]
+		if archives, ok := completions[0].(IssueArchives); ok {
+			provider.archives = archives
+		}
 	}
+	return provider
+}
+
+func NewProviderWithExecutionSnapshot(
+	workspaces cliservice.WorkspaceCatalog,
+	plans Plans,
+	turns ActiveTurns,
+	schedules IssueSchedules,
+	mutations IssueMutations,
+	acknowledgements IssueAcknowledgements,
+	issueDetails IssueDetails,
+	executionReads IssueExecutionReads,
+	completions ...IssueCompletions,
+) Provider {
+	provider := NewProviderWithExecution(
+		workspaces,
+		plans,
+		turns,
+		schedules,
+		mutations,
+		acknowledgements,
+		completions...,
+	)
+	provider.issueDetails = issueDetails
+	provider.executionReads = executionReads
 	return provider
 }
 
@@ -113,7 +168,7 @@ func (Provider) AppID() string {
 // after propose/revise, and the user's review decision comes back as a new
 // user message (feedback dispatch), never as something the agent blocks on.
 func (p Provider) Commands() []cliservice.Command {
-	return []cliservice.Command{
+	commands := []cliservice.Command{
 		p.newProposeCommand(),
 		p.newReviseCommand(),
 		p.newGetCommand(),
@@ -121,7 +176,19 @@ func (p Provider) Commands() []cliservice.Command {
 		p.newIssueScheduleCommand(),
 		p.newIssueAcknowledgeCommand(),
 		p.newIssueCompleteCommand(),
+		p.newIssueStopCommand(),
 	}
+	if p.issueDetails != nil && p.executionReads != nil {
+		commands = append(commands, p.newIssueGetCommand())
+	}
+	return commands
+}
+
+func (p Provider) requireArchives() error {
+	if p.archives == nil {
+		return cliservice.ServiceUnavailableError("Tutti Mode execution service is unavailable", nil)
+	}
+	return nil
 }
 
 func (p Provider) requireCompletions() error {

@@ -63,6 +63,7 @@ type MutationStore interface {
 
 type ArchiveStore interface {
 	RequestTuttiModeArchive(context.Context, executionbiz.ArchiveRequest) (executionbiz.ArchiveOperation, bool, error)
+	RequestTuttiModeArchivesForSourceSession(context.Context, executionbiz.SourceSessionArchiveRequest) ([]executionbiz.ArchiveOperation, error)
 	GetTuttiModeArchiveOperation(context.Context, string, string) (executionbiz.ArchiveOperation, error)
 	FailTuttiModeArchive(context.Context, string, string, string, time.Time) (executionbiz.ArchiveOperation, error)
 	CompleteTuttiModeArchiveIfSettled(context.Context, string, string, time.Time) (executionbiz.ArchiveOperation, bool, error)
@@ -75,6 +76,10 @@ type ArchiveRunCanceller interface {
 
 type ArchiveRecoveryEnqueuer interface {
 	Enqueue(string)
+}
+
+type ArchiveAutomationTurnCanceller interface {
+	CancelAutomationTurn(context.Context, string, string, string) error
 }
 
 type WakeStore interface {
@@ -111,6 +116,7 @@ type Service struct {
 	BeforeGoalReviewCommitStep func(string) error
 	Archives                   ArchiveStore
 	ArchiveRuns                ArchiveRunCanceller
+	ArchiveAutomationTurns     ArchiveAutomationTurnCanceller
 	ArchiveRecoveryQueue       ArchiveRecoveryEnqueuer
 	MainWakeSendTimeout        time.Duration
 	MainWakeCleanupTimeout     time.Duration
@@ -654,7 +660,11 @@ func (service Service) Mutate(
 		input.SourceSessionID == "" || input.CheckpointID == "" ||
 		input.RequestID == "" || input.ExpectedGraphRevision < 1 ||
 		len(input.Operations) == 0 {
-		return executionbiz.MutationResult{}, executionbiz.ErrMutationRejected
+		return executionbiz.MutationResult{}, executionbiz.Reject(
+			executionbiz.ErrMutationRejected,
+			executionbiz.RejectionInvalidMutation,
+			"",
+		)
 	}
 	operations := append([]executionbiz.MutationOperation(nil), input.Operations...)
 	for index := range operations {
@@ -663,19 +673,50 @@ func (service Service) Mutate(
 		switch operations[index].Kind {
 		case executionbiz.MutationOperationAdd:
 			if operations[index].Task.TaskID == "" {
-				return executionbiz.MutationResult{}, executionbiz.ErrMutationRejected
+				return executionbiz.MutationResult{}, executionbiz.Reject(
+					executionbiz.ErrMutationRejected,
+					executionbiz.RejectionInvalidMutation,
+					"",
+				)
+			}
+			if strings.TrimSpace(operations[index].Task.AgentTargetID) == "" {
+				return executionbiz.MutationResult{}, executionbiz.Reject(
+					executionbiz.ErrMutationRejected,
+					executionbiz.RejectionMissingAgentTarget,
+					operations[index].Task.TaskID,
+				)
 			}
 		case executionbiz.MutationOperationUpdate, executionbiz.MutationOperationSupersede,
 			executionbiz.MutationOperationRework:
 			if operations[index].TaskID == "" {
-				return executionbiz.MutationResult{}, executionbiz.ErrMutationRejected
+				return executionbiz.MutationResult{}, executionbiz.Reject(
+					executionbiz.ErrMutationRejected,
+					executionbiz.RejectionInvalidMutation,
+					"",
+				)
+			}
+			if operations[index].Kind == executionbiz.MutationOperationUpdate &&
+				!operations[index].TaskFields.Any() {
+				return executionbiz.MutationResult{}, executionbiz.Reject(
+					executionbiz.ErrMutationRejected,
+					executionbiz.RejectionInvalidMutation,
+					operations[index].TaskID,
+				)
 			}
 			if operations[index].Kind == executionbiz.MutationOperationRework &&
 				operations[index].Task.TaskID == "" {
-				return executionbiz.MutationResult{}, executionbiz.ErrMutationRejected
+				return executionbiz.MutationResult{}, executionbiz.Reject(
+					executionbiz.ErrMutationRejected,
+					executionbiz.RejectionInvalidMutation,
+					operations[index].TaskID,
+				)
 			}
 		default:
-			return executionbiz.MutationResult{}, executionbiz.ErrMutationRejected
+			return executionbiz.MutationResult{}, executionbiz.Reject(
+				executionbiz.ErrMutationRejected,
+				executionbiz.RejectionInvalidMutation,
+				operations[index].TaskID,
+			)
 		}
 	}
 	payload, err := json.Marshal(struct {

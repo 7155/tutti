@@ -126,6 +126,18 @@ func TestRenderSkillBundleIncludesGuideAndOptionalSkills(t *testing.T) {
 		t.Fatalf("skill slugs = %q", got)
 	}
 	tuttiSkill := skillBundleRecord(bundle.Skills, tuttiSkillName)
+	for _, expected := range []string{
+		"Never inspect or modify `~/.tutti*/*.db`",
+		"tutti-dev plan issue get --issue-id <issue-id> --json",
+		"`task_failed` or `task_canceled`",
+		"Rework it with a new `taskId`",
+		"Recovery is bounded",
+		"On `inactive_checkpoint` or `stale_graph_revision`",
+	} {
+		if !strings.Contains(tuttiSkill.Content, expected) {
+			t.Fatalf("tutti skill missing recovery rule %q: %q", expected, tuttiSkill.Content)
+		}
+	}
 	guide, ok := skillBundleFileContent(tuttiSkill, commandGuideReferencePath)
 	if !ok || !strings.Contains(guide, "tutti-dev issue get --issue-id <issue-id> --json") {
 		t.Fatalf("command guide = %q", guide)
@@ -139,9 +151,29 @@ func TestRenderSkillBundleIncludesGuideAndOptionalSkills(t *testing.T) {
 		t.Fatalf("model allocation parallel policy = %q", modelAllocation.Content)
 	}
 	modelTiers, ok := skillBundleFileContent(modelAllocation, tuttiModelAllocationReferencePath)
-	if !ok || !strings.Contains(modelTiers, "`gpt-5.6-sol`") ||
-		!strings.Contains(modelTiers, "`anthropic/claude-opus-4.8`") {
-		t.Fatalf("model tier reference = %q", modelTiers)
+	for _, expected := range []string{
+		"`gpt-5.6-luna`",
+		"`gpt-5.6-terra`",
+		"`gpt-5.6-sol`",
+		"`gpt-5.6-sol-pro`",
+		"`composer-2.5`",
+		"`grok-4.5`",
+		"`kimi-k3`",
+		"`moonshotai/kimi-k3`",
+		"`anthropic/claude-opus-4.8`",
+	} {
+		if !ok || !strings.Contains(modelTiers, expected) {
+			t.Fatalf("model tier reference missing %q: %q", expected, modelTiers)
+		}
+	}
+	for _, expected := range []string{
+		"Compare joint `(agentTargetId, model, reasoningEffort, permissionModeId)`",
+		"receive no suitability bonus",
+		"prefer a non-planning target",
+	} {
+		if !strings.Contains(modelAllocation.Content, expected) {
+			t.Fatalf("model allocation skill missing anti-affinity rule %q: %q", expected, modelAllocation.Content)
+		}
 	}
 	browser := skillBundleRecord(bundle.Skills, browserUseSkillName).Content
 	computer := skillBundleRecord(bundle.Skills, computerUseSkillName).Content

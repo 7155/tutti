@@ -835,41 +835,49 @@ inline data URL instead`. Claude or standard ACP may instead receive no
   SDK and standard ACP must receive base64 `data`. Search every provider send
   and guidance path for `materializeProviderPromptImagesAtBoundary`; the helper
   and its unit test can remain green even when a refactor removes all production
-  callers.
+  callers. If the visible failure detail is
+  `download remote prompt image: request failed`, compare the URL with a normal
+  system HTTP client and inspect its DNS result. A URL that succeeds normally
+  but resolves to a VPN or transparent-proxy synthetic address indicates that
+  the runtime is bypassing or second-guessing the system network path.
 - Root cause:
   Remote image URLs are the durable transport representation, while current
   Codex app-server, Claude SDK, and standard ACP provider wires require inline
   data. A provider-adapter refactor can preserve the materialization helper but
-  omit its call sites in newly split turn files.
+  omit its call sites in newly split turn files. Separately, pre-resolving and
+  classifying destination IPs at this boundary is incompatible with VPN, TUN,
+  split-DNS, and Fake-IP network stacks: their synthetic address is intentionally
+  not the public origin address, but the system transport still knows how to
+  reach the origin.
 - Fix:
   Materialize only at the final provider boundary. Keep the original URL-backed
   content for activity projection, and convert the provider-only copy after
   local slash/control handling but immediately before Codex `turn/start` or
   `turn/steer`, Claude SDK `exec` or `guide`, and standard ACP
-  `session/prompt`. Resolve and pin every download or redirect hop to a public
-  Internet address so prompt content cannot reach loopback, private, link-local,
-  transition-mapped, or other IANA special-purpose networks. Preserve the
-  configured proxy decision using the original URL, but send the proxy a pinned
-  public-IP tunnel target while retaining the original TLS server name and HTTP
-  Host. Strip redirect `Referer` headers so signed URL query parameters cannot
-  cross origins. Admit an asynchronous Codex guidance continuation before
-  publishing its provisional provider turn, and settle that exact attempt when
-  preparation ends without starting a real provider turn. For standard ACP,
-  publish the original user activity and provider-turn start before remote
-  materialization; if preparation fails, complete that same provider turn as
-  failed so the message remains durable and root settlement cannot strand.
+  `session/prompt`. Use the repository proxy-aware HTTP client and leave DNS,
+  proxy, VPN, and connect-target selection to the system network stack; do not
+  pre-resolve, pin, or reject resolved IP ranges at this provider compatibility
+  boundary. Continue accepting only HTTPS URLs, require every redirect hop to
+  remain HTTPS, strip redirect `Referer` headers so signed URL query parameters
+  cannot cross hops, and keep timeout, response-size, and image MIME checks.
+  Admit an asynchronous Codex guidance continuation before publishing its
+  provisional provider turn, and settle that exact attempt when preparation
+  ends without starting a real provider turn. For standard ACP, publish the
+  original user activity and provider-turn start before remote materialization;
+  if preparation fails, complete that same provider turn as failed so the
+  message remains durable and root settlement cannot strand.
 - Validation:
   Exercise URL-only content through the real adapter request paths and assert
   the captured provider payload contains inline data. Cover Codex send and
   guidance, Claude SDK exec and guide, and standard ACP exec; do not rely only
-  on direct helper tests. Also reject loopback literals and redirects whose
-  target resolves to an internal or transition-mapped address, verify proxy
-  CONNECT uses the pinned public IP, and assert redirects omit signed-URL
-  referrers. Cover failed and concurrent guidance continuation admission so
-  every published provisional attempt either yields a real provider lifecycle
-  or receives its matching provider-turn completion. Also fail standard ACP
-  materialization and assert the original user message, turn start, and failed
-  provider-turn completion are all emitted without sending `session/prompt`.
+  on direct helper tests. Verify the production client can materialize through a
+  system-routed reserved address, reject a redirect that downgrades to HTTP, and
+  assert redirects omit signed-URL referrers. Cover failed and concurrent
+  guidance continuation admission so every published provisional attempt either
+  yields a real provider lifecycle or receives its matching provider-turn
+  completion. Also fail standard ACP materialization and assert the original
+  user message, turn start, and failed provider-turn completion are all emitted
+  without sending `session/prompt`.
 - References:
   [prompt_content.go](../../../packages/agent/daemon/runtime/prompt_content.go)
   [codex_appserver_turn.go](../../../packages/agent/daemon/runtime/codex_appserver_turn.go)

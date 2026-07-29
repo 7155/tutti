@@ -607,7 +607,10 @@ disable submission, but must not change editor editability.
   per-Session Engine lane. Owner boundaries are serialization barriers rather
   than coalescing opportunities. A validated precondition updates canonical
   Session state before the Engine starts send, while a failed or timed-out
-  precondition prevents delivery
+  precondition prevents delivery. A timed-out settings write remains
+  delivery-unknown and does not release queued writes automatically. A fresh
+  explicit settings selection is the user's retry: Desktop AgentGUI and Native
+  Mobile derive that retry from the exact Engine settings-operation state
 - consumers do not read reducer maps directly
 - consumers do not create canonical session/message mirrors
 - optimistic records define confirmation, rejection, timeout, and uncertain-delivery paths

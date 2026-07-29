@@ -537,7 +537,9 @@ func updateTestService(t *testing.T, version string) (Service, string) {
 			agentNPMRegistryEnv + "=https://registry.example.test",
 		}
 	}
-	service.IsExecutableFile = func(path string) bool { return path == binaryPath }
+	service.IsExecutableFile = func(path string) bool {
+		return path == binaryPath || path == "/usr/bin/true"
+	}
 	service.RunAuthStatusCommand = func(context.Context, ProviderSpec, string) (AuthInfo, bool) {
 		return AuthInfo{Status: AuthAuthenticated}, true
 	}

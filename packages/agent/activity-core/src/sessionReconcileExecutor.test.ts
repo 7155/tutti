@@ -178,13 +178,19 @@ test("combined reconcile closes root and child races before one apply", async ()
     sessionDetail(rootV2, [childV1, childV2])
   ];
   const requests: MessageRequest[] = [];
+  const detailProjections: string[] = [];
   const callsBySessionId = new Map<string, number>();
   const harness = createHarness(
     {
-      getSessionDetail: async () => {
+      getSessionDetail: async ({ projection }) => {
+        detailProjections.push(projection);
         const detail = details.shift();
         assert.ok(detail);
-        return detail;
+        return sessionDetail(
+          detail.session,
+          [...detail.childSessions],
+          projection
+        );
       },
       listSessionMessages: async (input) => {
         requests.push({ ...input });
@@ -211,6 +217,7 @@ test("combined reconcile closes root and child races before one apply", async ()
   const result = await harness.execute("state_and_messages");
 
   assert.equal(result.status, "applied");
+  assert.deepEqual(detailProjections, ["message_hydration", "authoritative"]);
   assert.equal(callsBySessionId.get("root-1"), 2);
   assert.equal(callsBySessionId.get("child-1"), 1);
   assert.equal(callsBySessionId.get("child-2"), 1);
@@ -237,7 +244,8 @@ test("requested-session policy keeps child entities without prefetching child me
   const requests: MessageRequest[] = [];
   const harness = createHarness(
     {
-      getSessionDetail: async () => sessionDetail(session("root-1"), [child]),
+      getSessionDetail: async ({ projection }) =>
+        sessionDetail(session("root-1"), [child], projection),
       listSessionMessages: async (input) => {
         requests.push({ ...input });
         return page([], false, 0);
@@ -272,8 +280,8 @@ test("combined reconcile removes the full descendant closure of a tombstoned chi
   const requestedSessionIds: string[] = [];
   const harness = createHarness(
     {
-      getSessionDetail: async () =>
-        sessionDetail(session("root-1"), [child, grandchild]),
+      getSessionDetail: async ({ projection }) =>
+        sessionDetail(session("root-1"), [child, grandchild], projection),
       listSessionMessages: async (input) => {
         requestedSessionIds.push(input.agentSessionId);
         if (input.agentSessionId !== "root-1") {
@@ -357,10 +365,14 @@ test("combined result deduplicates messages replayed by root repair", async () =
   ];
   let messageReadCount = 0;
   const harness = createHarness({
-    getSessionDetail: async () => {
+    getSessionDetail: async ({ projection }) => {
       const detail = details.shift();
       assert.ok(detail);
-      return detail;
+      return sessionDetail(
+        detail.session,
+        [...detail.childSessions],
+        projection
+      );
     },
     listSessionMessages: async () => {
       messageReadCount += 1;
@@ -520,9 +532,16 @@ function session(
 
 function sessionDetail(
   root: AgentActivitySession,
-  childSessions: AgentActivitySession[] = []
+  childSessions: AgentActivitySession[] = [],
+  projection: AgentActivitySessionDetailSnapshot["projection"] = "authoritative"
 ): AgentActivitySessionDetailSnapshot {
-  return { childSessions, session: root, turns: [] };
+  return {
+    childSessions,
+    lifecycleCapabilitiesProjected: projection === "authoritative",
+    projection,
+    session: root,
+    turns: []
+  };
 }
 
 function message(

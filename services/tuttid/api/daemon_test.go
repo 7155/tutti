@@ -99,6 +99,7 @@ type stubAgentSessionService struct {
 	getSessionForkOperationFn         func(context.Context, string, string) (agentservice.SessionForkOperation, error)
 	acknowledgeSessionForkOperationFn func(context.Context, string, string) (agentservice.SessionForkOperation, error)
 	getDetailFn                       func(context.Context, string, string) (agentservice.SessionDetail, error)
+	getDetailWithProjectionFn         func(context.Context, string, string, agentservice.SessionDetailProjection) (agentservice.SessionDetail, error)
 	getFn                             func(context.Context, string, string) (agentservice.Session, error)
 	deleteFn                          func(context.Context, string, string) (agentservice.DeleteSessionResult, error)
 	listSectionDeletionCandidatesFn   func(context.Context, string, agentservice.ListSessionSectionDeletionCandidatesInput) (agentservice.SessionSectionDeletionCandidates, error)
@@ -391,6 +392,22 @@ func (s stubAgentSessionService) GetDetail(ctx context.Context, workspaceID, age
 		return s.getDetailFn(ctx, workspaceID, agentSessionID)
 	}
 	return agentservice.SessionDetail{ChildSessions: []agentservice.Session{}}, nil
+}
+
+func (s stubAgentSessionService) GetDetailWithProjection(
+	ctx context.Context,
+	workspaceID, agentSessionID string,
+	projection agentservice.SessionDetailProjection,
+) (agentservice.SessionDetail, error) {
+	if s.getDetailWithProjectionFn != nil {
+		return s.getDetailWithProjectionFn(
+			ctx,
+			workspaceID,
+			agentSessionID,
+			projection,
+		)
+	}
+	return s.GetDetail(ctx, workspaceID, agentSessionID)
 }
 
 func (s stubAgentSessionService) ReadAttachment(ctx context.Context, workspaceID string, agentSessionID string, attachmentID string) (agentservice.PromptAttachment, error) {

@@ -24,15 +24,19 @@ export function createMobileAgentActivityReconcileExecutor(input: {
     isAvailable: input.isAvailable,
     isSessionDeleted: input.isSessionDeleted,
     port: {
-      getSessionDetail: async ({ agentSessionId, signal }) =>
-        input.mapping.mapSessionDetail(
+      getSessionDetail: async ({ agentSessionId, projection, signal }) => {
+        const detailProjection =
+          projection === "message_hydration" ? "messageHydration" : "full";
+        return input.mapping.mapSessionDetail(
           agentSessionId,
           await input.client.getWorkspaceAgentSession(
             input.workspaceId,
             agentSessionId,
+            detailProjection,
             { signal }
           )
-        ),
+        );
+      },
       listSessionMessages: async ({
         afterVersion,
         agentSessionId,

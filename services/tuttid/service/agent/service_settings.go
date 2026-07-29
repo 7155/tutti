@@ -156,5 +156,12 @@ func (s *Service) UpdateSettings(ctx context.Context, workspaceID string, agentS
 	if err != nil {
 		return Session{}, err
 	}
-	return s.projectHostSessionResult(ctx, result.Canonical, result.Session, result.Live, result.Live)
+	return s.projectHostSessionResult(
+		ctx,
+		result.Canonical,
+		result.Session,
+		result.Live,
+		result.Live,
+		true,
+	)
 }

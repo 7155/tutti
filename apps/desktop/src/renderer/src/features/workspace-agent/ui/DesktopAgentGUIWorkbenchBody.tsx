@@ -25,7 +25,6 @@ import {
 } from "@tutti-os/workbench-surface";
 import { useTranslation } from "@renderer/i18n";
 import { useDesktopPreferencesService } from "@renderer/features/desktop-preferences/ui/useDesktopPreferencesService";
-import { useWorkspaceSettingsService } from "../../workspace-workbench/ui/useWorkspaceSettingsService";
 import { buildDesktopCommerceErrorPresentation } from "./desktopCommerceErrorPresentation";
 import { Toast } from "@renderer/lib/toast";
 import { isDesktopAgentProvider } from "@shared/preferences";
@@ -76,6 +75,7 @@ import { useStableDesktopAgentGUIHostProps } from "./useStableDesktopAgentGUIHos
 import { resolveDesktopAgentGUIEmbeddedDesktopSize } from "./desktopAgentGUIEmbeddedFrame.ts";
 import { scheduleDesktopAgentGUIWorkbenchHydration } from "./desktopAgentGUIWorkbenchHydration.ts";
 import { useDesktopAgentConfigCommerce } from "./useDesktopAgentConfigCommerce.tsx";
+import { hasDesktopLocalTuttiAgent } from "./desktopAgentConfigCommerceContext.ts";
 import { useDesktopAgentGUIComposerFooterAccessory } from "./useDesktopAgentGUIComposerFooterAccessory.tsx";
 import { useDesktopAgentGUIOpenSessionComposerRequest } from "./useDesktopAgentGUIOpenSessionComposerRequest.ts";
 import { useDesktopAgentGUIProviderAuthAccountLabels } from "./useDesktopAgentGUIProviderAuthAccountLabels.ts";
@@ -132,9 +132,7 @@ function DesktopAgentGUISurfaceImpl({
 }: DesktopAgentGUISurfaceProps): JSX.Element {
   const agents = agentDirectory.agents;
   const { i18n, locale } = useTranslation();
-  const { state: workspaceSettingsState } = useWorkspaceSettingsService();
-  const commerceEnabled =
-    workspaceSettingsState.tuttiAgentSwitchEnabled === true;
+  const commerceEnabled = hasDesktopLocalTuttiAgent(agents);
   const { accountState, handleAgentConfigMenuOpen, renderAgentConfigAccount } =
     useDesktopAgentConfigCommerce(commerceEnabled);
   const { service: desktopPreferencesService, state: desktopPreferencesState } =

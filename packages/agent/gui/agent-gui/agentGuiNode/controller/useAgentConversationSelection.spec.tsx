@@ -7,7 +7,7 @@ describe("useAgentConversationSelection", () => {
   it("reconciles detail when a selected rail session has no cached messages", () => {
     const active = { current: "recent-session" as string | null };
     const markPending = vi.fn();
-    const reload = vi.fn();
+    const ensureHydrated = vi.fn();
     const setLoading = vi.fn();
     const requestReveal = vi.fn();
     const hasConversationListQuery = vi.fn(() => true);
@@ -23,9 +23,9 @@ describe("useAgentConversationSelection", () => {
           contains: () => true
         },
         detail: {
+          ensureHydrated,
           isHydrated: () => false,
           markPending,
-          reload,
           setLoading
         },
         hasConversationListQuery,
@@ -57,7 +57,7 @@ describe("useAgentConversationSelection", () => {
     expect(markPending).toHaveBeenCalledWith("historical-session");
     expect(setLoading).not.toHaveBeenCalled();
     expect(hasConversationListQuery).toHaveBeenCalledOnce();
-    expect(reload).toHaveBeenCalledWith("historical-session");
+    expect(ensureHydrated).toHaveBeenCalledWith("historical-session");
     expect(requestReveal).toHaveBeenCalledWith(
       "historical-session",
       "external-open"
@@ -67,7 +67,7 @@ describe("useAgentConversationSelection", () => {
   it("reuses cached detail when selecting another hydrated session", () => {
     const active = { current: "session-1" as string | null };
     const markPending = vi.fn();
-    const reload = vi.fn();
+    const ensureHydrated = vi.fn();
     const setLoading = vi.fn();
     const data: AgentGUINodeData = {
       agentTargetId: null,
@@ -86,9 +86,9 @@ describe("useAgentConversationSelection", () => {
           contains: () => true
         },
         detail: {
+          ensureHydrated,
           isHydrated: () => true,
           markPending,
-          reload,
           setLoading
         },
         hasConversationListQuery: () => true,
@@ -119,12 +119,12 @@ describe("useAgentConversationSelection", () => {
 
     expect(setLoading).toHaveBeenCalledWith(false);
     expect(markPending).not.toHaveBeenCalled();
-    expect(reload).not.toHaveBeenCalled();
+    expect(ensureHydrated).not.toHaveBeenCalled();
   });
 
   it("selects an optimistic pending session without reloading durable detail", () => {
     const active = { current: "session-b" as string | null };
-    const reload = vi.fn();
+    const ensureHydrated = vi.fn();
     const setLoading = vi.fn();
     const setIntent = vi.fn();
     const { result } = renderHook(() =>
@@ -139,9 +139,9 @@ describe("useAgentConversationSelection", () => {
           contains: () => true
         },
         detail: {
+          ensureHydrated,
           isHydrated: () => false,
           markPending: vi.fn(),
-          reload,
           setLoading
         },
         hasConversationListQuery: () => true,
@@ -172,13 +172,13 @@ describe("useAgentConversationSelection", () => {
       id: "session-a"
     });
     expect(setLoading).toHaveBeenCalledWith(false);
-    expect(reload).not.toHaveBeenCalled();
+    expect(ensureHydrated).not.toHaveBeenCalled();
   });
 
   it("does not reload Rail or detail for an activation that cannot reload", () => {
     const active = { current: "session-b" as string | null };
     const hasConversationListQuery = vi.fn(() => true);
-    const reload = vi.fn();
+    const ensureHydrated = vi.fn();
     const { result } = renderHook(() =>
       useAgentConversationSelection({
         activation: {
@@ -191,9 +191,9 @@ describe("useAgentConversationSelection", () => {
           contains: () => true
         },
         detail: {
+          ensureHydrated,
           isHydrated: () => false,
           markPending: vi.fn(),
-          reload,
           setLoading: vi.fn()
         },
         hasConversationListQuery,
@@ -219,6 +219,6 @@ describe("useAgentConversationSelection", () => {
     act(() => result.current.selectConversation("session-a"));
 
     expect(hasConversationListQuery).not.toHaveBeenCalled();
-    expect(reload).not.toHaveBeenCalled();
+    expect(ensureHydrated).not.toHaveBeenCalled();
   });
 });

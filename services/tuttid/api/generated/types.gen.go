@@ -2518,6 +2518,24 @@ func (e WorkspaceAgentSessionAttachmentResponseMimeType) Valid() bool {
 	}
 }
 
+// Defines values for WorkspaceAgentSessionDetailProjection.
+const (
+	Full             WorkspaceAgentSessionDetailProjection = "full"
+	MessageHydration WorkspaceAgentSessionDetailProjection = "messageHydration"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceAgentSessionDetailProjection enum.
+func (e WorkspaceAgentSessionDetailProjection) Valid() bool {
+	switch e {
+	case Full:
+		return true
+	case MessageHydration:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WorkspaceAgentSessionForkOperationStatus.
 const (
 	WorkspaceAgentSessionForkOperationStatusAccepted  WorkspaceAgentSessionForkOperationStatus = "accepted"
@@ -6962,11 +6980,20 @@ type WorkspaceAgentSessionAttachmentResponse struct {
 // WorkspaceAgentSessionAttachmentResponseMimeType defines model for WorkspaceAgentSessionAttachmentResponse.MimeType.
 type WorkspaceAgentSessionAttachmentResponseMimeType string
 
+// WorkspaceAgentSessionDetailProjection Projection applied to a Session detail response. messageHydration preserves hierarchy and message cursors but leaves provider-backed lifecycle capabilities unresolved.
+type WorkspaceAgentSessionDetailProjection string
+
 // WorkspaceAgentSessionDetailResponse defines model for WorkspaceAgentSessionDetailResponse.
 type WorkspaceAgentSessionDetailResponse struct {
 	// ChildSessions Flat collection of every nested child session below session. Clients reconstruct the tree from the immutable parent fields.
 	ChildSessions []WorkspaceAgentSession `json:"childSessions"`
-	Session       WorkspaceAgentSession   `json:"session"`
+
+	// LifecycleCapabilitiesProjected Whether provider-backed lifecycle capability projection ran for session and childSessions. A full projection reports true even when a provider probe fails closed, because false then means the action is unavailable for this response. When false, projection was intentionally skipped and capability values must not be applied as authoritative.
+	LifecycleCapabilitiesProjected bool `json:"lifecycleCapabilitiesProjected"`
+
+	// Projection Projection applied to a Session detail response. messageHydration preserves hierarchy and message cursors but leaves provider-backed lifecycle capabilities unresolved.
+	Projection WorkspaceAgentSessionDetailProjection `json:"projection"`
+	Session    WorkspaceAgentSession                 `json:"session"`
 
 	// Turns Ordered durable turns owned by session. This detail-only collection is the canonical source for turn-scoped history such as file changes; clients must not reconstruct it from provider tool payloads.
 	Turns []WorkspaceAgentTurn `json:"turns"`
@@ -8195,6 +8222,12 @@ type ListWorkspaceAgentSessionsParams struct {
 	SearchQuery *string `form:"searchQuery,omitempty" json:"searchQuery,omitempty"`
 	Cursor      *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit       *int    `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// GetWorkspaceAgentSessionParams defines parameters for GetWorkspaceAgentSession.
+type GetWorkspaceAgentSessionParams struct {
+	// Projection Selects the detail projection. messageHydration preserves the session hierarchy and message cursors used by reconciliation discovery without resolving provider-backed lifecycle capabilities.
+	Projection *WorkspaceAgentSessionDetailProjection `form:"projection,omitempty" json:"projection,omitempty"`
 }
 
 // ListWorkspaceAgentSessionMessagesParams defines parameters for ListWorkspaceAgentSessionMessages.

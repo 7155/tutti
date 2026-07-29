@@ -307,16 +307,33 @@ export function createWorkspaceAgentClient(
     async getWorkspaceAgentSession(
       workspaceID,
       agentSessionID,
+      projection,
       requestOptions
     ) {
-      return unwrapData(
+      const expectedProjection = projection ?? "full";
+      const detail = unwrapData(
         await getWorkspaceAgentSession({
           client,
           path: { agentSessionID, workspaceID },
+          query: projection === undefined ? undefined : { projection },
           ...requestOptions
         }),
         "Workspace agent session request failed."
       );
+      if (detail.projection !== expectedProjection) {
+        throw new Error(
+          `Workspace agent session projection mismatch: requested ${expectedProjection}, received ${detail.projection}.`
+        );
+      }
+      if (
+        detail.lifecycleCapabilitiesProjected !==
+        (expectedProjection === "full")
+      ) {
+        throw new Error(
+          `Workspace agent session lifecycle capability projection does not match detail projection ${expectedProjection}.`
+        );
+      }
+      return detail;
     },
     async listWorkspaceAgentSessions(workspaceID, request, requestOptions) {
       return unwrapData(

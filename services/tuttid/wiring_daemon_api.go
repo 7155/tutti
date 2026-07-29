@@ -473,9 +473,10 @@ func buildDaemonAPI(
 	issueRunCanceller := issueRunSessionCanceller{Host: agentHost, Sessions: agentSessionService}
 	tuttiModeMainWakeOwner := "tuttid-main-wake:" + uuid.NewString()
 	tuttiModeExecutions := &tuttimodeexecutionservice.Service{
-		Store:    tuttiModeExecutionStore,
-		Archives: tuttiModeArchiveStore,
-		Wakes:    tuttiModeWakeStore,
+		Store:                  tuttiModeExecutionStore,
+		Archives:               tuttiModeArchiveStore,
+		Wakes:                  tuttiModeWakeStore,
+		ArchiveAutomationTurns: issueRunCanceller,
 		MainWakeTargets: tuttiModeMainWakeAgentAdapter{
 			Host:     agentHost,
 			Sessions: agentSessionService,
@@ -731,14 +732,10 @@ func buildDaemonAPI(
 			agentTargets,
 			preferences,
 		),
-		tuttimodeplancli.NewProviderWithExecution(
-			workspaceService,
-			tuttiModePlans,
-			agentSessionService,
-			&issueService,
-			&issueService,
-			tuttiModeExecutions,
-			tuttiModeExecutions,
+		tuttimodeplancli.NewProviderWithExecutionSnapshot(
+			workspaceService, tuttiModePlans, agentSessionService,
+			&issueService, &issueService, tuttiModeExecutions,
+			&issueService, tuttiModeExecutions, tuttiModeExecutions,
 		),
 		tuttigoalreviewcli.NewProvider(
 			tuttiModeExecutions,

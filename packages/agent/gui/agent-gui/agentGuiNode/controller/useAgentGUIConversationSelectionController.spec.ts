@@ -375,7 +375,7 @@ describe("clearRolledBackAgentGUISelection", () => {
 });
 
 describe("conversation reload ownership", () => {
-  it("coordinates forced message hydration from selection", () => {
+  it("ensures message hydration without turning selection into a forced refresh", () => {
     const sessionEngine = createTestAgentSessionEngine("workspace-1");
     const loadSelectedConversationMessages = vi.fn(async () => undefined);
     const data: AgentGUINodeData = {
@@ -442,8 +442,7 @@ describe("conversation reload ownership", () => {
     act(() => result.current.selectConversation("session-next"));
 
     expect(loadSelectedConversationMessages).toHaveBeenCalledWith(
-      "session-next",
-      { force: true }
+      "session-next"
     );
     sessionEngine.dispose();
   });

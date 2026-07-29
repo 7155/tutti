@@ -21,6 +21,11 @@ const workspace: WorkspaceSummary = {
   name: "Workspace"
 };
 
+const fullSessionDetailProjection = {
+  lifecycleCapabilitiesProjected: true,
+  projection: "full"
+} as const;
+
 describe("WorkspaceActivityService", () => {
   test("disposes the conversation Rail it owns", () => {
     const service = createService(
@@ -606,6 +611,7 @@ describe("WorkspaceActivityService", () => {
       detail: async () => {
         detailReads += 1;
         return {
+          ...fullSessionDetailProjection,
           childSessions: [],
           session: createSession(),
           turns: []
@@ -682,6 +688,7 @@ describe("WorkspaceActivityService", () => {
     const queries: Array<Record<string, unknown>> = [];
     const client = createClient({
       detail: async () => ({
+        ...fullSessionDetailProjection,
         childSessions: [],
         session: createSession(),
         turns: []
@@ -740,6 +747,7 @@ describe("WorkspaceActivityService", () => {
     const queries: Array<Record<string, unknown>> = [];
     const client = createClient({
       detail: async () => ({
+        ...fullSessionDetailProjection,
         childSessions: [],
         session: createSession(),
         turns: []
@@ -798,6 +806,7 @@ describe("WorkspaceActivityService", () => {
     let messageVersion = 1;
     const client = createClient({
       detail: async () => ({
+        ...fullSessionDetailProjection,
         childSessions: [],
         session: createSession(),
         turns: []
@@ -894,6 +903,7 @@ describe("WorkspaceActivityService", () => {
     };
     const client = createClient({
       detail: async () => ({
+        ...fullSessionDetailProjection,
         childSessions: [child],
         session: root,
         turns: [createTurn(root.id, "turn-root-1")]
@@ -1148,19 +1158,30 @@ function createClient(options: {
     createWorkspaceAgentSession: options.create,
     deleteWorkspaceAgentSessionsBatch: options.deleteBatch,
     getAgentProviderComposerOptions: options.composerOptions,
-    getWorkspaceAgentSession:
-      options.detail ??
-      (async (_workspaceId: string, agentSessionId: string) => {
-        const session = railSessions().find(
-          (candidate) => candidate.id === agentSessionId
-        );
-        if (!session) throw new Error("session not found");
-        return {
-          childSessions: [],
-          session,
-          turns: session.latestTurn ? [session.latestTurn] : []
-        };
-      }),
+    getWorkspaceAgentSession: async (
+      ...args: Parameters<NonNullable<TuttidClient["getWorkspaceAgentSession"]>>
+    ) => {
+      const detail = options.detail
+        ? await options.detail(args[0], args[1])
+        : await (async () => {
+            const session = railSessions().find(
+              (candidate) => candidate.id === args[1]
+            );
+            if (!session) throw new Error("session not found");
+            return {
+              ...fullSessionDetailProjection,
+              childSessions: [],
+              session,
+              turns: session.latestTurn ? [session.latestTurn] : []
+            };
+          })();
+      const projection = args[2] ?? "full";
+      return {
+        ...detail,
+        lifecycleCapabilitiesProjected: projection === "full",
+        projection
+      };
+    },
     listAgentTargets: async () => ({ targets: options.targets ?? [] }),
     listWorkspaceAgentSessionMessages: options.listMessages,
     listWorkspaceAgentPinnedSessionPage: async () => {

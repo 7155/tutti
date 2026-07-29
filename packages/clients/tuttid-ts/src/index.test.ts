@@ -702,6 +702,59 @@ test("shared tuttid client lists workspace agent sessions with query params", as
   });
 });
 
+test("shared tuttid client requests the message hydration session projection", async () => {
+  const response = {
+    childSessions: [],
+    lifecycleCapabilitiesProjected: false,
+    projection: "messageHydration",
+    session: {},
+    turns: []
+  };
+  const { client, requests } = captureClient(jsonResponse(response));
+  const controller = new AbortController();
+
+  assert.deepEqual(
+    await client.getWorkspaceAgentSession(
+      "workspace-1",
+      "session-1",
+      "messageHydration",
+      { signal: controller.signal }
+    ),
+    response
+  );
+  assertRequest(requests[0]!, {
+    authorization: null,
+    body: null,
+    method: "GET",
+    path: "/v1/workspaces/workspace-1/agent-sessions/session-1",
+    query: { projection: "messageHydration" }
+  });
+  assert.equal(requests[0]!.signal?.aborted, false);
+  controller.abort();
+  assert.equal(requests[0]!.signal?.aborted, true);
+});
+
+test("shared tuttid client rejects a mismatched session detail projection", async () => {
+  const { client } = captureClient(
+    jsonResponse({
+      childSessions: [],
+      lifecycleCapabilitiesProjected: true,
+      projection: "full",
+      session: {},
+      turns: []
+    })
+  );
+
+  await assert.rejects(
+    client.getWorkspaceAgentSession(
+      "workspace-1",
+      "session-1",
+      "messageHydration"
+    ),
+    /projection mismatch/
+  );
+});
+
 test("shared tuttid client forwards AbortSignal for issue topic and issue list requests", async () => {
   const requests: Request[] = [];
   const client = createTuttidClient({

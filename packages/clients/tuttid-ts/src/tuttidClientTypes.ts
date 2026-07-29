@@ -135,6 +135,7 @@ import type {
   WorkspaceWorkflowSnapshot,
   DecideWorkspaceWorkflowCheckpointRequest,
   WorkspaceAgentSession,
+  WorkspaceAgentSessionDetailProjection,
   TuttiModeActivation,
   WorkspaceAgentSessionDetailResponse,
   WorkspaceAgentPlanDecisionResponse,
@@ -441,6 +442,7 @@ export interface TuttidClient
   getWorkspaceAgentSession(
     workspaceID: string,
     agentSessionID: string,
+    projection?: WorkspaceAgentSessionDetailProjection,
     requestOptions?: TuttidRequestOptions
   ): Promise<WorkspaceAgentSessionDetailResponse>;
   getAgentProviderComposerOptions(

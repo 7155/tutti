@@ -4141,6 +4141,14 @@ paths:
       tags:
         - agent-session
       summary: Get one workspace agent session
+      parameters:
+        - name: projection
+          in: query
+          required: false
+          description: Selects the detail projection. messageHydration preserves the session hierarchy and message cursors used by reconciliation discovery without resolving provider-backed lifecycle capabilities.
+          schema:
+            $ref: "#/components/schemas/WorkspaceAgentSessionDetailProjection"
+            default: full
       responses:
         "200":
           description: Workspace agent session
@@ -11548,6 +11556,15 @@ components:
       description: >-
         Per-session durable message change cursor. The upper bound preserves
         exact integer representation in JavaScript clients.
+    WorkspaceAgentSessionDetailProjection:
+      type: string
+      enum:
+        - full
+        - messageHydration
+      description: >-
+        Projection applied to a Session detail response. messageHydration
+        preserves hierarchy and message cursors but leaves provider-backed
+        lifecycle capabilities unresolved.
     WorkspaceAgentSessionLifecycleCapabilities:
       type: object
       additionalProperties: false
@@ -11934,7 +11951,20 @@ components:
         - session
         - childSessions
         - turns
+        - projection
+        - lifecycleCapabilitiesProjected
       properties:
+        projection:
+          $ref: "#/components/schemas/WorkspaceAgentSessionDetailProjection"
+        lifecycleCapabilitiesProjected:
+          type: boolean
+          description: >-
+            Whether provider-backed lifecycle capability projection ran for
+            session and childSessions. A full projection reports true even
+            when a provider probe fails closed, because false then means the
+            action is unavailable for this response. When false, projection
+            was intentionally skipped and capability values must not be
+            applied as authoritative.
         session:
           $ref: "#/components/schemas/WorkspaceAgentSession"
         childSessions:

@@ -1003,10 +1003,21 @@ it owns the three reconcile scopes, cancellation and deletion fences,
 conversation-versus-durable cursors, pagination, the two-detail race closure,
 and atomic Engine dispatch. A host selects either requested-Session or
 Session-hierarchy message hydration according to the transcript surface it
-renders. HTTP execution, generated DTO mapping, absent/error interpretation,
-logging, polling, and legacy event fanout stay in the host. The canonical
-detail aggregate type belongs to activity-core; the tuttid adapter only maps
-the generated response into it.
+renders. The executor labels its first combined read as `message_hydration`;
+tuttid serves that projection without resolving provider-backed lifecycle
+capabilities. The final read remains authoritative and resolves those
+capabilities once. Hosts must preserve this distinction: caching provider
+capabilities or removing the final race-closing read can return stale actions,
+while using the full projection for discovery can launch an otherwise unused
+provider capability probe. Each HTTP response echoes its projection and whether
+lifecycle capability projection ran; clients fail closed on a mismatch, and
+values from a deliberately unprojected hydration response must never clear
+authoritative actions. Full projection remains fail-closed when a provider
+probe fails, preserving existing detail availability while making the action
+unavailable for that response. HTTP execution, generated DTO mapping,
+absent/error interpretation, logging, polling, and legacy event fanout stay in
+the host. The canonical detail aggregate type belongs to activity-core; the
+tuttid adapter only maps the generated response into it.
 
 Focused transcript paging is the adjacent AgentGUI application boundary.
 Desktop and Mobile construct the same
@@ -1018,10 +1029,13 @@ Engine. Mobile's disconnected poller and app lifecycle, Desktop diagnostics
 and WebSocket integration, and both renderers' scroll behavior remain host
 concerns. Hosts must not add a second older-message store or a host-local
 cursor/retry state machine. Desktop conversation selection owns activation
-guards and Rail projection coordination, then delegates initial or forced
-detail hydration to this controller. Message paging adapters do not call back
-into selection or Rail orchestration, and hosts do not maintain a second
-messages-only reconcile entrypoint.
+guards and Rail projection coordination, then asks this controller to ensure
+initial detail hydration. Automatic selection restoration is idempotent: it
+must not reinterpret a repeated selection as a forced refresh or enqueue a
+second reconcile while the first is pending. Explicit refresh remains a
+separate command. Message paging adapters do not call back into selection or
+Rail orchestration, and hosts do not maintain a second messages-only reconcile
+entrypoint.
 
 Event-stream continuity and command reachability are separate host facts.
 `eventStreamConnectionChanged` belongs to the coordinator and triggers

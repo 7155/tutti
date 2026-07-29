@@ -38,9 +38,9 @@ interface AgentConversationSelectionInput {
     contains(agentSessionId: string): boolean;
   };
   detail: {
+    ensureHydrated(agentSessionId: string): void;
     isHydrated(agentSessionId: string): boolean;
     markPending(agentSessionId: string): void;
-    reload(agentSessionId: string): void;
     setLoading(loading: boolean): void;
   };
   hasConversationListQuery(): boolean;
@@ -141,8 +141,8 @@ export function useAgentConversationSelection(
         if (reloadConversations) {
           void syncConversationListProjection(normalized);
         }
-        if (previous === normalized || !detailHydrated) {
-          current.detail.reload(normalized);
+        if (!detailHydrated) {
+          current.detail.ensureHydrated(normalized);
         }
       }
       persistActiveConversation(normalized);

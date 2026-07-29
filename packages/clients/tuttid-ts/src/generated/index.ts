@@ -1805,6 +1805,7 @@ export type {
   WorkspaceAgentRailPlacement,
   WorkspaceAgentSession,
   WorkspaceAgentSessionAttachmentResponse,
+  WorkspaceAgentSessionDetailProjection,
   WorkspaceAgentSessionDetailResponse,
   WorkspaceAgentSessionEventEnvelope,
   WorkspaceAgentSessionForkLineage,

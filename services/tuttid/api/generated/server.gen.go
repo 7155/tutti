@@ -253,7 +253,7 @@ type ServerInterface interface {
 	DeleteWorkspaceAgentSession(w http.ResponseWriter, r *http.Request, workspaceID WorkspaceID, agentSessionID AgentSessionID)
 	// Get one workspace agent session
 	// (GET /v1/workspaces/{workspaceID}/agent-sessions/{agentSessionID})
-	GetWorkspaceAgentSession(w http.ResponseWriter, r *http.Request, workspaceID WorkspaceID, agentSessionID AgentSessionID)
+	GetWorkspaceAgentSession(w http.ResponseWriter, r *http.Request, workspaceID WorkspaceID, agentSessionID AgentSessionID, params GetWorkspaceAgentSessionParams)
 	// Get the session acceptance ladder state
 	// (GET /v1/workspaces/{workspaceID}/agent-sessions/{agentSessionID}/acceptance)
 	GetAgentSessionAcceptance(w http.ResponseWriter, r *http.Request, workspaceID WorkspaceID, agentSessionID AgentSessionID)
@@ -3429,8 +3429,24 @@ func (siw *ServerInterfaceWrapper) GetWorkspaceAgentSession(w http.ResponseWrite
 
 	r = r.WithContext(ctx)
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetWorkspaceAgentSessionParams
+
+	// ------------- Optional query parameter "projection" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "projection", r.URL.Query(), &params.Projection, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "projection"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projection", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetWorkspaceAgentSession(w, r, workspaceID, agentSessionID)
+		siw.Handler.GetWorkspaceAgentSession(w, r, workspaceID, agentSessionID, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -17426,6 +17442,7 @@ func (response DeleteWorkspaceAgentSession503JSONResponse) VisitDeleteWorkspaceA
 type GetWorkspaceAgentSessionRequestObject struct {
 	WorkspaceID    WorkspaceID    `json:"workspaceID"`
 	AgentSessionID AgentSessionID `json:"agentSessionID"`
+	Params         GetWorkspaceAgentSessionParams
 }
 
 type GetWorkspaceAgentSessionResponseObject interface {
@@ -38750,11 +38767,12 @@ func (sh *strictHandler) DeleteWorkspaceAgentSession(w http.ResponseWriter, r *h
 }
 
 // GetWorkspaceAgentSession operation middleware
-func (sh *strictHandler) GetWorkspaceAgentSession(w http.ResponseWriter, r *http.Request, workspaceID WorkspaceID, agentSessionID AgentSessionID) {
+func (sh *strictHandler) GetWorkspaceAgentSession(w http.ResponseWriter, r *http.Request, workspaceID WorkspaceID, agentSessionID AgentSessionID, params GetWorkspaceAgentSessionParams) {
 	var request GetWorkspaceAgentSessionRequestObject
 
 	request.WorkspaceID = workspaceID
 	request.AgentSessionID = agentSessionID
+	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.GetWorkspaceAgentSession(ctx, request.(GetWorkspaceAgentSessionRequestObject))

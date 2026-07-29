@@ -307,16 +307,33 @@ export function createWorkspaceAgentClient(
     async getWorkspaceAgentSession(
       workspaceID,
       agentSessionID,
+      projection,
       requestOptions
     ) {
-      return unwrapData(
+      const expectedProjection = projection ?? "full";
+      const detail = unwrapData(
         await getWorkspaceAgentSession({
           client,
           path: { agentSessionID, workspaceID },
+          query: projection === undefined ? undefined : { projection },
           ...requestOptions
         }),
         "Workspace agent session request failed."
       );
+      if (detail.projection !== expectedProjection) {
+        throw new Error(
+          `Workspace agent session projection mismatch: requested ${expectedProjection}, received ${detail.projection}.`
+        );
+      }
+      if (
+        detail.lifecycleCapabilitiesProjected !==
+        (expectedProjection === "full")
+      ) {
+        throw new Error(
+          `Workspace agent session lifecycle capability projection does not match detail projection ${expectedProjection}.`
+        );
+      }
+      return detail;
     },
     async listWorkspaceAgentSessions(workspaceID, request, requestOptions) {
       return unwrapData(
@@ -440,11 +457,17 @@ export function createWorkspaceAgentClient(
         "Workspace agent session messages request failed."
       );
     },
-    async cancelWorkspaceAgentTurn(workspaceID, agentSessionID, turnID) {
+    async cancelWorkspaceAgentTurn(
+      workspaceID,
+      agentSessionID,
+      turnID,
+      requestOptions
+    ) {
       return unwrapData(
         await cancelWorkspaceAgentTurn({
           client,
-          path: { agentSessionID, turnID, workspaceID }
+          path: { agentSessionID, turnID, workspaceID },
+          ...requestOptions
         }),
         "Cancel workspace agent turn failed."
       );
@@ -481,12 +504,18 @@ export function createWorkspaceAgentClient(
         "Reconcile workspace agent goal state failed."
       );
     },
-    async sendWorkspaceAgentSessionInput(workspaceID, agentSessionID, request) {
+    async sendWorkspaceAgentSessionInput(
+      workspaceID,
+      agentSessionID,
+      request,
+      requestOptions
+    ) {
       return unwrapData(
         await sendWorkspaceAgentSessionInput({
           client,
           body: request,
-          path: { agentSessionID, workspaceID }
+          path: { agentSessionID, workspaceID },
+          ...requestOptions
         }),
         "Send workspace agent session input failed."
       );
@@ -562,23 +591,31 @@ export function createWorkspaceAgentClient(
     async updateWorkspaceAgentSessionSettings(
       workspaceID,
       agentSessionID,
-      request
+      request,
+      requestOptions
     ) {
       return unwrapData(
         await updateWorkspaceAgentSessionSettings({
           client,
           body: request,
-          path: { agentSessionID, workspaceID }
+          path: { agentSessionID, workspaceID },
+          ...requestOptions
         }),
         "Update workspace agent session settings failed."
       ).session;
     },
-    async updateWorkspaceAgentSessionPin(workspaceID, agentSessionID, request) {
+    async updateWorkspaceAgentSessionPin(
+      workspaceID,
+      agentSessionID,
+      request,
+      requestOptions
+    ) {
       return unwrapData(
         await updateWorkspaceAgentSessionPin({
           client,
           body: request,
-          path: { agentSessionID, workspaceID }
+          path: { agentSessionID, workspaceID },
+          ...requestOptions
         }),
         "Update workspace agent session pin failed."
       ).session;
@@ -615,13 +652,15 @@ export function createWorkspaceAgentClient(
       workspaceID,
       agentSessionID,
       requestID,
-      request
+      request,
+      requestOptions
     ) {
       return unwrapData(
         await submitWorkspaceAgentInteractive({
           client,
           body: request,
-          path: { agentSessionID, requestID, workspaceID }
+          path: { agentSessionID, requestID, workspaceID },
+          ...requestOptions
         }),
         "Submit workspace agent interactive response failed."
       ).session;

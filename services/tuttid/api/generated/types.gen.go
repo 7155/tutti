@@ -879,29 +879,35 @@ func (e AgentTargetSource) Valid() bool {
 
 // Defines values for ApiErrorDetailsCode.
 const (
-	AgentQuickPromptConflict          ApiErrorDetailsCode = "agent_quick_prompt_conflict"
-	AgentQuickPromptNotFound          ApiErrorDetailsCode = "agent_quick_prompt_not_found"
-	AgentQuickPromptOperationFailed   ApiErrorDetailsCode = "agent_quick_prompt_operation_failed"
-	AgentSessionForkOperationNotFound ApiErrorDetailsCode = "agent_session_fork_operation_not_found"
-	AgentTargetNotFound               ApiErrorDetailsCode = "agent_target_not_found"
-	AutomationRuleNotFound            ApiErrorDetailsCode = "automation_rule_not_found"
-	CollaborationRunNotFound          ApiErrorDetailsCode = "collaboration_run_not_found"
-	InvalidRequest                    ApiErrorDetailsCode = "invalid_request"
-	MethodNotAllowed                  ApiErrorDetailsCode = "method_not_allowed"
-	ModelPlanNotFound                 ApiErrorDetailsCode = "model_plan_not_found"
-	ModelPlanReferenced               ApiErrorDetailsCode = "model_plan_referenced"
-	ModelPolicyReferenced             ApiErrorDetailsCode = "model_policy_referenced"
-	PreferencesOperationFailed        ApiErrorDetailsCode = "preferences_operation_failed"
-	ServiceUnavailable                ApiErrorDetailsCode = "service_unavailable"
-	Unauthorized                      ApiErrorDetailsCode = "unauthorized"
-	WorkspaceAgentNotFound            ApiErrorDetailsCode = "workspace_agent_not_found"
-	WorkspaceAppNotFound              ApiErrorDetailsCode = "workspace_app_not_found"
-	WorkspaceFileNotFound             ApiErrorDetailsCode = "workspace_file_not_found"
-	WorkspaceIssueResourceExists      ApiErrorDetailsCode = "workspace_issue_resource_exists"
-	WorkspaceIssueResourceNotFound    ApiErrorDetailsCode = "workspace_issue_resource_not_found"
-	WorkspaceNotFound                 ApiErrorDetailsCode = "workspace_not_found"
-	WorkspaceOperationFailed          ApiErrorDetailsCode = "workspace_operation_failed"
-	WorkspaceTerminalNotFound         ApiErrorDetailsCode = "workspace_terminal_not_found"
+	AgentQuickPromptConflict              ApiErrorDetailsCode = "agent_quick_prompt_conflict"
+	AgentQuickPromptNotFound              ApiErrorDetailsCode = "agent_quick_prompt_not_found"
+	AgentQuickPromptOperationFailed       ApiErrorDetailsCode = "agent_quick_prompt_operation_failed"
+	AgentSessionForkOperationNotFound     ApiErrorDetailsCode = "agent_session_fork_operation_not_found"
+	AgentTargetNotFound                   ApiErrorDetailsCode = "agent_target_not_found"
+	AutomationRuleNotFound                ApiErrorDetailsCode = "automation_rule_not_found"
+	CollaborationRunNotFound              ApiErrorDetailsCode = "collaboration_run_not_found"
+	InvalidRequest                        ApiErrorDetailsCode = "invalid_request"
+	MethodNotAllowed                      ApiErrorDetailsCode = "method_not_allowed"
+	ModelPlanNotFound                     ApiErrorDetailsCode = "model_plan_not_found"
+	ModelPlanReferenced                   ApiErrorDetailsCode = "model_plan_referenced"
+	ModelPolicyReferenced                 ApiErrorDetailsCode = "model_policy_referenced"
+	PreferencesOperationFailed            ApiErrorDetailsCode = "preferences_operation_failed"
+	ServiceUnavailable                    ApiErrorDetailsCode = "service_unavailable"
+	TuttiExecutionActive                  ApiErrorDetailsCode = "tutti_execution_active"
+	TuttiModeArchiveConflict              ApiErrorDetailsCode = "tutti_mode_archive_conflict"
+	TuttiModeGoalReviewConflict           ApiErrorDetailsCode = "tutti_mode_goal_review_conflict"
+	TuttiModeGoalReviewNotFound           ApiErrorDetailsCode = "tutti_mode_goal_review_not_found"
+	TuttiModeGoalReviewOperationFailed    ApiErrorDetailsCode = "tutti_mode_goal_review_operation_failed"
+	TuttiModeGoalReviewServiceUnavailable ApiErrorDetailsCode = "tutti_mode_goal_review_service_unavailable"
+	Unauthorized                          ApiErrorDetailsCode = "unauthorized"
+	WorkspaceAgentNotFound                ApiErrorDetailsCode = "workspace_agent_not_found"
+	WorkspaceAppNotFound                  ApiErrorDetailsCode = "workspace_app_not_found"
+	WorkspaceFileNotFound                 ApiErrorDetailsCode = "workspace_file_not_found"
+	WorkspaceIssueResourceExists          ApiErrorDetailsCode = "workspace_issue_resource_exists"
+	WorkspaceIssueResourceNotFound        ApiErrorDetailsCode = "workspace_issue_resource_not_found"
+	WorkspaceNotFound                     ApiErrorDetailsCode = "workspace_not_found"
+	WorkspaceOperationFailed              ApiErrorDetailsCode = "workspace_operation_failed"
+	WorkspaceTerminalNotFound             ApiErrorDetailsCode = "workspace_terminal_not_found"
 )
 
 // Valid indicates whether the value is a known member of the ApiErrorDetailsCode enum.
@@ -934,6 +940,18 @@ func (e ApiErrorDetailsCode) Valid() bool {
 	case PreferencesOperationFailed:
 		return true
 	case ServiceUnavailable:
+		return true
+	case TuttiExecutionActive:
+		return true
+	case TuttiModeArchiveConflict:
+		return true
+	case TuttiModeGoalReviewConflict:
+		return true
+	case TuttiModeGoalReviewNotFound:
+		return true
+	case TuttiModeGoalReviewOperationFailed:
+		return true
+	case TuttiModeGoalReviewServiceUnavailable:
 		return true
 	case Unauthorized:
 		return true
@@ -2035,6 +2053,21 @@ func (e SubmitWorkspaceAgentPlanDecisionRequestPromptKind) Valid() bool {
 	}
 }
 
+// Defines values for SwitchTuttiModeGoalReviewToSelfResponseReviewMode.
+const (
+	Self SwitchTuttiModeGoalReviewToSelfResponseReviewMode = "self"
+)
+
+// Valid indicates whether the value is a known member of the SwitchTuttiModeGoalReviewToSelfResponseReviewMode enum.
+func (e SwitchTuttiModeGoalReviewToSelfResponseReviewMode) Valid() bool {
+	switch e {
+	case Self:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TuttiModeActivationSource.
 const (
 	TuttiModeActivationSourceBadgeRemove  TuttiModeActivationSource = "badge_remove"
@@ -2065,6 +2098,33 @@ func (e TuttiModeActivationStatus) Valid() bool {
 	case TuttiModeActivationStatusActive:
 		return true
 	case TuttiModeActivationStatusInactive:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TuttiModeArchiveOperationStatus.
+const (
+	TuttiModeArchiveOperationStatusArchiving     TuttiModeArchiveOperationStatus = "archiving"
+	TuttiModeArchiveOperationStatusCancelingRuns TuttiModeArchiveOperationStatus = "canceling_runs"
+	TuttiModeArchiveOperationStatusCompleted     TuttiModeArchiveOperationStatus = "completed"
+	TuttiModeArchiveOperationStatusFailed        TuttiModeArchiveOperationStatus = "failed"
+	TuttiModeArchiveOperationStatusRequested     TuttiModeArchiveOperationStatus = "requested"
+)
+
+// Valid indicates whether the value is a known member of the TuttiModeArchiveOperationStatus enum.
+func (e TuttiModeArchiveOperationStatus) Valid() bool {
+	switch e {
+	case TuttiModeArchiveOperationStatusArchiving:
+		return true
+	case TuttiModeArchiveOperationStatusCancelingRuns:
+		return true
+	case TuttiModeArchiveOperationStatusCompleted:
+		return true
+	case TuttiModeArchiveOperationStatusFailed:
+		return true
+	case TuttiModeArchiveOperationStatusRequested:
 		return true
 	default:
 		return false
@@ -2452,6 +2512,24 @@ func (e WorkspaceAgentSessionAttachmentResponseMimeType) Valid() bool {
 	case WorkspaceAgentSessionAttachmentResponseMimeTypeImagepng:
 		return true
 	case WorkspaceAgentSessionAttachmentResponseMimeTypeImagewebp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkspaceAgentSessionDetailProjection.
+const (
+	Full             WorkspaceAgentSessionDetailProjection = "full"
+	MessageHydration WorkspaceAgentSessionDetailProjection = "messageHydration"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceAgentSessionDetailProjection enum.
+func (e WorkspaceAgentSessionDetailProjection) Valid() bool {
+	switch e {
+	case Full:
+		return true
+	case MessageHydration:
 		return true
 	default:
 		return false
@@ -3381,31 +3459,31 @@ func (e WorkspaceWorkflowPlanRevisionSchemaVersion) Valid() bool {
 
 // Defines values for WorkspaceWorkflowStatus.
 const (
-	Accepted      WorkspaceWorkflowStatus = "accepted"
-	Canceled      WorkspaceWorkflowStatus = "canceled"
-	Completed     WorkspaceWorkflowStatus = "completed"
-	Failed        WorkspaceWorkflowStatus = "failed"
-	InProgress    WorkspaceWorkflowStatus = "in_progress"
-	PendingReview WorkspaceWorkflowStatus = "pending_review"
-	Rejected      WorkspaceWorkflowStatus = "rejected"
+	WorkspaceWorkflowStatusAccepted      WorkspaceWorkflowStatus = "accepted"
+	WorkspaceWorkflowStatusCanceled      WorkspaceWorkflowStatus = "canceled"
+	WorkspaceWorkflowStatusCompleted     WorkspaceWorkflowStatus = "completed"
+	WorkspaceWorkflowStatusFailed        WorkspaceWorkflowStatus = "failed"
+	WorkspaceWorkflowStatusInProgress    WorkspaceWorkflowStatus = "in_progress"
+	WorkspaceWorkflowStatusPendingReview WorkspaceWorkflowStatus = "pending_review"
+	WorkspaceWorkflowStatusRejected      WorkspaceWorkflowStatus = "rejected"
 )
 
 // Valid indicates whether the value is a known member of the WorkspaceWorkflowStatus enum.
 func (e WorkspaceWorkflowStatus) Valid() bool {
 	switch e {
-	case Accepted:
+	case WorkspaceWorkflowStatusAccepted:
 		return true
-	case Canceled:
+	case WorkspaceWorkflowStatusCanceled:
 		return true
-	case Completed:
+	case WorkspaceWorkflowStatusCompleted:
 		return true
-	case Failed:
+	case WorkspaceWorkflowStatusFailed:
 		return true
-	case InProgress:
+	case WorkspaceWorkflowStatusInProgress:
 		return true
-	case PendingReview:
+	case WorkspaceWorkflowStatusPendingReview:
 		return true
-	case Rejected:
+	case WorkspaceWorkflowStatusRejected:
 		return true
 	default:
 		return false
@@ -4144,6 +4222,12 @@ type AgentTargetAuthMethod struct {
 	Description *string `json:"description,omitempty"`
 	Id          string  `json:"id"`
 	Name        string  `json:"name"`
+
+	// TerminalCommand Ready-to-run interactive sign-in command for terminal-type methods.
+	TerminalCommand *string `json:"terminalCommand,omitempty"`
+
+	// Type Provider-declared method kind (for example "terminal").
+	Type *string `json:"type,omitempty"`
 }
 
 // AgentTargetAuthenticatedAccount defines model for AgentTargetAuthenticatedAccount.
@@ -4376,6 +4460,12 @@ type AppendAgentSessionRecordingActivityEventsRequest struct {
 // AppendAgentSessionRecordingActivityEventsResponse defines model for AppendAgentSessionRecordingActivityEventsResponse.
 type AppendAgentSessionRecordingActivityEventsResponse struct {
 	AcceptedThroughSequence int64 `json:"acceptedThroughSequence"`
+}
+
+// ArchiveTuttiModeExecutionRequest defines model for ArchiveTuttiModeExecutionRequest.
+type ArchiveTuttiModeExecutionRequest struct {
+	Reason    string `json:"reason"`
+	RequestId string `json:"requestId"`
 }
 
 // AuthenticateAgentTargetRuntimeRequest defines model for AuthenticateAgentTargetRuntimeRequest.
@@ -5394,18 +5484,21 @@ type IssueManagerExecutionProfile struct {
 
 // IssueManagerIssue defines model for IssueManagerIssue.
 type IssueManagerIssue struct {
-	Budget             IssueManagerBudget           `json:"budget"`
-	CanceledCount      int                          `json:"canceledCount"`
-	CompletedCount     int                          `json:"completedCount"`
-	Content            string                       `json:"content"`
-	CreatedAtUnix      int64                        `json:"createdAtUnix"`
-	CreatorAvatarUrl   string                       `json:"creatorAvatarUrl"`
-	CreatorDisplayName string                       `json:"creatorDisplayName"`
-	CreatorUserId      string                       `json:"creatorUserId"`
-	ExecutionProfile   IssueManagerExecutionProfile `json:"executionProfile"`
-	FailedCount        int                          `json:"failedCount"`
-	IssueId            string                       `json:"issueId"`
-	NotStartedCount    int                          `json:"notStartedCount"`
+	Budget             IssueManagerBudget `json:"budget"`
+	CanceledCount      int                `json:"canceledCount"`
+	CompletedCount     int                `json:"completedCount"`
+	Content            string             `json:"content"`
+	CreatedAtUnix      int64              `json:"createdAtUnix"`
+	CreatorAvatarUrl   string             `json:"creatorAvatarUrl"`
+	CreatorDisplayName string             `json:"creatorDisplayName"`
+	CreatorUserId      string             `json:"creatorUserId"`
+
+	// DispatchPaused When true, automatic task dispatch is durably paused and no successor task may launch.
+	DispatchPaused   bool                         `json:"dispatchPaused"`
+	ExecutionProfile IssueManagerExecutionProfile `json:"executionProfile"`
+	FailedCount      int                          `json:"failedCount"`
+	IssueId          string                       `json:"issueId"`
+	NotStartedCount  int                          `json:"notStartedCount"`
 
 	// ParallelExecution When true, the daemon dispatches every dependency-ready task whose execution directory is isolated; dependencies still require user acceptance.
 	ParallelExecution      bool `json:"parallelExecution"`
@@ -5605,10 +5698,16 @@ type IssueManagerTask struct {
 	Priority       IssueManagerPriority `json:"priority"`
 	SortIndex      int                  `json:"sortIndex"`
 	Status         IssueManagerStatus   `json:"status"`
-	TaskId         string               `json:"taskId"`
-	Title          string               `json:"title"`
-	UpdatedAtUnix  int64                `json:"updatedAtUnix"`
-	WorkspaceId    string               `json:"workspaceId"`
+
+	// SupersededAtUnix Logical supersession timestamp. Zero means the task remains in the active graph; non-zero preserves the task and its execution history while excluding it from future scheduling.
+	SupersededAtUnix int64 `json:"supersededAtUnix"`
+
+	// SupersededByTaskId Replacement task ID when supersession introduced one.
+	SupersededByTaskId string `json:"supersededByTaskId"`
+	TaskId             string `json:"taskId"`
+	Title              string `json:"title"`
+	UpdatedAtUnix      int64  `json:"updatedAtUnix"`
+	WorkspaceId        string `json:"workspaceId"`
 }
 
 // IssueManagerTaskContextRef defines model for IssueManagerTaskContextRef.
@@ -6200,6 +6299,25 @@ type SubmitWorkspaceAgentPlanDecisionRequestAction string
 // SubmitWorkspaceAgentPlanDecisionRequestPromptKind defines model for SubmitWorkspaceAgentPlanDecisionRequest.PromptKind.
 type SubmitWorkspaceAgentPlanDecisionRequestPromptKind string
 
+// SwitchTuttiModeGoalReviewToSelfRequest defines model for SwitchTuttiModeGoalReviewToSelfRequest.
+type SwitchTuttiModeGoalReviewToSelfRequest struct {
+	CheckpointId          string `json:"checkpointId"`
+	ExpectedGraphRevision int64  `json:"expectedGraphRevision"`
+	Reason                string `json:"reason"`
+	RequestId             string `json:"requestId"`
+}
+
+// SwitchTuttiModeGoalReviewToSelfResponse defines model for SwitchTuttiModeGoalReviewToSelfResponse.
+type SwitchTuttiModeGoalReviewToSelfResponse struct {
+	ExecutionId string                                            `json:"executionId"`
+	Replayed    bool                                              `json:"replayed"`
+	ReviewId    string                                            `json:"reviewId"`
+	ReviewMode  SwitchTuttiModeGoalReviewToSelfResponseReviewMode `json:"reviewMode"`
+}
+
+// SwitchTuttiModeGoalReviewToSelfResponseReviewMode defines model for SwitchTuttiModeGoalReviewToSelfResponse.ReviewMode.
+type SwitchTuttiModeGoalReviewToSelfResponseReviewMode string
+
 // TrackEvent defines model for TrackEvent.
 type TrackEvent struct {
 	ClientTs int64                   `json:"client_ts"`
@@ -6225,11 +6343,18 @@ type TuttiModeActivation struct {
 
 // TuttiModeActivationIntent defines model for TuttiModeActivationIntent.
 type TuttiModeActivationIntent struct {
-	// OrchestrationIntensity Optional orchestration intensity carried with the initial activation. Omitted uses the daemon default.
+	// Effect Optional outcome-quality preference carried with the initial activation. Omitted uses the daemon default.
+	Effect *int `json:"effect,omitempty"`
+
+	// OrchestrationIntensity Legacy single-axis alias of effect. Ignored when effect is present.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	OrchestrationIntensity *int `json:"orchestrationIntensity,omitempty"`
 
 	// Source User-visible interaction that created this activation revision.
 	Source TuttiModeActivationSource `json:"source"`
+
+	// Speed Optional completion-speed preference carried with the initial activation. Omitted uses the daemon default.
+	Speed  *int                      `json:"speed,omitempty"`
 	Status TuttiModeActivationStatus `json:"status"`
 }
 
@@ -6243,14 +6368,21 @@ type TuttiModeActivationResponse struct {
 type TuttiModeActivationRevision struct {
 	ActivationId    openapi_types.UUID `json:"activationId"`
 	CreatedAtUnixMs int64              `json:"createdAtUnixMs"`
-	Id              openapi_types.UUID `json:"id"`
 
-	// OrchestrationIntensity Session-scoped orchestration intensity captured with this activation revision. Higher values ask the planning agent for finer-grained task decomposition.
+	// Effect Session-scoped outcome-quality preference captured with this activation revision. Higher values favor stronger models and stronger task verification.
+	Effect *int               `json:"effect,omitempty"`
+	Id     openapi_types.UUID `json:"id"`
+
+	// OrchestrationIntensity Legacy single-axis alias of effect. New clients use effect and speed.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	OrchestrationIntensity int   `json:"orchestrationIntensity"`
 	Revision               int64 `json:"revision"`
 
 	// Source User-visible interaction that created this activation revision.
 	Source TuttiModeActivationSource `json:"source"`
+
+	// Speed Session-scoped completion-speed preference captured with this activation revision. Higher values favor faster suitable models.
+	Speed  *int                      `json:"speed,omitempty"`
 	Status TuttiModeActivationStatus `json:"status"`
 }
 
@@ -6259,6 +6391,26 @@ type TuttiModeActivationSource string
 
 // TuttiModeActivationStatus defines model for TuttiModeActivationStatus.
 type TuttiModeActivationStatus string
+
+// TuttiModeArchiveOperation defines model for TuttiModeArchiveOperation.
+type TuttiModeArchiveOperation struct {
+	AttemptCount      int                             `json:"attemptCount"`
+	CompletedAtUnixMs int64                           `json:"completedAtUnixMs"`
+	CreatedAtUnixMs   int64                           `json:"createdAtUnixMs"`
+	ExecutionId       string                          `json:"executionId"`
+	IssueId           string                          `json:"issueId"`
+	LastError         string                          `json:"lastError"`
+	OperationId       string                          `json:"operationId"`
+	Reason            string                          `json:"reason"`
+	RequestId         string                          `json:"requestId"`
+	RequestedBy       string                          `json:"requestedBy"`
+	Status            TuttiModeArchiveOperationStatus `json:"status"`
+	UpdatedAtUnixMs   int64                           `json:"updatedAtUnixMs"`
+	WorkspaceId       string                          `json:"workspaceId"`
+}
+
+// TuttiModeArchiveOperationStatus defines model for TuttiModeArchiveOperation.Status.
+type TuttiModeArchiveOperationStatus string
 
 // TuttiModePlanBudget defines model for TuttiModePlanBudget.
 type TuttiModePlanBudget struct {
@@ -6290,9 +6442,16 @@ type TuttiModePlanDocumentSchema string
 
 // TuttiModePlanExecution defines model for TuttiModePlanExecution.
 type TuttiModePlanExecution struct {
-	Mode                   TuttiModePlanExecutionMode `json:"mode"`
-	OrchestrationIntensity int                        `json:"orchestrationIntensity"`
-	ReasoningIntensity     int                        `json:"reasoningIntensity"`
+	// Effect Optional Tutti Mode outcome-quality preference snapshot. Omitted documents use orchestrationIntensity as the legacy single-axis effect and use the balanced default for speed.
+	Effect *int                       `json:"effect,omitempty"`
+	Mode   TuttiModePlanExecutionMode `json:"mode"`
+
+	// OrchestrationIntensity Issue-owned decomposition, dependency, review, and retry strength. This legacy v1 field keeps its original meaning and is not the Tutti Mode speed preference.
+	OrchestrationIntensity int `json:"orchestrationIntensity"`
+	ReasoningIntensity     int `json:"reasoningIntensity"`
+
+	// Speed Optional Tutti Mode completion-speed preference snapshot. Omitted documents use the balanced default.
+	Speed *int `json:"speed,omitempty"`
 }
 
 // TuttiModePlanExecutionMode defines model for TuttiModePlanExecution.Mode.
@@ -6380,14 +6539,21 @@ type UpdateIssueManagerTopicRequest struct {
 
 // UpdateTuttiModeActivationRequest defines model for UpdateTuttiModeActivationRequest.
 type UpdateTuttiModeActivationRequest struct {
+	// Effect Optional outcome-quality preference persisted with the appended activation revision. Omitted keeps the current value, or the daemon default for the first revision.
+	Effect *int `json:"effect,omitempty"`
+
 	// ExpectedRevision Optional optimistic-concurrency guard. Zero means no activation revision exists yet.
 	ExpectedRevision *int64 `json:"expectedRevision,omitempty"`
 
-	// OrchestrationIntensity Optional orchestration intensity persisted with the appended activation revision. Omitted keeps the current value, or the daemon default for the first revision.
+	// OrchestrationIntensity Legacy single-axis alias of effect. Ignored when effect is present.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	OrchestrationIntensity *int `json:"orchestrationIntensity,omitempty"`
 
 	// Source User-visible interaction that created this activation revision.
 	Source TuttiModeActivationSource `json:"source"`
+
+	// Speed Optional completion-speed preference persisted with the appended activation revision. Omitted keeps the current value, or the daemon default for the first revision.
+	Speed  *int                      `json:"speed,omitempty"`
 	Status TuttiModeActivationStatus `json:"status"`
 }
 
@@ -6820,11 +6986,20 @@ type WorkspaceAgentSessionAttachmentResponse struct {
 // WorkspaceAgentSessionAttachmentResponseMimeType defines model for WorkspaceAgentSessionAttachmentResponse.MimeType.
 type WorkspaceAgentSessionAttachmentResponseMimeType string
 
+// WorkspaceAgentSessionDetailProjection Projection applied to a Session detail response. messageHydration preserves hierarchy and message cursors but leaves provider-backed lifecycle capabilities unresolved.
+type WorkspaceAgentSessionDetailProjection string
+
 // WorkspaceAgentSessionDetailResponse defines model for WorkspaceAgentSessionDetailResponse.
 type WorkspaceAgentSessionDetailResponse struct {
 	// ChildSessions Flat collection of every nested child session below session. Clients reconstruct the tree from the immutable parent fields.
 	ChildSessions []WorkspaceAgentSession `json:"childSessions"`
-	Session       WorkspaceAgentSession   `json:"session"`
+
+	// LifecycleCapabilitiesProjected Whether provider-backed lifecycle capability projection ran for session and childSessions. A full projection reports true even when a provider probe fails closed, because false then means the action is unavailable for this response. When false, projection was intentionally skipped and capability values must not be applied as authoritative.
+	LifecycleCapabilitiesProjected bool `json:"lifecycleCapabilitiesProjected"`
+
+	// Projection Projection applied to a Session detail response. messageHydration preserves hierarchy and message cursors but leaves provider-backed lifecycle capabilities unresolved.
+	Projection WorkspaceAgentSessionDetailProjection `json:"projection"`
+	Session    WorkspaceAgentSession                 `json:"session"`
 
 	// Turns Ordered durable turns owned by session. This detail-only collection is the canonical source for turn-scoped history such as file changes; clients must not reconstruct it from provider tool payloads.
 	Turns []WorkspaceAgentTurn `json:"turns"`
@@ -7787,6 +7962,9 @@ type CliCommandID = string
 // CollaborationRunID defines model for CollaborationRunID.
 type CollaborationRunID = string
 
+// IssueID defines model for IssueID.
+type IssueID = string
+
 // IssueManagerContextRefID defines model for IssueManagerContextRefID.
 type IssueManagerContextRefID = string
 
@@ -7910,6 +8088,18 @@ type PreferencesOperationError = ApiErrorResponse
 // ServiceUnavailableError defines model for ServiceUnavailableError.
 type ServiceUnavailableError = ApiErrorResponse
 
+// TuttiExecutionActiveError defines model for TuttiExecutionActiveError.
+type TuttiExecutionActiveError = ApiErrorResponse
+
+// TuttiModeArchiveConflictError defines model for TuttiModeArchiveConflictError.
+type TuttiModeArchiveConflictError = ApiErrorResponse
+
+// TuttiModeGoalReviewConflictError defines model for TuttiModeGoalReviewConflictError.
+type TuttiModeGoalReviewConflictError = ApiErrorResponse
+
+// TuttiModeGoalReviewNotFoundError defines model for TuttiModeGoalReviewNotFoundError.
+type TuttiModeGoalReviewNotFoundError = ApiErrorResponse
+
 // UnauthorizedError defines model for UnauthorizedError.
 type UnauthorizedError = ApiErrorResponse
 
@@ -7963,6 +8153,9 @@ type GetAgentProviderStatusesParams struct {
 type ListCliCapabilitiesParams struct {
 	// WorkspaceID Optional workspace context. When omitted, the daemon uses the startup workspace.
 	WorkspaceID *string `form:"workspaceID,omitempty" json:"workspaceID,omitempty"`
+
+	// AgentSessionID Optional canonical Agent Session identity. When present, discovery is constrained by that Session's persisted command capability projection.
+	AgentSessionID *string `form:"agentSessionID,omitempty" json:"agentSessionID,omitempty"`
 
 	// IncludeHidden Include capabilities hidden from ordinary CLI command discovery by provider availability filters and command visibility. Intended for metadata consumers, not ordinary user command routing.
 	IncludeHidden *bool `form:"includeHidden,omitempty" json:"includeHidden,omitempty"`
@@ -8035,6 +8228,12 @@ type ListWorkspaceAgentSessionsParams struct {
 	SearchQuery *string `form:"searchQuery,omitempty" json:"searchQuery,omitempty"`
 	Cursor      *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit       *int    `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// GetWorkspaceAgentSessionParams defines parameters for GetWorkspaceAgentSession.
+type GetWorkspaceAgentSessionParams struct {
+	// Projection Selects the detail projection. messageHydration preserves the session hierarchy and message cursors used by reconciliation discovery without resolving provider-backed lifecycle capabilities.
+	Projection *WorkspaceAgentSessionDetailProjection `form:"projection,omitempty" json:"projection,omitempty"`
 }
 
 // ListWorkspaceAgentSessionMessagesParams defines parameters for ListWorkspaceAgentSessionMessages.
@@ -8139,6 +8338,11 @@ type ListWorkspaceIssueTasksParams struct {
 // AttachWorkspaceTerminalParams defines parameters for AttachWorkspaceTerminal.
 type AttachWorkspaceTerminalParams struct {
 	AfterSeq *TerminalAfterSeq `form:"afterSeq,omitempty" json:"afterSeq,omitempty"`
+}
+
+// GetTuttiModeArchiveOperationParams defines parameters for GetTuttiModeArchiveOperation.
+type GetTuttiModeArchiveOperationParams struct {
+	OperationId string `form:"operationId" json:"operationId"`
 }
 
 // ListWorkspaceWorkflowsParams defines parameters for ListWorkspaceWorkflows.
@@ -8416,6 +8620,9 @@ type CreateWorkspaceIssueTaskRunJSONRequestBody = CreateIssueManagerRunRequest
 // CompleteWorkspaceIssueTaskRunJSONRequestBody defines body for CompleteWorkspaceIssueTaskRun for application/json ContentType.
 type CompleteWorkspaceIssueTaskRunJSONRequestBody = CompleteIssueManagerRunRequest
 
+// SwitchTuttiModeGoalReviewToSelfJSONRequestBody defines body for SwitchTuttiModeGoalReviewToSelf for application/json ContentType.
+type SwitchTuttiModeGoalReviewToSelfJSONRequestBody = SwitchTuttiModeGoalReviewToSelfRequest
+
 // CreateModelPlanJSONRequestBody defines body for CreateModelPlan for application/json ContentType.
 type CreateModelPlanJSONRequestBody = PutModelPlanRequest
 
@@ -8442,6 +8649,9 @@ type CreateWorkspaceTerminalJSONRequestBody = CreateWorkspaceTerminalRequest
 
 // ResizeWorkspaceTerminalJSONRequestBody defines body for ResizeWorkspaceTerminal for application/json ContentType.
 type ResizeWorkspaceTerminalJSONRequestBody = ResizeWorkspaceTerminalRequest
+
+// ArchiveTuttiModeExecutionJSONRequestBody defines body for ArchiveTuttiModeExecution for application/json ContentType.
+type ArchiveTuttiModeExecutionJSONRequestBody = ArchiveTuttiModeExecutionRequest
 
 // PutWorkspaceWorkbenchJSONRequestBody defines body for PutWorkspaceWorkbench for application/json ContentType.
 type PutWorkspaceWorkbenchJSONRequestBody = PutWorkspaceWorkbenchRequest

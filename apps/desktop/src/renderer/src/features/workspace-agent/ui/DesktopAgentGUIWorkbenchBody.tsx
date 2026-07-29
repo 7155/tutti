@@ -13,11 +13,6 @@ import {
   type AgentHostInputApi,
   type AgentVisibleErrorOverrides
 } from "@tutti-os/agent-gui";
-import { AgentSessionReplayComposerAccessory } from "../../agent-session-replay/ui/AgentSessionReplayComposerAccessory.tsx";
-import { AgentSessionReplayPlaybackControls } from "../../agent-session-replay/ui/AgentSessionReplayPlaybackSpeed.tsx";
-import { AgentSessionReplayStatus } from "../../agent-session-replay/ui/AgentSessionReplayStatus.tsx";
-import { AgentSessionActivityReplayBinding } from "../../agent-session-replay/ui/AgentSessionActivityReplayBinding.tsx";
-import { createAgentSessionReplayLauncher } from "../../agent-session-replay/services/agentSessionReplayLauncher.ts";
 import { resolveInsufficientCreditsSemantic } from "@tutti-os/commerce";
 import { useService } from "@tutti-os/infra/di";
 import { requestWorkspaceAgentGuiLaunch } from "../services/workspaceAgentGuiLaunchCoordinator.ts";
@@ -29,9 +24,7 @@ import {
   workbenchFocusInputActivationType
 } from "@tutti-os/workbench-surface";
 import { useTranslation } from "@renderer/i18n";
-import type { WorkspaceAgentProvider } from "@tutti-os/client-tuttid-ts";
 import { useDesktopPreferencesService } from "@renderer/features/desktop-preferences/ui/useDesktopPreferencesService";
-import { useWorkspaceSettingsService } from "../../workspace-workbench/ui/useWorkspaceSettingsService";
 import { buildDesktopCommerceErrorPresentation } from "./desktopCommerceErrorPresentation";
 import { Toast } from "@renderer/lib/toast";
 import { isDesktopAgentProvider } from "@shared/preferences";
@@ -46,6 +39,7 @@ import {
   type DesktopAgentGUINodeState
 } from "../desktopAgentGUINodeState";
 import { consumeDesktopAgentGUIOpenSessionActivation } from "../services/desktopAgentGUIOpenSessionActivation.ts";
+import type { DesktopAgentGUIOpenSessionComposerRequest } from "../services/desktopAgentGUIOpenSessionComposerActivation.ts";
 import {
   consumeDesktopAgentGUIPrefillPromptActivation,
   type DesktopAgentGUIPrefillPromptRequest
@@ -78,6 +72,10 @@ import { useStableDesktopAgentGUIHostProps } from "./useStableDesktopAgentGUIHos
 import { resolveDesktopAgentGUIEmbeddedDesktopSize } from "./desktopAgentGUIEmbeddedFrame.ts";
 import { scheduleDesktopAgentGUIWorkbenchHydration } from "./desktopAgentGUIWorkbenchHydration.ts";
 import { useDesktopAgentConfigCommerce } from "./useDesktopAgentConfigCommerce.tsx";
+import { hasDesktopLocalTuttiAgent } from "./desktopAgentConfigCommerceContext.ts";
+import { useDesktopAgentGUIComposerFooterAccessory } from "./useDesktopAgentGUIComposerFooterAccessory.tsx";
+import { useDesktopAgentGUIOpenSessionComposerRequest } from "./useDesktopAgentGUIOpenSessionComposerRequest.ts";
+import { useDesktopAgentGUIProviderAuthAccountLabels } from "./useDesktopAgentGUIProviderAuthAccountLabels.ts";
 import { IAgentEnvService } from "../services/agentEnvService.interface.ts";
 import { preloadDesktopAgentGuiMentionBrowse } from "../services/preloadDesktopAgentGuiMentionBrowse.ts";
 import { DESKTOP_AGENT_GUI_CURRENT_USER_ID } from "../services/desktopAgentGuiIdentity.ts";
@@ -85,8 +83,7 @@ import {
   AGENT_SESSION_RECORDING_FLAG,
   AGENT_REFERENCE_PROVENANCE_FILTER_FLAG,
   isFeatureEnabled,
-  LAB_AGENT_INPUT_HISTORY_FLAG,
-  LAB_TUTTI_MODE_FLAG
+  LAB_AGENT_INPUT_HISTORY_FLAG
 } from "../../../../../shared/featureFlags/catalog.ts";
 
 function DesktopAgentGUISurfaceImpl({
@@ -132,9 +129,7 @@ function DesktopAgentGUISurfaceImpl({
 }: DesktopAgentGUISurfaceProps): JSX.Element {
   const agents = agentDirectory.agents;
   const { i18n, locale } = useTranslation();
-  const { state: workspaceSettingsState } = useWorkspaceSettingsService();
-  const commerceEnabled =
-    workspaceSettingsState.tuttiAgentSwitchEnabled === true;
+  const commerceEnabled = hasDesktopLocalTuttiAgent(agents);
   const { accountState, handleAgentConfigMenuOpen, renderAgentConfigAccount } =
     useDesktopAgentConfigCommerce(commerceEnabled);
   const { service: desktopPreferencesService, state: desktopPreferencesState } =
@@ -280,6 +275,8 @@ function DesktopAgentGUISurfaceImpl({
   const [openSessionRequest, setOpenSessionRequest] = useState<NonNullable<
     AgentGUIProps["runtimeRequests"]["openSession"]
   > | null>(null);
+  const [openSessionComposerRequest, setOpenSessionComposerRequest] =
+    useState<DesktopAgentGUIOpenSessionComposerRequest | null>(null);
   const [prefillPromptRequest, setPrefillPromptRequest] =
     useState<DesktopAgentGUIPrefillPromptRequest | null>(
       () => prefillPromptBootstrapRequest
@@ -388,6 +385,7 @@ function DesktopAgentGUISurfaceImpl({
       nodeId: surface.nodeId,
       onActivationError: handleOpenSessionActivationError,
       onOpenSessionRequest: setOpenSessionRequest,
+      onOpenSessionComposerRequest: setOpenSessionComposerRequest,
       // Persistence is owned by handleUpdateNode (the single writer).
       onStateChange: DESKTOP_AGENT_GUI_NOOP,
       provider,
@@ -509,6 +507,8 @@ function DesktopAgentGUISurfaceImpl({
     },
     [desktopPreferencesService, runtimeApi, workspaceId]
   );
+  const handleComposerAppendHandled =
+    useDesktopAgentGUIOpenSessionComposerRequest(setOpenSessionComposerRequest);
 
   const frame = surface.frame;
   const agentHostApiWithToast = useMemo<AgentHostInputApi>(
@@ -528,6 +528,7 @@ function DesktopAgentGUISurfaceImpl({
     [frame.height, frame.width]
   );
   const composerFocusRequestSequence =
+    openSessionComposerRequest?.sequence ??
     composerAppendRequest?.sequence ??
     (surface.activation?.type === workbenchFocusInputActivationType ||
     surface.activation?.type === desktopAgentGUIPrefillPromptActivationType
@@ -545,17 +546,10 @@ function DesktopAgentGUISurfaceImpl({
         installed: computerUseStatus?.installed ?? null
       },
       tuttiMode: {
-        enabled: isFeatureEnabled(
-          desktopPreferencesState.featureFlags,
-          LAB_TUTTI_MODE_FLAG
-        )
+        enabled: true
       }
     }),
-    [
-      computerUseStatus,
-      desktopPreferencesState.browserUseConnectionMode,
-      desktopPreferencesState.featureFlags
-    ]
+    [computerUseStatus, desktopPreferencesState.browserUseConnectionMode]
   );
   const handleAgentEnvPanelOpen = useCallback<
     NonNullable<AgentGUIProps["hostActions"]["onAgentEnvPanelOpen"]>
@@ -568,16 +562,9 @@ function DesktopAgentGUISurfaceImpl({
     desktopPreferencesState.featureFlags,
     LAB_AGENT_INPUT_HISTORY_FLAG
   );
-  const providerAuthAccountLabels = useMemo(() => {
-    const labels: Partial<Record<WorkspaceAgentProvider, string>> = {};
-    for (const status of providerStatusSnapshot.statuses) {
-      const accountLabel = status.auth.accountLabel?.trim();
-      if (accountLabel) {
-        labels[status.provider] = accountLabel;
-      }
-    }
-    return labels;
-  }, [providerStatusSnapshot.statuses]);
+  const providerAuthAccountLabels = useDesktopAgentGUIProviderAuthAccountLabels(
+    providerStatusSnapshot.statuses
+  );
   const handleHandoffConversation = useCallback<
     NonNullable<AgentGUIProps["hostActions"]["onHandoffConversation"]>
   >(
@@ -597,51 +584,14 @@ function DesktopAgentGUISurfaceImpl({
     desktopPreferencesState.featureFlags,
     AGENT_SESSION_RECORDING_FLAG
   );
-  const activityReplayBinding = runtimeApi ? (
-    <AgentSessionActivityReplayBinding
-      addObserver={agentSessionActivityReplay.addObserver}
-      engine={agentSessionActivityReplay.engine}
-      runtimeApi={runtimeApi}
-    />
-  ) : null;
-  const renderComposerFooterAccessory = useCallback<
-    NonNullable<AgentGUIProps["renderSlots"]["composerFooterAccessory"]>
-  >(
-    (composer) => (
-      <>
-        {activityReplayBinding}
-        {runtimeApi ? (
-          <>
-            <AgentSessionReplayStatus runtimeApi={runtimeApi} />
-            <AgentSessionReplayPlaybackControls runtimeApi={runtimeApi} />
-          </>
-        ) : null}
-        {sessionRecordingEnabled ? (
-          <AgentSessionReplayComposerAccessory
-            composer={composer}
-            launcher={
-              runtimeApi
-                ? createAgentSessionReplayLauncher({
-                    runtimeApi,
-                    service: agentSessionReplayService,
-                    workspaceId
-                  })
-                : undefined
-            }
-            service={agentSessionReplayService}
-          />
-        ) : null}
-      </>
-    ),
-    [
+  const renderComposerFooterAccessory =
+    useDesktopAgentGUIComposerFooterAccessory({
+      agentSessionActivityReplay,
       agentSessionReplayService,
-      activityReplayBinding,
       runtimeApi,
       sessionRecordingEnabled,
-      surface.host,
       workspaceId
-    ]
-  );
+    });
   const agentGUIHostProps = useStableDesktopAgentGUIHostProps({
     identity: {
       nodeId: surface.nodeId,
@@ -665,7 +615,13 @@ function DesktopAgentGUISurfaceImpl({
       agentSettings: DESKTOP_AGENT_GUI_AGENT_SETTINGS
     },
     runtimeRequests: {
-      composerAppend: composerAppendRequest,
+      composerAppend: openSessionComposerRequest
+        ? {
+            agentSessionId: openSessionComposerRequest.agentSessionId,
+            prompt: openSessionComposerRequest.draftPrompt,
+            sequence: openSessionComposerRequest.sequence
+          }
+        : composerAppendRequest,
       composerFocusSequence: composerFocusRequestSequence,
       workbench: {
         instanceId: surface.instanceId,
@@ -688,6 +644,7 @@ function DesktopAgentGUISurfaceImpl({
       workspaceAppIcons
     },
     hostActions: {
+      onComposerAppendHandled: handleComposerAppendHandled,
       onAgentEnvPanelOpen: handleAgentEnvPanelOpen,
       onAgentConfigMenuOpen: handleAgentConfigMenuOpen,
       onAgentProviderLogin: agentProviderStatusService

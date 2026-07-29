@@ -41,6 +41,38 @@ type fakeIssueManager struct {
 	completed   workspaceservice.CompleteIssueManagerRunInput
 }
 
+type managedConflictIssueManager struct {
+	*fakeIssueManager
+	resumeWorkspaceID     string
+	resumeIssueID         string
+	resumeSourceSessionID string
+}
+
+func (*managedConflictIssueManager) UpdateIssue(
+	context.Context,
+	string,
+	string,
+	workspaceservice.UpdateIssueManagerIssueInput,
+) (workspaceissues.Issue, error) {
+	return workspaceissues.Issue{}, &workspaceissues.ManagedIssueMutationError{
+		IssueID: "ISS-managed", SourceSessionID: "SESSION-source",
+	}
+}
+
+func (manager *managedConflictIssueManager) ResumeTuttiModeIssueExecution(
+	_ context.Context,
+	workspaceID string,
+	issueID string,
+	sourceSessionID string,
+) (workspaceissues.Issue, error) {
+	manager.resumeWorkspaceID = workspaceID
+	manager.resumeIssueID = issueID
+	manager.resumeSourceSessionID = sourceSessionID
+	return workspaceissues.Issue{
+		IssueID: issueID, WorkspaceID: workspaceID, DispatchPaused: false,
+	}, nil
+}
+
 func (*fakeIssueManager) ListTopics(context.Context, string) (workspaceissues.TopicList, error) {
 	return workspaceissues.TopicList{Items: []workspaceissues.Topic{
 		{TopicID: workspaceissues.DefaultTopicID, WorkspaceID: "workspace-1", Title: "Default", IsDefault: true},
@@ -473,6 +505,59 @@ func TestIssueUpdateTracksStatus(t *testing.T) {
 	}
 	if output.Value["issue"].(map[string]any)["status"] != "completed" {
 		t.Fatalf("output = %#v", output.Value)
+	}
+}
+
+func TestIssueUpdatePreservesManagedConflictDetails(t *testing.T) {
+	command := NewProvider(
+		fakeWorkspaceCatalog{startup: workspacebiz.Summary{ID: "workspace-1"}},
+		&managedConflictIssueManager{fakeIssueManager: &fakeIssueManager{}},
+		nil,
+	).newIssueUpdateCommand()
+
+	_, err := command.Handler(context.Background(), cliservice.InvokeRequest{
+		Input: map[string]any{"issue-id": "ISS-managed", "title": "changed"},
+	})
+	var managed *workspaceissues.ManagedIssueMutationError
+	if !errors.As(err, &managed) ||
+		managed.ManagedIssueID() != "ISS-managed" ||
+		managed.ManagedSourceSessionID() != "SESSION-source" {
+		t.Fatalf("managed conflict = %T %v", err, err)
+	}
+}
+
+func TestIssueUpdateRoutesManagedResumeThroughSourceScopedControl(t *testing.T) {
+	issues := &managedConflictIssueManager{
+		fakeIssueManager: &fakeIssueManager{},
+	}
+	command := NewProvider(
+		fakeWorkspaceCatalog{startup: workspacebiz.Summary{ID: "workspace-1"}},
+		issues,
+		nil,
+	).newIssueUpdateCommand()
+
+	output, err := command.Handler(context.Background(), cliservice.InvokeRequest{
+		Input: map[string]any{
+			"issue-id":        "ISS-managed",
+			"dispatch-paused": false,
+		},
+		Context: cliservice.InvokeContext{AgentSessionID: " SESSION-source "},
+	})
+	if err != nil {
+		t.Fatalf("Handler() error = %v", err)
+	}
+	if issues.resumeWorkspaceID != "workspace-1" ||
+		issues.resumeIssueID != "ISS-managed" ||
+		issues.resumeSourceSessionID != "SESSION-source" {
+		t.Fatalf(
+			"resume scope = %q/%q/%q",
+			issues.resumeWorkspaceID,
+			issues.resumeIssueID,
+			issues.resumeSourceSessionID,
+		)
+	}
+	if output.Value["issue"].(map[string]any)["issueId"] != "ISS-managed" {
+		t.Fatalf("resume output = %#v", output.Value)
 	}
 }
 

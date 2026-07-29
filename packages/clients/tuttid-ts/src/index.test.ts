@@ -232,6 +232,35 @@ test("generated tuttid client surfaces structured protocol errors", async () => 
   } satisfies ApiErrorResponse);
 });
 
+test("shared tuttid client calls the managed Tutti execution cancel route", async () => {
+  let requestMethod = "";
+  let requestPath = "";
+  const client = createTuttidClient({
+    fetch: async (input, init) => {
+      const request =
+        input instanceof Request ? input : new Request(input, init);
+      requestMethod = request.method;
+      requestPath = new URL(request.url).pathname;
+      return new Response(JSON.stringify({ canceledRunCount: 2 }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+
+  const response = await client.cancelTuttiModeExecution(
+    "workspace-1",
+    "issue-1"
+  );
+
+  assert.equal(requestMethod, "POST");
+  assert.equal(
+    requestPath,
+    "/v1/workspaces/workspace-1/tutti-executions/issue-1/cancel-execution"
+  );
+  assert.deepEqual(response, { canceledRunCount: 2 });
+});
+
 test("shared tuttid client unwraps workspace list responses", async () => {
   const client = createTuttidClient({
     fetch: async () =>
@@ -673,6 +702,59 @@ test("shared tuttid client lists workspace agent sessions with query params", as
   });
 });
 
+test("shared tuttid client requests the message hydration session projection", async () => {
+  const response = {
+    childSessions: [],
+    lifecycleCapabilitiesProjected: false,
+    projection: "messageHydration",
+    session: {},
+    turns: []
+  };
+  const { client, requests } = captureClient(jsonResponse(response));
+  const controller = new AbortController();
+
+  assert.deepEqual(
+    await client.getWorkspaceAgentSession(
+      "workspace-1",
+      "session-1",
+      "messageHydration",
+      { signal: controller.signal }
+    ),
+    response
+  );
+  assertRequest(requests[0]!, {
+    authorization: null,
+    body: null,
+    method: "GET",
+    path: "/v1/workspaces/workspace-1/agent-sessions/session-1",
+    query: { projection: "messageHydration" }
+  });
+  assert.equal(requests[0]!.signal?.aborted, false);
+  controller.abort();
+  assert.equal(requests[0]!.signal?.aborted, true);
+});
+
+test("shared tuttid client rejects a mismatched session detail projection", async () => {
+  const { client } = captureClient(
+    jsonResponse({
+      childSessions: [],
+      lifecycleCapabilitiesProjected: true,
+      projection: "full",
+      session: {},
+      turns: []
+    })
+  );
+
+  await assert.rejects(
+    client.getWorkspaceAgentSession(
+      "workspace-1",
+      "session-1",
+      "messageHydration"
+    ),
+    /projection mismatch/
+  );
+});
+
 test("shared tuttid client forwards AbortSignal for issue topic and issue list requests", async () => {
   const requests: Request[] = [];
   const client = createTuttidClient({
@@ -707,6 +789,60 @@ test("shared tuttid client forwards AbortSignal for issue topic and issue list r
     ["/v1/workspaces/ws-1/issue-topics", "/v1/workspaces/ws-1/issues"]
   );
   abortController.abort();
+  assert.equal(
+    requests.every((request) => request.signal.aborted),
+    true
+  );
+});
+
+test("shared tuttid client forwards AbortSignal for Agent effect writes", async () => {
+  const { client, requests } = captureClient((request) => {
+    if (request.path.endsWith("/cancel")) {
+      return jsonResponse({
+        cancel: { canceled: true, reason: "turn_canceled" }
+      });
+    }
+    if (request.path.endsWith("/input")) {
+      return jsonResponse({
+        session: {},
+        turn: {},
+        turnId: "turn-1"
+      });
+    }
+    return jsonResponse({ session: {} });
+  });
+  const abortController = new AbortController();
+  const options = { signal: abortController.signal };
+
+  await client.cancelWorkspaceAgentTurn("ws-1", "session-1", "turn-1", options);
+  await client.sendWorkspaceAgentSessionInput(
+    "ws-1",
+    "session-1",
+    { clientSubmitId: "submit-1", content: [] },
+    options
+  );
+  await client.updateWorkspaceAgentSessionSettings(
+    "ws-1",
+    "session-1",
+    { model: "model-1" },
+    options
+  );
+  await client.submitWorkspaceAgentInteractive(
+    "ws-1",
+    "session-1",
+    "request-1",
+    { turnId: "turn-1" },
+    options
+  );
+  await client.updateWorkspaceAgentSessionPin(
+    "ws-1",
+    "session-1",
+    { pinned: true },
+    options
+  );
+
+  abortController.abort();
+  assert.equal(requests.length, 5);
   assert.equal(
     requests.every((request) => request.signal.aborted),
     true

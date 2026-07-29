@@ -135,6 +135,7 @@ import type {
   WorkspaceWorkflowSnapshot,
   DecideWorkspaceWorkflowCheckpointRequest,
   WorkspaceAgentSession,
+  WorkspaceAgentSessionDetailProjection,
   TuttiModeActivation,
   WorkspaceAgentSessionDetailResponse,
   WorkspaceAgentPlanDecisionResponse,
@@ -441,6 +442,7 @@ export interface TuttidClient
   getWorkspaceAgentSession(
     workspaceID: string,
     agentSessionID: string,
+    projection?: WorkspaceAgentSessionDetailProjection,
     requestOptions?: TuttidRequestOptions
   ): Promise<WorkspaceAgentSessionDetailResponse>;
   getAgentProviderComposerOptions(
@@ -836,6 +838,10 @@ export interface TuttidClient
     workspaceID: string,
     issueID: string
   ): Promise<CancelIssueManagerExecutionResponse>;
+  cancelTuttiModeExecution(
+    workspaceID: string,
+    issueID: string
+  ): Promise<CancelIssueManagerExecutionResponse>;
   putWorkspaceWorkbench(
     workspaceID: string,
     snapshot: WorkbenchSnapshot
@@ -852,7 +858,8 @@ export interface TuttidClient
   cancelWorkspaceAgentTurn(
     workspaceID: string,
     agentSessionID: string,
-    turnID: string
+    turnID: string,
+    requestOptions?: TuttidRequestOptions
   ): Promise<WorkspaceAgentTurnCancelResponse>;
   goalControlWorkspaceAgentSession(
     workspaceID: string,
@@ -870,7 +877,8 @@ export interface TuttidClient
   sendWorkspaceAgentSessionInput(
     workspaceID: string,
     agentSessionID: string,
-    request: SendWorkspaceAgentSessionInputRequest
+    request: SendWorkspaceAgentSessionInputRequest,
+    requestOptions?: TuttidRequestOptions
   ): Promise<SendWorkspaceAgentSessionInputResponse>;
   submitWorkspaceAgentPlanDecision(
     workspaceID: string,
@@ -903,12 +911,14 @@ export interface TuttidClient
   updateWorkspaceAgentSessionSettings(
     workspaceID: string,
     agentSessionID: string,
-    request: AgentSessionComposerSettings
+    request: AgentSessionComposerSettings,
+    requestOptions?: TuttidRequestOptions
   ): Promise<WorkspaceAgentSession>;
   updateWorkspaceAgentSessionPin(
     workspaceID: string,
     agentSessionID: string,
-    request: UpdateWorkspaceAgentSessionPinRequest
+    request: UpdateWorkspaceAgentSessionPinRequest,
+    requestOptions?: TuttidRequestOptions
   ): Promise<WorkspaceAgentSession>;
   updateWorkspaceAgentSessionTitle(
     workspaceID: string,
@@ -924,7 +934,8 @@ export interface TuttidClient
     workspaceID: string,
     agentSessionID: string,
     requestID: string,
-    request: SubmitWorkspaceAgentInteractiveRequest
+    request: SubmitWorkspaceAgentInteractiveRequest,
+    requestOptions?: TuttidRequestOptions
   ): Promise<WorkspaceAgentSession>;
   searchWorkspaceFiles(
     workspaceID: string,

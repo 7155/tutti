@@ -16,6 +16,23 @@ type sessionForkCapabilityStore struct {
 	workspaceID, sourceSessionID, throughTurnID string
 }
 
+func TestNormalizeSessionForkErrorPreservesBoundaryReason(t *testing.T) {
+	input := &storesqlite.SessionForkBoundaryError{
+		Reason: storesqlite.SessionForkBoundaryReasonAttachmentUnsupported,
+	}
+	normalized := normalizeSessionForkError(input)
+	if !errors.Is(normalized, ErrSessionForkConflict) ||
+		!errors.Is(normalized, storesqlite.ErrSessionForkTurnState) {
+		t.Fatalf("normalized error=%v", normalized)
+	}
+	var reasoner interface{ ForkBoundaryReason() string }
+	if !errors.As(normalized, &reasoner) ||
+		reasoner.ForkBoundaryReason() !=
+			string(storesqlite.SessionForkBoundaryReasonAttachmentUnsupported) {
+		t.Fatalf("boundary reason not preserved: %v", normalized)
+	}
+}
+
 func (s *sessionForkCapabilityStore) CheckSessionForkThroughTurn(
 	_ context.Context,
 	workspaceID, sourceSessionID, throughTurnID string,
@@ -173,6 +190,44 @@ func TestProtocolV2BatchProjectionDoesNotProbeSessionForkCapabilities(t *testing
 	}
 	if store.lineageReads != 1 {
 		t.Fatalf("lineage reads=%d, want 1 canonical read", store.lineageReads)
+	}
+}
+
+func TestMessageHydrationProjectionDoesNotProbeSessionForkCapabilities(t *testing.T) {
+	store := &sessionForkListProjectionStore{}
+	runtime := &sessionForkCapabilityRuntime{}
+	service := &Service{}
+	service.SetApplicationHost(agenthost.New(agenthost.Config{
+		SessionForks: store, SessionForkRuntime: runtime,
+	}))
+
+	projected, err := service.withProtocolV2TurnStateProjectionOptions(
+		t.Context(),
+		"workspace-1",
+		Session{
+			ID: "source-1", Kind: agentactivitybiz.SessionKindRoot,
+		},
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.calls != 0 || store.sourceReads != 0 {
+		t.Fatalf(
+			"message hydration projection probed fork capability: runtime=%d sourceReads=%d",
+			runtime.calls,
+			store.sourceReads,
+		)
+	}
+	if projected.LifecycleCapabilities.Fork ||
+		projected.LifecycleCapabilities.ForkThroughTurn {
+		t.Fatalf(
+			"message hydration lifecycle capabilities=%#v, want fail-closed projection",
+			projected.LifecycleCapabilities,
+		)
+	}
+	if store.lineageReads != 1 {
+		t.Fatalf("lineage reads=%d, want one canonical read", store.lineageReads)
 	}
 }
 

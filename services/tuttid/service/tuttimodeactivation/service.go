@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	preferencesbiz "github.com/tutti-os/tutti/services/tuttid/biz/preferences"
 	activationbiz "github.com/tutti-os/tutti/services/tuttid/biz/tuttimodeactivation"
 	workspacedata "github.com/tutti-os/tutti/services/tuttid/data/workspace"
 )
@@ -22,15 +21,7 @@ var (
 	ErrServiceUnavailable      = errors.New("tutti mode activation service is unavailable")
 	ErrTurnSnapshotNotFound    = errors.New("tutti mode turn snapshot not found")
 	ErrTurnSnapshotNotAccepted = errors.New("tutti mode turn snapshot acceptance is not durable")
-	// ErrTuttiModeDisabled rejects writes while the lab.tuttiMode feature flag
-	// is off. Reads and turn-snapshot lifecycle stay available so existing
-	// activations keep working.
-	ErrTuttiModeDisabled = errors.New("tutti mode is disabled by the lab.tuttiMode feature flag")
 )
-
-// TuttiModeFeatureFlag is the desktop preferences feature-flag key that gates
-// Tutti Mode writes. Alias of the shared lab-flag catalog key.
-const TuttiModeFeatureFlag = preferencesbiz.LabFlagTuttiMode
 
 type Store interface {
 	GetTuttiModeActivation(context.Context, string, string) (activationbiz.Activation, bool, error)
@@ -51,12 +42,8 @@ type Publisher interface {
 type Service struct {
 	Store     Store
 	Publisher Publisher
-	// FeatureFlags reads the desktop preferences feature-flag map. Nil keeps
-	// every write allowed (tests and minimal embedders); when set, writes are
-	// rejected with ErrTuttiModeDisabled unless lab.tuttiMode is true.
-	FeatureFlags func(context.Context) (map[string]bool, error)
-	Now          func() time.Time
-	NewID        func() string
+	Now       func() time.Time
+	NewID     func() string
 }
 
 type SetInput struct {
@@ -64,9 +51,14 @@ type SetInput struct {
 	AgentSessionID string
 	State          activationbiz.State
 	Source         activationbiz.Source
-	// OrchestrationIntensity is optional. Nil keeps the current revision's
-	// value (or the default for the first revision); a value appends a new
-	// revision when it differs from the current one.
+	// Effect and Speed are optional. Nil keeps the current revision's value
+	// (or the balanced default for the first revision).
+	Effect *int
+	Speed  *int
+	// OrchestrationIntensity is the deprecated single-axis alias of Effect.
+	// Effect takes precedence when both are present.
+	//
+	// Deprecated: use Effect and Speed.
 	OrchestrationIntensity *int
 	ExpectedRevision       *int64
 }
@@ -112,9 +104,6 @@ func (s *Service) Set(ctx context.Context, input SetInput) (SetResult, error) {
 	if err := s.ready(); err != nil {
 		return SetResult{}, err
 	}
-	if err := s.requireTuttiModeEnabled(ctx); err != nil {
-		return SetResult{}, err
-	}
 	workspaceID, agentSessionID, err := normalizeIdentity(input.WorkspaceID, input.AgentSessionID)
 	if err != nil {
 		return SetResult{}, err
@@ -126,20 +115,26 @@ func (s *Service) Set(ctx context.Context, input SetInput) (SetResult, error) {
 		input.State == activationbiz.StateInactive && input.Source != activationbiz.SourceBadgeRemove {
 		return SetResult{}, fmt.Errorf("%w: status and source do not describe one user activation transition", ErrInvalidInput)
 	}
-	if input.OrchestrationIntensity != nil && !activationbiz.IsOrchestrationIntensity(*input.OrchestrationIntensity) {
-		return SetResult{}, fmt.Errorf("%w: orchestration intensity must be between 0 and 100", ErrInvalidInput)
+	effect := input.Effect
+	if effect == nil {
+		effect = input.OrchestrationIntensity
+	}
+	if effect != nil && !activationbiz.IsPreference(*effect) ||
+		input.Speed != nil && !activationbiz.IsPreference(*input.Speed) {
+		return SetResult{}, fmt.Errorf("%w: effect and speed must be between 0 and 100", ErrInvalidInput)
 	}
 	now := s.now()
 	activation, changed, err := s.Store.SetTuttiModeActivation(ctx, workspacedata.SetTuttiModeActivationInput{
-		WorkspaceID:            workspaceID,
-		AgentSessionID:         agentSessionID,
-		ActivationID:           s.newID(),
-		RevisionID:             s.newID(),
-		ExpectedRevision:       cloneInt64Pointer(input.ExpectedRevision),
-		State:                  input.State,
-		Source:                 input.Source,
-		OrchestrationIntensity: cloneIntPointer(input.OrchestrationIntensity),
-		ChangedAt:              now,
+		WorkspaceID:      workspaceID,
+		AgentSessionID:   agentSessionID,
+		ActivationID:     s.newID(),
+		RevisionID:       s.newID(),
+		ExpectedRevision: cloneInt64Pointer(input.ExpectedRevision),
+		State:            input.State,
+		Source:           input.Source,
+		Effect:           cloneIntPointer(effect),
+		Speed:            cloneIntPointer(input.Speed),
+		ChangedAt:        now,
 	})
 	if errors.Is(err, workspacedata.ErrTuttiModeActivationRevisionConflict) {
 		return SetResult{}, ErrRevisionConflict
@@ -271,23 +266,6 @@ func (s *Service) DeleteSessionState(ctx context.Context, workspaceID, agentSess
 func (s *Service) ready() error {
 	if s == nil || s.Store == nil {
 		return ErrServiceUnavailable
-	}
-	return nil
-}
-
-// requireTuttiModeEnabled enforces the lab.tuttiMode write gate. A flag-read
-// failure fails closed for writes: the durable state is unchanged either way,
-// and a misconfigured gate must not silently open the feature.
-func (s *Service) requireTuttiModeEnabled(ctx context.Context) error {
-	if s.FeatureFlags == nil {
-		return nil
-	}
-	flags, err := s.FeatureFlags(ctx)
-	if err != nil {
-		return fmt.Errorf("read tutti mode feature flag: %w", err)
-	}
-	if !preferencesbiz.IsLabFlagEnabled(flags, TuttiModeFeatureFlag) {
-		return ErrTuttiModeDisabled
 	}
 	return nil
 }

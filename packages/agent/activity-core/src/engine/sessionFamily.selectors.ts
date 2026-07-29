@@ -111,9 +111,8 @@ export function createAgentSessionFamilySnapshotSelector(
       (session) => session.kind === "child"
     );
     const rootSession =
-      projectedSessions.find(
-        (session) => session.agentSessionId === rootId
-      ) ?? null;
+      projectedSessions.find((session) => session.agentSessionId === rootId) ??
+      null;
     const childSessions = referenceArrayEqual(
       previousSnapshot.childSessions,
       nextChildSessions

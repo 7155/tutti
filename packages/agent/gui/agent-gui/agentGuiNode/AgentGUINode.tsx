@@ -121,6 +121,7 @@ export const AgentGUINode = memo(function AgentGUINode({
     legacyAgentFilterEnabled: referenceProvenanceFilterEnabled
   });
   const {
+    onComposerAppendHandled,
     onLinkAction,
     onHandoffConversation,
     onCapabilitySettingsRequest,
@@ -289,6 +290,7 @@ export const AgentGUINode = memo(function AgentGUINode({
     targetConnectionSource,
     defaultAgentTargetId,
     onDataChange: handleDataChange,
+    onComposerAppendHandled,
     onRememberComposerDefaults,
     onShowMessage
   });

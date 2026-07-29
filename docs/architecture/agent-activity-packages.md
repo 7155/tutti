@@ -162,6 +162,14 @@ tombstone deletes.
 `agent-activity-core` is host-agnostic and must not import React, Electron,
 desktop preload APIs, or the generated `tuttid` client.
 
+The published Tutti Mode activation contract retains
+`orchestrationIntensity` as a deprecated effect alias during the
+effect/speed migration. New fields take precedence when both forms are
+present; presentations and daemon responses continue to emit the alias with
+the normalized effect value. The tuttid adapter also accepts an older response
+that contains only the alias and assigns balanced speed (`50`). Removing the
+alias or its selector requires an explicit breaking package/API release.
+
 It owns:
 
 - agent activity contracts used by UI packages and host adapters
@@ -181,8 +189,17 @@ It owns:
 - the workspace session engine (`createAgentSessionEngine` under
   `src/engine/`): intent dispatch loop, domain-composed pure reducers,
   command-description effect executor, expiry-intent clock, and intent frame
-  batching, with scheduler/clock/command ports injected by the host (see
+  batching, with scheduler/clock/command ports injected by the host
+- the typed frontend effect seam for activation, prompt send, settings update,
+  turn cancellation, Interaction response, pin, and batch delete, including
+  lossless command projection and required-settings-before-send ordering; hosts
+  retain transport, DTO mapping, AbortSignal propagation, and product-specific
+  command extensions (see
   [Agent GUI Node](./agent-gui-node.md#4-workspace-frontend-engine))
+
+The public seam is `AgentSessionEffectPort`. Prompt precondition ordering and
+its helper port are Engine implementation details and are not exported from the
+package root.
 
 It does not own:
 
@@ -279,7 +296,11 @@ sections come from current user projects and session membership comes from
 persisted `rail_section_key`, not frontend cwd grouping or project-root
 filters.
 The published `@tutti-os/agent-gui/conversation-rail-runtime` entrypoint owns
-the host-neutral Rail query/mutation cohort. The sibling
+the host-neutral Rail query/mutation cohort. Its stable host surface is the
+typed `createAgentConversationRailRuntime` factory plus the runtime/source
+types; method-name manifests and UI capability inspection are package-internal.
+Downstream hosts such as tsh compose the typed factory and do not import those
+test or presentation helpers. The sibling
 `@tutti-os/agent-gui/conversation-rail-controller` entrypoint owns the
 controller interface, workspace-Engine-scoped query caches, and
 `createAgentGUIConversationRailQueryController` factory. Product hosts provide
@@ -306,9 +327,10 @@ controller snapshot exposes memberships, ordered ids, pagination, search, and
 request state only; Desktop joins it with Engine state for localized
 conversation summaries outside the headless entrypoint. Resolved cache entries
 are shared by controllers created for the same workspace Engine; the factory,
-not `AgentActivityRuntime` or a host adapter, owns that registry. In-flight
-first-page entity payloads stay scoped to one attached controller generation so
-an obsolete mount cannot ingest or cache them.
+not `AgentActivityRuntime` or a host adapter, owns that registry. The cache
+implementation has no published AgentGUI subpath. In-flight first-page entity
+payloads stay scoped to one attached controller generation so an obsolete mount
+cannot ingest or cache them.
 Every daemon `WorkspaceAgentSession` response carries the persisted membership
 as required `railSectionKey`. The desktop adapter rejects a missing or blank
 value as a protocol contract error; it must not manufacture `conversations` or
@@ -990,10 +1012,39 @@ it owns the three reconcile scopes, cancellation and deletion fences,
 conversation-versus-durable cursors, pagination, the two-detail race closure,
 and atomic Engine dispatch. A host selects either requested-Session or
 Session-hierarchy message hydration according to the transcript surface it
-renders. HTTP execution, generated DTO mapping, absent/error interpretation,
-logging, polling, and legacy event fanout stay in the host. The canonical
-detail aggregate type belongs to activity-core; the tuttid adapter only maps
-the generated response into it.
+renders. The executor labels its first combined read as `message_hydration`;
+tuttid serves that projection without resolving provider-backed lifecycle
+capabilities. The final read remains authoritative and resolves those
+capabilities once. Hosts must preserve this distinction: caching provider
+capabilities or removing the final race-closing read can return stale actions,
+while using the full projection for discovery can launch an otherwise unused
+provider capability probe. Each HTTP response echoes its projection and whether
+lifecycle capability projection ran; clients fail closed on a mismatch, and
+values from a deliberately unprojected hydration response must never clear
+authoritative actions. Full projection remains fail-closed when a provider
+probe fails, preserving existing detail availability while making the action
+unavailable for that response. HTTP execution, generated DTO mapping,
+absent/error interpretation, logging, polling, and legacy event fanout stay in
+the host. The canonical detail aggregate type belongs to activity-core; the
+tuttid adapter only maps the generated response into it.
+
+Focused transcript paging is the adjacent AgentGUI application boundary.
+Desktop and Mobile construct the same
+`@tutti-os/agent-gui/conversation-message-controller`. It routes initial and
+latest hydration through Engine reconcile intents, reads older history only
+from the canonical Engine message window, fences in-flight pages when focus or
+host availability changes, and dispatches accepted mapped pages into that
+Engine. Mobile's disconnected poller and app lifecycle, Desktop diagnostics
+and WebSocket integration, and both renderers' scroll behavior remain host
+concerns. Hosts must not add a second older-message store or a host-local
+cursor/retry state machine. Desktop conversation selection owns activation
+guards and Rail projection coordination, then asks this controller to ensure
+initial detail hydration. Automatic selection restoration is idempotent: it
+must not reinterpret a repeated selection as a forced refresh or enqueue a
+second reconcile while the first is pending. Explicit refresh remains a
+separate command. Message paging adapters do not call back into selection or
+Rail orchestration, and hosts do not maintain a second messages-only reconcile
+entrypoint.
 
 Event-stream continuity and command reachability are separate host facts.
 `eventStreamConnectionChanged` belongs to the coordinator and triggers

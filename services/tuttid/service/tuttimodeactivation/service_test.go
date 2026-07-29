@@ -16,6 +16,7 @@ func TestServiceSetPublishesCommittedIndependentActivation(t *testing.T) {
 	store := newMemoryStore()
 	publisher := &recordingPublisher{}
 	ids := []string{"activation-1", "revision-1"}
+	legacyEffect := 73
 	service := &Service{Store: store, Publisher: publisher, Now: func() time.Time { return now }, NewID: func() string {
 		value := ids[0]
 		ids = ids[1:]
@@ -25,6 +26,7 @@ func TestServiceSetPublishesCommittedIndependentActivation(t *testing.T) {
 	result, err := service.Set(context.Background(), SetInput{
 		WorkspaceID: " workspace-1 ", AgentSessionID: " session-1 ",
 		State: activationbiz.StateActive, Source: activationbiz.SourceSlashCommand,
+		OrchestrationIntensity: &legacyEffect,
 	})
 	if err != nil {
 		t.Fatalf("Set() error = %v", err)
@@ -34,6 +36,9 @@ func TestServiceSetPublishesCommittedIndependentActivation(t *testing.T) {
 	}
 	if len(publisher.updates) != 1 || publisher.updates[0].ChangeKind != activationbiz.ChangeKindActivated {
 		t.Fatalf("updates = %#v", publisher.updates)
+	}
+	if store.lastSetInput.Effect == nil || *store.lastSetInput.Effect != 73 {
+		t.Fatalf("legacy effect mapping = %#v", store.lastSetInput)
 	}
 }
 
@@ -127,10 +132,11 @@ func TestServiceAcceptTurnSnapshotConfirmsDurableAcceptedStateIdempotently(t *te
 }
 
 type memoryStore struct {
-	activations map[string]activationbiz.Activation
-	snapshots   map[string]activationbiz.TurnSnapshot
-	accepted    map[string]bool
-	setErr      error
+	activations  map[string]activationbiz.Activation
+	snapshots    map[string]activationbiz.TurnSnapshot
+	accepted     map[string]bool
+	lastSetInput workspacedata.SetTuttiModeActivationInput
+	setErr       error
 }
 
 func newMemoryStore() *memoryStore {
@@ -157,6 +163,7 @@ func (s *memoryStore) ListTuttiModeActivations(_ context.Context, _ string, sess
 }
 
 func (s *memoryStore) SetTuttiModeActivation(_ context.Context, input workspacedata.SetTuttiModeActivationInput) (activationbiz.Activation, bool, error) {
+	s.lastSetInput = input
 	if s.setErr != nil {
 		return activationbiz.Activation{}, false, s.setErr
 	}
@@ -233,73 +240,4 @@ type recordingPublisher struct{ updates []activationbiz.Update }
 func (p *recordingPublisher) PublishTuttiModeActivationUpdated(_ context.Context, update activationbiz.Update) error {
 	p.updates = append(p.updates, update)
 	return nil
-}
-
-func TestSetRejectsWritesWhenTuttiModeFlagDisabled(t *testing.T) {
-	t.Parallel()
-
-	store := newMemoryStore()
-	service := &Service{
-		Store: store,
-		FeatureFlags: func(context.Context) (map[string]bool, error) {
-			return map[string]bool{}, nil
-		},
-	}
-	input := SetInput{
-		WorkspaceID: "workspace-1", AgentSessionID: "session-1",
-		State: activationbiz.StateActive, Source: activationbiz.SourceSlashCommand,
-	}
-	if _, err := service.Set(context.Background(), input); !errors.Is(err, ErrTuttiModeDisabled) {
-		t.Fatalf("Set() with flag off error = %v, want ErrTuttiModeDisabled", err)
-	}
-
-	// Reads stay available while writes are gated.
-	if _, err := service.Get(context.Background(), "workspace-1", "session-1"); err != nil {
-		t.Fatalf("Get() with flag off error = %v, want nil", err)
-	}
-}
-
-func TestSetAllowsWritesWhenTuttiModeFlagEnabled(t *testing.T) {
-	t.Parallel()
-
-	now := time.UnixMilli(1_700_000_000_000).UTC()
-	store := newMemoryStore()
-	ids := []string{"activation-1", "revision-1"}
-	service := &Service{
-		Store: store,
-		FeatureFlags: func(context.Context) (map[string]bool, error) {
-			return map[string]bool{TuttiModeFeatureFlag: true}, nil
-		},
-		Now: func() time.Time { return now },
-		NewID: func() string {
-			value := ids[0]
-			ids = ids[1:]
-			return value
-		},
-	}
-	result, err := service.Set(context.Background(), SetInput{
-		WorkspaceID: "workspace-1", AgentSessionID: "session-1",
-		State: activationbiz.StateActive, Source: activationbiz.SourceSlashCommand,
-	})
-	if err != nil || !result.Changed {
-		t.Fatalf("Set() with flag on result = %#v error = %v, want applied change", result, err)
-	}
-}
-
-func TestSetFailsClosedWhenFeatureFlagReadFails(t *testing.T) {
-	t.Parallel()
-
-	service := &Service{
-		Store: newMemoryStore(),
-		FeatureFlags: func(context.Context) (map[string]bool, error) {
-			return nil, errors.New("preferences read failed")
-		},
-	}
-	_, err := service.Set(context.Background(), SetInput{
-		WorkspaceID: "workspace-1", AgentSessionID: "session-1",
-		State: activationbiz.StateActive, Source: activationbiz.SourceSlashCommand,
-	})
-	if err == nil || errors.Is(err, ErrTuttiModeDisabled) {
-		t.Fatalf("Set() with flag read failure error = %v, want wrapped read error", err)
-	}
 }

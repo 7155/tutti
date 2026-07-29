@@ -4,8 +4,26 @@ import (
 	"errors"
 	"testing"
 
+	runtimeprep "github.com/tutti-os/tutti/packages/agent/runtimeprep"
+	workspaceissues "github.com/tutti-os/tutti/packages/workspace/issues"
+	tuttigenerated "github.com/tutti-os/tutti/services/tuttid/api/generated"
 	agentservice "github.com/tutti-os/tutti/services/tuttid/service/agent"
 )
+
+func TestClassifyConfigDependencyUnavailable(t *testing.T) {
+	classified := Classify(&runtimeprep.ConfigDependencyUnavailableError{
+		Provider:       "codex",
+		ConfigKey:      "model_instructions_file",
+		DependencyPath: "instructions.md",
+		FailureKind:    runtimeprep.ConfigDependencyFailureMissing,
+	})
+	if classified.Reason != ReasonAgentConfigDependencyUnavailable {
+		t.Fatalf("reason = %q", classified.Reason)
+	}
+	if classified.Params["dependencyPath"] != "instructions.md" {
+		t.Fatalf("params = %#v", classified.Params)
+	}
+}
 
 func TestClassifyRuntimeOperationReconciliationIsRetryable(t *testing.T) {
 	classified := Classify(agentservice.ErrRuntimeOperationInProgress)
@@ -50,6 +68,22 @@ func TestClassifySessionTitleTooLongHasStableReasonAndLimit(t *testing.T) {
 	}
 	if classified.Params["maxCharacters"] != agentservice.MaxSessionTitleRunes {
 		t.Fatalf("params = %#v, want maxCharacters = %d", classified.Params, agentservice.MaxSessionTitleRunes)
+	}
+}
+
+func TestClassifyManagedIssueMutationCarriesRecoveryTarget(t *testing.T) {
+	classified := Classify(&workspaceissues.ManagedIssueMutationError{
+		IssueID: "issue-managed", SourceSessionID: "source-session",
+	})
+	if classified.StatusCode != StatusWorkspaceIssueExists ||
+		classified.Code != tuttigenerated.WorkspaceIssueResourceExists ||
+		classified.Reason != "tutti_issue_managed" {
+		t.Fatalf("classified = %#v, want managed Issue conflict", classified)
+	}
+	if classified.Params["issueId"] != "issue-managed" ||
+		classified.Params["sourceSessionId"] != "source-session" ||
+		classified.Params["recommendedAction"] != "open_source_session" {
+		t.Fatalf("params = %#v, want exact source-conversation recovery target", classified.Params)
 	}
 }
 

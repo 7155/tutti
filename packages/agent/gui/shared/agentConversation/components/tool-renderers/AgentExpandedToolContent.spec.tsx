@@ -60,7 +60,7 @@ describe("AgentExpandedToolContent", () => {
                   kind: "edit",
                   title: "Edit /workspace/note.txt",
                   status: "pending",
-                  rawInput: {
+                  input: {
                     changes: {
                       "/workspace/note.txt": {
                         type: "add",
@@ -68,13 +68,6 @@ describe("AgentExpandedToolContent", () => {
                       }
                     }
                   },
-                  content: [
-                    {
-                      type: "diff",
-                      path: "/workspace/note.txt",
-                      newText: "hello from approval preview\n"
-                    }
-                  ],
                   locations: [{ path: "/workspace/note.txt" }]
                 }
               }
@@ -148,7 +141,7 @@ describe("AgentExpandedToolContent", () => {
                 toolCall: {
                   title: "WebFetch",
                   toolName: "WebFetch",
-                  rawInput: {
+                  input: {
                     url: "https://docs.example.com/guide",
                     prompt: "Summarize the guide"
                   }
@@ -182,7 +175,7 @@ describe("AgentExpandedToolContent", () => {
                 toolCall: {
                   kind: "fetch",
                   title: "open_page",
-                  rawInput: {
+                  input: {
                     url: "https://docs.example.com/guide"
                   }
                 }
@@ -603,8 +596,8 @@ describe("AgentExpandedToolContent", () => {
               output: {
                 stdout: "/workspace/app\n",
                 stderr: "permission denied\n",
-                exit_code: 127,
-                duration_ms: 42
+                exitCode: 127,
+                durationMs: 42
               }
             }
           })
@@ -640,7 +633,7 @@ describe("AgentExpandedToolContent", () => {
               },
               error: {
                 stdout: "missing-tool: not found\n",
-                exit_code: 127
+                exitCode: 127
               }
             }
           })
@@ -692,7 +685,7 @@ describe("AgentExpandedToolContent", () => {
               },
               output: {
                 mode: "list_files",
-                content: ""
+                text: ""
               }
             }
           })
@@ -717,7 +710,7 @@ describe("AgentExpandedToolContent", () => {
               },
               output: {
                 mode: "content",
-                content: "src/app.ts:42: const ready = true"
+                text: "src/app.ts:42: const ready = true"
               }
             }
           })
@@ -738,7 +731,7 @@ describe("AgentExpandedToolContent", () => {
               },
               output: {
                 mode: "count",
-                content: "3"
+                text: "3"
               }
             }
           })
@@ -884,7 +877,7 @@ describe("AgentExpandedToolContent", () => {
                 query: "same content"
               },
               output: {
-                output: "same content"
+                text: "same content"
               }
             }
           })
@@ -910,7 +903,7 @@ describe("AgentExpandedToolContent", () => {
                 url: "https://docs.example.com/very/long/page"
               },
               output: {
-                content: `# Title\n\n${"a".repeat(3200)}`
+                text: `# Title\n\n${"a".repeat(3200)}`
               }
             }
           })
@@ -986,8 +979,7 @@ describe("AgentExpandedToolContent", () => {
                 url: "https://forecast.weather.gov/zipcity.php?inputstring=10002"
               },
               output: {
-                content:
-                  "Detailed Forecast\n\nWednesday: Sunny, with a high near 82."
+                text: "Detailed Forecast\n\nWednesday: Sunny, with a high near 82."
               }
             }
           })
@@ -1041,7 +1033,7 @@ describe("AgentExpandedToolContent", () => {
               },
               output: {
                 matches: ["read_file"],
-                total_deferred_tools: 12
+                totalDeferredTools: 12
               }
             }
           })
@@ -1137,7 +1129,7 @@ describe("AgentExpandedToolContent", () => {
                 toolName: "queryDocs"
               },
               output: {
-                content: JSON.stringify({
+                text: JSON.stringify({
                   docs: [
                     { title: "Renderer docs", description: "Detailed guide" }
                   ]
@@ -1164,7 +1156,7 @@ describe("AgentExpandedToolContent", () => {
                 toolName: "read_file"
               },
               output: {
-                content: [{ text: "Loaded docs chunk" }]
+                text: "Loaded docs chunk"
               }
             }
           })
@@ -1208,7 +1200,7 @@ describe("AgentExpandedToolContent", () => {
                 toolName: "read_file"
               },
               output: {
-                output: "Nested output fallback"
+                text: "Nested output fallback"
               }
             }
           })

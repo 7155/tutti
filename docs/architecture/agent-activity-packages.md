@@ -991,6 +991,21 @@ prefix is dropped with diagnostics rather than inventing a tool row.
 Completed, failed, canceled, and rewritten tool results remain full canonical
 `message_update` snapshots.
 
+Durable tool snapshots contain the business projection, not a provider-result
+archive. Before `workspace_agent_messages.payload_json` is written, the
+canonical projection promotes readable text to `output.text` or `error.text`,
+tool references to `output.matches`, generated-image paths to
+`output.savedPath`/`output.savedPaths`, and file mutations to `fileChanges`.
+Provider envelopes and duplicate representations such as top-level `content`,
+`output.content`, `rawInput`/`rawOutput`, Claude `toolResponse`, adapter
+metadata, image base64, and unknown provider-only result keys are not retained.
+Provider adapters may continue accepting those wire shapes, but shared
+business code consumes only the explicit canonical fields. Agent
+reference/session output uses the same canonical projection rather than
+depending on a retained raw tool result. This is a forward-write rule: existing
+rows are not rewritten, their removed fields are ignored, and normal retention
+eventually ages them out.
+
 The Go live-protocol adapter owns the complete fast-lane envelope on both sides
 of a device link: schema validation, recipient identity projection,
 protobuf-wire framing, batching, replay/resume, sequence-gap detection, and

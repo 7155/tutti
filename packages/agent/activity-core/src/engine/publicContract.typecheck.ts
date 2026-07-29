@@ -1,4 +1,5 @@
 import type {
+  AgentSessionEngine,
   AgentSessionEngineState,
   EngineExtensionCommand,
   EngineIntent
@@ -17,4 +18,13 @@ export type PromptExecutionStateRemainsPrivate = Assert<
 
 export type RenameRemainsTypedEffect = Assert<
   IsNever<Extract<EngineExtensionCommand, { type: "session/rename" }>>
+>;
+
+type SessionMutationOperation =
+  | "deleteSessions"
+  | "renameSession"
+  | "setSessionPinned";
+
+export type SessionMutationsUseSemanticEngineOperations = Assert<
+  SessionMutationOperation extends keyof AgentSessionEngine ? true : false
 >;

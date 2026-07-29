@@ -150,8 +150,6 @@ export type {
   SessionMutationsIntent,
   SessionMutationsState,
   SessionPinRequestedIntent,
-  SessionRenameCommand,
-  SessionRenameRequestedIntent,
   SessionSetPinnedCommand,
   SessionsDeleteCommand,
   SessionsDeleteRequestedIntent

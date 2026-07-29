@@ -313,6 +313,135 @@ test("rename result commits mutation and canonical session in one engine notific
   engine.dispose();
 });
 
+test("engine rename method owns mutation protocol and returns the canonical session", async () => {
+  let resolveCommand: (value: unknown) => void = () => {};
+  let command: EngineExternalCommand | null = null;
+  const engine = createAgentSessionEngine({
+    clock: { nowUnixMs: () => 42 },
+    commandPort: {
+      execute: async (nextCommand) => {
+        command = nextCommand;
+        return new Promise((resolve) => {
+          resolveCommand = resolve;
+        });
+      }
+    },
+    identity: { origin: "local", workspaceId: "workspace-1" },
+    scheduler: {
+      schedule: () => ({ cancel() {} })
+    }
+  });
+  engine.dispatch({ session, type: "session/upserted" });
+
+  const resultPromise = engine.renameSession({
+    agentSessionId: " session-1 ",
+    title: "  Renamed session  "
+  });
+
+  assert.deepEqual(command, {
+    agentSessionId: "session-1",
+    commandId: "rename:42:1",
+    correlationId: "rename:42:1",
+    timeoutMs: 30_000,
+    title: "Renamed session",
+    type: "session/rename",
+    workspaceId: "workspace-1"
+  });
+  resolveCommand({
+    session: { ...session, title: "Renamed session", updatedAtUnixMs: 2 }
+  });
+
+  const result = await resultPromise;
+  assert.equal(result.title, "Renamed session");
+  assert.equal(
+    engine.getSnapshot().sessionLifecycle.sessionsById["session-1"]?.title,
+    result.title
+  );
+  engine.dispose();
+});
+
+test("engine rename method aborts its host effect when the caller cancels", async () => {
+  let effectSignal: AbortSignal | undefined;
+  const engine = createAgentSessionEngine({
+    clock: { nowUnixMs: () => 42 },
+    commandPort: {
+      execute: async (_command, options) => {
+        effectSignal = options?.signal;
+        return new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener(
+            "abort",
+            () => reject(options.signal?.reason),
+            { once: true }
+          );
+        });
+      }
+    },
+    identity: { origin: "local", workspaceId: "workspace-1" },
+    scheduler: {
+      schedule: () => ({ cancel() {} })
+    }
+  });
+  engine.dispatch({ session, type: "session/upserted" });
+  const controller = new AbortController();
+
+  const resultPromise = engine.renameSession({
+    agentSessionId: "session-1",
+    signal: controller.signal,
+    title: "Renamed session"
+  });
+  controller.abort();
+
+  await assert.rejects(
+    resultPromise,
+    (error: Error & { code?: string }) =>
+      error.name === "AbortError" && error.code === "aborted"
+  );
+  assert.equal(effectSignal?.aborted, true);
+  await flushCommandResults();
+  const mutation = Object.values(
+    engine.getSnapshot().sessionMutations.byMutationId
+  )[0];
+  assert.equal(mutation?.status, "unknown");
+  assert.equal(mutation?.errorCode, "aborted");
+  engine.dispose();
+});
+
+test("rename rejects an authoritative session with a different title", () => {
+  const requested = sessionMutationsReducer(
+    createInitialSessionMutationsState(),
+    {
+      agentSessionId: "session-1",
+      mutationId: "rename-mismatch",
+      title: "Renamed session",
+      type: "session/renameRequested",
+      workspaceId: "workspace-1"
+    },
+    { deletedSessionIds: {}, sessionsById: { "session-1": session } }
+  );
+  const settled = sessionMutationsReducer(
+    requested.state,
+    {
+      commandId: "rename-mismatch",
+      commandType: "session/rename",
+      correlationId: "rename-mismatch",
+      outcome: "succeeded",
+      type: "engine/commandResult",
+      value: { session }
+    },
+    { deletedSessionIds: {}, sessionsById: { "session-1": session } }
+  );
+
+  assert.equal(
+    settled.state.byMutationId["rename-mismatch"]?.status,
+    "unknown"
+  );
+  assert.equal(
+    settled.state.byMutationId["rename-mismatch"]?.errorCode,
+    "invalid_command_result"
+  );
+  assert.equal(settled.followUpIntents, undefined);
+});
+
 test("rename rejects empty titles before reaching the command port", async () => {
   let commandCalls = 0;
   const engine = createAgentSessionEngine({

@@ -53,10 +53,18 @@ Engine rules:
 - Instances are identified by the workspace + origin pair and injected
   explicitly. There is no module-level singleton; hosts running multiple
   runtimes against one workspace create one engine per origin.
-- `dispatch(intent)` is the only input. Reducers are pure and return new state
-  plus command descriptions; the effect executor performs commands and feeds
-  every settlement (success, failure, timeout) back into the loop as
-  command-result intents.
+- Normalized observations and advanced lifecycle intents enter through
+  `dispatch(intent)`. Session rename, pin, and batch delete enter through the
+  semantic `engine.renameSession`, `engine.setSessionPinned`, and
+  `engine.deleteSessions` methods. Those methods derive workspace identity,
+  allocate mutation identity, own the default timeout and caller cancellation,
+  await settlement, and return canonical results without exposing reducer
+  protocol to hosts. Cancellation aborts the host effect; once delivery may
+  have started, the mutation remains delivery-unknown rather than becoming a
+  confirmed failure.
+- Reducers are pure and return new state plus command descriptions; the effect
+  executor performs commands and feeds every settlement (success, failure,
+  timeout) back into the loop as command-result intents.
 - New hosts implement `AgentSessionEffectPort` for activation, prompt send,
   settings update, turn cancellation, Interaction response, rename, pin, and
   batch delete. The Engine owns command-to-capability projection and
@@ -73,6 +81,9 @@ Engine rules:
 - `getSnapshot()` / `subscribe()` expose the immutable state tree. React
   surfaces subscribe through the single `useEngineSelector` binding in
   `@tutti-os/agent-gui`.
+- `dispatchSessionMutation` remains a compatibility entrypoint for published
+  consumers migrating to the semantic Engine methods. New product-host code
+  must not construct mutation ids, timeout policy, or mutation-record reads.
 
 The state tree includes lifecycle entities, message windows, prompt queue,
 pending intents, composer options, runtime availability, reconciliation, and

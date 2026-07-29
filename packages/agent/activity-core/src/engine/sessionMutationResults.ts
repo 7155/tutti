@@ -16,7 +16,8 @@ export function validRenameResult(
   value: unknown,
   record: Extract<SessionMutationRecord, { kind: "rename" }>
 ): AgentActivitySession | null {
-  return validSessionResult(value, record);
+  const session = validSessionResult(value, record);
+  return session?.title === record.title ? session : null;
 }
 
 function validSessionResult(

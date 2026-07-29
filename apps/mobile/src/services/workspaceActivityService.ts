@@ -2,7 +2,6 @@ import {
   AGENT_SESSION_ENGINE_LOCAL_ORIGIN,
   createAgentActivitySnapshotProjector,
   createAgentSessionEngine,
-  dispatchSessionMutation,
   selectEngineSessionSettingsUpdate,
   selectEngineSessionRuntimeAvailability,
   type AgentActivitySessionSettings,
@@ -370,13 +369,9 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
     );
     if (!session) return;
     try {
-      await dispatchSessionMutation(this.engine, {
+      await this.engine.setSessionPinned({
         agentSessionId,
-        mutationId: createMobileActivityCommandId(),
-        pinned: session.pinnedAtUnixMs == null,
-        timeoutMs: COMMAND_TIMEOUT_MS,
-        type: "session/pinRequested",
-        workspaceId: this.workspace.id
+        pinned: session.pinnedAtUnixMs == null
       });
       await this.rail.reconcile();
       this.errorCode = null;
@@ -390,15 +385,10 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
     const normalizedTitle = title.trim();
     if (!normalizedTitle) return;
     try {
-      await dispatchSessionMutation(this.engine, {
+      await this.engine.renameSession({
         agentSessionId,
-        mutationId: createMobileActivityCommandId(),
-        timeoutMs: COMMAND_TIMEOUT_MS,
-        title: normalizedTitle,
-        type: "session/renameRequested",
-        workspaceId: this.workspace.id
+        title: normalizedTitle
       });
-      await this.rail.reconcile();
       this.errorCode = null;
     } catch {
       if (!this.disposed) this.errorCode = "request_failed";
@@ -408,12 +398,8 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
 
   async deleteSession(agentSessionId: string): Promise<void> {
     try {
-      await dispatchSessionMutation(this.engine, {
-        agentSessionIds: [agentSessionId],
-        mutationId: createMobileActivityCommandId(),
-        timeoutMs: COMMAND_TIMEOUT_MS,
-        type: "sessions/deleteRequested",
-        workspaceId: this.workspace.id
+      await this.engine.deleteSessions({
+        agentSessionIds: [agentSessionId]
       });
       await this.rail.reconcile();
       this.errorCode = null;

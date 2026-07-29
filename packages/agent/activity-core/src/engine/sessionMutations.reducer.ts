@@ -106,8 +106,9 @@ export function sessionMutationsReducer(
     const errorIdentity =
       intent.errorReason?.trim() || intent.errorCode?.trim() || null;
     const deliveryUnknown =
-      record.kind === "forkThroughTurn" &&
-      errorIdentity === "agent_session_fork_delivery_unknown";
+      errorIdentity === "aborted" ||
+      (record.kind === "forkThroughTurn" &&
+        errorIdentity === "agent_session_fork_delivery_unknown");
     return replaceRecord(state, {
       ...record,
       errorCode: errorIdentity,

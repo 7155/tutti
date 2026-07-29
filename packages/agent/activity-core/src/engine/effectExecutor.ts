@@ -55,7 +55,12 @@ export function createEngineEffectExecutor({
     abort(commandId, reason) {
       const controller = abortControllersByCommandId.get(commandId.trim());
       if (!controller || controller.signal.aborted) return;
-      controller.abort(new Error(reason.trim() || "engine command aborted"));
+      const error = new Error(
+        reason.trim() || "engine command aborted"
+      ) as Error & { code: string };
+      error.code = "aborted";
+      error.name = "AbortError";
+      controller.abort(error);
     },
     dispose() {
       disposed = true;
@@ -345,6 +350,9 @@ function engineCommandErrorFields(error: unknown): {
       ? (error as Record<string, unknown>)
       : null;
   const code = typeof record?.code === "string" ? record.code.trim() : "";
+  const normalizedCode =
+    code ||
+    (error instanceof Error && error.name === "AbortError" ? "aborted" : "");
   const reason = typeof record?.reason === "string" ? record.reason.trim() : "";
   const message =
     error instanceof Error
@@ -353,7 +361,7 @@ function engineCommandErrorFields(error: unknown): {
         ? record.message
         : String(error);
   return {
-    ...(code ? { errorCode: code } : {}),
+    ...(normalizedCode ? { errorCode: normalizedCode } : {}),
     ...(reason ? { errorReason: reason } : {}),
     errorMessage: message
   };

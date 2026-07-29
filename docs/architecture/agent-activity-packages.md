@@ -194,14 +194,21 @@ It owns:
   turn cancellation, Interaction response, rename, pin, and batch delete,
   including lossless command projection, canonical Session result validation,
   shared mutation settlement, and a serialized settings-precondition state
-  machine; hosts retain transport, DTO mapping, AbortSignal propagation, and
-  product-specific command extensions (see
+  machine
+- semantic `AgentSessionEngine` methods for rename, pin, and batch delete;
+  these methods hide workspace projection, mutation identity, timeout,
+  cancellation, settlement waiting, and canonical result projection from
+  product hosts; hosts retain transport, DTO mapping, AbortSignal propagation,
+  and product-specific command extensions (see
   [Agent GUI Node](./agent-gui-node.md#4-workspace-frontend-engine))
 
-The public seam is `AgentSessionEffectPort`. Prompt precondition ordering and
-its helper port are Engine implementation details and are not exported from the
-package root. Reducer-only prompt continuation intents are absent from public
-`EngineIntent`; their bookkeeping is also absent from
+The public host-effect seam is `AgentSessionEffectPort`; the public
+application-write seam is the semantic `AgentSessionEngine` methods.
+`dispatchSessionMutation` remains compatibility-only while published consumers
+migrate and must not be used by new product-host code. Prompt precondition
+ordering and its helper port are Engine implementation details and are not
+exported from the package root. Reducer-only prompt continuation intents are
+absent from public `EngineIntent`; their bookkeeping is also absent from
 `AgentSessionEngineState`, `getSnapshot()`, and subscription callbacks.
 
 Edit retry follows the same frontend command rule as pin, delete, cancel, and
@@ -429,13 +436,15 @@ seconds across controller remounts and repeated target switches. In-flight
 request coalescing remains controller-local; the factory shares only resolved
 entries across controllers. The cache never owns session entities, titles,
 lifecycle, or interaction state.
-Pin and delete are engine mutations, not direct runtime calls from AgentGUI.
-The engine records the pending mutation, emits one semantic command, and feeds
-the command result back through its reducer loop. Successful pin results and
-delete tombstones enter canonical state as follow-up intents in the same engine
-drain. The desktop activity facade may await that engine record, but its command
-port is the only transport executor. Settled mutation records use a bounded
-window; they are workflow evidence, not an unbounded history store.
+Rename, pin, and delete are semantic Engine operations, not direct runtime
+calls from AgentGUI or reducer-protocol assembly in a product host. The Engine
+records the pending mutation, emits one semantic command, and feeds the command
+result back through its reducer loop. Successful Session results and delete
+tombstones enter canonical state as follow-up intents in the same engine drain.
+The product activity facade awaits the semantic Engine method and never
+allocates mutation identity, chooses timeout policy, or reads mutation records.
+Its command port is the only transport executor. Settled mutation records use a
+bounded window; they are workflow evidence, not an unbounded history store.
 When one of those canonical commits changes page membership, the rail query
 controller reloads only the affected first pages. Its public snapshot contains
 daemon membership and query publication state, not derived Engine

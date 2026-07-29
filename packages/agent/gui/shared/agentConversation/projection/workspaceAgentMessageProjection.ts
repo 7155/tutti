@@ -551,14 +551,7 @@ function mergePayload(
     return next;
   }
   const merged = { ...previous, ...next };
-  for (const key of [
-    "input",
-    "output",
-    "error",
-    "metadata",
-    "toolState",
-    "tool_state"
-  ]) {
+  for (const key of ["input", "output", "error", "metadata"]) {
     if (isRecord(previous[key]) || isRecord(next[key])) {
       merged[key] = {
         ...(isRecord(previous[key]) ? previous[key] : {}),

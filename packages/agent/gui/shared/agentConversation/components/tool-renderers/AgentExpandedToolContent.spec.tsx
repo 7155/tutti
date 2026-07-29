@@ -97,12 +97,10 @@ describe("AgentExpandedToolContent", () => {
             payload: {
               input: {
                 options: [{ id: "allow_once", label: "Allow once" }],
+                filePath: "/workspace/generated.md",
+                oldString: "const ready = false",
+                newString: "const ready = true",
                 toolCall: {
-                  input: {
-                    file_path: "/workspace/generated.md",
-                    old_string: "const ready = false",
-                    new_string: "const ready = true"
-                  },
                   name: "Edit",
                   title: "Edit",
                   toolName: "Edit"

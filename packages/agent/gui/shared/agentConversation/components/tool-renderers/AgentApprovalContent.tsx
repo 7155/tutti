@@ -90,7 +90,7 @@ function approvalPreviewCall(call: AgentToolCallVM): AgentToolCallVM | null {
   if (!preview) {
     return null;
   }
-  const input = objectValue(toolCall.input);
+  const input = objectValue(toolCall.input) ?? call.input;
   const locations = arrayValue(toolCall.locations);
   return {
     kind: "tool-call",

@@ -50,7 +50,9 @@ export function getFileChangeRenderData(
   }
 
   const fromFileChanges = fileChangesFiles(
-    call.payload?.fileChanges ?? payloadOutput?.fileChanges
+    call.input?.fileChanges ??
+      call.payload?.fileChanges ??
+      payloadOutput?.fileChanges
   );
   if (fromFileChanges.length > 0) {
     return fromFileChanges;
@@ -95,13 +97,17 @@ export function getFileChangeRenderData(
   );
   const oldString = firstString(
     stringValue(call.input?.old_string),
+    stringValue(call.input?.oldString),
     stringValue(payloadInput?.old_string),
+    stringValue(payloadInput?.oldString),
     stringValue(call.output?.oldString),
     stringValue(payloadOutput?.oldString)
   );
   const newString = firstString(
     stringValue(call.input?.new_string),
+    stringValue(call.input?.newString),
     stringValue(payloadInput?.new_string),
+    stringValue(payloadInput?.newString),
     stringValue(call.output?.newString),
     stringValue(payloadOutput?.newString)
   );

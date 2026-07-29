@@ -26,9 +26,25 @@ func TestCompactToolCallPayloadKeepsBusinessProjectionWithoutProviderEnvelopes(t
 				"query":   "provider",
 				"command": "pwd",
 			},
+			"toolCall": map[string]any{
+				"toolCallId": "approval-1",
+				"title":      "Edit",
+				"kind":       "edit",
+				"input": map[string]any{
+					"filePath": "/workspace/a.ts",
+				},
+				"rawInput": map[string]any{
+					"largeProviderSnapshot": "discarded",
+				},
+				"content": []any{
+					map[string]any{"type": "text", "text": "discarded duplicate"},
+				},
+				"providerDebug": true,
+			},
 		},
 		"output": map[string]any{
-			"mode": "content",
+			"isError": false,
+			"mode":    "content",
 			"structuredContent": map[string]any{
 				"items": []any{"kept"},
 			},
@@ -54,10 +70,12 @@ func TestCompactToolCallPayloadKeepsBusinessProjectionWithoutProviderEnvelopes(t
 		},
 		"metadata": map[string]any{
 			"adapter":    "claude-agent-sdk",
+			"agentId":    "agent-1",
+			"durationMs": 123,
 			"taskStatus": "completed",
 			"claudeToolResponse": map[string]any{
 				"originalFile":    "large provider snapshot",
-				"totalDurationMs": 123,
+				"totalDurationMs": 999,
 			},
 		},
 		"providerDebug": map[string]any{"raw": true},
@@ -79,6 +97,16 @@ func TestCompactToolCallPayloadKeepsBusinessProjectionWithoutProviderEnvelopes(t
 	if input["query"] != "canonical" || input["command"] != "pwd" {
 		t.Fatalf("input = %#v, want canonical values with flattened missing fields", input)
 	}
+	toolCall := input["toolCall"].(map[string]any)
+	toolInput := toolCall["input"].(map[string]any)
+	if toolCall["toolCallId"] != "approval-1" || toolInput["filePath"] != "/workspace/a.ts" {
+		t.Fatalf("input.toolCall = %#v, want canonical approval projection", toolCall)
+	}
+	for _, key := range []string{"rawInput", "content", "providerDebug"} {
+		if _, exists := toolCall[key]; exists {
+			t.Fatalf("input.toolCall.%s retained: %#v", key, toolCall)
+		}
+	}
 
 	output := got["output"].(map[string]any)
 	for _, key := range []string{"content", "rawOutput", "toolResponse", "ignored"} {
@@ -89,7 +117,8 @@ func TestCompactToolCallPayloadKeepsBusinessProjectionWithoutProviderEnvelopes(t
 	if output["text"] != "visible result" || output["stdout"] != "command output" || output["exitCode"] != 0 {
 		t.Fatalf("output = %#v, want normalized command result", output)
 	}
-	if output["mode"] != "content" ||
+	if output["isError"] != false ||
+		output["mode"] != "content" ||
 		!reflect.DeepEqual(output["structuredContent"], map[string]any{"items": []any{"kept"}}) {
 		t.Fatalf("output = %#v, want business search and MCP fields", output)
 	}
@@ -108,7 +137,7 @@ func TestCompactToolCallPayloadKeepsBusinessProjectionWithoutProviderEnvelopes(t
 	if _, exists := metadata["claudeToolResponse"]; exists {
 		t.Fatalf("metadata.claudeToolResponse retained: %#v", metadata)
 	}
-	if metadata["taskStatus"] != "completed" || metadata["durationMs"] != 123 {
+	if metadata["taskStatus"] != "completed" || metadata["agentId"] != "agent-1" || metadata["durationMs"] != 123 {
 		t.Fatalf("metadata = %#v, want business task fields", metadata)
 	}
 
@@ -202,6 +231,20 @@ func TestCompactToolCallPayloadProjectsFailedContentIntoError(t *testing.T) {
 	errorBody := got["error"].(map[string]any)
 	if errorBody["text"] != "permission denied" {
 		t.Fatalf("error = %#v, want projected text", errorBody)
+	}
+}
+
+func TestCompactToolCallPayloadRetainsFormalFailureReason(t *testing.T) {
+	got := CompactToolCallPayload("failed", map[string]any{
+		"callId": "call-1",
+		"error": map[string]any{
+			"reason": "user_interrupt",
+		},
+	})
+
+	errorBody := got["error"].(map[string]any)
+	if errorBody["reason"] != "user_interrupt" {
+		t.Fatalf("error = %#v, want formal failure reason", errorBody)
 	}
 }
 

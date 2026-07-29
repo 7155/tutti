@@ -63,6 +63,7 @@ var canonicalToolBodyKeys = map[string]struct{}{
 	"filenames":           {},
 	"files":               {},
 	"imageMimeType":       {},
+	"isError":             {},
 	"links":               {},
 	"matches":             {},
 	"message":             {},
@@ -72,6 +73,7 @@ var canonicalToolBodyKeys = map[string]struct{}{
 	"patch":               {},
 	"payload":             {},
 	"requestId":           {},
+	"reason":              {},
 	"savedPath":           {},
 	"savedPaths":          {},
 	"selectedId":          {},
@@ -301,20 +303,6 @@ func compactToolSteps(value any) []any {
 	return steps
 }
 
-func compactToolInput(value any) map[string]any {
-	body := toolMap(value)
-	if body == nil {
-		return nil
-	}
-	for _, rawKey := range []string{"rawInput", "raw_input"} {
-		if raw := toolMap(body[rawKey]); len(raw) > 0 {
-			body = mergeMissingToolValues(body, raw)
-		}
-		delete(body, rawKey)
-	}
-	return body
-}
-
 func compactToolBody(value any) map[string]any {
 	body := toolBodyMap(value)
 	if body == nil {
@@ -406,18 +394,7 @@ func compactToolMetadata(value any) map[string]any {
 	if metadata == nil {
 		return nil
 	}
-	if response := toolMap(metadata["claudeToolResponse"]); len(response) > 0 {
-		for source, target := range map[string]string{
-			"agentId":         "agentId",
-			"totalDurationMs": "durationMs",
-		} {
-			if _, exists := metadata[target]; !exists && response[source] != nil {
-				metadata[target] = cloneToolValue(response[source])
-			}
-		}
-	}
 	delete(metadata, "adapter")
-	delete(metadata, "claudeToolResponse")
 	delete(metadata, "fileChange")
 	if steps := compactToolSteps(metadata["steps"]); len(steps) > 0 {
 		metadata["steps"] = steps

@@ -38,6 +38,7 @@ import type { AgentSessionReplayService } from "../../agent-session-replay/servi
 export interface DesktopAgentGUISurfaceContext {
   activation: WorkbenchHostNodeBodyContext["activation"];
   conversationRailAutoCollapseMode?: "preserve-middle-content";
+  conversationRailStateOwner: "surface" | "workbench-node-source";
   displayMode: WorkbenchHostNodeBodyContext["displayMode"];
   frame: WorkbenchHostNodeBodyContext["node"]["frame"];
   host: WorkbenchHostNodeBodyContext["host"];
@@ -76,9 +77,6 @@ export interface DesktopAgentGUIWorkbenchBodyProps {
   dockPreviewCache: WorkbenchDockPreviewCache;
   onLinkAction?: (action: WorkspaceLinkAction) => void;
   onCapabilitySettingsRequest?: AgentGUIProps["hostActions"]["onCapabilitySettingsRequest"];
-  onWorkbenchConversationRailToggle?: (
-    conversationRailCollapsed: boolean
-  ) => void;
   onOpenAgentConversationWindow?: (input: {
     agentSessionId: string;
     agentTargetId: string | null;

@@ -570,6 +570,7 @@ export function StandaloneAgentWindow({
   const surface = useMemo<DesktopAgentGUISurfaceContext>(
     () => ({
       activation,
+      conversationRailStateOwner: "surface",
       conversationRailAutoCollapseMode: "preserve-middle-content",
       displayMode: "floating",
       frame: agentGuiFrame,
@@ -639,15 +640,6 @@ export function StandaloneAgentWindow({
       });
     },
     [instanceId, nodeState.lastActiveAgentSessionId]
-  );
-  const handleWorkbenchConversationRailToggle = useCallback(
-    (conversationRailCollapsed: boolean) => {
-      setNodeState((current) => ({
-        ...current,
-        conversationRailCollapsed
-      }));
-    },
-    []
   );
   const {
     handleLinkAction,
@@ -837,9 +829,6 @@ export function StandaloneAgentWindow({
               dockPreviewCache={dockPreviewCache}
               onLinkAction={handleLinkAction}
               onCapabilitySettingsRequest={handleCapabilitySettingsRequest}
-              onWorkbenchConversationRailToggle={
-                handleWorkbenchConversationRailToggle
-              }
               onOpenAgentConversationWindow={({
                 agentSessionId,
                 agentTargetId,

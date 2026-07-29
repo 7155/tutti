@@ -1833,8 +1833,13 @@ The existing package-owned AgentGUI external-request controller is the only
 consumer of Workbench commands. It routes by exact Workbench instance and
 executes new-conversation and Session actions directly, without a host hook,
 React request state, or sequence projection. Product hosts provide only the
-Workbench instance identity and, when the host owns standalone Rail state, an
-optional persistence callback.
+Workbench instance identity and an optional host-owned Rail response callback.
+The reusable Workbench node-state source remains the only embedded Rail state
+writer; its callback may record a host device preference but must not write the
+same node state again. A standalone surface may use the callback as its sole
+Rail state writer because it has no Workbench node-state source. The callback
+contract contains no Tutti Desktop preference or product policy, so other hosts
+such as TSH may persist their own Rail state without adopting Desktop behavior.
 
 Attention state preserves explicit user intent: marking the currently selected
 Session unread keeps its unread indicator while that selection remains open.

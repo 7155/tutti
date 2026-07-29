@@ -322,6 +322,11 @@ export function createAgentGuiWorkbenchContribution(
               }
             },
             onToggleConversationRail: (nextCollapsed) => {
+              dispatchAgentGuiWorkbenchCommand({
+                conversationRailCollapsed: nextCollapsed,
+                instanceId,
+                type: "conversation-rail-toggle"
+              });
               if (
                 isConversationRailCollapsed &&
                 nextCollapsed === false &&

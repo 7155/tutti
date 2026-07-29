@@ -2,6 +2,7 @@ import type {
   AgentSessionActivateEffectInput,
   AgentSessionEffectPort,
   AgentActivityCancelTurnInput,
+  AgentActivityDeleteSessionsResult,
   AgentActivitySendInput,
   AgentActivitySession,
   AgentActivitySessionDetailSnapshot,
@@ -224,7 +225,7 @@ function deleteSessions(
     workspaceId: string;
   },
   signal?: AbortSignal
-): Promise<unknown> {
+): Promise<AgentActivityDeleteSessionsResult> {
   return context.client
     .deleteWorkspaceAgentSessionsBatch(
       input.workspaceId,
@@ -268,7 +269,7 @@ function renameSession(
     workspaceId: string;
   },
   signal?: AbortSignal
-): Promise<unknown> {
+): Promise<{ session: AgentActivitySession }> {
   return context.client
     .updateWorkspaceAgentSessionTitle(
       input.workspaceId,
@@ -287,7 +288,7 @@ function setSessionPinned(
     workspaceId: string;
   },
   signal?: AbortSignal
-): Promise<unknown> {
+): Promise<{ session: AgentActivitySession }> {
   return context.client
     .updateWorkspaceAgentSessionPin(
       input.workspaceId,

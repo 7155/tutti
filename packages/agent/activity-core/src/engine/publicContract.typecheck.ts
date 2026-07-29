@@ -1,4 +1,7 @@
 import type {
+  AgentActivityDeleteSessionsResult,
+  AgentActivitySession,
+  AgentSessionEffectPort,
   AgentSessionEngine,
   AgentSessionEngineState,
   EngineExtensionCommand,
@@ -6,6 +9,7 @@ import type {
 } from "../index.ts";
 
 type Assert<T extends true> = T;
+type IsEqual<Left, Right> = [Left, Right] extends [Right, Left] ? true : false;
 type IsNever<T> = [T] extends [never] ? true : false;
 
 export type PromptExecutionIntentRemainsPrivate = Assert<
@@ -27,4 +31,25 @@ type SessionMutationOperation =
 
 export type SessionMutationsUseSemanticEngineOperations = Assert<
   SessionMutationOperation extends keyof AgentSessionEngine ? true : false
+>;
+
+export type DeleteSessionsEffectReturnsTypedResult = Assert<
+  IsEqual<
+    Awaited<ReturnType<AgentSessionEffectPort["deleteSessions"]>>,
+    AgentActivityDeleteSessionsResult
+  >
+>;
+
+export type RenameSessionEffectReturnsTypedResult = Assert<
+  IsEqual<
+    Awaited<ReturnType<AgentSessionEffectPort["renameSession"]>>,
+    { session: AgentActivitySession }
+  >
+>;
+
+export type SetSessionPinnedEffectReturnsTypedResult = Assert<
+  IsEqual<
+    Awaited<ReturnType<AgentSessionEffectPort["setSessionPinned"]>>,
+    { session: AgentActivitySession }
+  >
 >;

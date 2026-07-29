@@ -349,7 +349,7 @@ export interface AgentSessionEffectPort {
   deleteSessions(
     input: Omit<AgentActivityDeleteSessionsInput, "signal">,
     options?: EngineEffectOptions
-  ): Promise<unknown>;
+  ): Promise<AgentActivityDeleteSessionsResult>;
   respondToInteraction(
     input: AgentActivitySubmitInteractiveInput,
     options?: EngineEffectOptions
@@ -357,7 +357,7 @@ export interface AgentSessionEffectPort {
   renameSession(
     input: Omit<AgentActivityRenameSessionInput, "signal">,
     options?: EngineEffectOptions
-  ): Promise<unknown>;
+  ): Promise<{ session: AgentActivitySession }>;
   sendInput(
     input: AgentActivitySendInput,
     options?: EngineEffectOptions
@@ -365,7 +365,7 @@ export interface AgentSessionEffectPort {
   setSessionPinned(
     input: Omit<AgentActivitySetSessionPinnedInput, "signal">,
     options?: EngineEffectOptions
-  ): Promise<unknown>;
+  ): Promise<{ session: AgentActivitySession }>;
   updateSessionSettings(
     input: {
       agentSessionId: string;

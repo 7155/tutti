@@ -469,6 +469,7 @@ type SessionDetail struct {
 	Session       Session
 	ChildSessions []Session
 	Turns         []agentactivitybiz.Turn
+	EditRetry     agenthost.EditRetryAvailability
 }
 
 type SessionSectionsReader interface {

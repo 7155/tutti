@@ -507,7 +507,53 @@ On daemon restart, Host recovery first restores durable operations, then settles
 
 Codex's restored Full access warning is presentation-only, device-local safety chrome. Show it only when an empty home composer restores an unacknowledged Full access target default; do not show it for another provider or permission mode, an active or historical Session, or while defaults are loading. Explicit Full access confirmation and “Don't show again” persist the same browser-local acknowledgement, while the close action affects only the current mount. This acknowledgement must not enter Session lifecycle, target defaults, Workbench node data, or `AgentActivityRuntime` state.
 
-### 3.5 Messages and ordering
+### 3.5 Edit retry and effective history
+
+Edit retry is a Host-owned lifecycle operation, not a transcript mutation and
+not a GUI-orchestrated pair of provider calls. It is available only for the
+latest settled root user Turn when the provider exposes authoritative effective
+history and the Session has no active or child work. The command carries the
+exact Turn id, expected history revision, edited text, and a caller-stable
+operation id.
+
+```text
+AgentGUI edit intent
+  -> agent-activity-core typed command + stable client operation id
+  -> Desktop transport adapter
+  -> tuttid HTTP adapter
+  -> Host durable edit-retry operation
+  -> provider rollback/read/start capability
+  -> SQLite effective-history transaction
+  -> committed activity invalidation
+  -> Desktop semantic event normalization
+  -> agent-activity-core state-and-message reconcile
+  -> AgentGUI canonical projection
+```
+
+Host checkpoints before provider mutation and treats provider `thread/read` as
+the authority after an unknown result. Confirmed rollback retracts one complete
+Turn from effective history but retains its audit row and file-change record.
+The replacement reuses the persisted structured submission and changes only
+its first text block, preserving attachments and other non-text input. Rollback
+is never represented as natural-language model input.
+
+AgentGUI projects only three presentation states: ready, processing, and
+needs-action. It may expose edit controls only on the exact eligible Turn.
+The workspace `AgentSessionEngine` owns command identity, pending/failure
+state, recovery-action dispatch, and command-result reconciliation; React keeps
+only the unsent editor draft and awaits the engine-owned command settlement.
+An accepted transport result enters an engine-owned `reconciling` state and
+does not overwrite canonical availability. Editing stays blocked until a
+session-detail read confirms the returned history revision and recovery state;
+Desktop must not manufacture recovery actions from the command response.
+`resend_pending` and `recovery_required` are explicit recovery states rather
+than indefinite loading. GUI recovery commands delegate to Host and never
+choose whether rollback or replacement should be repeated. Completion and
+terminal Turn events request both state and message reconciliation because
+events are latency hints; the authoritative detail and message reads repair
+missed WebSocket delivery without requiring a Session switch.
+
+### 3.6 Messages and ordering
 
 A durable message has two independent ordering values:
 
@@ -638,6 +684,16 @@ disable submission, but must not change editor editability.
 - consumers do not create canonical session/message mirrors
 - optimistic records define confirmation, rejection, timeout, and uncertain-delivery paths
 - business command completion returns to the engine as a result intent; controllers do not rebuild lifecycle with Promise/effect chains
+
+Edit-and-retry availability is an exact SessionEngine projection, not a fact
+inferred from transcript order. AgentGUI edits only the authoritative eligible
+latest Turn, preserves attachment and non-text blocks through the Host-owned
+submission envelope, and never optimistically splices the transcript. After
+the command is accepted, Desktop applies effective history through the
+composite authoritative snapshot; AgentGUI only renders that canonical result.
+An authoritatively retracted initial optimistic prompt is marked on its pending
+activation so it cannot be materialized again while activation metadata and
+turnless controls remain intact.
 
 ### 4.2 Historical pull and realtime push
 

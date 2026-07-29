@@ -2,6 +2,34 @@
 
 [Agent runtime index](./agent-runtime.md) · [All troubleshooting](./README.md)
 
+### Older extension session fails because its launch identity is incomplete
+
+- **Symptom:** Sending a new message to a previously created extension session
+  fails with `session runtime snapshot is unavailable: launch identity is
+incomplete`, while a newly created session can still launch.
+- **Quick checks:** Compare the persisted Session provider with
+  `internal_runtime_context.sessionRuntimeSnapshot.provider`. The historical
+  defect has an open extension provider such as `acp:kimi-code` on the Session,
+  an empty provider in the snapshot, and a provider-native fingerprint produced
+  with the same empty provider. An intermediate build may retain the provider
+  field while still carrying that legacy empty-provider fingerprint.
+- **Root cause:** Registered-only provider normalization was used when writing
+  the snapshot and its provider-native model fingerprint. Extension-owned ACP
+  provider IDs were therefore collapsed to empty even though the durable
+  Session retained the correct provider.
+- **Fix:** Persist and fingerprint provider-native configurations with open
+  provider normalization. For existing records, recover only when the Session
+  carries a valid extension-owned provider and the snapshot exactly matches the
+  legacy empty-provider fingerprint; keep malformed, registered-provider, plan,
+  and fingerprint-mismatched snapshots fail-closed.
+- **Validation:** Prove a newly written extension snapshot binds its provider,
+  the exact historical shape resumes through its current enabled Agent Target,
+  a strict context-only read still rejects the incomplete identity, and altered
+  fingerprints or registered-provider fallbacks remain unavailable.
+- **References:**
+  [session_runtime_snapshot.go](../../../services/tuttid/service/agent/session_runtime_snapshot.go),
+  [model_plan_binding.go](../../../services/tuttid/service/agent/model_plan_binding.go)
+
 ### One hung provider startup blocks unrelated Agent sessions
 
 - **Symptom:** One provider process starts but never reaches runtime-ready, then
@@ -1920,7 +1948,10 @@ inline data URL instead`. Claude or standard ACP may instead receive no
   `internal_runtime_context_json.$.sessionRuntimeSnapshot.provider`. An
   extension provider such as `acp:<name>` beside an empty snapshot provider,
   followed by `launch identity is incomplete`, identifies the durable snapshot
-  path rather than a PATH or listener failure.
+  path rather than a PATH or listener failure. A second historical shape keeps
+  `acp:<name>` in both locations but has a provider-native fingerprint computed
+  from an empty provider; it fails later with
+  `provider-native fingerprint does not match`.
 - Root cause:
   Dynamic Agent Extension adapters are created on demand and cached only for
   the daemon lifetime. Computing `resumable` from that cache maps restart state
@@ -1953,16 +1984,20 @@ inline data URL instead`. Claude or standard ACP may instead receive no
   Agent Target. For already-written empty-provider extension snapshots, recover
   only when the canonical session provider is a valid unregistered open
   identity, the snapshot declares provider-native configuration, and its
-  fingerprint exactly matches the historical empty-provider payload. Keep
-  every other malformed or mismatched snapshot fail-closed, and do not rewrite
-  the database merely to make discovery succeed.
+  fingerprint exactly matches the historical empty-provider payload. Apply the
+  same narrow compatibility check to the transitional shape that already
+  retained the open provider in the snapshot: the canonical and snapshot
+  providers must match exactly before accepting the historical fingerprint.
+  Keep every other malformed or mismatched snapshot fail-closed, and do not
+  rewrite the database merely to make discovery succeed.
 - Validation:
   Start from a controller with no cached extension adapter. Assert a persisted
   Target-bound session is resumable, malformed or mismatched bindings fail
   closed, and the eligibility check does not launch the provider. Then run
   `go test ./packages/agent/daemon/runtime ./services/tuttid/service/agent`.
   Also cover new extension snapshots preserving `acp:*`, verified legacy
-  empty-provider recovery, registered-provider fallback rejection, CLI command
+  empty-provider recovery, transitional open-provider/legacy-fingerprint
+  recovery, registered or mismatched provider fallback rejection, CLI command
   projection for the recovered session, and runtime preparation after restart.
 - References:
   [controller_session_registry.go](../../../packages/agent/daemon/runtime/controller_session_registry.go)

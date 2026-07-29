@@ -86,7 +86,7 @@ func TestCompactToolCallPayloadKeepsBusinessProjectionWithoutProviderEnvelopes(t
 			t.Fatalf("output.%s retained: %#v", key, output)
 		}
 	}
-	if output["text"] != nil || output["stdout"] != "command output" || output["exitCode"] != 0 {
+	if output["text"] != "visible result" || output["stdout"] != "command output" || output["exitCode"] != 0 {
 		t.Fatalf("output = %#v, want normalized command result", output)
 	}
 	if output["mode"] != "content" ||
@@ -175,7 +175,7 @@ func TestCompactToolCallPayloadCompactsNestedTaskSteps(t *testing.T) {
 		t.Fatalf("step input = %#v, want flattened input", input)
 	}
 	output := step["toolResult"].(map[string]any)
-	if output["stdout"] != "nested output" || output["text"] != nil {
+	if output["stdout"] != "nested output" || output["text"] != "duplicate nested output" {
 		t.Fatalf("step output = %#v, want canonical output text", output)
 	}
 	for _, key := range []string{"content", "rawOutput", "toolResponse"} {
@@ -202,6 +202,24 @@ func TestCompactToolCallPayloadProjectsFailedContentIntoError(t *testing.T) {
 	errorBody := got["error"].(map[string]any)
 	if errorBody["text"] != "permission denied" {
 		t.Fatalf("error = %#v, want projected text", errorBody)
+	}
+}
+
+func TestCompactToolCallPayloadRetainsFormalTextAndStreamFields(t *testing.T) {
+	got := CompactToolCallPayload("completed", map[string]any{
+		"callId": "call-1",
+		"output": map[string]any{
+			"text":   "same output",
+			"stdout": "same output",
+			"stderr": "same output",
+		},
+	})
+
+	output := got["output"].(map[string]any)
+	for _, key := range []string{"text", "stdout", "stderr"} {
+		if output[key] != "same output" {
+			t.Fatalf("output.%s = %#v, want formal field retained", key, output[key])
+		}
 	}
 }
 

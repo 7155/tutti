@@ -152,7 +152,7 @@ func CompactToolCallPayload(status string, payload map[string]any) map[string]an
 		if *target == nil {
 			*target = map[string]any{}
 		}
-		if toolBodyDisplayText(*target) == "" {
+		if toolString((*target)["text"]) == "" {
 			(*target)["text"] = strings.Join(projection.texts, "\n")
 		}
 	}
@@ -345,7 +345,7 @@ func compactToolBody(value any) map[string]any {
 
 	projection := toolContentProjection{}
 	projection.add(body["content"])
-	if toolBodyDisplayText(body) == "" {
+	if toolString(body["text"]) == "" {
 		if text := firstToolBodyText(body, projection.texts); text != "" {
 			body["text"] = text
 		}
@@ -394,11 +394,6 @@ func compactToolBody(value any) map[string]any {
 	} else {
 		delete(body, "steps")
 	}
-	if text := toolString(body["text"]); text != "" &&
-		(text == toolString(body["stdout"]) || text == toolString(body["stderr"])) {
-		delete(body, "text")
-	}
-
 	delete(body, "_meta")
 	delete(body, "content")
 	delete(body, "metadata")
@@ -445,15 +440,6 @@ func firstToolBodyText(body map[string]any, contentTexts []string) string {
 	}
 	if len(contentTexts) > 0 {
 		return strings.Join(contentTexts, "\n")
-	}
-	return ""
-}
-
-func toolBodyDisplayText(body map[string]any) string {
-	for _, key := range []string{"text", "message", "summary", "stdout", "stderr"} {
-		if text := toolString(body[key]); text != "" {
-			return text
-		}
 	}
 	return ""
 }

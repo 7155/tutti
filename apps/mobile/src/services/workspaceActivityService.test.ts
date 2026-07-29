@@ -527,7 +527,7 @@ describe("WorkspaceActivityService", () => {
     service.dispose();
   });
 
-  test("renames a session and reconciles the canonical rail snapshot", async () => {
+  test("renames a session through the engine without reloading rail membership", async () => {
     let session: WorkspaceAgentSession | null = createSession();
     const renameRequests: string[] = [];
     const client = createClient({
@@ -540,12 +540,15 @@ describe("WorkspaceActivityService", () => {
       session: () => session
     });
     const service = createService(client);
+    const reconcileRail = jest.spyOn(service.rail, "reconcile");
 
     await service.start();
     await flushAsyncWork();
+    reconcileRail.mockClear();
     await service.renameSession("session-1", "  Renamed session  ");
 
     expect(renameRequests).toEqual(["Renamed session"]);
+    expect(reconcileRail).not.toHaveBeenCalled();
     expect(service.getSnapshot().selectedSession?.title).toBe(
       "Renamed session"
     );

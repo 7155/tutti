@@ -642,21 +642,34 @@ disable submission, but must not change editor editability.
   aggregate reads, but do not belong in high-frequency AgentGUI render paths.
   Event callbacks that need current canonical data read the engine snapshot at
   event time instead of retaining a whole-workspace render snapshot
-- lifecycle writes use typed intents/commands
+- lifecycle writes use semantic Engine operations or typed intents/commands
 - the Engine alone translates shared activation, prompt send, settings update,
-  turn cancel, Interaction response, pin, and batch-delete commands into
-  `AgentSessionEffectPort` calls. Desktop and Mobile implement those semantic
-  methods and must not duplicate a command-type switch for them. Platform-only
-  commands remain in each host's `EngineExtensionCommand` adapter. Every effect
-  propagates the Engine-owned AbortSignal to its transport. Direct settings
-  changes, post-activation persistence, and prompt-required settings share one
-  per-Session Engine lane. Owner boundaries are serialization barriers rather
-  than coalescing opportunities. A validated precondition updates canonical
-  Session state before the Engine starts send, while a failed or timed-out
-  precondition prevents delivery. A timed-out settings write remains
-  delivery-unknown and does not release queued writes automatically. A fresh
-  explicit settings selection is the user's retry: Desktop AgentGUI and Native
-  Mobile derive that retry from the exact Engine settings-operation state
+  turn cancel, Interaction response, rename, pin, and batch-delete commands
+  into `AgentSessionEffectPort` calls. Desktop and Mobile implement those
+  semantic methods and must not duplicate a command-type switch for them.
+  Host activity facades call `engine.renameSession`,
+  `engine.setSessionPinned`, and `engine.deleteSessions`; these deep methods
+  own workspace projection, mutation identity, default timeout, cancellation,
+  settlement waiting, and canonical result projection. Hosts must not
+  reconstruct that protocol with `dispatchSessionMutation` and snapshot reads.
+  Platform-only commands remain in each host's `EngineExtensionCommand`
+  adapter. Every effect propagates the Engine-owned AbortSignal to its
+  transport. Rename, pin, and delete settle through the shared Session-mutation
+  state. Rename and pin may update canonical Session state only from a validated
+  authoritative Session result. Delete may remove canonical Sessions only from
+  a validated `SessionDeleteMutationResult`, projected as `session/removed`
+  tombstone intents. Caller cancellation aborts the host effect, but an already
+  accepted write remains delivery-unknown until later canonical reconciliation;
+  it is never converted into a confirmed failure. Direct settings changes,
+  post-activation persistence, and
+  prompt-required settings share one per-Session Engine lane. Owner boundaries
+  are serialization barriers rather than coalescing opportunities. A validated
+  precondition updates canonical Session state before the Engine starts send,
+  while a failed or timed-out precondition prevents delivery. A timed-out
+  settings write remains delivery-unknown and does not release queued writes
+  automatically. A fresh explicit settings selection is the user's retry:
+  Desktop AgentGUI and Native Mobile derive that retry from the exact Engine
+  settings-operation state
 - consumers do not read reducer maps directly
 - consumers do not create canonical session/message mirrors
 - optimistic records define confirmation, rejection, timeout, and uncertain-delivery paths
@@ -1498,7 +1511,7 @@ DOM.
 
 ### 6.3 `AgentActivityRuntime` and `AgentHostApi`
 
-`AgentActivityRuntime` is the AgentGUI activity-data and command boundary. Session, messages, activation, send, cancel, Interaction, Goal, settings, composer options, pin, and delete enter through it.
+`AgentActivityRuntime` is the AgentGUI activity-data and command boundary. Session, messages, activation, send, cancel, Interaction, Goal, settings, composer options, rename, pin, and delete enter through it.
 
 `AgentHostApi` supplies host capabilities only: files, clipboard, project/account lookup, Agent Target setup/probes, diagnostics, and OS/Workbench helpers. It must not become a Session, Turn, timeline, or write source again.
 

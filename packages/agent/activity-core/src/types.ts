@@ -163,6 +163,7 @@ export interface AgentActivityRenameSessionInput {
   workspaceId: string;
   agentSessionId: string;
   title: string;
+  signal?: AbortSignal;
 }
 
 export interface AgentActivityPresence {

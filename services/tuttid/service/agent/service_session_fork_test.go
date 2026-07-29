@@ -248,9 +248,7 @@ func TestSessionForkContextPolicyRejectsWorktreeIsolation(t *testing.T) {
 
 func TestSessionForkContextPolicyPreservesNonOwnedRuntimeFacts(t *testing.T) {
 	policy := serviceHostSessionForkContextPolicy{
-		service: &Service{
-			RuntimePreparer: runtimeprep.NewDefaultPreparer(t.TempDir()),
-		},
+		runtimePreparer: runtimeprep.NewDefaultPreparer(t.TempDir()),
 	}
 	target, err := policy.PrepareSessionForkTargetContext(t.Context(), storesqlite.Session{
 		Provider: "codex",
@@ -280,16 +278,14 @@ func TestSessionForkContextPolicyLeavesBindingModeEnforcementToHost(t *testing.T
 	source := storesqlite.Session{Provider: "codex"}
 	prepared := agenthost.ProviderRuntimeSession{Cwd: "/prepared-project"}
 	target, err := (serviceHostSessionForkContextPolicy{
-		service: &Service{RuntimePreparer: fakeRuntimePreparer{}},
+		runtimePreparer: fakeRuntimePreparer{},
 	}).PrepareSessionForkTargetContext(t.Context(), source, prepared)
 	if err != nil || target.Cwd != "/prepared-project" {
 		t.Fatalf("policy without provider state binder target=%#v error=%v", target, err)
 	}
 
 	target, err = (serviceHostSessionForkContextPolicy{
-		service: &Service{
-			RuntimePreparer: runtimeprep.NewDefaultPreparer(t.TempDir()),
-		},
+		runtimePreparer: runtimeprep.NewDefaultPreparer(t.TempDir()),
 	}).PrepareSessionForkTargetContext(t.Context(), source, prepared)
 	if err != nil || target.Cwd != "/prepared-project" {
 		t.Fatalf("policy with provider state binder target=%#v error=%v", target, err)
@@ -320,13 +316,9 @@ func TestHostPreparationRepairsCommittedCodexForkProviderStateBeforeResume(t *te
 		},
 	}
 	preparer := &recordingSessionForkRuntimePreparer{}
-	service := &Service{RuntimePreparer: preparer}
-	service.SetApplicationHost(agenthost.New(agenthost.Config{
-		SessionForks: store,
-	}))
-
 	err := (serviceHostPreparation{
-		service: service,
+		runtimePreparer: preparer,
+		sessionForks:    store,
 	}).bindCommittedSessionForkProviderState(
 		t.Context(),
 		agenthost.RuntimePreparationInput{

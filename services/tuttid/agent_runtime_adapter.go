@@ -226,7 +226,8 @@ func runtimeTuttiModeSnapshotFromService(
 	if snapshot == nil {
 		return nil
 	}
-	legacyOrchestrationIntensity := snapshot.OrchestrationIntensity //nolint:staticcheck // Compatibility bridge preserves version-zero snapshots.
+	//nolint:staticcheck // Compatibility bridge preserves version-zero snapshots.
+	legacyOrchestrationIntensity := snapshot.OrchestrationIntensity
 	return &agentruntime.TuttiModeTurnSnapshot{
 		ActivationID:           snapshot.ActivationID,
 		RevisionID:             snapshot.RevisionID,

@@ -24,10 +24,8 @@ import {
   readWorkspaceFileDropEntries
 } from "../../terminalNode/workspaceFileDrop";
 import {
-  classifyAgentRichTextExternalFiles,
-  imageFilesFromDataTransfer,
-  nonImageFilesFromDataTransfer,
   readAgentRichTextPromptImages,
+  routeAgentRichTextExternalFiles,
   systemFileDragInfoFromDataTransfer
 } from "./agentRichTextPromptImages";
 import type {
@@ -408,24 +406,17 @@ export const AgentRichTextEditor = forwardRef<
           return true;
         },
         paste: (_view, event) => {
-          const { imageFiles, regularFiles } =
-            classifyAgentRichTextExternalFiles(event.clipboardData);
-          const canPasteImagesAsFiles =
-            imageFiles.length > 0 &&
-            !promptImagesSupportedRef.current &&
-            Boolean(onPasteFilesRef.current);
-          if (
-            imageFiles.length > 0 ||
-            (regularFiles.length > 0 && onPasteFilesRef.current)
-          ) {
+          const { externalFiles, imageFiles, imagesHandledAsFiles } =
+            routeAgentRichTextExternalFiles(event.clipboardData, {
+              externalFilesSupported: Boolean(onPasteFilesRef.current),
+              promptImagesSupported: promptImagesSupportedRef.current
+            });
+          if (imageFiles.length > 0 || externalFiles.length > 0) {
             event.preventDefault();
-            const filesForExternalPreparation = canPasteImagesAsFiles
-              ? [...regularFiles, ...imageFiles]
-              : regularFiles;
-            if (filesForExternalPreparation.length > 0) {
-              onPasteFilesRef.current?.(filesForExternalPreparation);
+            if (externalFiles.length > 0) {
+              onPasteFilesRef.current?.(externalFiles);
             }
-            if (imageFiles.length > 0 && !canPasteImagesAsFiles) {
+            if (imageFiles.length > 0 && !imagesHandledAsFiles) {
               if (!promptImagesSupportedRef.current) {
                 onPromptImagesUnsupportedRef.current?.();
               } else {
@@ -565,23 +556,15 @@ export const AgentRichTextEditor = forwardRef<
           if (!dataTransfer || disabled) {
             return false;
           }
-          const imageFiles = imageFilesFromDataTransfer(dataTransfer);
-          const imageFileSet = new Set(imageFiles);
-          const regularFiles = nonImageFilesFromDataTransfer(
-            dataTransfer
-          ).filter((file) => !imageFileSet.has(file));
-          const canHandleRegularFiles = Boolean(onDropFilesRef.current);
-          const canDropImagesAsFiles =
-            imageFiles.length > 0 &&
-            !promptImagesSupportedRef.current &&
-            canHandleRegularFiles;
-          const filesForExternalPreparation = canDropImagesAsFiles
-            ? [...regularFiles, ...imageFiles]
-            : regularFiles;
-          if (
-            imageFiles.length > 0 ||
-            (regularFiles.length > 0 && canHandleRegularFiles)
-          ) {
+          const {
+            externalFiles: filesForExternalPreparation,
+            imageFiles,
+            imagesHandledAsFiles
+          } = routeAgentRichTextExternalFiles(dataTransfer, {
+            externalFilesSupported: Boolean(onDropFilesRef.current),
+            promptImagesSupported: promptImagesSupportedRef.current
+          });
+          if (imageFiles.length > 0 || filesForExternalPreparation.length > 0) {
             event.preventDefault();
             const currentEditor = editorRef.current;
             if (
@@ -594,12 +577,11 @@ export const AgentRichTextEditor = forwardRef<
                 left: event.clientX,
                 top: event.clientY
               })?.pos;
-              const fallbackSelectionPosition =
-                currentEditor.state.selection.from;
+              const selectionPosition = currentEditor.state.selection.from;
               const insertPosition =
                 coordinatePosition ??
-                (Number.isInteger(fallbackSelectionPosition)
-                  ? fallbackSelectionPosition
+                (Number.isInteger(selectionPosition)
+                  ? selectionPosition
                   : null) ??
                 currentEditor.state.doc.content.size;
               currentEditor
@@ -609,7 +591,7 @@ export const AgentRichTextEditor = forwardRef<
                 .run();
               onDropFilesRef.current(filesForExternalPreparation);
             }
-            if (imageFiles.length === 0 || canDropImagesAsFiles) {
+            if (imageFiles.length === 0 || imagesHandledAsFiles) {
               return true;
             }
             if (!promptImagesSupportedRef.current) {

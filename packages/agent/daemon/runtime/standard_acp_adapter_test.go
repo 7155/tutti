@@ -1663,6 +1663,37 @@ func TestCursorAdapterAllowsImagePromptWithoutInitializeCapability(t *testing.T)
 	}
 }
 
+func TestStandardACPAdapterExecMaterializesRemoteImageAtProviderBoundary(t *testing.T) {
+	t.Parallel()
+
+	transport := newStandardACPTransport("OpenCode", "opencode-session-remote-image")
+	adapter := newOpenCodeTestAdapter(transport)
+	imageURL, materializer := testRemotePromptImageMaterializer(t)
+	adapter.promptImageMaterializer = materializer
+	session := standardTestSession(ProviderOpenCode)
+	if _, err := adapter.Start(context.Background(), session); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	session.ProviderSessionID = "opencode-session-remote-image"
+
+	if _, err := adapter.Exec(context.Background(), session, []PromptContentBlock{
+		{Type: "text", Text: "what is in this screenshot?"},
+		{Type: "image", MimeType: "image/png", URL: imageURL},
+	}, "", "turn-remote-image", nil, nil); err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+
+	params := transport.conn.lastPromptParams()
+	prompt, _ := params["prompt"].([]any)
+	if len(prompt) != 2 {
+		t.Fatalf("session/prompt content = %#v, want text+image", params["prompt"])
+	}
+	image, _ := prompt[1].(map[string]any)
+	if image["mimeType"] != "image/png" || image["data"] != "aGk=" {
+		t.Fatalf("session/prompt image = %#v, want inline image data", image)
+	}
+}
+
 func TestStandardACPAdapterRejectsImagePromptWithoutCapability(t *testing.T) {
 	t.Parallel()
 

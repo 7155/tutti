@@ -106,6 +106,7 @@ type standardACPAdapter struct {
 	commandSink                CommandSnapshotSink
 	eventSink                  SessionEventSink
 	configSink                 ConfigOptionsUpdateSink
+	promptImageMaterializer    providerPromptImageMaterializer
 	lifecycleMu                sync.Mutex
 	lifecycleLocks             map[string]*standardACPSessionLock
 }

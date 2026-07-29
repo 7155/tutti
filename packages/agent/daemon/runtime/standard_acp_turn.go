@@ -29,10 +29,14 @@ func (a *standardACPAdapter) Exec(
 		)}, ErrSessionDisconnected
 	}
 	session.ProviderSessionID = acpSession.providerSessionID
-	a.rememberSessionTurn(session.AgentSessionID, turnID)
 	explicitDisplayPrompt, visibleText := explicitAndVisiblePromptText(content, displayPrompt)
 	mentionRoutingApplied, mentionRoutingSkills := tuttiMentionRoutingSkills(visibleText)
-	acpPromptContent := promptContentForACP(content)
+	providerContent, err := materializeProviderPromptImagesAtBoundary(ctx, content, a.promptImageMaterializer)
+	if err != nil {
+		return nil, err
+	}
+	a.rememberSessionTurn(session.AgentSessionID, turnID)
+	acpPromptContent := promptContentForACP(providerContent)
 	if mentionRoutingApplied {
 		acpPromptContent = appendTuttiMentionRoutingPrompt(acpPromptContent, mentionRoutingSkills)
 	}

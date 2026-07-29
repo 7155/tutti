@@ -50,6 +50,10 @@ list entries remain first, Tutti session roots are appended next, and the user's
 native skill root is appended last. Exact duplicate paths are ignored after
 their first occurrence. Invalid YAML or an incompatible target key shape stops
 runtime preparation with a clear error instead of silently omitting skills.
+There is no provider-ID migration branch to remove; if Hermes later exposes a
+native ACP/runtime option for additive skill roots and home isolation, remove the
+signed `runtimePrep` declaration from the Hermes package and let the generic
+instruction/skill preparer handle it like other ACP extensions.
 
 Product-owned responsibilities remain outside the module:
 

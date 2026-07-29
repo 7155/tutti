@@ -141,6 +141,70 @@ func TestExtensionRuntimePreparerAddsDeclaredSkillRootsToSessionConfig(t *testin
 	}
 }
 
+func TestExtensionRuntimePreparerPrepareTwiceIsIdempotent(t *testing.T) {
+	globalHome := t.TempDir()
+	t.Setenv("HERMES_HOME", globalHome)
+	if err := os.WriteFile(filepath.Join(globalHome, "config.yaml"), []byte("skills:\n  external_dirs:\n    - \"/user/root\"\n"), 0o600); err != nil {
+		t.Fatalf("write global config: %v", err)
+	}
+
+	stateDir := t.TempDir()
+	cwd := t.TempDir()
+	prep := NewDefaultPreparer(stateDir)
+	prep.CommandCatalog = staticCommandCatalog(nil)
+	input := PrepareInput{
+		WorkspaceID:          "workspace-1",
+		AgentSessionID:       "session-1",
+		AgentTargetID:        "local:hermes",
+		Provider:             "acp:hermes",
+		Cwd:                  cwd,
+		ExtensionRuntimePrep: hermesRuntimePrep(),
+		ExtensionSkillRoots:  []string{".agent_context/skills"},
+	}
+	if _, err := prep.Prepare(t.Context(), input); err != nil {
+		t.Fatalf("first Prepare() error = %v", err)
+	}
+	runtimeRoot, err := LocalStore{StateDir: stateDir}.RuntimeRoot("workspace-1", "session-1")
+	if err != nil {
+		t.Fatalf("RuntimeRoot() error = %v", err)
+	}
+	sessionSkillRoot := filepath.Join(runtimeRoot, "extension-skills", ".agent_context", "skills")
+	stalePath := filepath.Join(sessionSkillRoot, tuttiSkillName, "stale.txt")
+	if err := os.WriteFile(stalePath, []byte("stale"), 0o644); err != nil {
+		t.Fatalf("write stale skill file: %v", err)
+	}
+
+	if _, err := prep.Prepare(t.Context(), input); err != nil {
+		t.Fatalf("second Prepare() error = %v", err)
+	}
+
+	entries, err := os.ReadDir(sessionSkillRoot)
+	if err != nil {
+		t.Fatalf("ReadDir() error = %v", err)
+	}
+	for _, skillName := range []string{tuttiHandoffSkillName, tuttiSkillName} {
+		matches := 0
+		for _, entry := range entries {
+			if entry.IsDir() && (entry.Name() == skillName || strings.HasPrefix(entry.Name(), skillName+"-")) {
+				matches++
+			}
+		}
+		if matches != 1 {
+			t.Fatalf("managed skill %q directory count = %d, want 1", skillName, matches)
+		}
+	}
+	if _, err := os.Stat(stalePath); !os.IsNotExist(err) {
+		t.Fatalf("stale managed skill file should be replaced on retry, err=%v", err)
+	}
+	config, err := os.ReadFile(filepath.Join(runtimeRoot, "hermes", "config.yaml"))
+	if err != nil {
+		t.Fatalf("session config.yaml missing: %v", err)
+	}
+	if strings.Count(string(config), sessionSkillRoot) != 1 {
+		t.Fatalf("session skill root should appear once after retry:\n%s", config)
+	}
+}
+
 func TestExtensionRuntimePreparerMaterializesBrowserUseSkillWhenEnabled(t *testing.T) {
 	t.Setenv("HERMES_HOME", t.TempDir())
 	stateDir := t.TempDir()

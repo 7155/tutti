@@ -51,6 +51,39 @@ describe("createAgentConversationMessageController", () => {
     engine.dispose();
   });
 
+  it("treats repeated initial hydration as idempotent while reconcile is pending", async () => {
+    type CommandResult = Awaited<ReturnType<EngineCommandPort["execute"]>>;
+    let resolveExecute: (result: CommandResult) => void = () => {};
+    const execute = vi.fn<EngineCommandPort["execute"]>(
+      () =>
+        new Promise((resolve) => {
+          resolveExecute = resolve;
+        })
+    );
+    const engine = createTestAgentSessionEngine("workspace-1", { execute });
+    const controller = createController({ engine });
+
+    controller.requestInitial("session-1");
+    controller.requestInitial("session-1");
+
+    await vi.waitFor(() => {
+      expect(
+        execute.mock.calls.filter(
+          ([command]) => command.type === "session/reconcile"
+        )
+      ).toHaveLength(1);
+    });
+    resolveExecute({
+      affectedSessionIds: [],
+      appliedMessages: [],
+      session: null,
+      status: "applied"
+    });
+
+    controller.dispose();
+    engine.dispose();
+  });
+
   it("loads older history only from the authoritative Engine window", async () => {
     const engine = createTestAgentSessionEngine("workspace-1");
     const listSessionMessages = vi.fn(async () =>

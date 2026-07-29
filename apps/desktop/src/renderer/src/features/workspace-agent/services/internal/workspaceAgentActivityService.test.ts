@@ -16,6 +16,16 @@ import {
 import type { ReporterEventInput } from "../../../analytics/services/reporterService.interface.ts";
 import { WorkspaceAgentActivityService } from "./workspaceAgentActivityService.ts";
 
+function sessionDetailProjection(
+  projection: Parameters<TuttidClient["getWorkspaceAgentSession"]>[2]
+) {
+  const resolved = projection ?? "full";
+  return {
+    lifecycleCapabilitiesProjected: resolved === "full",
+    projection: resolved
+  };
+}
+
 test("WorkspaceAgentActivityService starts one canonical workspace load when the shared engine is created", async () => {
   let listCalls = 0;
   const service = new WorkspaceAgentActivityService({
@@ -51,7 +61,10 @@ test("WorkspaceAgentActivityService applies authoritative Session detail in one 
   };
   const service = new WorkspaceAgentActivityService({
     tuttidClient: {
-      getWorkspaceAgentSession: async () => ({
+      getWorkspaceAgentSession: async (
+        ...args: Parameters<TuttidClient["getWorkspaceAgentSession"]>
+      ) => ({
+        ...sessionDetailProjection(args[2]),
         childSessions: [childSession],
         session: rootSession,
         turns: [workspaceAgentTurn()]
@@ -687,7 +700,10 @@ test("WorkspaceAgentActivityService reads existing session settings from the dae
   const service = new WorkspaceAgentActivityService({
     tuttidClient: {
       createWorkspaceAgentSession: async () => createdSession,
-      getWorkspaceAgentSession: async () => ({
+      getWorkspaceAgentSession: async (
+        ...args: Parameters<TuttidClient["getWorkspaceAgentSession"]>
+      ) => ({
+        ...sessionDetailProjection(args[2]),
         session: loadedSession,
         childSessions: [],
         turns: []
@@ -729,7 +745,10 @@ test("WorkspaceAgentActivityService does not reinterpret a failed Turn as activa
   const service = new WorkspaceAgentActivityService({
     tuttidClient: {
       createWorkspaceAgentSession: async () => failedSession,
-      getWorkspaceAgentSession: async () => ({
+      getWorkspaceAgentSession: async (
+        ...args: Parameters<TuttidClient["getWorkspaceAgentSession"]>
+      ) => ({
+        ...sessionDetailProjection(args[2]),
         childSessions: [],
         session: failedSession,
         turns: []
@@ -1011,7 +1030,10 @@ test("WorkspaceAgentActivityService starts session-event streams and forwards ca
       subscribeConnectionState: () => () => {}
     } as never,
     tuttidClient: {
-      getWorkspaceAgentSession: async () => ({
+      getWorkspaceAgentSession: async (
+        ...args: Parameters<TuttidClient["getWorkspaceAgentSession"]>
+      ) => ({
+        ...sessionDetailProjection(args[2]),
         session: workspaceAgentSession({
           currentPhase: "idle",
           status: "completed",
@@ -1158,7 +1180,10 @@ test("WorkspaceAgentActivityService reconciles a realtime message version gap be
       subscribeConnectionState: () => () => {}
     } as never,
     tuttidClient: {
-      getWorkspaceAgentSession: async () => ({
+      getWorkspaceAgentSession: async (
+        ...args: Parameters<TuttidClient["getWorkspaceAgentSession"]>
+      ) => ({
+        ...sessionDetailProjection(args[2]),
         session,
         childSessions: [],
         turns: []
@@ -1315,7 +1340,10 @@ test("WorkspaceAgentActivityService reconciles cached messages after reconnect w
       }
     } as never,
     tuttidClient: {
-      getWorkspaceAgentSession: async () => ({
+      getWorkspaceAgentSession: async (
+        ...args: Parameters<TuttidClient["getWorkspaceAgentSession"]>
+      ) => ({
+        ...sessionDetailProjection(args[2]),
         session,
         childSessions: [],
         turns: []
@@ -1559,7 +1587,10 @@ test("WorkspaceAgentActivityService preserves realtime turn provenance for atten
       subscribeConnectionState: () => () => {}
     } as never,
     tuttidClient: {
-      getWorkspaceAgentSession: async () => ({
+      getWorkspaceAgentSession: async (
+        ...args: Parameters<TuttidClient["getWorkspaceAgentSession"]>
+      ) => ({
+        ...sessionDetailProjection(args[2]),
         session: settled,
         childSessions: [],
         turns: []
@@ -1646,7 +1677,9 @@ test("WorkspaceAgentActivityService preserves live provenance across a transient
       subscribeConnectionState: () => () => {}
     } as never,
     tuttidClient: {
-      getWorkspaceAgentSession: async () => {
+      getWorkspaceAgentSession: async (
+        ...args: Parameters<TuttidClient["getWorkspaceAgentSession"]>
+      ) => {
         getCalls += 1;
         if (getCalls === 2) {
           throw new TuttidProtocolError({
@@ -1657,6 +1690,7 @@ test("WorkspaceAgentActivityService preserves live provenance across a transient
           });
         }
         return {
+          ...sessionDetailProjection(args[2]),
           session: getCalls === 1 ? running : settled,
           childSessions: [],
           turns: []
@@ -1874,9 +1908,12 @@ test("WorkspaceAgentActivityService fetches detail before combined message recon
   });
   const service = new WorkspaceAgentActivityService({
     tuttidClient: {
-      getWorkspaceAgentSession: async () => {
+      getWorkspaceAgentSession: async (
+        ...args: Parameters<TuttidClient["getWorkspaceAgentSession"]>
+      ) => {
         calls.push("getSession");
         return {
+          ...sessionDetailProjection(args[2]),
           session: messagesResolved ? finalSession : staleSession,
           childSessions: [],
           turns: []
@@ -1978,7 +2015,10 @@ test("WorkspaceAgentActivityService reconciles child sessions and their messages
   }> = [];
   const service = new WorkspaceAgentActivityService({
     tuttidClient: {
-      getWorkspaceAgentSession: async () => ({
+      getWorkspaceAgentSession: async (
+        ...args: Parameters<TuttidClient["getWorkspaceAgentSession"]>
+      ) => ({
+        ...sessionDetailProjection(args[2]),
         session: root,
         childSessions: [child],
         turns: [
@@ -2117,11 +2157,13 @@ test("WorkspaceAgentActivityService catches up children that advance between det
     tuttidClient: {
       getWorkspaceAgentSession: async (
         _workspaceId: string,
-        requestedSessionId: string
+        requestedSessionId: string,
+        projection?: Parameters<TuttidClient["getWorkspaceAgentSession"]>[2]
       ) => {
         detailReads += 1;
         if (requestedSessionId === "child-1") {
           return {
+            ...sessionDetailProjection(projection),
             session: {
               ...child,
               messageVersion: detailReads === 2 ? 3 : 2
@@ -2131,6 +2173,7 @@ test("WorkspaceAgentActivityService catches up children that advance between det
           };
         }
         return {
+          ...sessionDetailProjection(projection),
           session: root,
           childSessions: [
             {
@@ -2239,7 +2282,10 @@ test("WorkspaceAgentActivityService loads the newest history page first", async 
   const session = workspaceAgentSession({ status: "ready" });
   const service = new WorkspaceAgentActivityService({
     tuttidClient: {
-      getWorkspaceAgentSession: async () => ({
+      getWorkspaceAgentSession: async (
+        ...args: Parameters<TuttidClient["getWorkspaceAgentSession"]>
+      ) => ({
+        ...sessionDetailProjection(args[2]),
         session,
         childSessions: [],
         turns: []
@@ -2317,7 +2363,10 @@ test("WorkspaceAgentActivityService drains child incremental pages from its dura
   });
   const service = new WorkspaceAgentActivityService({
     tuttidClient: {
-      getWorkspaceAgentSession: async () => ({
+      getWorkspaceAgentSession: async (
+        ...args: Parameters<TuttidClient["getWorkspaceAgentSession"]>
+      ) => ({
+        ...sessionDetailProjection(args[2]),
         session,
         childSessions: [],
         turns: []

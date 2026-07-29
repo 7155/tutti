@@ -2145,6 +2145,11 @@ export type WorkspaceAgentSessionKind = "root" | "child";
  */
 export type WorkspaceAgentMessageCursor = number;
 
+/**
+ * Projection applied to a Session detail response. messageHydration preserves hierarchy and message cursors but leaves provider-backed lifecycle capabilities unresolved.
+ */
+export type WorkspaceAgentSessionDetailProjection = "full" | "messageHydration";
+
 export type WorkspaceAgentSessionLifecycleCapabilities = {
   /**
    * Whether this exact session can fork its latest settled state.
@@ -2344,6 +2349,11 @@ export type WorkspaceAgentSessionResponse = {
 };
 
 export type WorkspaceAgentSessionDetailResponse = {
+  projection: WorkspaceAgentSessionDetailProjection;
+  /**
+   * Whether provider-backed lifecycle capability projection ran for session and childSessions. A full projection reports true even when a provider probe fails closed, because false then means the action is unavailable for this response. When false, projection was intentionally skipped and capability values must not be applied as authoritative.
+   */
+  lifecycleCapabilitiesProjected: boolean;
   session: WorkspaceAgentSession;
   /**
    * Flat collection of every nested child session below session. Clients reconstruct the tree from the immutable parent fields.
@@ -10473,7 +10483,12 @@ export type GetWorkspaceAgentSessionData = {
     workspaceID: string;
     agentSessionID: string;
   };
-  query?: never;
+  query?: {
+    /**
+     * Selects the detail projection. messageHydration preserves the session hierarchy and message cursors used by reconciliation discovery without resolving provider-backed lifecycle capabilities.
+     */
+    projection?: WorkspaceAgentSessionDetailProjection;
+  };
   url: "/v1/workspaces/{workspaceID}/agent-sessions/{agentSessionID}";
 };
 

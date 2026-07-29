@@ -180,6 +180,7 @@ func (s *Service) projectSessionForkOperation(
 			ProviderRuntimeSession{},
 			false,
 			true,
+			true,
 		)
 		if err != nil {
 			return SessionForkOperation{}, err

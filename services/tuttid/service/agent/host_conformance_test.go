@@ -742,7 +742,7 @@ func (d *legacyHostConformanceDriver) GetSession(ctx context.Context, ref agenth
 		if err != nil {
 			return hostconformance.SessionObservation{}, err
 		}
-		session, err := d.service.projectHostSessionResult(ctx, result.Canonical, result.Session, result.Live, false)
+		session, err := d.service.projectHostSessionResult(ctx, result.Canonical, result.Session, result.Live, false, true)
 		return legacyHostSessionObservationWithLive(session, result.Live), err
 	}
 	session, err := d.service.Get(ctx, ref.WorkspaceID, ref.AgentSessionID)
@@ -774,7 +774,7 @@ func (d *legacyHostConformanceDriver) UpdateSettings(ctx context.Context, input 
 		if err != nil {
 			return hostconformance.SessionObservation{}, err
 		}
-		session, err := d.service.projectHostSessionResult(ctx, result.Canonical, result.Session, result.Live, false)
+		session, err := d.service.projectHostSessionResult(ctx, result.Canonical, result.Session, result.Live, false, true)
 		return legacyHostSessionObservationWithLive(session, result.Live), err
 	}
 	session, err := d.service.UpdateSettings(ctx, input.WorkspaceID, input.AgentSessionID, input.Settings)
@@ -788,7 +788,7 @@ func (d *legacyHostConformanceDriver) UpdatePin(ctx context.Context, input agent
 		if err != nil {
 			return hostconformance.SessionObservation{}, err
 		}
-		session, err := d.service.projectHostSessionResult(ctx, result.Canonical, result.Session, result.Live, false)
+		session, err := d.service.projectHostSessionResult(ctx, result.Canonical, result.Session, result.Live, false, true)
 		return legacyHostSessionObservationWithLive(session, result.Live), err
 	}
 	session, err := d.service.UpdatePin(ctx, input.WorkspaceID, input.AgentSessionID, input.Pinned)

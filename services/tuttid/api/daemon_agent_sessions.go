@@ -36,7 +36,7 @@ type AgentSessionService interface {
 	GetSessionForkOperation(context.Context, string, string) (agentservice.SessionForkOperation, error)
 	AcknowledgeSessionForkOperation(context.Context, string, string) (agentservice.SessionForkOperation, error)
 	Get(context.Context, string, string) (agentservice.Session, error)
-	GetDetail(context.Context, string, string) (agentservice.SessionDetail, error)
+	GetDetailWithProjection(context.Context, string, string, agentservice.SessionDetailProjection) (agentservice.SessionDetail, error)
 	ReadAttachment(context.Context, string, string, string) (agentservice.PromptAttachment, error)
 	ListGitBranches(context.Context, string, string) (agentservice.GitBranches, error)
 	ListGitBranchesForPath(context.Context, string, string) (agentservice.GitBranches, error)
@@ -105,12 +105,32 @@ func (api DaemonAPI) GetAgentProviderComposerOptions(ctx context.Context, reques
 }
 
 func (api DaemonAPI) GetWorkspaceAgentSession(ctx context.Context, request tuttigenerated.GetWorkspaceAgentSessionRequestObject) (tuttigenerated.GetWorkspaceAgentSessionResponseObject, error) {
+	if request.Params.Projection != nil && !request.Params.Projection.Valid() {
+		return tuttigenerated.GetWorkspaceAgentSession400JSONResponse{
+			InvalidRequestErrorJSONResponse: invalidRequestError(
+				apierrors.InvalidRequest(
+					apierrors.ReasonMalformedRequest,
+					apierrors.WithDeveloperMessage("unsupported agent session detail projection"),
+				),
+			),
+		}, nil
+	}
 	if api.AgentSessionService == nil {
 		return tuttigenerated.GetWorkspaceAgentSession503JSONResponse{
 			ServiceUnavailableErrorJSONResponse: agentSessionServiceUnavailableError(),
 		}, nil
 	}
-	detail, err := api.AgentSessionService.GetDetail(ctx, string(request.WorkspaceID), string(request.AgentSessionID))
+	projection := agentservice.SessionDetailProjectionFull
+	if request.Params.Projection != nil &&
+		*request.Params.Projection == tuttigenerated.MessageHydration {
+		projection = agentservice.SessionDetailProjectionMessageHydration
+	}
+	detail, err := api.AgentSessionService.GetDetailWithProjection(
+		ctx,
+		string(request.WorkspaceID),
+		string(request.AgentSessionID),
+		projection,
+	)
 	if err != nil {
 		return writeGetWorkspaceAgentSessionError(err), nil
 	}
@@ -123,9 +143,11 @@ func (api DaemonAPI) GetWorkspaceAgentSession(ctx context.Context, request tutti
 		return writeGetWorkspaceAgentSessionError(err), nil
 	}
 	return tuttigenerated.GetWorkspaceAgentSession200JSONResponse{
-		Session:       generatedSession,
-		ChildSessions: generatedChildren,
-		Turns:         generatedAgentTurns(detail.Turns),
+		Session:                        generatedSession,
+		ChildSessions:                  generatedChildren,
+		Turns:                          generatedAgentTurns(detail.Turns),
+		Projection:                     tuttigenerated.WorkspaceAgentSessionDetailProjection(projection),
+		LifecycleCapabilitiesProjected: projection == agentservice.SessionDetailProjectionFull,
 	}, nil
 }
 

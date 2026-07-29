@@ -585,6 +585,47 @@ Turn state, loading, cancel, restore, file-change undo, rail projection, event u
   [codex_appserver_adapter_test.go](../../../packages/agent/daemon/runtime/codex_appserver_adapter_test.go)
   [agent-gui-node.md](../../architecture/agent-gui-node.md)
 
+### Opening a historical Codex session starts two short provider processes
+
+- Symptom:
+  Selecting one settled Codex conversation logs two process starts, each with
+  `initialize` followed by `thread/read`, even though no turn was resumed.
+- Quick checks:
+  Confirm neither sequence contains `thread/resume`. Enable reconcile trace
+  diagnostics temporarily and count complete `state_and_messages` commands.
+  Two discovery/message/final sequences indicate two reconciles; one sequence
+  with two probes indicates that both detail projections resolved capabilities.
+- Root cause:
+  There are two independent boundaries to verify. Combined reconciliation
+  intentionally reads detail twice to close races while messages load, but its
+  discovery read only needs hierarchy and `messageVersion`; using the full
+  Session projection there adds an accidental provider-history capability
+  probe. Separately, automatic selection restoration can be replayed while the
+  first reconcile is running. Treating that ordinary selection as
+  `force: true` appends a second complete reconcile, whose final detail read
+  launches another probe.
+- Fix:
+  Preserve the two-read race fence. Send the first request with the
+  `messageHydration` projection and the final request with `full`; only the
+  latter resolves provider-backed lifecycle capabilities. Model automatic
+  selection as idempotent “ensure hydrated” work, leaving force refresh as an
+  explicit intent. Do not mask either symptom with a TTL cache, single-flight
+  delay, or by removing the final read.
+- Validation:
+  Select a historical root-only Codex Session with no child hierarchy through
+  `make dev-gui`. One combined reconcile should issue two detail requests and
+  one message-list request, but only the final detail request should emit the short
+  `initialize`/`thread/read` capability probe. Replaying the same selection
+  while that reconcile is pending must not start another combined reconcile.
+  Sessions with child hierarchy or additional message pages may issue more than
+  one message-list request; each request must still follow the shared executor's
+  Session and cursor policy.
+- References:
+  [sessionReconcileExecutor.ts](../../../packages/agent/activity-core/src/sessionReconcileExecutor.ts)
+  [useAgentConversationSelection.ts](../../../packages/agent/gui/agent-gui/agentGuiNode/controller/useAgentConversationSelection.ts)
+  [service_turns.go](../../../services/tuttid/service/agent/service_turns.go)
+  [codex_appserver_fork.go](../../../packages/agent/daemon/runtime/codex_appserver_fork.go)
+
 ### Codex turn stays working before any reply or tool activity
 
 - Symptom:

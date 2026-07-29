@@ -32,7 +32,7 @@ import { AgentGuiWorkbenchSessionMenu } from "./AgentGuiWorkbenchSessionMenu.tsx
 import type {
   AgentGuiWorkbenchSessionAction,
   AgentGuiWorkbenchSessionMenuCopy
-} from "./sessionActions.ts";
+} from "./commands.ts";
 import type { AgentGuiWorkbenchSessionMenuAdditionalAction } from "./AgentGuiWorkbenchSessionMenu.tsx";
 import type { AgentToolSidebarHeaderLayout } from "./tool-sidebar/headerLayout.ts";
 

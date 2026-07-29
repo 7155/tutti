@@ -1,6 +1,4 @@
 export {
-  AGENT_GUI_WORKBENCH_NEW_CONVERSATION_EVENT,
-  AGENT_GUI_WORKBENCH_CONVERSATION_RAIL_TOGGLE_EVENT,
   agentGuiWorkbenchDefaultCopy,
   agentGuiWorkbenchDefaultNodeFrame,
   buildAgentGuiDockEntries,
@@ -12,23 +10,21 @@ export type {
   AgentGuiWorkbenchProviderAvailability,
   AgentGuiWorkbenchContributionCopy,
   AgentGuiWorkbenchContributionCopyOverrides,
-  AgentGuiWorkbenchConversationRailToggleDetail,
-  AgentGuiWorkbenchNewConversationDetail,
   AgentGuiWorkbenchRenderBodyHelpers,
   BuildAgentGuiDockEntriesInput,
   CreateAgentGuiWorkbenchContributionInput
 } from "./contribution.ts";
 export {
-  AGENT_GUI_WORKBENCH_SESSION_ACTION_EVENT,
-  dispatchAgentGuiWorkbenchSessionAction,
+  AGENT_GUI_WORKBENCH_COMMAND_EVENT,
+  dispatchAgentGuiWorkbenchCommand,
   isAgentGuiWorkbenchSessionAction
-} from "./sessionActions.ts";
+} from "./commands.ts";
 export type {
+  AgentGuiWorkbenchCommand,
+  AgentGuiWorkbenchCommandBridge,
   AgentGuiWorkbenchSessionAction,
-  AgentGuiWorkbenchSessionActionDetail,
-  AgentGuiWorkbenchSessionActionRequest,
   AgentGuiWorkbenchSessionMenuCopy
-} from "./sessionActions.ts";
+} from "./commands.ts";
 export {
   agentGuiWorkbenchConversationIdentitiesEqual,
   resolveAgentGuiWorkbenchConversationIdentity

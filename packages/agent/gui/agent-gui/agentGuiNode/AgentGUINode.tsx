@@ -89,8 +89,7 @@ export const AgentGUINode = memo(function AgentGUINode({
   const {
     composerAppend: composerAppendRequest = null,
     composerFocusSequence: composerFocusRequestSequence = null,
-    newConversationSequence: newConversationRequestSequence = null,
-    sessionAction: sessionActionRequest = null,
+    workbench: workbenchCommandBridge = null,
     openSession: openSessionRequest = null,
     prefillPrompt: prefillPromptRequest = null,
     agentStatusController
@@ -463,8 +462,7 @@ export const AgentGUINode = memo(function AgentGUINode({
               isVisible={isVisible}
               onEngagementEvent={onEngagementEvent}
               composerFocusRequestSequence={composerFocusRequestSequence}
-              newConversationRequestSequence={newConversationRequestSequence}
-              sessionActionRequest={sessionActionRequest}
+              workbenchCommandBridge={workbenchCommandBridge}
               slashStatusLimits={slashStatusLimits}
               slashStatusLimitsLoading={controllerRailStatus?.loading ?? false}
               slashStatusLimitsUnavailable={slashStatusLimitsUnavailable}

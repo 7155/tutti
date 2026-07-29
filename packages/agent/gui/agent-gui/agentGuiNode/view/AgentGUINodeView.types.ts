@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { AgentActivityGoalControlAction } from "@tutti-os/agent-activity-core";
-import type { AgentGuiWorkbenchSessionActionRequest } from "../../../workbench/sessionActions";
+import type { AgentGuiWorkbenchCommandBridge } from "../../../workbench/commands";
 import type { ReferenceSourceAggregator } from "@tutti-os/workspace-file-reference/core";
 import type { ReferenceSourcePickerProps } from "@tutti-os/workspace-file-reference/ui";
 import type {
@@ -559,8 +559,7 @@ export interface AgentGUINodeViewProps {
   isVisible?: boolean;
   onEngagementEvent?: AgentGUIEngagementEventSink;
   composerFocusRequestSequence?: number | null;
-  newConversationRequestSequence?: number | null;
-  sessionActionRequest?: AgentGuiWorkbenchSessionActionRequest | null;
+  workbenchCommandBridge?: AgentGuiWorkbenchCommandBridge | null;
   slashStatusLimits?: readonly AgentComposerSlashStatusLimit[];
   slashStatusLimitsLoading?: boolean;
   slashStatusLimitsUnavailable?: boolean;

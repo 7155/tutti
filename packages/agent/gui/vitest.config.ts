@@ -15,7 +15,7 @@ const domTypeScriptTests = [
   "build/cssSafeSvgDataUrl.spec.ts",
   "shared/agentConversation/lib/copyImageToClipboard.spec.ts",
   "workbench/contribution.test.ts",
-  "workbench/sessionActions.spec.ts"
+  "workbench/commands.spec.ts"
 ];
 
 export default defineConfig({

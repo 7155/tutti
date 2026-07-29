@@ -1814,10 +1814,22 @@ rail row More menu / row context menu / workbench header menu
 ```
 
 All three surfaces render the same action groups; the header dispatches
-through `sessionActions.ts` and the node resolves the target session against
-canonical rail entities under the rail interaction lock. While either row
+one discriminated `AgentGuiWorkbenchCommand` protocol and the node resolves the
+target session against canonical rail entities under the rail interaction
+lock. While either row
 menu is open the row keeps its hover layout (short title truncation, actions
 visible) so titles cannot overlap the action cluster.
+The existing package-owned AgentGUI external-request controller is the only
+consumer of Workbench commands. It routes by exact Workbench instance and
+executes new-conversation and Session actions directly, without a host hook,
+React request state, or sequence projection. Product hosts provide only the
+Workbench instance identity and an optional host-owned Rail response callback.
+The reusable Workbench node-state source remains the only embedded Rail state
+writer; its callback may record a host device preference but must not write the
+same node state again. A standalone surface may use the callback as its sole
+Rail state writer because it has no Workbench node-state source. The callback
+contract contains no Tutti Desktop preference or product policy, so other hosts
+such as TSH may persist their own Rail state without adopting Desktop behavior.
 
 Attention state preserves explicit user intent: marking the currently selected
 Session unread keeps its unread indicator while that selection remains open.

@@ -329,7 +329,11 @@ func stableManagedSkillName(root string, baseName string) (string, error) {
 	if baseName == "" {
 		return "", fmt.Errorf("provider skill name is required")
 	}
-	for _, candidate := range []string{baseName, baseName + "-tutti"} {
+	candidates := []string{baseName, baseName + "-tutti"}
+	for index := 2; index <= 99; index++ {
+		candidates = append(candidates, fmt.Sprintf("%s-tutti-%d", baseName, index))
+	}
+	for _, candidate := range candidates {
 		path := filepath.Join(root, candidate)
 		info, err := os.Stat(path)
 		if err == nil {

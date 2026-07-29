@@ -30,7 +30,11 @@ func (ExtensionRuntimePreparer) Prepare(ctx context.Context, input ProviderPrepa
 		return ProviderPrepareResult{}, err
 	}
 	if input.ExtensionRuntimePrep.Home == nil {
-		if err := materializeExtensionRuntimeSkills(input, input.ExtensionSkillRoots, true); err != nil {
+		skillRoots, err := cwdExtensionSkillRoots(input.ExtensionSkillRoots)
+		if err != nil {
+			return ProviderPrepareResult{}, err
+		}
+		if err := materializeExtensionRuntimeSkills(input, skillRoots, true); err != nil {
 			return ProviderPrepareResult{}, err
 		}
 		return ProviderPrepareResult{Cwd: input.Cwd}, nil

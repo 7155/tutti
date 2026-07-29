@@ -32,7 +32,10 @@ func (p InstructionFilePreparer) Prepare(_ context.Context, input ProviderPrepar
 	if input.Manifest != nil {
 		input.Manifest.RecordManagedFile(path, "provider-instructions", writeResult.Created)
 	}
-	skillRoots := append([]string(nil), input.ExtensionSkillRoots...)
+	skillRoots, err := cwdExtensionSkillRoots(input.ExtensionSkillRoots)
+	if err != nil {
+		return ProviderPrepareResult{}, err
+	}
 	usesExtensionSkillRoots := len(skillRoots) > 0
 	if len(skillRoots) == 0 {
 		if root := providerSkillRoot(input.Cwd, input.Provider); root != "" {
@@ -60,4 +63,19 @@ func (p InstructionFilePreparer) Prepare(_ context.Context, input ProviderPrepar
 	return ProviderPrepareResult{
 		Cwd: input.Cwd,
 	}, nil
+}
+
+func cwdExtensionSkillRoots(declaredRoots []string) ([]string, error) {
+	roots := make([]string, 0, len(declaredRoots))
+	for _, root := range declaredRoots {
+		root = strings.TrimSpace(root)
+		if root == "" {
+			continue
+		}
+		if err := validateExtensionRuntimeRelPath(root, "extension runtime skill root"); err != nil {
+			return nil, err
+		}
+		roots = appendUniquePath(roots, filepath.Clean(filepath.FromSlash(root)))
+	}
+	return roots, nil
 }

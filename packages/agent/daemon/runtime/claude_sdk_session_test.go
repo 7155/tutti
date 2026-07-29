@@ -244,6 +244,7 @@ func TestClaudeSDKSidecarCommandUsesVendoredEntryWithManagedNodeEnv(t *testing.T
 func TestClaudeSDKSidecarCommandUsesManagedNodeCacheRoot(t *testing.T) {
 	t.Setenv(claudeSDKSidecarCommandEnv, "")
 	t.Setenv(claudeSDKSidecarEntryPathEnv, "")
+	t.Setenv(claudeSDKAppRuntimeRootEnv, "")
 
 	cacheRoot := t.TempDir()
 	nodePath := filepath.Join(cacheRoot, runtime.GOOS+"-"+runtime.GOARCH, "node", "bin", claudeSDKNodeBinaryName())
@@ -572,6 +573,8 @@ func TestClaudeCodeSDKAdapterExecSendsStructuredPromptContent(t *testing.T) {
 		}},
 	}
 	adapter := NewClaudeCodeSDKAdapter(nil)
+	imageURL, materializer := testRemotePromptImageMaterializer(t)
+	adapter.promptImageMaterializer = materializer
 	session := standardTestSession(ProviderClaudeCode)
 	adapter.storeSession(session.AgentSessionID, &claudeSDKAdapterSession{
 		conn:              conn,
@@ -586,7 +589,7 @@ func TestClaudeCodeSDKAdapterExecSendsStructuredPromptContent(t *testing.T) {
 		session,
 		[]PromptContentBlock{
 			{Type: "text", Text: "what is in this image?"},
-			{Type: "image", MimeType: "image/png", Data: "aW1hZ2U="},
+			{Type: "image", MimeType: "image/png", URL: imageURL},
 		},
 		"what is in this image?",
 		"turn-image",
@@ -619,7 +622,7 @@ func TestClaudeCodeSDKAdapterExecSendsStructuredPromptContent(t *testing.T) {
 		t.Fatalf("text block = %#v", textBlock)
 	}
 	imageBlock, _ := content[1].(map[string]any)
-	if imageBlock["type"] != "image" || imageBlock["mimeType"] != "image/png" || imageBlock["data"] != "aW1hZ2U=" {
+	if imageBlock["type"] != "image" || imageBlock["mimeType"] != "image/png" || imageBlock["data"] != "aGk=" || imageBlock["url"] != nil {
 		t.Fatalf("image block = %#v", imageBlock)
 	}
 }

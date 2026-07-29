@@ -11,10 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	preferencesbiz "github.com/tutti-os/tutti/services/tuttid/biz/preferences"
 	workflowbiz "github.com/tutti-os/tutti/services/tuttid/biz/workspaceworkflow"
 	workspacedata "github.com/tutti-os/tutti/services/tuttid/data/workspace"
-	tuttimodeactivation "github.com/tutti-os/tutti/services/tuttid/service/tuttimodeactivation"
 )
 
 const defaultWaitInterval = 100 * time.Millisecond
@@ -27,10 +25,6 @@ var (
 	ErrMutationConflict   = errors.New("tutti mode plan request id conflicts with a prior mutation")
 	ErrCheckpointMissing  = errors.New("tutti mode plan checkpoint was not found")
 	ErrServiceUnavailable = errors.New("tutti mode plan service is unavailable")
-	// ErrTuttiModeDisabled rejects writes while the lab.tuttiMode feature
-	// flag is off. Reads (Get/List/Wait) stay available so existing workflows
-	// remain inspectable.
-	ErrTuttiModeDisabled = errors.New("tutti mode is disabled by the lab.tuttiMode feature flag")
 )
 
 // Store is the durable workflow surface owned by the workspace data layer.
@@ -48,12 +42,6 @@ type Store interface {
 	CompleteWorkspaceWorkflowOperation(context.Context, workspacedata.CompleteWorkspaceWorkflowOperationInput) (workflowbiz.WorkflowOperation, bool, error)
 	ListRecoverableCreateIssueOperations(context.Context) ([]workspacedata.RecoverableCreateIssueOperation, error)
 	ListPendingConfigurationReviewCheckpoints(context.Context) ([]workspacedata.PendingConfigurationReviewCheckpoint, error)
-}
-
-// SourceSessionDeletionStore executes a service-authorized transaction
-// command without owning the workflow cancellation policy.
-type SourceSessionDeletionStore interface {
-	ExecuteSourceSessionDeletion(context.Context, workspacedata.SourceSessionDeletionCommand) (workspacedata.SourceSessionDeletionResult, error)
 }
 
 type Publisher interface {
@@ -85,6 +73,7 @@ type MaterializeIssueInput struct {
 	TopicID         string
 	Execution       PlanExecution
 	Budget          PlanBudget
+	Review          PlanReview
 	ActionableItems []ActionableItem
 }
 
@@ -105,19 +94,14 @@ type PlanRevisionFeedbackInput struct {
 }
 
 type Service struct {
-	Store                  Store
-	SourceSessionDeletions SourceSessionDeletionStore
-	Revisions              RevisionContentStore
-	Publisher              Publisher
-	IssueMaterializer      IssueMaterializer
-	FeedbackDispatcher     FeedbackDispatcher
-	// FeatureFlags reads the desktop preferences feature-flag map. Nil keeps
-	// every write allowed; when set, Propose/Revise/Decide are rejected with
-	// ErrTuttiModeDisabled unless lab.tuttiMode is true.
-	FeatureFlags func(context.Context) (map[string]bool, error)
-	Now          func() time.Time
-	NewID        func() string
-	WaitInterval time.Duration
+	Store              Store
+	Revisions          RevisionContentStore
+	Publisher          Publisher
+	IssueMaterializer  IssueMaterializer
+	FeedbackDispatcher FeedbackDispatcher
+	Now                func() time.Time
+	NewID              func() string
+	WaitInterval       time.Duration
 }
 
 type ProposeInput struct {
@@ -234,9 +218,6 @@ func NextActionForCheckpoint(checkpoint workflowbiz.WorkflowCheckpoint) (NextAct
 
 func (s *Service) Propose(ctx context.Context, input ProposeInput) (ProposalResult, error) {
 	if err := s.ready(); err != nil {
-		return ProposalResult{}, err
-	}
-	if err := s.requireTuttiModeEnabled(ctx); err != nil {
 		return ProposalResult{}, err
 	}
 	input.WorkspaceID = strings.TrimSpace(input.WorkspaceID)
@@ -366,9 +347,6 @@ func (s *Service) Revise(ctx context.Context, input ReviseInput) (RevisionResult
 
 func (s *Service) revise(ctx context.Context, input ReviseInput, expectedSourceSessionID string) (RevisionResult, error) {
 	if err := s.ready(); err != nil {
-		return RevisionResult{}, err
-	}
-	if err := s.requireTuttiModeEnabled(ctx); err != nil {
 		return RevisionResult{}, err
 	}
 	input.WorkspaceID = strings.TrimSpace(input.WorkspaceID)
@@ -508,9 +486,6 @@ func (s *Service) revise(ctx context.Context, input ReviseInput, expectedSourceS
 
 func (s *Service) Decide(ctx context.Context, input DecideInput) (DecisionResult, error) {
 	if err := s.ready(); err != nil {
-		return DecisionResult{}, err
-	}
-	if err := s.requireTuttiModeEnabled(ctx); err != nil {
 		return DecisionResult{}, err
 	}
 	input.WorkspaceID = strings.TrimSpace(input.WorkspaceID)
@@ -733,23 +708,6 @@ func (s *Service) wait(ctx context.Context, input WaitInput, expectedSourceSessi
 func (s *Service) ready() error {
 	if s == nil || s.Store == nil || s.Revisions == nil {
 		return ErrServiceUnavailable
-	}
-	return nil
-}
-
-// requireTuttiModeEnabled enforces the lab.tuttiMode write gate. A flag-read
-// failure fails closed for writes: durable state is unchanged either way, and
-// a misconfigured gate must not silently open the feature.
-func (s *Service) requireTuttiModeEnabled(ctx context.Context) error {
-	if s.FeatureFlags == nil {
-		return nil
-	}
-	flags, err := s.FeatureFlags(ctx)
-	if err != nil {
-		return fmt.Errorf("read tutti mode feature flag: %w", err)
-	}
-	if !preferencesbiz.IsLabFlagEnabled(flags, tuttimodeactivation.TuttiModeFeatureFlag) {
-		return ErrTuttiModeDisabled
 	}
 	return nil
 }

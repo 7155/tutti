@@ -117,8 +117,9 @@ Identity, time, and state use canonical representations. Unknown enum values pro
 AgentGUI / Message Center / host surface
   -> typed intent or AgentActivityRuntime command
   -> workspace AgentSessionEngine
-  -> injected command port
-  -> Desktop or Mobile workspace activity adapter
+  -> shared typed lifecycle effect projection
+  -> Desktop or Mobile AgentSessionEffectPort
+     (host-only commands use the narrow EngineExtensionCommand adapter)
   -> tuttid HTTP and product adapter
   -> packages/agent/host
   -> canonical store transaction + provider runtime port
@@ -377,6 +378,12 @@ transactionally rejects an unverified prefix, descendant lane, or
 session-scoped local attachment. This prevents a later unavailable Turn from
 hiding an earlier valid Turn while preserving a fail-closed commit.
 
+Session Fork is also a default-off Lab capability. Desktop maps
+`lab.agentSessionFork` to an explicit AgentGUI host opt-in, so provider support
+alone does not expose the action. Tuttid independently enforces the same flag
+on new Fork writes; disabling it leaves existing lineage, operation reads, and
+operation acknowledgements available.
+
 Tuttid currently rejects worktree-isolated sources at the Session capability
 layer. A provider-native thread Fork keeps the provider cwd; copying the
 source worktree ownership or silently selecting another checkout would be
@@ -596,6 +603,13 @@ disable submission, but must not change editor editability.
   Event callbacks that need current canonical data read the engine snapshot at
   event time instead of retaining a whole-workspace render snapshot
 - lifecycle writes use typed intents/commands
+- the Engine alone translates shared activation, prompt send, settings update,
+  turn cancel, Interaction response, pin, and batch-delete commands into
+  `AgentSessionEffectPort` calls. Desktop and Mobile implement those semantic
+  methods and must not duplicate a command-type switch for them. Platform-only
+  commands remain in each host's `EngineExtensionCommand` adapter. Every effect
+  propagates the Engine-owned AbortSignal to its transport; a required settings
+  precondition rechecks cancellation before prompt send
 - consumers do not read reducer maps directly
 - consumers do not create canonical session/message mirrors
 - optimistic records define confirmation, rejection, timeout, and uncertain-delivery paths
@@ -655,6 +669,19 @@ that advances while the first message pass is in flight. Transient optimistic
 rows never advance this cursor. This child policy is separate from the root
 conversation's user-boundary repair policy, which may intentionally restart an
 incremental read at zero.
+
+The discovery detail request uses the daemon's `messageHydration` projection.
+That projection retains the hierarchy and `messageVersion` cursors needed by
+the shared executor but does not resolve provider-backed lifecycle
+capabilities. The final detail request uses the full projection and is the only
+read in one combined reconcile that may perform a historical provider
+capability probe. Desktop and Mobile derive this choice from the same
+activity-core request purpose; host adapters must not infer it from timing or
+add a TTL cache for capability results. The detail response echoes the selected
+projection and an explicit lifecycle-capability projection flag. The shared
+tuttid client rejects mismatched responses, and consumers must not treat
+false-valued capabilities from an unresolved hydration projection as
+authoritative.
 
 A `waiting` Turn does not imply user action. Only a pending Interaction produces approval/question attention.
 
@@ -778,6 +805,15 @@ AgentGUI fails that paired capability closed when either method is absent, so
 the view cannot expose an action that will resolve to an empty optional-method
 path.
 
+Conversation deletion is transactional from the renderer's perspective. The
+canonical delete command must succeed before AgentGUI clears the active
+Session, changes Rail selection, unactivates runtime state, removes rows, or
+discards local drafts. The same rule applies to batch deletion: a protected
+Tutti execution conflict leaves the whole selection and local collection
+unchanged. The conflict parser recognizes only the daemon's typed
+`tutti_execution_active` payload; archive/view commands remain an optional
+host capability until the generated execution adapter is present.
+
 The full first-page query is the only Rail read that resolves a navigation
 scope and clears its pending state. Targeted section refresh and pagination may
 update only an already-resolved matching scope. A subordinate result must not
@@ -820,10 +856,31 @@ hidden and refresh from current time when visual exposure resumes.
 
 Rail selection, detail hydration, older-page loading, and transcript projection are separate states.
 
-A focused controller may own detail paging/loading/error. Canonical messages, Turns, Interactions, and optimistic prompts still come from the engine. An empty message list means neither hydrated nor not-found.
+Desktop and Mobile use the same renderer-neutral AgentGUI conversation-message
+controller for focused detail message queries. Initial hydration and latest
+refresh enter the Engine as Session reconcile intents; explicit older-page
+loads read only the Engine's authoritative message window, share one
+in-flight/retry/stale-request fence, and apply mapped durable pages back to the
+same Engine. Switching the focused Session or pausing the host aborts and
+generation-fences the obsolete older-page request. A failed request remains
+retryable at the same cursor.
+
+The host owns mapped transport, foreground/background and disconnected-polling
+triggers, diagnostics enrichment, scrolling, and rendering. Canonical messages,
+Turns, Interactions, and optimistic prompts still come from the Engine; neither
+Desktop view state nor Mobile services keep an older-message entity store. An
+empty message list means neither hydrated nor not-found.
 Selecting an already hydrated Session must not start another detail reconcile;
 the selection controller alone decides whether hydration is missing. Composer
-option synchronization does not own Session detail reloads.
+option synchronization does not own Session detail reloads. On Desktop the
+selection controller also owns activation guards and Rail projection
+coordination before requesting idempotent initial hydration. A repeated
+automatic selection restoration must not become a forced refresh or append
+pending demand to the in-flight reconcile; explicit user refresh is a separate
+intent. The message paging adapter owns only focused message-controller
+lifetime, transport mapping, diagnostics, and initial/older commands; it does
+not call back into selection or Rail state. There is no separate messages-only
+Engine reconcile helper.
 
 Timeline projection is pure, deterministic, and provider-neutral. React views render rows/cards and dispatch actions.
 Transcript Turn membership and order come only from timeline items in the
@@ -858,30 +915,40 @@ High-frequency transcript updates must not pair DOM mutation with unconditional 
 Transcript end-following is one UI-local state machine shared by DOM, TanStack
 Virtual, and React Native adapters. It has only `following` and `detached`
 modes. User scroll-away intent detaches synchronously, before the first scroll
-frame. Conversation selection, prompt submission, an explicit scroll-to-end
-request, or the user actually reaching the end may reattach. Content growth,
-layout effects, observers, virtualizer geometry, and near-end thresholds are
-sensors or executors only; they must not transition the mode.
+frame. A mounted detail view retains the scroll anchor and follow-end mode for
+each exact Agent Session it visits. First selection follows the end; returning
+to a detached Session restores its retained position, while returning to a
+following Session stays at the end. This memory expires with the mounted view
+and never enters navigation, Engine, or Session state. Prompt submission, an
+explicit scroll-to-end request, or the user actually reaching the end may
+reattach. Content growth, layout effects, observers, virtualizer geometry, and
+near-end thresholds are sensors or executors only; they must not transition the
+mode.
 
 Turn-level virtualization has one geometry owner. When the transcript is
 virtualized and the state machine is `following`, TanStack Virtual owns append
 following, streaming size adjustments, prepend anchoring, end detection, list
-height, and item transforms. While `detached`, AgentGUI disables end anchoring
-and append following so TanStack cannot bypass the shared intent owner.
-AgentGUI retains Session selection, explicit user intent, top-page loading,
-bottom-dock safe-area measurement, and the non-virtualized short-transcript
-branch. It must not apply native `scrollHeight`-delta prepend compensation or a
-content-resize bottom write after the virtualizer accepts ownership.
+height, and item transforms. While `detached`, AgentGUI disables append
+following so TanStack cannot bypass the shared intent owner, but retains
+stable-item mutation anchoring so prepending an older page preserves the
+visible viewport without reattaching to the end. AgentGUI retains Session
+selection, explicit user intent, top-page loading, bottom-dock safe-area
+measurement, and the non-virtualized short-transcript branch. It must not apply
+native `scrollHeight`-delta prepend compensation or a content-resize bottom
+write after the virtualizer accepts ownership.
 
 The detail view reaches that owner through a narrow controller containing the
 exact `agentSessionId`, `isAtEnd`, and `scrollToEnd`. Every read or write checks
-the current Session identity; a stale controller is inert. Virtual measurement
-keys also include the exact Agent Session id, so replacing a conversation
-cannot reuse another Session's measured Turn height. The virtual list measures
-its offset from the timeline scroll origin as `scrollMargin`, including changes
-caused by the older-page loading indicator. Direct DOM transform mode owns the
-virtual sizer height and item transforms; React keeps only row content,
-measurement refs, cross-axis sizing, and disclosure spacing.
+the current Session identity; a stale controller is inert. Controller readiness
+is reported back to the detail scroll controller so initial end positioning
+still runs when the virtualizer acquires its scroll element after the first
+detail layout. Virtual measurement keys also include the exact Agent Session
+id, so replacing a conversation cannot reuse another Session's measured Turn
+height. The virtual list measures its offset from the timeline scroll origin as
+`scrollMargin`, including changes caused by the older-page loading indicator.
+Direct DOM transform mode owns the virtual sizer height and item transforms;
+React keeps only row content, measurement refs, cross-axis sizing, and
+disclosure spacing.
 
 Virtualizer- or layout-driven scroll events do not change the end-following
 mode or trigger older-page loading without explicit user scroll-away intent. A
@@ -1030,6 +1097,15 @@ pinned to the verified active installation.
 
 Target-managed setup uses exact `agentTargetId`; daemon persists its state and actions. Setup gates only the empty new-conversation surface. Active/history conversations follow host-projected Session runtime availability for exact-target capability and transport reachability. A blocked Session runtime disables both composer editing and submit until the host reports the Session available again.
 
+Provider-declared terminal authentication remains a Host capability, not React
+or Session lifecycle. AgentGUI's target-setup controller owns the local
+`idle`/`waiting`/`error` projection and terminal handle, while the Desktop host
+launches the workspace terminal and monitors the authoritative target-setup
+watch until it reports ready or the bounded wait expires. The view only renders
+that controller state and dispatches start/cancel intent; it must not add its
+own effect or timer polling loop, raise the AgentGUI degradation baseline, or
+infer authentication from terminal output.
+
 The built-in managed-environment wizard and Agent Extension setup have different owners. Shared UI must not combine their lifecycles by provider name.
 
 See [Agent Extensions](./agent-extensions.md) for the detailed setup contract.
@@ -1092,26 +1168,82 @@ plan panel starts with the plan title and body; it does not repeat mode,
 review-kind, or pending-state badges already communicated by the workflow
 banner.
 
-An active Tutti Mode composer badge is an intensity-settings entry, not a
-destructive toggle. Clicking it opens the UI-local `TuttiBudgetPopover`, seeded
-from the engine-projected orchestration intensity. Every slider movement sends
-the selected intensity directly through the existing Tutti Mode activation
-command -- there is no draft/confirm step. Turning Tutti Mode off remains a
-separate adjacent action, and both controls stay disabled while an activation
-update is unresolved.
-The Desktop command host and HTTP adapter must preserve both the optimistic
-CAS revision and the optional orchestration intensity; dropping either field
-turns a valid UI intent into a stale or semantically mismatched response.
+Task-assignment directories and target option catalogs are workspace query
+projections, not Plan, Session, or Turn state. The Desktop assignment source
+retains them in the shared bounded workspace query cache: directories are keyed
+by workspace, while target options use exact workspace, Agent Target, and
+provider identity. AgentGUI may synchronously reuse the last successful value,
+including a stale value, while the source performs a deduplicated refresh.
+Provider catalog and workspace model-configuration events invalidate only the
+affected target entries; a generation fence prevents a pre-invalidation
+response from becoming current. Composer options remain a separate
+cwd/settings-sensitive projection and do not share this cache instance.
 
-The intensity popup uses one interactive Economical-to-Balanced-to-Powerful
-gradient slider and projects its local draft into equal tendency bands while it
-moves.
-That projection is explanatory UI, not a model or task assignment: it previews
-Economical, Balanced, or Powerful model strength (matching the slider bands)
-and 1, 2–3, or up to 4 parallel Agents. Four is the current hard workspace-wide Issue execution
-ceiling, not a cap on the total planned Agent or task count. The planning Agent
-still derives the exact model, total task graph, and safe parallelism from the
-request, selected Skills, available composer catalog, and workspace state.
+The materialized Issue is also a Tutti-owned aggregate-work projection for the
+source composer. While dispatch is not paused and any task is nonterminal, an
+empty composer shows the normal running Stop control even when the source
+Session has no active Turn; this is presentation state and must not manufacture
+an Agent Turn or change Host submit availability. Typed input replaces that
+aggregate Stop with Send. An exact active source Turn with
+`activeTurnGuidance` receives the input as guidance/steer; an idle source starts
+a normal Turn, and an active source without guidance support keeps the normal
+queue path instead of cancel-then-send. Stop durably pauses Issue dispatch and
+cancels its running task Sessions, and also sends the ordinary source-Session
+stop only when that Session has stoppable work. The two idempotent paths are
+independent because canceling an idle Session merely to trigger the Issue
+cascade could capture a later Turn.
+
+Task-level accept and rework controls in that projection prepare localized
+instructions in the exact source Session composer; they preserve any existing
+draft and never send automatically. They do not call generic Issue Task
+mutations or impersonate the source Agent's CLI authority. Once the user sends
+the draft, the normal source-conversation submit/guidance path applies and the
+Agent inspects the canonical Tutti execution before issuing checkpoint- and
+revision-fenced commands. Other plan-panel interactions should use this
+prompt-action pattern only when their intended effect requires source-Agent
+judgment; navigation and existing daemon-owned commands remain direct semantic
+actions.
+
+An independent-review failure is a distinct workflow presentation, not a
+generic retry loop. The dock may offer an explicitly user-triggered self-review
+fallback through an optional host command and shows its pending, success, or
+failure result together with the audit identifier. It never switches review
+mode automatically.
+
+An active Tutti Mode composer badge is a preference-settings entry, not a
+destructive toggle. Clicking it opens the UI-local `TuttiBudgetPopover`, seeded
+from the engine-projected `effect` and `speed` preferences. Every slider
+movement sends its selected value directly through the existing Tutti Mode
+activation command -- there is no draft/confirm step. Turning Tutti Mode off
+remains a separate adjacent action, and all controls stay disabled while an
+activation update is unresolved. The Desktop command host and HTTP adapter must
+preserve the optimistic CAS revision and both optional preferences; dropping
+any field turns a valid UI intent into a stale or semantically mismatched
+response. Tutti Desktop always advertises the Tutti Mode host capability;
+historical `lab.tuttiMode` preference values do not hide or disable it.
+
+The preference popup uses two independent 0-100 sliders. `effect` raises the
+minimum model capability and task-verification breadth. `speed` asks the
+planning Agent to choose the fastest model that still satisfies that effect
+floor and maps into an upper parallel target: `0-24 -> 1`, `25-49 -> 2`,
+`50-74 -> 3`, and `75-100 -> 4`. They are combined, never averaged: high effect
+plus high speed means "fastest suitable powerful model" with a target of up to
+four parallel Agents, not a mid-tier model.
+
+The popup previews a short model strategy and that parallel target. The target
+is not a concurrency promise: the planning Agent may shape real independent
+workstreams toward it, while actual scheduling remains bounded by dependencies,
+ownership, safe isolation, ready work, budget, and the workspace-wide
+four-Run ceiling. Exact models still come from the live composer catalog.
+Effect-scaled verification remains planning policy but is not shown as a
+primary preview metric.
+
+Plan review reads the additive `execution.effect` and `execution.speed`
+snapshots from current `tutti-mode-plan/v1` documents. A legacy v1 document
+without those fields maps its single `orchestrationIntensity` value to effect
+and uses the balanced speed default. The existing execution fields keep their
+original Issue semantics; AgentGUI must not reinterpret
+`orchestrationIntensity` as speed.
 
 Home-composer project state distinguishes an unresolved durable default from an
 explicit selection whose path may be null. The project selector may apply the
@@ -1222,6 +1354,13 @@ otherwise recover interactively.
 | `hostCapabilities` | host catalog, readiness, menus, icons     |
 | `hostActions`      | host mutations, Workbench/window actions  |
 | `renderSlots`      | narrow product-neutral presentation slots |
+
+Host-issued `runtimeRequests.composerAppend` values are one-shot requests.
+AgentGUI waits until the exact requested Session is the active conversation,
+applies the append once, and then calls
+`hostActions.onComposerAppendHandled(sequence)`. A Host that retains routed
+requests must clear only the acknowledged sequence; it must not let an older
+open-Session append mask a newer request.
 
 Do not restore flat compatibility props or hide workflow inside a render slot.
 The optional `renderSlots.projectDirectoryPickerHeaderActions` slot is limited
@@ -1448,11 +1587,12 @@ home composer submit
 ```
 
 Initial-content create is one transaction. Failure compensates the provisional runtime/canonical shell; it must not leave a Turn-less Session.
-The initiating composer snapshots Tutti activation and orchestration intensity
-with that submit. An explicit active or inactive submit snapshot is authoritative
-over a later read of mutable home-draft state; non-composer callers may fall back
-to the engine draft when no snapshot exists. `capabilityRefs` remain independent
-audit provenance and must never substitute for `initialTuttiModeActivation`.
+The initiating composer snapshots Tutti activation plus effect and speed with
+that submit. An explicit active or inactive submit snapshot is authoritative
+over a later read of mutable home-draft state; non-composer callers may fall
+back to the engine draft when no snapshot exists. `capabilityRefs` remain
+independent audit provenance and must never substitute for
+`initialTuttiModeActivation`.
 An activation may instead carry `initialGoalControl`. In that branch the engine
 and runtime adapter preserve the structured `{action, objective}` command, the
 host integration creates a non-provisional Session without initial content,
@@ -1478,14 +1618,23 @@ The controller's new-conversation command must distinguish rail placement from
 the active Session's runtime working directory before entering the home
 composer. A Session in the Chats section may have a generated `cwd`, but that
 path is not a selected user project and must be cleared. A Session in a
-canonical project section keeps its working directory, while a command already
-on the home composer preserves the user's explicit project selection. Views
-only forward new-conversation intent; unresolved active rail membership fails
-closed rather than guessing from composer presentation fields.
+canonical project section resolves that section key back to the registered
+project root; its runtime `cwd` may instead be a nested directory or isolated
+worktree and is never reused as project identity. “Continue in new
+conversation” uses the same resolution before moving the mention draft to
+Home. A command already on the home composer preserves the user's explicit
+project selection. Views only forward new-conversation intent; unresolved
+active rail membership fails closed rather than guessing from composer
+presentation fields.
 For delegated/shared execution, the initiating caller remains the placement
 authority: the adapter forwards that caller-selected `RailPlacement` through
 the binding to the owner Host. The owner persists the same section key and does
 not recompute it from the owner's user-project list.
+The Agent CLI handoff adapter also inherits the caller Session's runtime `cwd`
+so the delegate starts inside the same checkout or linked worktree. If a
+project-backed caller has no runtime `cwd`, its canonical project path is the
+fallback. A supplied caller Session ID that cannot be resolved fails the start
+instead of creating a detached Session in an allocator directory.
 
 ### 7.2 Existing conversation submit
 
@@ -1627,8 +1776,9 @@ Do not start by adding a fallback to the visible component.
 
 ### 8.1 Agent settings surface
 
-The desktop settings panel's Agent section has four independently gated tabs:
-General Settings, Agent Runtime, Custom Agents, and Automation. The Agent
+The desktop settings panel's Agent section has General Settings, Agent Runtime,
+and Custom Agents available by default; Automation remains independently
+gated. The Agent
 Runtime tab renders provider rows from the authoritative
 identity catalog plus the live `IAgentProviderStatusService`; it does not copy
 a provider registry. Its Enable/Disable control reads all Agent Targets from

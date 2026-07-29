@@ -104,16 +104,47 @@ func installCodexApprovalRules(codexHome string, input PrepareInput) error {
 	if err := os.MkdirAll(rulesDir, 0o700); err != nil {
 		return fmt.Errorf("create codex rules directory: %w", err)
 	}
-	content := codexApprovalRules(input.CLICommand)
+	content := codexApprovalRules(input)
 	if err := os.WriteFile(filepath.Join(rulesDir, "default.rules"), []byte(content), 0o644); err != nil {
 		return fmt.Errorf("write codex approval rules: %w", err)
 	}
 	return nil
 }
 
-func codexApprovalRules(cliCommand string) string {
-	command := normalizeCLICommandName(cliCommand)
-	return "prefix_rule(pattern=[" + strconv.Quote(command) + "], decision=\"allow\")\n"
+func codexApprovalRules(input PrepareInput) string {
+	command := normalizeCLICommandName(input.CLICommand)
+	if input.CommandCapabilityProjection == nil {
+		return codexApprovalRule([]string{command})
+	}
+	if input.commandCapabilities == nil {
+		return ""
+	}
+	var rules strings.Builder
+	seen := make(map[string]struct{}, len(input.commandCapabilities.commands))
+	for _, capability := range input.commandCapabilities.commands {
+		pattern := append([]string{command}, normalizedCommandPath(capability.Path)...)
+		key := strings.Join(pattern, "\x00")
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		rules.WriteString(codexApprovalRule(pattern))
+	}
+	return rules.String()
+}
+
+func codexApprovalRule(pattern []string) string {
+	quoted := make([]string, 0, len(pattern))
+	for _, segment := range pattern {
+		if segment = strings.TrimSpace(segment); segment != "" {
+			quoted = append(quoted, strconv.Quote(segment))
+		}
+	}
+	if len(quoted) == 0 {
+		return ""
+	}
+	return "prefix_rule(pattern=[" + strings.Join(quoted, ", ") +
+		"], decision=\"allow\")\n"
 }
 
 func exposeUserCodexFiles(codexHome string) error {
@@ -146,7 +177,10 @@ func exposeUserCodexFiles(codexHome string) error {
 	if err := exposeUserCodexConfig(codexHome, userCodexHome); err != nil {
 		return err
 	}
-	return exposeUserCodexModelCatalog(codexHome, userCodexHome)
+	if err := exposeUserCodexModelCatalog(codexHome, userCodexHome); err != nil {
+		return err
+	}
+	return exposeUserCodexInstructionsFile(codexHome, userCodexHome)
 }
 
 // exposeCodexImportedRolloutFile symlinks the single Codex CLI rollout
@@ -247,67 +281,6 @@ func exposeUserCodexConfig(codexHome string, userCodexHome string) error {
 	}
 	if err := copyFile(source, target, 0o600); err != nil {
 		return fmt.Errorf("copy codex config: %w", err)
-	}
-	return nil
-}
-
-// exposeUserCodexModelCatalog mirrors a relative model_catalog_json path into
-// the run-scoped CODEX_HOME. Tutti copies config.toml alone; tools such as
-// CC Switch write model_catalog_json = "cc-switch-model-catalog.json", which
-// Codex resolves against CODEX_HOME. Without the catalog file, thread/start
-// fails with ENOENT and Tutti surfaces "agent session is not connected".
-//
-// Absolute catalog paths stay readable from the host filesystem and need no
-// mirror. Missing keys or missing source files are no-ops.
-func exposeUserCodexModelCatalog(codexHome string, userCodexHome string) error {
-	configPath := filepath.Join(codexHome, "config.toml")
-	contentBytes, err := os.ReadFile(configPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("read codex config for model catalog path: %w", err)
-	}
-	lines := strings.Split(strings.ReplaceAll(string(contentBytes), "\r\n", "\n"), "\n")
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		if strings.HasPrefix(trimmed, "[") {
-			break
-		}
-		value, ok := codexConfigStringAssignmentValue(trimmed, "model_catalog_json")
-		if !ok {
-			continue
-		}
-		value = strings.TrimSpace(value)
-		if value == "" || filepath.IsAbs(value) {
-			return nil
-		}
-		cleanRel := filepath.Clean(value)
-		if cleanRel == "." || cleanRel == ".." || strings.HasPrefix(cleanRel, ".."+string(filepath.Separator)) {
-			return nil
-		}
-		source := filepath.Join(userCodexHome, cleanRel)
-		if info, err := os.Stat(source); err != nil || info.IsDir() {
-			return nil
-		}
-		target := filepath.Join(codexHome, cleanRel)
-		if _, err := os.Lstat(target); err == nil {
-			return nil
-		} else if !os.IsNotExist(err) {
-			return fmt.Errorf("inspect codex model catalog: %w", err)
-		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-			return fmt.Errorf("create codex model catalog parent: %w", err)
-		}
-		if err := os.Symlink(source, target); err != nil {
-			if copyErr := copyFile(source, target, 0o600); copyErr != nil {
-				return fmt.Errorf("expose codex model catalog %s: symlink failed: %v; copy failed: %w", cleanRel, err, copyErr)
-			}
-		}
-		return nil
 	}
 	return nil
 }

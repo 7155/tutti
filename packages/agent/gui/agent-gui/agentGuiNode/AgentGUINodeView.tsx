@@ -86,6 +86,7 @@ export function AgentGUINodeView({
   viewModel,
   referenceProvenanceFilters = null,
   sessionInputHistoryEnabled = false,
+  sessionForkEnabled = false,
   renderAgentTargetInfo,
   renderProjectDirectoryPickerHeaderActions,
   renderSidebarFooter,
@@ -694,6 +695,7 @@ export function AgentGUINodeView({
                 homeTargetProjection={homeTargetProjection}
                 referenceProvenanceFilters={referenceProvenanceFilters}
                 sessionInputHistoryEnabled={sessionInputHistoryEnabled}
+                sessionForkEnabled={sessionForkEnabled}
                 composerEngagement={composerEngagement}
                 actions={actions}
                 labels={labels}

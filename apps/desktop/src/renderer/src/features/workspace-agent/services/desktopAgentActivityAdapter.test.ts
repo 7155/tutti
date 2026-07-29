@@ -361,16 +361,19 @@ test("desktop agent activity adapter preserves session-level turnless messages",
 
 test("desktop agent activity adapter forwards typed submit diagnostics", async () => {
   const calls: unknown[] = [];
+  const controller = new AbortController();
   const adapter = createDesktopAgentActivityAdapter({
     tuttidClient: createTuttidClient({
       async sendWorkspaceAgentSessionInput(
         requestWorkspaceId,
         agentSessionId,
-        request
+        request,
+        requestOptions
       ) {
         calls.push({
           agentSessionId,
           request,
+          signal: requestOptions?.signal,
           workspaceId: requestWorkspaceId
         });
         return createSendInputResponse(
@@ -388,6 +391,7 @@ test("desktop agent activity adapter forwards typed submit diagnostics", async (
     capabilityRefs: [{ capability: "tutti", source: "slash_command" }],
     content: [{ type: "text", text: "hello" }],
     guidance: true,
+    signal: controller.signal,
     submitDiagnostics: {
       submittedAtUnixMs: 1234,
       source: "agent-gui"
@@ -408,6 +412,7 @@ test("desktop agent activity adapter forwards typed submit diagnostics", async (
           source: "agent-gui"
         }
       } satisfies SendWorkspaceAgentSessionInputRequest,
+      signal: controller.signal,
       workspaceId
     }
   ]);
@@ -570,7 +575,9 @@ test("desktop agent activity adapter creates, projects, and revision-updates the
       activationId: "activation-1",
       createdAtUnixMs: 10,
       id: "revision-1",
+      effect: 80,
       orchestrationIntensity: 80,
+      speed: 60,
       revision: 1,
       source: "slash_command" as const,
       status: "active" as const
@@ -586,7 +593,9 @@ test("desktop agent activity adapter creates, projects, and revision-updates the
       activationId: "activation-1",
       createdAtUnixMs: 20,
       id: "revision-2",
+      effect: 25,
       orchestrationIntensity: 25,
+      speed: 90,
       revision: 2,
       source: "badge_remove" as const,
       status: "inactive" as const
@@ -628,13 +637,17 @@ test("desktop agent activity adapter creates, projects, and revision-updates the
     agentTargetId: "local:codex",
     clientSubmitId: "submit-tutti",
     initialTuttiModeActivation: {
+      effect: 80,
       source: "slash_command",
+      speed: 60,
       status: "active"
     },
     workspaceId
   });
   assert.deepEqual(createBodies[0]?.initialTuttiModeActivation, {
+    effect: 80,
     source: "slash_command",
+    speed: 60,
     status: "active"
   });
   assert.deepEqual(created.tuttiModeActivation, activeActivation);
@@ -643,7 +656,8 @@ test("desktop agent activity adapter creates, projects, and revision-updates the
   const updated = await adapter.updateTuttiModeActivation({
     agentSessionId: "agent-session-1",
     expectedRevision: 1,
-    orchestrationIntensity: 25,
+    effect: 25,
+    speed: 90,
     signal: controller.signal,
     source: "badge_remove",
     status: "inactive",
@@ -653,7 +667,8 @@ test("desktop agent activity adapter creates, projects, and revision-updates the
     agentSessionId: "agent-session-1",
     request: {
       expectedRevision: 1,
-      orchestrationIntensity: 25,
+      effect: 25,
+      speed: 90,
       source: "badge_remove",
       status: "inactive"
     },
@@ -774,15 +789,23 @@ test("desktop agent activity adapter leaves session event subscription to the se
 
 test("desktop agent activity adapter submits interactive responses through tuttid", async () => {
   const calls: unknown[] = [];
+  const controller = new AbortController();
   const adapter = createDesktopAgentActivityAdapter({
     tuttidClient: createTuttidClient({
       async submitWorkspaceAgentInteractive(
         requestWorkspaceId,
         agentSessionId,
         requestId,
-        request
+        request,
+        requestOptions
       ) {
-        calls.push([requestWorkspaceId, agentSessionId, requestId, request]);
+        calls.push([
+          requestWorkspaceId,
+          agentSessionId,
+          requestId,
+          request,
+          requestOptions
+        ]);
         return createSession({ id: agentSessionId, status: "waiting" });
       }
     }),
@@ -794,6 +817,7 @@ test("desktop agent activity adapter submits interactive responses through tutti
     optionId: "acceptEdits",
     payload: { path: "/Users/example/demo/src/styles.css" },
     requestId: "interactive-1",
+    signal: controller.signal,
     turnId: "turn-1",
     workspaceId
   });
@@ -808,12 +832,54 @@ test("desktop agent activity adapter submits interactive responses through tutti
         optionId: "acceptEdits",
         payload: { path: "/Users/example/demo/src/styles.css" },
         turnId: "turn-1"
-      }
+      },
+      { signal: controller.signal }
     ]
   ]);
   assert.equal(result.session.workspaceId, workspaceId);
   assert.equal(result.session.agentSessionId, "agent-session-1");
   assert.equal(result.session.activeTurn?.phase, "waiting");
+});
+
+test("desktop agent activity adapter forwards pin cancellation to tuttid", async () => {
+  const calls: unknown[] = [];
+  const controller = new AbortController();
+  const adapter = createDesktopAgentActivityAdapter({
+    tuttidClient: createTuttidClient({
+      async updateWorkspaceAgentSessionPin(
+        requestWorkspaceId,
+        agentSessionId,
+        request,
+        requestOptions
+      ) {
+        calls.push([
+          requestWorkspaceId,
+          agentSessionId,
+          request,
+          requestOptions
+        ]);
+        return createSession({ id: agentSessionId, pinnedAtUnixMs: 10 });
+      }
+    }),
+    runtimeApi: createRuntimeApi()
+  });
+
+  const result = await adapter.setSessionPinned({
+    agentSessionId: "agent-session-1",
+    pinned: true,
+    signal: controller.signal,
+    workspaceId
+  });
+
+  assert.deepEqual(calls, [
+    [
+      workspaceId,
+      "agent-session-1",
+      { pinned: true },
+      { signal: controller.signal }
+    ]
+  ]);
+  assert.equal(result.pinnedAtUnixMs, 10);
 });
 
 test("desktop agent activity adapter normalizes provider composer options", async () => {
@@ -1899,6 +1965,42 @@ test("desktop agent activity adapter classifies an ambiguous POST failure as del
       error instanceof Error &&
       (error as Error & { reason?: string }).reason ===
         "agent_session_fork_delivery_unknown"
+  );
+});
+
+test("desktop agent activity adapter promotes the exact fork boundary reason", async () => {
+  const adapter = createDesktopAgentActivityAdapter({
+    tuttidClient: createTuttidClient({
+      async forkWorkspaceAgentSession() {
+        throw new TuttidProtocolError({
+          code: "workspace_operation_failed",
+          developerMessage:
+            "agent session fork turn is not a verified settled boundary: selected turn sequence provenance is legacy_unverified",
+          params: {
+            forkBoundaryReason: "agent_session_fork_turn_sequence_unverified"
+          },
+          reason: "agent_session_fork_conflict",
+          statusCode: 409
+        });
+      }
+    }),
+    runtimeApi: createRuntimeApi()
+  });
+
+  await assert.rejects(
+    adapter.forkSession({
+      requestId: "fork-request",
+      sourceAgentSessionId: "source-session",
+      targetAgentSessionId: "target-session",
+      turnId: "source-turn",
+      workspaceId
+    }),
+    (error: unknown) =>
+      error instanceof TuttidProtocolError &&
+      error.reason === "agent_session_fork_turn_sequence_unverified" &&
+      error.params.forkBoundaryReason ===
+        "agent_session_fork_turn_sequence_unverified" &&
+      error.message.includes("legacy_unverified")
   );
 });
 

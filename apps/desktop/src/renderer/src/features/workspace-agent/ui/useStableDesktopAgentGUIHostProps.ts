@@ -23,6 +23,7 @@ export type DesktopAgentGUIHostProps = {
     AgentGUIProps["hostCapabilities"],
     | "referenceProvenanceFilterEnabled"
     | "sessionInputHistoryEnabled"
+    | "sessionForkEnabled"
     | "capabilityMenuState"
     | "visibleErrorPresentationOverrides"
     | "comingSoonProviders"
@@ -34,6 +35,7 @@ export type DesktopAgentGUIHostProps = {
   >;
   hostActions: Pick<
     AgentGUIProps["hostActions"],
+    | "onComposerAppendHandled"
     | "onAgentConfigMenuOpen"
     | "onAgentEnvPanelOpen"
     | "onAgentProviderLogin"
@@ -101,6 +103,7 @@ export function useStableDesktopAgentGUIHostProps({
         nextHostCapabilities.referenceProvenanceFilterEnabled,
       sessionInputHistoryEnabled:
         nextHostCapabilities.sessionInputHistoryEnabled,
+      sessionForkEnabled: nextHostCapabilities.sessionForkEnabled,
       capabilityMenuState: nextHostCapabilities.capabilityMenuState,
       visibleErrorPresentationOverrides:
         nextHostCapabilities.visibleErrorPresentationOverrides,
@@ -112,6 +115,7 @@ export function useStableDesktopAgentGUIHostProps({
       workspaceAppIcons: nextHostCapabilities.workspaceAppIcons
     },
     hostActions: {
+      onComposerAppendHandled: nextHostActions.onComposerAppendHandled,
       onAgentConfigMenuOpen: nextHostActions.onAgentConfigMenuOpen,
       onAgentEnvPanelOpen: nextHostActions.onAgentEnvPanelOpen,
       onAgentProviderLogin: nextHostActions.onAgentProviderLogin,

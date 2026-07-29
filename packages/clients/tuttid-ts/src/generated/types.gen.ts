@@ -4,6 +4,20 @@ export type ClientOptions = {
   baseUrl: "http://127.0.0.1:4545" | (string & {});
 };
 
+export type SwitchTuttiModeGoalReviewToSelfRequest = {
+  checkpointId: string;
+  expectedGraphRevision: number;
+  requestId: string;
+  reason: string;
+};
+
+export type SwitchTuttiModeGoalReviewToSelfResponse = {
+  executionId: string;
+  reviewId: string;
+  reviewMode: "self";
+  replayed: boolean;
+};
+
 export type HealthStatusResponse = {
   service: string;
   status: "ok";
@@ -328,7 +342,13 @@ export type ApiErrorDetails = {
     | "model_policy_referenced"
     | "workspace_agent_not_found"
     | "collaboration_run_not_found"
-    | "automation_rule_not_found";
+    | "automation_rule_not_found"
+    | "tutti_mode_goal_review_not_found"
+    | "tutti_mode_goal_review_conflict"
+    | "tutti_mode_goal_review_operation_failed"
+    | "tutti_mode_goal_review_service_unavailable"
+    | "tutti_mode_archive_conflict"
+    | "tutti_execution_active";
   reason?: string;
   params?: {
     [key: string]: unknown;
@@ -624,6 +644,14 @@ export type AgentTargetAuthMethod = {
   id: string;
   name: string;
   description?: string | null;
+  /**
+   * Provider-declared method kind (for example "terminal").
+   */
+  type?: string | null;
+  /**
+   * Ready-to-run interactive sign-in command for terminal-type methods.
+   */
+  terminalCommand?: string | null;
 };
 
 export type InstallAgentTargetRuntimeRequest = {
@@ -2032,7 +2060,17 @@ export type TuttiModeActivationRevision = {
   status: TuttiModeActivationStatus;
   source: TuttiModeActivationSource;
   /**
-   * Session-scoped orchestration intensity captured with this activation revision. Higher values ask the planning agent for finer-grained task decomposition.
+   * Session-scoped outcome-quality preference captured with this activation revision. Higher values favor stronger models and stronger task verification.
+   */
+  effect?: number | null;
+  /**
+   * Session-scoped completion-speed preference captured with this activation revision. Higher values favor faster suitable models.
+   */
+  speed?: number | null;
+  /**
+   * Legacy single-axis alias of effect. New clients use effect and speed.
+   *
+   * @deprecated
    */
   orchestrationIntensity: number;
   createdAtUnixMs: number;
@@ -2052,7 +2090,17 @@ export type TuttiModeActivationIntent = {
   status: TuttiModeActivationStatus;
   source: TuttiModeActivationSource;
   /**
-   * Optional orchestration intensity carried with the initial activation. Omitted uses the daemon default.
+   * Optional outcome-quality preference carried with the initial activation. Omitted uses the daemon default.
+   */
+  effect?: number | null;
+  /**
+   * Optional completion-speed preference carried with the initial activation. Omitted uses the daemon default.
+   */
+  speed?: number | null;
+  /**
+   * Legacy single-axis alias of effect. Ignored when effect is present.
+   *
+   * @deprecated
    */
   orchestrationIntensity?: number | null;
 };
@@ -2068,7 +2116,17 @@ export type UpdateTuttiModeActivationRequest = {
   status: TuttiModeActivationStatus;
   source: TuttiModeActivationSource;
   /**
-   * Optional orchestration intensity persisted with the appended activation revision. Omitted keeps the current value, or the daemon default for the first revision.
+   * Optional outcome-quality preference persisted with the appended activation revision. Omitted keeps the current value, or the daemon default for the first revision.
+   */
+  effect?: number | null;
+  /**
+   * Optional completion-speed preference persisted with the appended activation revision. Omitted keeps the current value, or the daemon default for the first revision.
+   */
+  speed?: number | null;
+  /**
+   * Legacy single-axis alias of effect. Ignored when effect is present.
+   *
+   * @deprecated
    */
   orchestrationIntensity?: number | null;
   /**
@@ -2094,6 +2152,11 @@ export type WorkspaceAgentSessionKind = "root" | "child";
  * Per-session durable message change cursor. The upper bound preserves exact integer representation in JavaScript clients.
  */
 export type WorkspaceAgentMessageCursor = number;
+
+/**
+ * Projection applied to a Session detail response. messageHydration preserves hierarchy and message cursors but leaves provider-backed lifecycle capabilities unresolved.
+ */
+export type WorkspaceAgentSessionDetailProjection = "full" | "messageHydration";
 
 export type WorkspaceAgentSessionLifecycleCapabilities = {
   /**
@@ -2294,6 +2357,11 @@ export type WorkspaceAgentSessionResponse = {
 };
 
 export type WorkspaceAgentSessionDetailResponse = {
+  projection: WorkspaceAgentSessionDetailProjection;
+  /**
+   * Whether provider-backed lifecycle capability projection ran for session and childSessions. A full projection reports true even when a provider probe fails closed, because false then means the action is unavailable for this response. When false, projection was intentionally skipped and capability values must not be applied as authoritative.
+   */
+  lifecycleCapabilitiesProjected: boolean;
   session: WorkspaceAgentSession;
   /**
    * Flat collection of every nested child session below session. Clients reconstruct the tree from the immutable parent fields.
@@ -2706,6 +2774,27 @@ export type ExternalAgentImportResultResponse = {
   importedMessages: number;
   skippedSessions: number;
   errors: Array<ExternalAgentImportError>;
+};
+
+export type ArchiveTuttiModeExecutionRequest = {
+  requestId: string;
+  reason: string;
+};
+
+export type TuttiModeArchiveOperation = {
+  workspaceId: string;
+  executionId: string;
+  issueId: string;
+  operationId: string;
+  requestId: string;
+  status: "requested" | "canceling_runs" | "archiving" | "completed" | "failed";
+  requestedBy: string;
+  reason: string;
+  attemptCount: number;
+  lastError: string;
+  createdAtUnixMs: number;
+  updatedAtUnixMs: number;
+  completedAtUnixMs: number;
 };
 
 export type DeleteWorkspaceAgentSessionResponse = {
@@ -3463,7 +3552,18 @@ export type WorkspaceWorkflow = {
 export type TuttiModePlanExecution = {
   mode: "sequential" | "parallel";
   reasoningIntensity: number;
+  /**
+   * Issue-owned decomposition, dependency, review, and retry strength. This legacy v1 field keeps its original meaning and is not the Tutti Mode speed preference.
+   */
   orchestrationIntensity: number;
+  /**
+   * Optional Tutti Mode outcome-quality preference snapshot. Omitted documents use orchestrationIntensity as the legacy single-axis effect and use the balanced default for speed.
+   */
+  effect?: number | null;
+  /**
+   * Optional Tutti Mode completion-speed preference snapshot. Omitted documents use the balanced default.
+   */
+  speed?: number | null;
 };
 
 export type TuttiModePlanBudget = {
@@ -3761,6 +3861,10 @@ export type IssueManagerIssue = {
    * When true, the daemon dispatches every dependency-ready task whose execution directory is isolated; dependencies still require user acceptance.
    */
   parallelExecution: boolean;
+  /**
+   * When true, automatic task dispatch is durably paused and no successor task may launch.
+   */
+  dispatchPaused: boolean;
   executionProfile: IssueManagerExecutionProfile;
   budget: IssueManagerBudget;
   taskCount: number;
@@ -3811,6 +3915,14 @@ export type IssueManagerTask = {
   autoAccept: boolean;
   acceptanceState: IssueManagerAcceptanceState;
   acceptanceSummary: string;
+  /**
+   * Logical supersession timestamp. Zero means the task remains in the active graph; non-zero preserves the task and its execution history while excluding it from future scheduling.
+   */
+  supersededAtUnix: number;
+  /**
+   * Replacement task ID when supersession introduced one.
+   */
+  supersededByTaskId: string;
   creatorUserId: string;
   creatorDisplayName: string;
   creatorAvatarUrl: string;
@@ -4200,6 +4312,8 @@ export type WorkspaceId = string;
 
 export type SessionForkOperationId = string;
 
+export type IssueId = string;
+
 export type WorkspaceAppId = string;
 
 export type WorkspaceAppFactoryJobId = string;
@@ -4573,6 +4687,10 @@ export type ListCliCapabilitiesData = {
      * Optional workspace context. When omitted, the daemon uses the startup workspace.
      */
     workspaceID?: string;
+    /**
+     * Optional canonical Agent Session identity. When present, discovery is constrained by that Session's persisted command capability projection.
+     */
+    agentSessionID?: string;
     /**
      * Include capabilities hidden from ordinary CLI command discovery by provider availability filters and command visibility. Intended for metadata consumers, not ordinary user command routing.
      */
@@ -9659,6 +9777,10 @@ export type ClearWorkspaceAgentSessionsErrors = {
    */
   405: ApiErrorResponse;
   /**
+   * One or more source sessions own a nonterminal Tutti execution
+   */
+  409: ApiErrorResponse;
+  /**
    * Workspace operation failed in an upstream adapter or command
    */
   502: ApiErrorResponse;
@@ -9813,6 +9935,10 @@ export type DeleteWorkspaceAgentSessionsBatchErrors = {
    * HTTP method is not supported on this route
    */
   405: ApiErrorResponse;
+  /**
+   * One or more source sessions own a nonterminal Tutti execution
+   */
+  409: ApiErrorResponse;
   /**
    * Workspace operation failed in an upstream adapter or command
    */
@@ -10333,6 +10459,10 @@ export type DeleteWorkspaceAgentSessionErrors = {
    */
   405: ApiErrorResponse;
   /**
+   * One or more source sessions own a nonterminal Tutti execution
+   */
+  409: ApiErrorResponse;
+  /**
    * Workspace operation failed in an upstream adapter or command
    */
   502: ApiErrorResponse;
@@ -10361,7 +10491,12 @@ export type GetWorkspaceAgentSessionData = {
     workspaceID: string;
     agentSessionID: string;
   };
-  query?: never;
+  query?: {
+    /**
+     * Selects the detail projection. messageHydration preserves the session hierarchy and message cursors used by reconciliation discovery without resolving provider-backed lifecycle capabilities.
+     */
+    projection?: WorkspaceAgentSessionDetailProjection;
+  };
   url: "/v1/workspaces/{workspaceID}/agent-sessions/{agentSessionID}";
 };
 
@@ -10405,6 +10540,162 @@ export type GetWorkspaceAgentSessionResponses = {
 export type GetWorkspaceAgentSessionResponse =
   GetWorkspaceAgentSessionResponses[keyof GetWorkspaceAgentSessionResponses];
 
+export type CancelTuttiModeExecutionData = {
+  body?: never;
+  path: {
+    workspaceID: string;
+    issueID: string;
+  };
+  query?: never;
+  url: "/v1/workspaces/{workspaceID}/tutti-executions/{issueID}/cancel-execution";
+};
+
+export type CancelTuttiModeExecutionErrors = {
+  /**
+   * Request payload or parameters are invalid
+   */
+  400: ApiErrorResponse;
+  /**
+   * Bearer token is missing or invalid
+   */
+  401: ApiErrorResponse;
+  /**
+   * Workspace issue-manager resource was not found
+   */
+  404: ApiErrorResponse;
+  /**
+   * HTTP method is not supported on this route
+   */
+  405: ApiErrorResponse;
+  /**
+   * Workspace operation failed in an upstream adapter or command
+   */
+  502: ApiErrorResponse;
+  /**
+   * Required daemon service dependency is unavailable
+   */
+  503: ApiErrorResponse;
+};
+
+export type CancelTuttiModeExecutionError =
+  CancelTuttiModeExecutionErrors[keyof CancelTuttiModeExecutionErrors];
+
+export type CancelTuttiModeExecutionResponses = {
+  /**
+   * Tutti execution stopped
+   */
+  200: CancelIssueManagerExecutionResponse;
+};
+
+export type CancelTuttiModeExecutionResponse =
+  CancelTuttiModeExecutionResponses[keyof CancelTuttiModeExecutionResponses];
+
+export type GetTuttiModeArchiveOperationData = {
+  body?: never;
+  path: {
+    workspaceID: string;
+    issueID: string;
+  };
+  query: {
+    operationId: string;
+  };
+  url: "/v1/workspaces/{workspaceID}/tutti-executions/{issueID}/archive";
+};
+
+export type GetTuttiModeArchiveOperationErrors = {
+  /**
+   * Request payload or parameters are invalid
+   */
+  400: ApiErrorResponse;
+  /**
+   * Bearer token is missing or invalid
+   */
+  401: ApiErrorResponse;
+  /**
+   * Workspace issue-manager resource was not found
+   */
+  404: ApiErrorResponse;
+  /**
+   * HTTP method is not supported on this route
+   */
+  405: ApiErrorResponse;
+  /**
+   * Workspace operation failed in an upstream adapter or command
+   */
+  502: ApiErrorResponse;
+  /**
+   * Required daemon service dependency is unavailable
+   */
+  503: ApiErrorResponse;
+};
+
+export type GetTuttiModeArchiveOperationError =
+  GetTuttiModeArchiveOperationErrors[keyof GetTuttiModeArchiveOperationErrors];
+
+export type GetTuttiModeArchiveOperationResponses = {
+  /**
+   * Current durable archive operation
+   */
+  200: TuttiModeArchiveOperation;
+};
+
+export type GetTuttiModeArchiveOperationResponse =
+  GetTuttiModeArchiveOperationResponses[keyof GetTuttiModeArchiveOperationResponses];
+
+export type ArchiveTuttiModeExecutionData = {
+  body: ArchiveTuttiModeExecutionRequest;
+  path: {
+    workspaceID: string;
+    issueID: string;
+  };
+  query?: never;
+  url: "/v1/workspaces/{workspaceID}/tutti-executions/{issueID}/archive";
+};
+
+export type ArchiveTuttiModeExecutionErrors = {
+  /**
+   * Request payload or parameters are invalid
+   */
+  400: ApiErrorResponse;
+  /**
+   * Bearer token is missing or invalid
+   */
+  401: ApiErrorResponse;
+  /**
+   * Workspace issue-manager resource was not found
+   */
+  404: ApiErrorResponse;
+  /**
+   * HTTP method is not supported on this route
+   */
+  405: ApiErrorResponse;
+  /**
+   * Archive request id conflicts with a different durable archive request
+   */
+  409: ApiErrorResponse;
+  /**
+   * Workspace operation failed in an upstream adapter or command
+   */
+  502: ApiErrorResponse;
+  /**
+   * Required daemon service dependency is unavailable
+   */
+  503: ApiErrorResponse;
+};
+
+export type ArchiveTuttiModeExecutionError =
+  ArchiveTuttiModeExecutionErrors[keyof ArchiveTuttiModeExecutionErrors];
+
+export type ArchiveTuttiModeExecutionResponses = {
+  /**
+   * Current durable archive operation
+   */
+  200: TuttiModeArchiveOperation;
+};
+
+export type ArchiveTuttiModeExecutionResponse =
+  ArchiveTuttiModeExecutionResponses[keyof ArchiveTuttiModeExecutionResponses];
+
 export type ForkWorkspaceAgentSessionData = {
   body: ForkWorkspaceAgentSessionRequest;
   path: {
@@ -10433,7 +10724,7 @@ export type ForkWorkspaceAgentSessionErrors = {
    */
   405: ApiErrorResponse;
   /**
-   * The source session or requested fork boundary is not forkable
+   * The source session or requested fork boundary is not forkable. Boundary validation failures keep reason `agent_session_fork_conflict` and include the stable rejection code in `error.params.forkBoundaryReason`.
    */
   409: ApiErrorResponse;
   /**
@@ -12103,6 +12394,60 @@ export type CreateWorkspaceFileDirectoryResponses = {
 export type CreateWorkspaceFileDirectoryResponse =
   CreateWorkspaceFileDirectoryResponses[keyof CreateWorkspaceFileDirectoryResponses];
 
+export type SwitchTuttiModeGoalReviewToSelfData = {
+  body: SwitchTuttiModeGoalReviewToSelfRequest;
+  path: {
+    workspaceID: string;
+    issueID: string;
+  };
+  query?: never;
+  url: "/v1/workspaces/{workspaceID}/issues/{issueID}/tutti-mode-review/self";
+};
+
+export type SwitchTuttiModeGoalReviewToSelfErrors = {
+  /**
+   * Request payload or parameters are invalid
+   */
+  400: ApiErrorResponse;
+  /**
+   * Bearer token is missing or invalid
+   */
+  401: ApiErrorResponse;
+  /**
+   * Tutti Mode execution or Goal Review was not found
+   */
+  404: ApiErrorResponse;
+  /**
+   * HTTP method is not supported on this route
+   */
+  405: ApiErrorResponse;
+  /**
+   * Goal Review fallback conflicts with current durable state or request history
+   */
+  409: ApiErrorResponse;
+  /**
+   * Workspace operation failed in an upstream adapter or command
+   */
+  502: ApiErrorResponse;
+  /**
+   * Required daemon service dependency is unavailable
+   */
+  503: ApiErrorResponse;
+};
+
+export type SwitchTuttiModeGoalReviewToSelfError =
+  SwitchTuttiModeGoalReviewToSelfErrors[keyof SwitchTuttiModeGoalReviewToSelfErrors];
+
+export type SwitchTuttiModeGoalReviewToSelfResponses = {
+  /**
+   * Goal Review switched to self review, or an idempotent replay
+   */
+  200: SwitchTuttiModeGoalReviewToSelfResponse;
+};
+
+export type SwitchTuttiModeGoalReviewToSelfResponse2 =
+  SwitchTuttiModeGoalReviewToSelfResponses[keyof SwitchTuttiModeGoalReviewToSelfResponses];
+
 export type ListWorkspaceRecentFilesData = {
   body?: never;
   path: {
@@ -13423,7 +13768,7 @@ export type CreateWorkspaceIssueTopicErrors = {
    */
   405: ApiErrorResponse;
   /**
-   * Workspace issue-manager resource already exists
+   * Workspace issue-manager resource conflicts with durable state
    */
   409: ApiErrorResponse;
   /**
@@ -13477,7 +13822,7 @@ export type DeleteWorkspaceIssueTopicErrors = {
    */
   405: ApiErrorResponse;
   /**
-   * Workspace issue-manager resource already exists
+   * Workspace issue-manager resource conflicts with durable state
    */
   409: ApiErrorResponse;
   /**
@@ -13638,7 +13983,7 @@ export type CreateWorkspaceIssueErrors = {
    */
   405: ApiErrorResponse;
   /**
-   * Workspace issue-manager resource already exists
+   * Workspace issue-manager resource conflicts with durable state
    */
   409: ApiErrorResponse;
   /**
@@ -13691,7 +14036,7 @@ export type CreateWorkspaceIssueFromPlanErrors = {
    */
   405: ApiErrorResponse;
   /**
-   * Workspace issue-manager resource already exists
+   * Workspace issue-manager resource conflicts with durable state
    */
   409: ApiErrorResponse;
   /**
@@ -13843,6 +14188,10 @@ export type DeleteWorkspaceIssueErrors = {
    */
   405: ApiErrorResponse;
   /**
+   * Workspace issue-manager resource conflicts with durable state
+   */
+  409: ApiErrorResponse;
+  /**
    * Workspace operation failed in an upstream adapter or command
    */
   502: ApiErrorResponse;
@@ -13943,6 +14292,10 @@ export type UpdateWorkspaceIssueErrors = {
    */
   405: ApiErrorResponse;
   /**
+   * Workspace issue-manager resource conflicts with durable state
+   */
+  409: ApiErrorResponse;
+  /**
    * Workspace operation failed in an upstream adapter or command
    */
   502: ApiErrorResponse;
@@ -13993,7 +14346,7 @@ export type AddWorkspaceIssueContextRefsErrors = {
    */
   405: ApiErrorResponse;
   /**
-   * Workspace issue-manager resource already exists
+   * Workspace issue-manager resource conflicts with durable state
    */
   409: ApiErrorResponse;
   /**
@@ -14048,6 +14401,10 @@ export type RemoveWorkspaceIssueContextRefErrors = {
    */
   405: ApiErrorResponse;
   /**
+   * Workspace issue-manager resource conflicts with durable state
+   */
+  409: ApiErrorResponse;
+  /**
    * Workspace operation failed in an upstream adapter or command
    */
   502: ApiErrorResponse;
@@ -14097,6 +14454,10 @@ export type CancelWorkspaceIssueExecutionErrors = {
    * HTTP method is not supported on this route
    */
   405: ApiErrorResponse;
+  /**
+   * Workspace issue-manager resource conflicts with durable state
+   */
+  409: ApiErrorResponse;
   /**
    * Workspace operation failed in an upstream adapter or command
    */
@@ -14198,7 +14559,7 @@ export type CreateWorkspaceIssueRunErrors = {
    */
   405: ApiErrorResponse;
   /**
-   * Workspace issue-manager resource already exists
+   * Workspace issue-manager resource conflicts with durable state
    */
   409: ApiErrorResponse;
   /**
@@ -14412,7 +14773,7 @@ export type CreateWorkspaceIssueTaskErrors = {
    */
   405: ApiErrorResponse;
   /**
-   * Workspace issue-manager resource already exists
+   * Workspace issue-manager resource conflicts with durable state
    */
   409: ApiErrorResponse;
   /**
@@ -14466,7 +14827,7 @@ export type CreateWorkspaceIssueTasksErrors = {
    */
   405: ApiErrorResponse;
   /**
-   * Workspace issue-manager resource already exists
+   * Workspace issue-manager resource conflicts with durable state
    */
   409: ApiErrorResponse;
   /**
@@ -14520,6 +14881,10 @@ export type DeleteWorkspaceIssueTaskErrors = {
    * HTTP method is not supported on this route
    */
   405: ApiErrorResponse;
+  /**
+   * Workspace issue-manager resource conflicts with durable state
+   */
+  409: ApiErrorResponse;
   /**
    * Workspace operation failed in an upstream adapter or command
    */
@@ -14623,6 +14988,10 @@ export type UpdateWorkspaceIssueTaskErrors = {
    */
   405: ApiErrorResponse;
   /**
+   * Workspace issue-manager resource conflicts with durable state
+   */
+  409: ApiErrorResponse;
+  /**
    * Workspace operation failed in an upstream adapter or command
    */
   502: ApiErrorResponse;
@@ -14674,7 +15043,7 @@ export type AddWorkspaceIssueTaskContextRefsErrors = {
    */
   405: ApiErrorResponse;
   /**
-   * Workspace issue-manager resource already exists
+   * Workspace issue-manager resource conflicts with durable state
    */
   409: ApiErrorResponse;
   /**
@@ -14729,6 +15098,10 @@ export type RemoveWorkspaceIssueTaskContextRefErrors = {
    * HTTP method is not supported on this route
    */
   405: ApiErrorResponse;
+  /**
+   * Workspace issue-manager resource conflicts with durable state
+   */
+  409: ApiErrorResponse;
   /**
    * Workspace operation failed in an upstream adapter or command
    */
@@ -14832,7 +15205,7 @@ export type CreateWorkspaceIssueTaskRunErrors = {
    */
   405: ApiErrorResponse;
   /**
-   * Workspace issue-manager resource already exists
+   * Workspace issue-manager resource conflicts with durable state
    */
   409: ApiErrorResponse;
   /**

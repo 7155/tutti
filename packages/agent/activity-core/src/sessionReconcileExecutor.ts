@@ -24,6 +24,7 @@ export type AgentActivityChildMessageHydration =
 export interface AgentActivitySessionReconcilePort {
   getSessionDetail(input: {
     agentSessionId: string;
+    projection: "authoritative" | "message_hydration";
     signal?: AbortSignal;
     workspaceId: string;
   }): Promise<AgentActivitySessionDetailSnapshot>;
@@ -145,10 +146,26 @@ export function createAgentActivitySessionReconcileExecutor(
     });
     const detail = await input.port.getSessionDetail({
       agentSessionId,
+      projection: phase === "discovery" ? "message_hydration" : "authoritative",
       signal,
       workspaceId
     });
     assertExecutionActive(signal);
+    const expectedProjection =
+      phase === "discovery" ? "message_hydration" : "authoritative";
+    if (detail.projection !== expectedProjection) {
+      throw new Error(
+        `session reconcile detail projection mismatch: expected ${expectedProjection}, received ${detail.projection}`
+      );
+    }
+    if (
+      detail.lifecycleCapabilitiesProjected !==
+      (expectedProjection === "authoritative")
+    ) {
+      throw new Error(
+        `session reconcile lifecycle capability projection mismatch for ${expectedProjection} detail`
+      );
+    }
     if (detail.session.agentSessionId !== agentSessionId) {
       throw new Error(
         `session reconcile detail identity mismatch: expected ${agentSessionId}, received ${detail.session.agentSessionId}`
@@ -591,6 +608,8 @@ function withoutDeletedChildren(
     ...childSessions.map((session) => session.agentSessionId)
   ]);
   return {
+    projection: detail.projection,
+    lifecycleCapabilitiesProjected: detail.lifecycleCapabilitiesProjected,
     session: detail.session,
     childSessions,
     turns: detail.turns.filter((turn) => retainedIds.has(turn.agentSessionId))

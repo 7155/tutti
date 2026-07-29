@@ -21,6 +21,11 @@ const workspace: WorkspaceSummary = {
   name: "Workspace"
 };
 
+const fullSessionDetailProjection = {
+  lifecycleCapabilitiesProjected: true,
+  projection: "full"
+} as const;
+
 describe("WorkspaceActivityService", () => {
   test("disposes the conversation Rail it owns", () => {
     const service = createService(
@@ -606,6 +611,7 @@ describe("WorkspaceActivityService", () => {
       detail: async () => {
         detailReads += 1;
         return {
+          ...fullSessionDetailProjection,
           childSessions: [],
           session: createSession(),
           turns: []
@@ -639,6 +645,7 @@ describe("WorkspaceActivityService", () => {
 
     await service.start();
     await flushAsyncWork();
+    const detailReadsAfterInitialHydration = detailReads;
     liveListener!({
       event: {
         agentSessionId: "session-1",
@@ -668,7 +675,8 @@ describe("WorkspaceActivityService", () => {
           (message) => message.messageId
         )
     ).toEqual(["message-1", "audit-1"]);
-    expect(detailReads).toBe(0);
+    expect(detailReadsAfterInitialHydration).toBe(2);
+    expect(detailReads).toBe(detailReadsAfterInitialHydration);
 
     service.dispose();
   });
@@ -680,6 +688,7 @@ describe("WorkspaceActivityService", () => {
     const queries: Array<Record<string, unknown>> = [];
     const client = createClient({
       detail: async () => ({
+        ...fullSessionDetailProjection,
         childSessions: [],
         session: createSession(),
         turns: []
@@ -729,7 +738,7 @@ describe("WorkspaceActivityService", () => {
     service.dispose();
   });
 
-  test("runs an authoritative live reconcile while incremental polling is in flight", async () => {
+  test("queues authoritative live reconcile behind in-flight incremental polling", async () => {
     const clock = new RecordingClock();
     let liveListener: ((delivery: AgentLiveDelivery) => void) | null = null;
     let resolveIncremental:
@@ -738,13 +747,14 @@ describe("WorkspaceActivityService", () => {
     const queries: Array<Record<string, unknown>> = [];
     const client = createClient({
       detail: async () => ({
+        ...fullSessionDetailProjection,
         childSessions: [],
         session: createSession(),
         turns: []
       }),
       listMessages: async (_workspaceId, agentSessionId, query) => {
         queries.push(query);
-        if (query.afterVersion === 5) {
+        if (query.afterVersion === 0 && queries.length === 2) {
           return new Promise((resolve) => {
             resolveIncremental = resolve;
           });
@@ -769,7 +779,14 @@ describe("WorkspaceActivityService", () => {
 
     expect(queries).toEqual([
       { limit: 100, order: "desc" },
-      { afterVersion: 5, order: "asc" },
+      { afterVersion: 0, order: "asc" }
+    ]);
+    resolveIncremental!(messagePage("session-1", "message-6", 6));
+    await flushAsyncWork();
+
+    expect(queries).toEqual([
+      { limit: 100, order: "desc" },
+      { afterVersion: 0, order: "asc" },
       { afterVersion: 0, order: "asc" }
     ]);
     expect(
@@ -780,8 +797,6 @@ describe("WorkspaceActivityService", () => {
         )
     ).toBe(true);
 
-    resolveIncremental!(messagePage("session-1", "message-6", 6));
-    await flushAsyncWork();
     service.dispose();
   });
 
@@ -791,6 +806,7 @@ describe("WorkspaceActivityService", () => {
     let messageVersion = 1;
     const client = createClient({
       detail: async () => ({
+        ...fullSessionDetailProjection,
         childSessions: [],
         session: createSession(),
         turns: []
@@ -887,6 +903,7 @@ describe("WorkspaceActivityService", () => {
     };
     const client = createClient({
       detail: async () => ({
+        ...fullSessionDetailProjection,
         childSessions: [child],
         session: root,
         turns: [createTurn(root.id, "turn-root-1")]
@@ -1141,7 +1158,30 @@ function createClient(options: {
     createWorkspaceAgentSession: options.create,
     deleteWorkspaceAgentSessionsBatch: options.deleteBatch,
     getAgentProviderComposerOptions: options.composerOptions,
-    getWorkspaceAgentSession: options.detail,
+    getWorkspaceAgentSession: async (
+      ...args: Parameters<NonNullable<TuttidClient["getWorkspaceAgentSession"]>>
+    ) => {
+      const detail = options.detail
+        ? await options.detail(args[0], args[1])
+        : await (async () => {
+            const session = railSessions().find(
+              (candidate) => candidate.id === args[1]
+            );
+            if (!session) throw new Error("session not found");
+            return {
+              ...fullSessionDetailProjection,
+              childSessions: [],
+              session,
+              turns: session.latestTurn ? [session.latestTurn] : []
+            };
+          })();
+      const projection = args[2] ?? "full";
+      return {
+        ...detail,
+        lifecycleCapabilitiesProjected: projection === "full",
+        projection
+      };
+    },
     listAgentTargets: async () => ({ targets: options.targets ?? [] }),
     listWorkspaceAgentSessionMessages: options.listMessages,
     listWorkspaceAgentPinnedSessionPage: async () => {

@@ -124,6 +124,8 @@ export interface AgentGUINodeHostCapabilities {
   referenceProvenanceFilterEnabled?: boolean;
   /** Host-owned experimental opt-in for current-Session composer history. */
   sessionInputHistoryEnabled?: boolean;
+  /** Host-owned experimental opt-in for creating Session forks. */
+  sessionForkEnabled?: boolean;
   capabilityMenuState?: AgentComposerCapabilityMenuState;
   /**
    * Keeps owner-supported Browser/Computer capability entries visible while
@@ -155,6 +157,8 @@ export interface AgentGUINodeHostCapabilities {
 }
 
 export interface AgentGUINodeHostActions {
+  /** Confirms that AgentGUI applied one host-issued composer append request. */
+  onComposerAppendHandled?: (sequence: number) => void;
   onLinkAction?: (action: WorkspaceLinkAction) => void;
   onHandoffConversation?: (input: {
     agentTargetId?: string | null;
@@ -384,6 +388,7 @@ export function areAgentGUINodePropsEqual(
     pc.referenceProvenanceFilterEnabled ===
       nc.referenceProvenanceFilterEnabled &&
     pc.sessionInputHistoryEnabled === nc.sessionInputHistoryEnabled &&
+    pc.sessionForkEnabled === nc.sessionForkEnabled &&
     agentGuiStateEquals(previous.state, next.state) &&
     pf.position.x === nf.position.x &&
     pf.position.y === nf.position.y &&
@@ -428,6 +433,7 @@ export function areAgentGUINodePropsEqual(
     pa.onAgentProviderLogin === na.onAgentProviderLogin &&
     pa.onAgentEnvPanelOpen === na.onAgentEnvPanelOpen &&
     pa.onAgentConfigMenuOpen === na.onAgentConfigMenuOpen &&
+    pa.onComposerAppendHandled === na.onComposerAppendHandled &&
     pa.onOpenConversationWindow === na.onOpenConversationWindow &&
     pa.onClose === na.onClose &&
     pa.onResize === na.onResize &&

@@ -102,6 +102,42 @@ describe("P0 new-conversation placement scenarios", () => {
     });
   });
 
+  it("keeps the logical project when the active session runs in an isolated worktree", async () => {
+    const projectPath = "/workspace/project-a";
+    const sectionKey = "project:workspace-1:/workspace/project-a";
+    const scenario = renderNewConversationScenario({
+      activeConversation: conversationSummary({
+        cwd: "/state/task-worktrees/issue/task-run",
+        railSectionKey: sectionKey
+      }),
+      initialHomeProjectPath: null,
+      userProjects: [
+        {
+          id: "project-a",
+          label: "Project A",
+          path: projectPath,
+          pinnedAtUnixMs: 0,
+          sectionKey
+        }
+      ]
+    });
+
+    act(() => scenario.requestNewConversation());
+    act(() =>
+      scenario.submitPrompt([{ type: "text", text: "continue from worktree" }])
+    );
+
+    expect(await scenario.waitForActivation()).toMatchObject({
+      cwd: projectPath,
+      railPlacement: {
+        version: 1,
+        kind: "project",
+        projectPath,
+        sectionKey
+      }
+    });
+  });
+
   it("preserves an explicit project selection already made on Home", async () => {
     const projectPath = "/workspace/project-a";
     const sectionKey = "project:workspace-1:/workspace/project-a";
@@ -199,6 +235,7 @@ function renderNewConversationScenario(input: {
       workspaceId: "workspace-1"
     });
     const { createConversation } = useAgentGUIConversationHome({
+      activeConversationId: activeConversationIdRef.current,
       activeConversationIdRef,
       activePendingActivation: null,
       agentActivityRuntime,
@@ -258,14 +295,11 @@ function renderNewConversationScenario(input: {
       isConversationStale: () => false,
       isCreatingConversationRef: { current: false },
       isCurrentConversation: () => false,
-      loadSelectedConversationMessages: async () => undefined,
-      loadSessionState: vi.fn(),
       onDataChangeRef: {
         current: (updater) => {
           dataRef.current = updater(dataRef.current);
         }
       },
-      refreshMessagesFromSnapshot: vi.fn(),
       requestRailReveal: vi.fn(),
       selectedAgentTargetIsExplicitRef: { current: true },
       selectedAgentTargetRef: { current: target },
@@ -278,7 +312,6 @@ function renderNewConversationScenario(input: {
       setIsComposerHome: vi.fn(),
       setIsLoadingMessages: vi.fn(),
       submittedDraftSnapshotsRef,
-      syncConversationListProjection: async () => undefined,
       tuttiModeDraftKey: "node-default:codex:local:codex",
       userProjectsRef: { current: input.userProjects },
       workspaceId: "workspace-1"
@@ -330,7 +363,8 @@ function renderNewConversationScenario(input: {
         activeConversationId: activeConversationIdRef.current,
         conversations: conversationsRef.current,
         createConversation: result.current.createConversation,
-        transientConversation: null
+        transientConversation: null,
+        userProjects: input.userProjects
       });
     },
     persistActiveConversation,

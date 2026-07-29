@@ -8,6 +8,14 @@ interactive response, plan decision, durable runtime-operation, and complete
 goal-control/reconcile application core. `tuttid` routes those commands through
 `Host`; transport and HTTP shapes remain unchanged.
 
+Tutti Mode turn snapshots use `PreferenceVersion` to separate the current
+`Effect`/`Speed` pair from the deprecated single-axis
+`OrchestrationIntensity`. Current writers set
+`TuttiModePreferenceVersionEffectSpeed` and populate the legacy alias with the
+effect value. Runtime readers treat version zero as a legacy snapshot, mapping
+its intensity to effect and using balanced speed (`50`). This is an upgrade
+read path, not support for connecting a new client to an older daemon.
+
 The module owns:
 
 - lifecycle command and runtime observation types;
@@ -121,8 +129,14 @@ metadata only.
 canonical store first resolves the complete root/child closure; Host acquires
 the shared session-mutation actor and session locks in stable order, closes
 every live runtime in that closure, and commits only if the store resolves the
-same closure inside the write transaction. A changed child tree is replanned
-before any tombstone is written. A requested runtime that is live before its
+same closure inside the write transaction. An optional provider-neutral
+`SessionDeletionGuard` receives that exact Host-owned closure before any
+runtime close or canonical delete. A rejected admission returns with no
+canonical lifecycle side effects. Every admitted attempt is reported as
+completed or failed; reporting is observational and cannot change the command
+result. A changed child tree is reported as a failed attempt, replanned, and
+re-admitted with its new exact closure before Host closes any newly discovered
+runtime or writes a tombstone. A requested runtime that is live before its
 first canonical report is still closed and cleaned up by the same coordinator;
 the empty canonical plan simply skips the tombstone transaction, so deleting an
 already absent session is a successful no-op and batch responses retain empty
@@ -164,6 +178,10 @@ dispatch; an existing live observation bypasses preparation. Consumers hide
 settled Turn actions when that capability is absent.
 Boundary validity remains a separate transactional proof, so an unavailable
 latest Turn does not suppress an earlier valid boundary.
+Every fail-closed boundary rejection retains a stable, content-free reason
+through Host. HTTP adapters may project it as structured diagnostic metadata
+while preserving their existing coarse conflict reason; transcript payloads
+and attachment contents never enter that reason.
 
 Fork uses a durable `prepared -> dispatching -> provider_accepted -> committed`
 saga. `RequestID` is the replay key. A source fence serializes the snapshot
@@ -275,6 +293,9 @@ Coordinator, goal, and commit-observer scenario groups extend the same driver
 with recovery ordering through the worktree sweep, recovery failure
 propagation, post-commit failure semantics, and exact-tombstone permanent
 removal semantics.
+Deletion-admission scenarios are required members of both the standard adapter
+and application-core catalogs; the focused deletion-admission catalog reuses
+those same scenario values rather than defining a second behavior suite.
 
 The conformance package keeps its shared fixture and driver contract in
 `conformance.go`, explicit scenario membership in `scenarios.go`, and scenario

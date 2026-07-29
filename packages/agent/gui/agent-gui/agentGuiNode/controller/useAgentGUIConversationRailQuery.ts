@@ -8,7 +8,7 @@ import {
   type AgentGUIConversationRailQuerySnapshot,
   type ConversationRailQueryRuntime
 } from "../../../agentConversationRailController";
-import { inspectAgentConversationBatchDeletionCapability } from "../../../agentConversationRailRuntime";
+import { inspectAgentConversationBatchDeletionCapability } from "./agentConversationBatchDeletionCapability";
 import { useEngineSelector } from "../../../shared/engine/useEngineSelector";
 import type { AgentGUINodeViewModel } from "../model/agentGuiNodeTypes";
 import { createConversationRailConversationsSelector } from "./agentGuiConversationRailQuerySnapshot";

@@ -678,10 +678,12 @@ disable submission, but must not change editor editability.
   Platform-only commands remain in each host's `EngineExtensionCommand`
   adapter. Every effect propagates the Engine-owned AbortSignal to its
   transport. Rename, pin, and delete settle through the shared Session-mutation
-  state and only a validated authoritative Session result may update canonical
-  state. Caller cancellation aborts the host effect, but an already accepted
-  write remains delivery-unknown until later canonical reconciliation; it is
-  never converted into a confirmed failure. Direct settings changes,
+  state. Rename and pin may update canonical Session state only from a validated
+  authoritative Session result. Delete may remove canonical Sessions only from
+  a validated `SessionDeleteMutationResult`, projected as `session/removed`
+  tombstone intents. Caller cancellation aborts the host effect, but an already
+  accepted write remains delivery-unknown until later canonical reconciliation;
+  it is never converted into a confirmed failure. Direct settings changes,
   post-activation persistence, and
   prompt-required settings share one per-Session Engine lane. Owner boundaries
   are serialization barriers rather than coalescing opportunities. A validated

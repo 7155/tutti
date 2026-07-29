@@ -192,7 +192,8 @@ It owns:
   batching, with scheduler/clock/command ports injected by the host
 - the typed frontend effect seam for activation, prompt send, settings update,
   turn cancellation, Interaction response, rename, pin, and batch delete,
-  including lossless command projection, canonical Session result validation,
+  including lossless command projection, authoritative Session result
+  validation for rename and pin, validated delete-result tombstone projection,
   shared mutation settlement, and a serialized settings-precondition state
   machine
 - semantic `AgentSessionEngine` methods for rename, pin, and batch delete;

@@ -384,14 +384,13 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
     const normalizedTitle = title.trim();
     if (!normalizedTitle) return;
     try {
-      const session = await this.client.updateWorkspaceAgentSessionTitle(
-        this.workspace.id,
+      await dispatchSessionMutation(this.engine, {
         agentSessionId,
-        { title: normalizedTitle }
-      );
-      this.engine.dispatch({
-        session: this.mapping.mapSession(session),
-        type: "session/upserted"
+        mutationId: createMobileActivityCommandId(),
+        timeoutMs: COMMAND_TIMEOUT_MS,
+        title: normalizedTitle,
+        type: "session/renameRequested",
+        workspaceId: this.workspace.id
       });
       await this.rail.reconcile();
       this.errorCode = null;

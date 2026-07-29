@@ -240,6 +240,15 @@ function executeCommand(
         },
         { signal }
       );
+    case "session/rename":
+      return effects.renameSession(
+        {
+          agentSessionId: command.agentSessionId,
+          title: command.title,
+          workspaceId: command.workspaceId
+        },
+        { signal }
+      );
     default:
       return commandPort.execute(command, { signal });
   }

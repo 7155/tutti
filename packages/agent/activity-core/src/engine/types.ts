@@ -197,7 +197,7 @@ export type EngineExternalCommandExceptPlanDecision = Exclude<
 type AgentSessionEffectCommand =
   | Extract<
       SessionMutationCommand,
-      { type: "session/setPinned" | "sessions/delete" }
+      { type: "session/rename" | "session/setPinned" | "sessions/delete" }
     >
   | InteractionRespondCommand
   | PromptQueueSendCommand
@@ -351,6 +351,10 @@ export interface AgentSessionEffectPort {
     input: AgentActivitySubmitInteractiveInput,
     options?: EngineEffectOptions
   ): Promise<unknown>;
+  renameSession(
+    input: AgentActivityRenameSessionInput,
+    options?: EngineEffectOptions
+  ): Promise<unknown>;
   sendInput(
     input: AgentActivitySendInput,
     options?: EngineEffectOptions
@@ -489,6 +493,7 @@ import type {
   AgentActivityCancelTurnInput,
   AgentActivityDeleteSessionsInput,
   AgentActivityInitialGoalControl,
+  AgentActivityRenameSessionInput,
   AgentActivitySendInput,
   AgentActivitySetSessionPinnedInput,
   AgentActivitySessionSettings,

@@ -898,7 +898,23 @@ export class WorkspaceAgentActivityService
   async renameSession(
     input: Parameters<AgentActivityAdapter["renameSession"]>[0]
   ): Promise<AgentActivitySession> {
-    return this.mutationOperations.renameSession(input);
+    const workspaceId = normalizeWorkspaceId(input.workspaceId);
+    const agentSessionId = input.agentSessionId.trim();
+    await dispatchSessionMutation(this.entry(workspaceId).engine, {
+      agentSessionId,
+      mutationId: this.nextSessionMutationId("rename"),
+      timeoutMs: 30_000,
+      title: input.title,
+      type: "session/renameRequested",
+      workspaceId
+    });
+    const activitySession = this.getSnapshot(workspaceId).sessions.find(
+      (session) => session.agentSessionId === agentSessionId
+    );
+    if (!activitySession) {
+      throw new Error("workspace_agent_rename_result_missing");
+    }
+    return activitySession;
   }
 
   async getSession(
@@ -1089,7 +1105,7 @@ export class WorkspaceAgentActivityService
     }
   }
 
-  private nextSessionMutationId(kind: "delete" | "pin"): string {
+  private nextSessionMutationId(kind: "delete" | "pin" | "rename"): string {
     const sequence = this.sessionMutationSequence++;
     return `${kind}:${Date.now()}:${sequence}`;
   }

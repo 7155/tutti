@@ -598,19 +598,22 @@ disable submission, but must not change editor editability.
   event time instead of retaining a whole-workspace render snapshot
 - lifecycle writes use typed intents/commands
 - the Engine alone translates shared activation, prompt send, settings update,
-  turn cancel, Interaction response, pin, and batch-delete commands into
-  `AgentSessionEffectPort` calls. Desktop and Mobile implement those semantic
-  methods and must not duplicate a command-type switch for them. Platform-only
-  commands remain in each host's `EngineExtensionCommand` adapter. Every effect
-  propagates the Engine-owned AbortSignal to its transport. Direct settings
-  changes, post-activation persistence, and prompt-required settings share one
-  per-Session Engine lane. Owner boundaries are serialization barriers rather
-  than coalescing opportunities. A validated precondition updates canonical
-  Session state before the Engine starts send, while a failed or timed-out
-  precondition prevents delivery. A timed-out settings write remains
-  delivery-unknown and does not release queued writes automatically. A fresh
-  explicit settings selection is the user's retry: Desktop AgentGUI and Native
-  Mobile derive that retry from the exact Engine settings-operation state
+  turn cancel, Interaction response, rename, pin, and batch-delete commands
+  into `AgentSessionEffectPort` calls. Desktop and Mobile implement those
+  semantic methods and must not duplicate a command-type switch for them.
+  Platform-only commands remain in each host's `EngineExtensionCommand`
+  adapter. Every effect propagates the Engine-owned AbortSignal to its
+  transport. Rename, pin, and delete settle through the shared Session-mutation
+  state and only a validated authoritative Session result may update canonical
+  state. Direct settings changes, post-activation persistence, and
+  prompt-required settings share one per-Session Engine lane. Owner boundaries
+  are serialization barriers rather than coalescing opportunities. A validated
+  precondition updates canonical Session state before the Engine starts send,
+  while a failed or timed-out precondition prevents delivery. A timed-out
+  settings write remains delivery-unknown and does not release queued writes
+  automatically. A fresh explicit settings selection is the user's retry:
+  Desktop AgentGUI and Native Mobile derive that retry from the exact Engine
+  settings-operation state
 - consumers do not read reducer maps directly
 - consumers do not create canonical session/message mirrors
 - optimistic records define confirmation, rejection, timeout, and uncertain-delivery paths
@@ -1407,7 +1410,7 @@ DOM.
 
 ### 6.3 `AgentActivityRuntime` and `AgentHostApi`
 
-`AgentActivityRuntime` is the AgentGUI activity-data and command boundary. Session, messages, activation, send, cancel, Interaction, Goal, settings, composer options, pin, and delete enter through it.
+`AgentActivityRuntime` is the AgentGUI activity-data and command boundary. Session, messages, activation, send, cancel, Interaction, Goal, settings, composer options, rename, pin, and delete enter through it.
 
 `AgentHostApi` supplies host capabilities only: files, clipboard, project/account lookup, Agent Target setup/probes, diagnostics, and OS/Workbench helpers. It must not become a Session, Turn, timeline, or write source again.
 

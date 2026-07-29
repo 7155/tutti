@@ -308,9 +308,10 @@ describe("createWorkspaceActivityEffectPort", () => {
     );
   });
 
-  test("projects pin and delete mutations with the Engine cancellation signal", async () => {
+  test("projects metadata mutations with the Engine cancellation signal", async () => {
     const controller = new AbortController();
     const updateWorkspaceAgentSessionPin = jest.fn().mockResolvedValue({});
+    const updateWorkspaceAgentSessionTitle = jest.fn().mockResolvedValue({});
     const deleteWorkspaceAgentSessionsBatch = jest.fn().mockResolvedValue({
       cleanupFailedSessionIds: [],
       removedMessages: 3,
@@ -324,7 +325,8 @@ describe("createWorkspaceActivityEffectPort", () => {
     const port = createWorkspaceActivityEffectPort(() => ({
       client: {
         deleteWorkspaceAgentSessionsBatch,
-        updateWorkspaceAgentSessionPin
+        updateWorkspaceAgentSessionPin,
+        updateWorkspaceAgentSessionTitle
       } as unknown as TuttidClient,
       engine: {} as AgentSessionEngine,
       loadComposerOptions() {},
@@ -344,6 +346,14 @@ describe("createWorkspaceActivityEffectPort", () => {
       },
       { signal: controller.signal }
     );
+    const renameResult = await port.renameSession(
+      {
+        agentSessionId: "session-1",
+        title: "Renamed session",
+        workspaceId: "workspace-1"
+      },
+      { signal: controller.signal }
+    );
     const deleteResult = await port.deleteSessions(
       {
         agentSessionIds: ["session-1", "session-2"],
@@ -358,12 +368,19 @@ describe("createWorkspaceActivityEffectPort", () => {
       { pinned: true },
       { signal: controller.signal }
     );
+    expect(updateWorkspaceAgentSessionTitle).toHaveBeenCalledWith(
+      "workspace-1",
+      "session-1",
+      { title: "Renamed session" },
+      { signal: controller.signal }
+    );
     expect(deleteWorkspaceAgentSessionsBatch).toHaveBeenCalledWith(
       "workspace-1",
       { sessionIds: ["session-1", "session-2"] },
       { signal: controller.signal }
     );
     expect(pinResult).toEqual({ session: activitySession });
+    expect(renameResult).toEqual({ session: activitySession });
     expect(deleteResult).toEqual({
       cleanupFailedSessionIds: [],
       removedMessages: 3,

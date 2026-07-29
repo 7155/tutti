@@ -191,8 +191,9 @@ It owns:
   command-description effect executor, expiry-intent clock, and intent frame
   batching, with scheduler/clock/command ports injected by the host
 - the typed frontend effect seam for activation, prompt send, settings update,
-  turn cancellation, Interaction response, pin, and batch delete, including
-  lossless command projection and a serialized settings-precondition state
+  turn cancellation, Interaction response, rename, pin, and batch delete,
+  including lossless command projection, canonical Session result validation,
+  shared mutation settlement, and a serialized settings-precondition state
   machine; hosts retain transport, DTO mapping, AbortSignal propagation, and
   product-specific command extensions (see
   [Agent GUI Node](./agent-gui-node.md#4-workspace-frontend-engine))

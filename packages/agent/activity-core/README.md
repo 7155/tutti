@@ -20,8 +20,8 @@ transport commands and normalize observations before they enter the engine.
 - analyzes normalized activity events into one inline-observation intent plus
   an explicit authoritative-reconcile requirement
 - projects shared activation, prompt send, settings update, turn cancel,
-  Interaction response, pin, and batch-delete commands onto one typed host
-  effect port
+  Interaction response, rename, pin, and batch-delete commands onto one typed
+  host effect port
 - executes the shared prompt state machine, including serialized required
   settings persistence before send
 - exposes selectors such as `selectNeedsAttentionCount`
@@ -58,8 +58,8 @@ Engine rules:
   every settlement (success, failure, timeout) back into the loop as
   command-result intents.
 - New hosts implement `AgentSessionEffectPort` for activation, prompt send,
-  settings update, turn cancellation, Interaction response, pin, and batch
-  delete. The Engine owns command-to-capability projection and
+  settings update, turn cancellation, Interaction response, rename, pin, and
+  batch delete. The Engine owns command-to-capability projection and
   the settings-precondition state machine. A typed port declares
   `kind: "typed"` and its `execute` callback receives only
   `EngineExtensionCommand`; the discriminated legacy shape keeps the
@@ -273,8 +273,9 @@ identity exists, with identical attention semantics on Desktop and Mobile.
 The Engine projects shared lifecycle command descriptions onto
 `AgentSessionEffectPort`: `activateSession`, `sendInput`,
 `updateSessionSettings`, `cancelTurn`, `respondToInteraction`,
-`setSessionPinned`, and `deleteSessions`. Hosts implement transport and result
-mapping without switching on those command types. When a queued prompt includes
+`renameSession`, `setSessionPinned`, and `deleteSessions`. Hosts implement
+transport and result mapping without switching on those command types. When a
+queued prompt includes
 a required settings patch, the Engine records a prompt continuation and enters
 that patch into the same per-Session settings lane as direct UI changes and
 post-activation settings persistence. Only one settings write for a Session

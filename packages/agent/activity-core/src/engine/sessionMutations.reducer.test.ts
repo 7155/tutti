@@ -240,6 +240,144 @@ test("pin result commits mutation and canonical session in one engine notificati
   engine.dispose();
 });
 
+test("rename result commits mutation and canonical session in one engine notification", async () => {
+  let resolveCommand: (value: unknown) => void = () => {};
+  const commandPort: EngineCommandPort = {
+    executePlanDecision: async () => {
+      throw new Error("unexpected plan decision command");
+    },
+    execute: async () =>
+      new Promise((resolve) => {
+        resolveCommand = resolve;
+      })
+  };
+  const engine = createAgentSessionEngine({
+    clock: { nowUnixMs: () => 0 },
+    commandPort,
+    identity: { origin: "local", workspaceId: "workspace-1" },
+    scheduler: {
+      schedule: () => ({ cancel() {} })
+    }
+  });
+  engine.dispatch({ session, type: "session/upserted" });
+  const states: AgentSessionEngineState[] = [];
+  engine.subscribe((state) => states.push(state));
+
+  const resultPromise = dispatchSessionMutation(engine, {
+    agentSessionId: "session-1",
+    mutationId: "rename-1",
+    title: "  Renamed session  ",
+    type: "session/renameRequested",
+    workspaceId: "workspace-1"
+  });
+  assert.equal(states.length, 1);
+  assert.deepEqual(states[0]?.sessionMutations.byMutationId["rename-1"], {
+    agentSessionIds: ["session-1"],
+    commandId: "rename-1",
+    errorCode: null,
+    errorMessage: null,
+    kind: "rename",
+    mutationId: "rename-1",
+    status: "inFlight",
+    title: "Renamed session",
+    workspaceId: "workspace-1"
+  });
+  assert.equal(
+    states[0]?.sessionLifecycle.sessionsById["session-1"]?.title,
+    "Session"
+  );
+
+  resolveCommand({
+    session: { ...session, title: "Renamed session", updatedAtUnixMs: 2 }
+  });
+  await resultPromise;
+
+  assert.equal(states.length, 2);
+  assert.equal(
+    states[1]?.sessionMutations.byMutationId["rename-1"]?.status,
+    "succeeded"
+  );
+  assert.equal(
+    states[1]?.sessionLifecycle.sessionsById["session-1"]?.title,
+    "Renamed session"
+  );
+  assert.equal(
+    states.some(
+      (state) =>
+        state.sessionMutations.byMutationId["rename-1"]?.status ===
+          "succeeded" &&
+        state.sessionLifecycle.sessionsById["session-1"]?.title === "Session"
+    ),
+    false
+  );
+  engine.dispose();
+});
+
+test("rename rejects empty titles before reaching the command port", async () => {
+  let commandCalls = 0;
+  const engine = createAgentSessionEngine({
+    clock: { nowUnixMs: () => 0 },
+    commandPort: {
+      execute: async () => {
+        commandCalls += 1;
+      }
+    },
+    identity: { origin: "local", workspaceId: "workspace-1" },
+    scheduler: {
+      schedule: () => ({ cancel() {} })
+    }
+  });
+  engine.dispatch({ session, type: "session/upserted" });
+
+  await assert.rejects(
+    dispatchSessionMutation(engine, {
+      agentSessionId: "session-1",
+      mutationId: "rename-empty",
+      title: "   ",
+      type: "session/renameRequested",
+      workspaceId: "workspace-1"
+    }),
+    /session mutation was not accepted/
+  );
+  assert.equal(commandCalls, 0);
+  engine.dispose();
+});
+
+test("rename timeout remains delivery-unknown without changing canonical state", () => {
+  const requested = sessionMutationsReducer(
+    createInitialSessionMutationsState(),
+    {
+      agentSessionId: "session-1",
+      mutationId: "rename-timeout",
+      title: "Renamed session",
+      type: "session/renameRequested",
+      workspaceId: "workspace-1"
+    },
+    { deletedSessionIds: {}, sessionsById: { "session-1": session } }
+  );
+  const timedOut = sessionMutationsReducer(
+    requested.state,
+    {
+      commandId: "rename-timeout",
+      commandType: "session/rename",
+      correlationId: "rename-timeout",
+      outcome: "timedOut",
+      type: "engine/commandResult"
+    },
+    { deletedSessionIds: {}, sessionsById: { "session-1": session } }
+  );
+
+  assert.equal(
+    timedOut.state.byMutationId["rename-timeout"]?.status,
+    "unknown"
+  );
+  assert.equal(
+    timedOut.state.byMutationId["rename-timeout"]?.errorCode,
+    "timeout"
+  );
+  assert.equal(timedOut.followUpIntents, undefined);
+});
+
 test("failed mutation is explicit and emits no canonical follow-up", () => {
   const requested = sessionMutationsReducer(
     createInitialSessionMutationsState(),

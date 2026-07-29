@@ -9,6 +9,20 @@ export function validPinResult(
   value: unknown,
   record: Extract<SessionMutationRecord, { kind: "pin" }>
 ): AgentActivitySession | null {
+  return validSessionResult(value, record);
+}
+
+export function validRenameResult(
+  value: unknown,
+  record: Extract<SessionMutationRecord, { kind: "rename" }>
+): AgentActivitySession | null {
+  return validSessionResult(value, record);
+}
+
+function validSessionResult(
+  value: unknown,
+  record: Extract<SessionMutationRecord, { kind: "pin" | "rename" }>
+): AgentActivitySession | null {
   if (!value || typeof value !== "object") return null;
   const session = (value as { session?: Partial<AgentActivitySession> })
     .session;

@@ -141,7 +141,7 @@ test("applies a settled Turn and its cleared Session reference atomically", () =
         command.type === "session/reconcile" &&
         command.agentSessionId === "session-1" &&
         command.live &&
-        command.scope === "state"
+        command.scope === "state_and_messages"
     )
   );
 
@@ -311,6 +311,43 @@ test("rejects an inconsistent Turn projection and reconciles state", () => {
   harness.engine.dispose();
 });
 
+test("authoritative history drops a terminal optimistic row from a retracted Turn", () => {
+  const harness = createHarness();
+  harness.coordinator.ingestEvent({
+    workspaceId: "workspace-1",
+    agentSessionId: "session-1",
+    eventType: "message_delta",
+    data: {
+      workspaceId: "workspace-1",
+      agentSessionId: "session-1",
+      messageId: "retracted-message",
+      turnId: "retracted-turn",
+      role: "assistant",
+      kind: "text",
+      occurredAtUnixMs: 10,
+      completedAtUnixMs: 11,
+      status: "completed",
+      content: { operation: "set", value: "old answer" }
+    }
+  });
+
+  assert.equal(
+    harness.coordinator.project(harness.readCanonicalSnapshot())
+      .sessionMessagesById["session-1"]?.length,
+    1
+  );
+
+  harness.coordinator.reconcileAuthoritativeHistory("session-1", [], []);
+
+  assert.equal(
+    harness.coordinator.project(harness.readCanonicalSnapshot())
+      .sessionMessagesById["session-1"]?.length,
+    0
+  );
+  harness.coordinator.dispose();
+  harness.engine.dispose();
+});
+
 test("preserves unrelated Session message projections during an optimistic delta", () => {
   const harness = createHarness();
   harness.engine.dispatch({
@@ -439,6 +476,46 @@ test("reconnect hydrates the workspace, priority session, and cached messages", 
   harness.engine.dispose();
 });
 
+test("settled turn updates request a combined reconcile even without inline messages", () => {
+  const harness = createHarness();
+
+  harness.coordinator.ingestEvent({
+    workspaceId: "workspace-1",
+    agentSessionId: "session-1",
+    eventType: "turn_update",
+    data: {
+      workspaceId: "workspace-1",
+      agentSessionId: "session-1",
+      eventType: "turn_update",
+      occurredAtUnixMs: 10,
+      activeTurnId: null,
+      turn: {
+        agentSessionId: "session-1",
+        completedCommand: null,
+        error: null,
+        fileChanges: null,
+        origin: "user_prompt",
+        outcome: "completed",
+        phase: "settled",
+        startedAtUnixMs: 1,
+        settledAtUnixMs: 10,
+        turnId: "turn-1",
+        updatedAtUnixMs: 10
+      }
+    }
+  });
+
+  assert.ok(
+    harness.commands.some(
+      (command) =>
+        command.type === "session/reconcile" &&
+        command.agentSessionId === "session-1" &&
+        command.scope === "state_and_messages"
+    )
+  );
+  harness.coordinator.dispose();
+  harness.engine.dispose();
+});
 function message(agentSessionId: string, messageId: string, text: string) {
   return {
     workspaceId: "workspace-1",

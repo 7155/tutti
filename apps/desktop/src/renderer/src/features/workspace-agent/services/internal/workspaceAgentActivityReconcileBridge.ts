@@ -9,7 +9,9 @@ import {
 import {
   createAgentActivitySnapshotProjector,
   createAgentActivitySessionReconcileExecutor,
-  createAgentActivityWorkspaceEventCoordinator
+  createAgentActivityWorkspaceEventCoordinator,
+  selectEngineSession,
+  selectLatestActivationForSession
 } from "@tutti-os/agent-activity-core";
 import type { WorkspaceAgentActivityEnsureSessionSynchronizedInput } from "../workspaceAgentActivityService.interface.ts";
 import type { WorkspaceAgentSessionEngineHost } from "./workspaceAgentSessionEngineHost.ts";
@@ -211,6 +213,7 @@ export abstract class WorkspaceAgentActivityReconcileBridge {
     workspaceId: string,
     agentSessionId: string,
     source: string,
+    projection: "full" | "messageHydration" = "full",
     signal?: AbortSignal
   ): Promise<AgentActivitySessionDetailSnapshot> {
     const normalizedWorkspaceId = normalizeWorkspaceId(workspaceId);
@@ -225,6 +228,7 @@ export abstract class WorkspaceAgentActivityReconcileBridge {
       await this.reconcileDependencies.tuttidClient.getWorkspaceAgentSession(
         normalizedWorkspaceId,
         agentSessionId,
+        projection,
         { signal }
       );
     const mapped = agentActivitySessionDetailFromTuttid(
@@ -467,7 +471,22 @@ export abstract class WorkspaceAgentActivityReconcileBridge {
         (event) => {
           const agentSessionId = event.payload.agentSessionId.trim();
           if (!agentSessionId) return;
-          this.entries.get(workspaceId)?.engine.dispatch({
+          const entry = this.entries.get(workspaceId);
+          if (!entry) return;
+          const snapshot = entry.engine.getSnapshot();
+          const pendingActivation = selectLatestActivationForSession(
+            snapshot,
+            agentSessionId
+          );
+          if (
+            !selectEngineSession(snapshot, agentSessionId) &&
+            pendingActivation?.mode === "new" &&
+            (pendingActivation.status === "requested" ||
+              pendingActivation.status === "uncertain")
+          ) {
+            return;
+          }
+          entry.engine.dispatch({
             agentSessionId,
             needsMessages: false,
             needsState: true,
@@ -692,11 +711,12 @@ export abstract class WorkspaceAgentActivityReconcileBridge {
         });
       },
       port: {
-        getSessionDetail: ({ agentSessionId, signal }) =>
+        getSessionDetail: ({ agentSessionId, projection, signal }) =>
           this.fetchActivitySessionDetail(
             normalizedWorkspaceId,
             agentSessionId,
             "",
+            projection === "message_hydration" ? "messageHydration" : "full",
             signal
           ),
         listSessionMessages: (query) => entry.adapter.listSessionMessages(query)

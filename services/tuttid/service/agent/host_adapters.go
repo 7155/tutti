@@ -37,10 +37,6 @@ func (p serviceHostSessionForkContextPolicy) PrepareSessionForkTargetContext(
 	if p.service == nil || p.service.RuntimePreparer == nil {
 		return agenthost.SessionForkTargetContext{}, agenthost.ErrSessionForkUnsupported
 	}
-	binder, ok := p.service.RuntimePreparer.(runtimeprep.SessionForkProviderStateBinder)
-	if !ok || !binder.SupportsSessionForkProviderStateBinding(source.Provider) {
-		return agenthost.SessionForkTargetContext{}, agenthost.ErrSessionForkUnsupported
-	}
 	return agenthost.SessionForkTargetContext{
 		Cwd:            strings.TrimSpace(prepared.Cwd),
 		RuntimeContext: clonePayload(prepared.RuntimeContext),
@@ -48,6 +44,16 @@ func (p serviceHostSessionForkContextPolicy) PrepareSessionForkTargetContext(
 }
 
 type serviceHostSessionForkProviderStateBinder struct{ service *Service }
+
+func (b serviceHostSessionForkProviderStateBinder) SupportsSessionForkProviderStateBinding(
+	provider string,
+) bool {
+	if b.service == nil || b.service.RuntimePreparer == nil {
+		return false
+	}
+	binder, ok := b.service.RuntimePreparer.(runtimeprep.SessionForkProviderStateBinder)
+	return ok && binder.SupportsSessionForkProviderStateBinding(provider)
+}
 
 func (b serviceHostSessionForkProviderStateBinder) BindSessionForkProviderState(
 	ctx context.Context,
@@ -362,11 +368,12 @@ func composeApplicationHost(
 		CanonicalStore: canonical, SessionManagement: sessionManagement,
 		SessionBatchManagement: sessionBatchManagement, SessionPurge: s.SessionPurgeStore,
 		SessionForks: sessionForks, SessionForkRecovery: sessionForkRecovery,
-		SessionForkRuntime: sessionForkRuntime,
-		SessionForkContext: serviceHostSessionForkContextPolicy{service: s},
-		SessionForkState:   serviceHostSessionForkProviderStateBinder{service: s},
-		Runtime:            runtime,
-		RuntimePreparation: serviceHostPreparation{service: s}, Attachments: s.PromptAttachmentStore,
+		SessionForkRuntime:   sessionForkRuntime,
+		SessionForkContext:   serviceHostSessionForkContextPolicy{service: s},
+		SessionForkState:     serviceHostSessionForkProviderStateBinder{service: s},
+		SessionDeletionGuard: s.SessionDeletionGuard,
+		Runtime:              runtime,
+		RuntimePreparation:   serviceHostPreparation{service: s}, Attachments: s.PromptAttachmentStore,
 		SettingsPolicy: serviceHostSettingsPolicy{service: s},
 		Clock:          serviceHostClock{service: s}, SessionLocker: serviceHostLocker{service: s},
 		RuntimeStartGate:  serviceHostStartupGate{service: s},

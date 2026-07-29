@@ -502,6 +502,66 @@ test("desktop agent activity adapter marks empty-cwd creates as no-project", asy
   assert.deepEqual((createBody as { noProject?: boolean }).noProject, true);
 });
 
+test("desktop agent activity adapter consumes the armed recording for one new session", async () => {
+  const createBodies: CreateWorkspaceAgentSessionRequest[] = [];
+  let takeCount = 0;
+  const adapter = createDesktopAgentActivityAdapter({
+    tuttidClient: createTuttidClient({
+      async createWorkspaceAgentSession(_workspaceId, body) {
+        createBodies.push(body);
+        return createSession({ id: body.agentSessionId });
+      }
+    }),
+    runtimeApi: createRuntimeApi(),
+    takePendingSessionRecording() {
+      takeCount += 1;
+      return takeCount === 1 ? "recording-1" : null;
+    }
+  });
+
+  await adapter.createSession({
+    clientSubmitId: "submit-recorded",
+    agentSessionId: "agent-session-recorded",
+    agentTargetId: "local:codex",
+    initialContent: [{ type: "text", text: "record me" }],
+    workspaceId
+  });
+
+  assert.equal(createBodies[0]?.recordingId, "recording-1");
+  assert.equal(takeCount, 1);
+});
+
+test("desktop agent activity adapter restores the armed recording when session creation fails", async () => {
+  const restored: Array<{ recordingId: string; workspaceId: string }> = [];
+  const adapter = createDesktopAgentActivityAdapter({
+    tuttidClient: createTuttidClient({
+      async createWorkspaceAgentSession() {
+        throw new Error("create failed");
+      }
+    }),
+    runtimeApi: createRuntimeApi(),
+    takePendingSessionRecording() {
+      return "recording-1";
+    },
+    restorePendingSessionRecording(restoredWorkspaceId, recordingId) {
+      restored.push({ recordingId, workspaceId: restoredWorkspaceId });
+    }
+  });
+
+  await assert.rejects(
+    adapter.createSession({
+      clientSubmitId: "submit-recorded",
+      agentSessionId: "agent-session-recorded",
+      agentTargetId: "local:codex",
+      initialContent: [{ type: "text", text: "record me" }],
+      workspaceId
+    }),
+    /create failed/
+  );
+
+  assert.deepEqual(restored, [{ recordingId: "recording-1", workspaceId }]);
+});
+
 test("desktop agent activity adapter creates, projects, and revision-updates the independent Tutti activation", async () => {
   const activeActivation = {
     agentSessionId: "agent-session-1",
@@ -510,7 +570,9 @@ test("desktop agent activity adapter creates, projects, and revision-updates the
       activationId: "activation-1",
       createdAtUnixMs: 10,
       id: "revision-1",
+      effect: 80,
       orchestrationIntensity: 80,
+      speed: 60,
       revision: 1,
       source: "slash_command" as const,
       status: "active" as const
@@ -526,7 +588,9 @@ test("desktop agent activity adapter creates, projects, and revision-updates the
       activationId: "activation-1",
       createdAtUnixMs: 20,
       id: "revision-2",
+      effect: 25,
       orchestrationIntensity: 25,
+      speed: 90,
       revision: 2,
       source: "badge_remove" as const,
       status: "inactive" as const
@@ -568,13 +632,17 @@ test("desktop agent activity adapter creates, projects, and revision-updates the
     agentTargetId: "local:codex",
     clientSubmitId: "submit-tutti",
     initialTuttiModeActivation: {
+      effect: 80,
       source: "slash_command",
+      speed: 60,
       status: "active"
     },
     workspaceId
   });
   assert.deepEqual(createBodies[0]?.initialTuttiModeActivation, {
+    effect: 80,
     source: "slash_command",
+    speed: 60,
     status: "active"
   });
   assert.deepEqual(created.tuttiModeActivation, activeActivation);
@@ -583,7 +651,8 @@ test("desktop agent activity adapter creates, projects, and revision-updates the
   const updated = await adapter.updateTuttiModeActivation({
     agentSessionId: "agent-session-1",
     expectedRevision: 1,
-    orchestrationIntensity: 25,
+    effect: 25,
+    speed: 90,
     signal: controller.signal,
     source: "badge_remove",
     status: "inactive",
@@ -593,7 +662,8 @@ test("desktop agent activity adapter creates, projects, and revision-updates the
     agentSessionId: "agent-session-1",
     request: {
       expectedRevision: 1,
-      orchestrationIntensity: 25,
+      effect: 25,
+      speed: 90,
       source: "badge_remove",
       status: "inactive"
     },

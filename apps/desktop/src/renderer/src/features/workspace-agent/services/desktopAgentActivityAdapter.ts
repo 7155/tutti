@@ -38,6 +38,11 @@ export interface CreateDesktopAgentActivityAdapterInput {
   composerOptionsRequestTimeoutMs?: number;
   tuttidClient: TuttidClient;
   runtimeApi: Pick<DesktopRuntimeApi, "logTerminalDiagnostic">;
+  takePendingSessionRecording?: (workspaceId: string) => string | null;
+  restorePendingSessionRecording?: (
+    workspaceId: string,
+    recordingId: string
+  ) => void;
 }
 
 const defaultComposerOptionsRequestTimeoutMs = 15_000;
@@ -70,7 +75,9 @@ export function agentActivitySessionDetailFromTuttid(
 export function createDesktopAgentActivityAdapter({
   composerOptionsRequestTimeoutMs = defaultComposerOptionsRequestTimeoutMs,
   tuttidClient,
-  runtimeApi
+  runtimeApi,
+  takePendingSessionRecording,
+  restorePendingSessionRecording
 }: CreateDesktopAgentActivityAdapterInput): AgentActivityAdapter {
   return {
     async listSessions(input) {
@@ -198,6 +205,7 @@ export function createDesktopAgentActivityAdapter({
         submitDiagnostics: input.submitDiagnostics,
         workspaceId: input.workspaceId
       });
+      let recordingId: string | null = null;
       try {
         const agentSessionId =
           input.agentSessionId?.trim() || createDesktopAgentActivitySessionId();
@@ -214,9 +222,11 @@ export function createDesktopAgentActivityAdapter({
           }
         });
         const agentTargetId = requiredAgentTargetId(input.agentTargetId);
+        recordingId = takePendingSessionRecording?.(input.workspaceId) ?? null;
         const request: CreateWorkspaceAgentSessionRequest = {
           agentSessionId,
           agentTargetId,
+          ...(recordingId ? { recordingId } : {}),
           ...(input.capabilityRefs?.length
             ? {
                 capabilityRefs: input.capabilityRefs.map(
@@ -233,7 +243,13 @@ export function createDesktopAgentActivityAdapter({
           ...(input.initialTuttiModeActivation
             ? {
                 initialTuttiModeActivation: {
-                  ...input.initialTuttiModeActivation
+                  effect:
+                    input.initialTuttiModeActivation.effect ??
+                    input.initialTuttiModeActivation.orchestrationIntensity ??
+                    null,
+                  source: input.initialTuttiModeActivation.source,
+                  speed: input.initialTuttiModeActivation.speed,
+                  status: input.initialTuttiModeActivation.status
                 }
               }
             : {}),
@@ -276,6 +292,9 @@ export function createDesktopAgentActivityAdapter({
           session
         );
       } catch (error) {
+        if (recordingId) {
+          restorePendingSessionRecording?.(input.workspaceId, recordingId);
+        }
         reportDesktopAgentSubmitTrace(runtimeApi, {
           agentSessionId: input.agentSessionId?.trim() ?? null,
           clientSubmitId: input.clientSubmitId,
@@ -392,9 +411,13 @@ export function createDesktopAgentActivityAdapter({
             ...(input.expectedRevision === undefined
               ? {}
               : { expectedRevision: input.expectedRevision }),
-            ...(input.orchestrationIntensity === undefined
+            ...(input.effect === undefined &&
+            input.orchestrationIntensity === undefined
               ? {}
-              : { orchestrationIntensity: input.orchestrationIntensity }),
+              : {
+                  effect: input.effect ?? input.orchestrationIntensity
+                }),
+            ...(input.speed === undefined ? {} : { speed: input.speed }),
             source: input.source,
             status: input.status
           },

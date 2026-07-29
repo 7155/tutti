@@ -190,7 +190,12 @@ describe("AgentTranscriptView virtual rendering", () => {
         ...baseConversation.sourceDetail,
         session: normalizeAgentActivitySession({
           ...baseConversation.sourceDetail.session,
-          lifecycleCapabilities: { fork: false, forkThroughTurn: true }
+          lifecycleCapabilities: {
+            fork: false,
+            forkThroughTurn: true,
+            forkThroughTurnIds: ["turn-10"],
+            forkThroughTurnIdsKnown: true
+          }
         })
       }
     };
@@ -251,7 +256,7 @@ describe("AgentTranscriptView virtual rendering", () => {
     ).toBeDisabled();
   });
 
-  it("disables virtualizer end anchoring while the user is detached", () => {
+  it("preserves mutation anchoring but disables append following while detached", () => {
     virtualizerMockState.virtualIndexes = [10];
 
     const rendered = render(
@@ -269,7 +274,7 @@ describe("AgentTranscriptView virtual rendering", () => {
 
     expect(useVirtualizer).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        anchorTo: "start",
+        anchorTo: "end",
         followOnAppend: false
       })
     );

@@ -109,19 +109,25 @@ type CloseInput struct {
 // SessionForkCapabilities reports provider-native fork boundaries supported by
 // the exact runtime currently attached to a session.
 type SessionForkCapabilities struct {
-	FullSession                 bool     `json:"fullSession"`
-	ThroughTurn                 bool     `json:"throughTurn"`
-	ThroughProviderTurnIDs      []string `json:"throughProviderTurnIds,omitempty"`
-	ThroughProviderTurnIDsKnown bool     `json:"throughProviderTurnIdsKnown,omitempty"`
+	DriverKind                   string   `json:"driverKind,omitempty"`
+	DriverVersion                string   `json:"driverVersion,omitempty"`
+	StateBindingMode             string   `json:"stateBindingMode,omitempty"`
+	DeterministicTargetSessionID bool     `json:"deterministicTargetSessionId,omitempty"`
+	FullSession                  bool     `json:"fullSession"`
+	ThroughTurn                  bool     `json:"throughTurn"`
+	ThroughProviderTurnIDs       []string `json:"throughProviderTurnIds,omitempty"`
+	ThroughProviderTurnIDsKnown  bool     `json:"throughProviderTurnIdsKnown,omitempty"`
 }
 
 // SessionForkInput identifies a provider source and optional inclusive
 // provider-turn boundary. ProviderTurnID is deliberately distinct from the
 // canonical WorkspaceAgentTurn id.
 type SessionForkInput struct {
-	Source          Session  `json:"-"`
-	ProviderTurnID  string   `json:"providerTurnId,omitempty"`
-	ProviderTurnIDs []string `json:"providerTurnIds,omitempty"`
+	Source                  Session  `json:"-"`
+	ProviderTurnID          string   `json:"providerTurnId,omitempty"`
+	ProviderTurnIDs         []string `json:"providerTurnIds,omitempty"`
+	TargetProviderSessionID string   `json:"targetProviderSessionId,omitempty"`
+	TargetTitle             string   `json:"targetTitle,omitempty"`
 }
 
 type SessionForkDeliveryDisposition string
@@ -139,6 +145,9 @@ type SessionForkResult struct {
 	ProviderSessionID           string                         `json:"providerSessionId"`
 	ForkedFromProviderSessionID string                         `json:"forkedFromProviderSessionId"`
 	ThroughProviderTurnID       string                         `json:"throughProviderTurnId,omitempty"`
+	TargetProviderTurnIDs       []string                       `json:"targetProviderTurnIds,omitempty"`
+	StateBindingMode            string                         `json:"stateBindingMode,omitempty"`
+	StateBindingReceipt         string                         `json:"stateBindingReceipt,omitempty"`
 	DeliveryDisposition         SessionForkDeliveryDisposition `json:"deliveryDisposition"`
 }
 
@@ -148,15 +157,16 @@ type ExecInput struct {
 	TurnID         string
 	// ClientSubmitID is a typed host identity. The controller may project it
 	// into adapter execution metadata, but callers must not encode it there.
-	ClientSubmitID    string
-	CapabilityRefs    []CapabilityReference
-	TuttiModeSnapshot *TuttiModeTurnSnapshot
-	Content           []PromptContentBlock
-	DisplayPrompt     string
-	InitialTitle      string
-	InitialTitleBase  string
-	Metadata          map[string]any
-	Guidance          bool
+	ClientSubmitID                  string
+	CanonicalSubmitOccurredAtUnixMS int64
+	CapabilityRefs                  []CapabilityReference
+	TuttiModeSnapshot               *TuttiModeTurnSnapshot
+	Content                         []PromptContentBlock
+	DisplayPrompt                   string
+	InitialTitle                    string
+	InitialTitleBase                string
+	Metadata                        map[string]any
+	Guidance                        bool
 }
 
 // SubmitProvenanceInput describes the canonical user submit that an adapter
@@ -164,13 +174,14 @@ type ExecInput struct {
 // durable provenance never happens while Exec holds the session lifecycle
 // lock.
 type SubmitProvenanceInput struct {
-	RoomID         string
-	AgentSessionID string
-	TurnID         string
-	ClientSubmitID string
-	Content        []PromptContentBlock
-	DisplayPrompt  string
-	Guidance       bool
+	RoomID                          string
+	AgentSessionID                  string
+	TurnID                          string
+	ClientSubmitID                  string
+	CanonicalSubmitOccurredAtUnixMS int64
+	Content                         []PromptContentBlock
+	DisplayPrompt                   string
+	Guidance                        bool
 }
 
 type CapabilityReference = activityshared.CapabilityReference
@@ -185,15 +196,24 @@ const (
 // facts only; provider-facing instruction text is rendered inside this
 // package so callers cannot smuggle arbitrary prompt content through it.
 type TuttiModeTurnSnapshot struct {
-	ActivationID string
-	RevisionID   string
-	Revision     int64
-	State        string
-	Source       string
-	// OrchestrationIntensity is the user-selected planning strength (0-100)
-	// captured by the exact activation revision this turn observed.
+	ActivationID      string
+	RevisionID        string
+	Revision          int64
+	State             string
+	Source            string
+	PreferenceVersion int
+	// Effect and Speed are the user-selected outcome-quality and
+	// completion-speed preferences captured by the exact activation revision.
+	Effect int
+	Speed  int
+	// OrchestrationIntensity is the legacy single-axis alias of Effect.
+	//
+	// Deprecated: use Effect and Speed with PreferenceVersion set to
+	// TuttiModePreferenceVersionEffectSpeed.
 	OrchestrationIntensity int
 }
+
+const TuttiModePreferenceVersionEffectSpeed = 1
 
 type CancelInput struct {
 	RoomID             string
@@ -295,6 +315,7 @@ type PromptContentBlock struct {
 type Session struct {
 	RoomID             string              `json:"roomId"`
 	AgentSessionID     string              `json:"agentSessionId"`
+	RootAgentSessionID string              `json:"rootAgentSessionId,omitempty"`
 	AgentTargetID      string              `json:"agentTargetId,omitempty"`
 	Provider           string              `json:"provider"`
 	ProviderSessionID  string              `json:"providerSessionId"`
@@ -468,6 +489,15 @@ func nextEventUnixMS() int64 {
 		}
 		if lastEventUnixMS.CompareAndSwap(last, current) {
 			return current
+		}
+	}
+}
+
+func observeEventUnixMS(value int64) {
+	for value > 0 {
+		last := lastEventUnixMS.Load()
+		if value <= last || lastEventUnixMS.CompareAndSwap(last, value) {
+			return
 		}
 	}
 }

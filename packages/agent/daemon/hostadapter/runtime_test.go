@@ -209,7 +209,8 @@ func TestRuntimeControllerDelegatesDurableSubmitProvenance(t *testing.T) {
 	input := host.RuntimeSubmitProvenanceInput{
 		WorkspaceID: " workspace-1 ", AgentSessionID: "session-1", TurnID: "turn-1",
 		ClientSubmitID: "submit-1", DisplayPrompt: "display", Guidance: true,
-		Content: []host.PromptContentBlock{{Type: "text", Text: "hello"}},
+		CanonicalSubmitOccurredAtUnixMS: 1_234,
+		Content:                         []host.PromptContentBlock{{Type: "text", Text: "hello"}},
 	}
 
 	if err := controller.DurablyReportSubmitProvenance(t.Context(), input); err != nil {
@@ -217,6 +218,7 @@ func TestRuntimeControllerDelegatesDurableSubmitProvenance(t *testing.T) {
 	}
 	if backend.input.RoomID != input.WorkspaceID || backend.input.AgentSessionID != input.AgentSessionID ||
 		backend.input.TurnID != input.TurnID || backend.input.ClientSubmitID != input.ClientSubmitID ||
+		backend.input.CanonicalSubmitOccurredAtUnixMS != input.CanonicalSubmitOccurredAtUnixMS ||
 		backend.input.DisplayPrompt != input.DisplayPrompt || !backend.input.Guidance {
 		t.Fatalf("delegated provenance = %#v", backend.input)
 	}
@@ -228,24 +230,34 @@ func TestRuntimeControllerDelegatesDurableSubmitProvenance(t *testing.T) {
 func TestRuntimeControllerPreservesTypedExecIdentity(t *testing.T) {
 	input := host.RuntimeExecInput{
 		WorkspaceID: "workspace-1", AgentSessionID: "session-1", TurnID: "turn-1", ClientSubmitID: "submit-1",
-		CapabilityRefs: []host.CapabilityReference{{Capability: "browser-use", Source: "composer"}},
+		CanonicalSubmitOccurredAtUnixMS: 1_234,
+		CapabilityRefs:                  []host.CapabilityReference{{Capability: "browser-use", Source: "composer"}},
 		TuttiModeSnapshot: &host.TuttiModeTurnSnapshot{
 			ActivationID: "activation-1", RevisionID: "revision-1", Revision: 2,
-			State: "active", Source: "workspace", OrchestrationIntensity: 75,
+			State: "active", Source: "workspace",
+			PreferenceVersion: host.TuttiModePreferenceVersionEffectSpeed,
+			Effect:            75, Speed: 60, OrchestrationIntensity: 75,
 		},
 	}
 
 	projected := runtimeExecInput(input)
-	if projected.TurnID != input.TurnID || projected.ClientSubmitID != input.ClientSubmitID {
+	if projected.TurnID != input.TurnID || projected.ClientSubmitID != input.ClientSubmitID ||
+		projected.CanonicalSubmitOccurredAtUnixMS != input.CanonicalSubmitOccurredAtUnixMS {
 		t.Fatalf("projected exec identity = %#v", projected)
 	}
 	if len(projected.CapabilityRefs) != 1 || projected.CapabilityRefs[0].Capability != "browser-use" || projected.CapabilityRefs[0].Source != "composer" {
 		t.Fatalf("projected capability refs = %#v", projected.CapabilityRefs)
 	}
-	if projected.TuttiModeSnapshot == nil || projected.TuttiModeSnapshot.ActivationID != "activation-1" ||
+	if projected.TuttiModeSnapshot == nil {
+		t.Fatal("projected Tutti Mode snapshot is nil")
+	}
+	legacyOrchestrationIntensity := projected.TuttiModeSnapshot.OrchestrationIntensity //nolint:staticcheck // Compatibility assertion covers the deprecated alias.
+	if projected.TuttiModeSnapshot.ActivationID != "activation-1" ||
 		projected.TuttiModeSnapshot.RevisionID != "revision-1" || projected.TuttiModeSnapshot.Revision != 2 ||
 		projected.TuttiModeSnapshot.State != "active" || projected.TuttiModeSnapshot.Source != "workspace" ||
-		projected.TuttiModeSnapshot.OrchestrationIntensity != 75 {
+		projected.TuttiModeSnapshot.PreferenceVersion != agentruntime.TuttiModePreferenceVersionEffectSpeed ||
+		projected.TuttiModeSnapshot.Effect != 75 || projected.TuttiModeSnapshot.Speed != 60 ||
+		legacyOrchestrationIntensity != 75 {
 		t.Fatalf("projected Tutti Mode snapshot = %#v", projected.TuttiModeSnapshot)
 	}
 }

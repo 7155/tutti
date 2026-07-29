@@ -270,12 +270,14 @@ func (a *RuntimeController) ResolveSessionFork(
 		return host.SessionForkDriverDescriptor{}, nil
 	}
 	return host.SessionForkDriverDescriptor{
-		Kind:                        "daemon-runtime-native",
-		Version:                     "v1",
-		FullSession:                 capabilities.FullSession,
-		ThroughTurn:                 capabilities.ThroughTurn,
-		ThroughProviderTurnIDs:      append([]string(nil), capabilities.ThroughProviderTurnIDs...),
-		ThroughProviderTurnIDsKnown: capabilities.ThroughProviderTurnIDsKnown,
+		Kind:                         firstNonEmptyString(capabilities.DriverKind, "daemon-runtime-native"),
+		Version:                      firstNonEmptyString(capabilities.DriverVersion, "v1"),
+		StateBindingMode:             host.SessionForkStateBindingMode(firstNonEmptyString(capabilities.StateBindingMode, string(host.SessionForkStateBindingHostCopy))),
+		DeterministicTargetSessionID: capabilities.DeterministicTargetSessionID,
+		FullSession:                  capabilities.FullSession,
+		ThroughTurn:                  capabilities.ThroughTurn,
+		ThroughProviderTurnIDs:       append([]string(nil), capabilities.ThroughProviderTurnIDs...),
+		ThroughProviderTurnIDsKnown:  capabilities.ThroughProviderTurnIDsKnown,
 	}, nil
 }
 
@@ -294,19 +296,24 @@ func (a *RuntimeController) ForkSession(
 			DeliveryDisposition: host.SessionForkDeliveryNotStarted,
 		}, host.ErrSessionForkUnsupported
 	}
-	// RequestID remains the Host's durable replay key. The daemon/provider fork
-	// transport has no provider-side idempotency key and intentionally does not
-	// receive it.
 	result, err := backend.Fork(ctx, agentruntime.SessionForkInput{
-		Source:          runtimeSession(input.Source),
-		ProviderTurnID:  input.SourceProviderTurnID,
-		ProviderTurnIDs: append([]string(nil), input.SourceProviderTurnIDs...),
+		Source:                  runtimeSession(input.Source),
+		ProviderTurnID:          input.SourceProviderTurnID,
+		ProviderTurnIDs:         append([]string(nil), input.SourceProviderTurnIDs...),
+		TargetProviderSessionID: strings.TrimSpace(input.TargetProviderSessionID),
+		TargetTitle:             input.TargetTitle,
 	})
 	mapped := host.RuntimeSessionForkResult{
-		ProviderSessionID: strings.TrimSpace(result.ProviderSessionID),
+		ProviderSessionID:     strings.TrimSpace(result.ProviderSessionID),
+		TargetProviderTurnIDs: append([]string(nil), result.TargetProviderTurnIDs...),
+		StateBindingMode:      host.SessionForkStateBindingMode(strings.TrimSpace(result.StateBindingMode)),
+		StateBindingReceipt:   strings.TrimSpace(result.StateBindingReceipt),
 		DeliveryDisposition: host.SessionForkDeliveryDisposition(
 			result.DeliveryDisposition,
 		),
+	}
+	if mapped.StateBindingMode == "" {
+		mapped.StateBindingMode = host.SessionForkStateBindingHostCopy
 	}
 	if err != nil {
 		if errors.Is(err, agentruntime.ErrSessionForkUnsupported) {
@@ -315,6 +322,15 @@ func (a *RuntimeController) ForkSession(
 		return mapped, mapRuntimeError(err)
 	}
 	return mapped, nil
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (a *RuntimeController) GoalControl(ctx context.Context, input host.RuntimeGoalControlInput) (host.RuntimeGoalControlResult, error) {
@@ -496,10 +512,11 @@ func runtimeExecInput(input host.RuntimeExecInput) agentruntime.ExecInput {
 	return agentruntime.ExecInput{
 		RoomID: input.WorkspaceID, AgentSessionID: input.AgentSessionID,
 		TurnID: input.TurnID, ClientSubmitID: input.ClientSubmitID,
-		CapabilityRefs:    runtimeCapabilityReferences(input.CapabilityRefs),
-		TuttiModeSnapshot: runtimeTuttiModeSnapshot(input.TuttiModeSnapshot),
-		Content:           runtimePromptContent(input.Content),
-		DisplayPrompt:     input.DisplayPrompt, InitialTitle: input.InitialTitle, InitialTitleBase: input.InitialTitleBase,
+		CanonicalSubmitOccurredAtUnixMS: input.CanonicalSubmitOccurredAtUnixMS,
+		CapabilityRefs:                  runtimeCapabilityReferences(input.CapabilityRefs),
+		TuttiModeSnapshot:               runtimeTuttiModeSnapshot(input.TuttiModeSnapshot),
+		Content:                         runtimePromptContent(input.Content),
+		DisplayPrompt:                   input.DisplayPrompt, InitialTitle: input.InitialTitle, InitialTitleBase: input.InitialTitleBase,
 		Metadata: cloneMap(input.Metadata), Guidance: input.Guidance,
 	}
 }
@@ -508,7 +525,8 @@ func runtimeSubmitProvenanceInput(input host.RuntimeSubmitProvenanceInput) agent
 	return agentruntime.SubmitProvenanceInput{
 		RoomID: input.WorkspaceID, AgentSessionID: input.AgentSessionID,
 		TurnID: input.TurnID, ClientSubmitID: input.ClientSubmitID,
-		Content: runtimePromptContent(input.Content), DisplayPrompt: input.DisplayPrompt,
+		CanonicalSubmitOccurredAtUnixMS: input.CanonicalSubmitOccurredAtUnixMS,
+		Content:                         runtimePromptContent(input.Content), DisplayPrompt: input.DisplayPrompt,
 		Guidance: input.Guidance,
 	}
 }
@@ -539,9 +557,14 @@ func runtimeTuttiModeSnapshot(input *host.TuttiModeTurnSnapshot) *agentruntime.T
 	if input == nil {
 		return nil
 	}
+	legacyOrchestrationIntensity := input.OrchestrationIntensity //nolint:staticcheck // Compatibility bridge preserves version-zero snapshots.
 	return &agentruntime.TuttiModeTurnSnapshot{
 		ActivationID: input.ActivationID, RevisionID: input.RevisionID, Revision: input.Revision,
-		State: input.State, Source: input.Source, OrchestrationIntensity: input.OrchestrationIntensity,
+		State: input.State, Source: input.Source,
+		PreferenceVersion:      input.PreferenceVersion,
+		Effect:                 input.Effect,
+		Speed:                  input.Speed,
+		OrchestrationIntensity: legacyOrchestrationIntensity,
 	}
 }
 

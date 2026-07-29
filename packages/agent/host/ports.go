@@ -52,6 +52,7 @@ type SessionForkStore interface {
 	GetUnknownSessionForkOperation(context.Context, string, string, string, string) (storesqlite.SessionForkOperation, bool, error)
 	GetBlockingSessionForkOperation(context.Context, string, string, string, string) (storesqlite.SessionForkOperation, bool, error)
 	MarkSessionForkDispatching(context.Context, string, string, int64) (storesqlite.SessionForkOperation, bool, error)
+	RetryUnknownSessionFork(context.Context, string, string, int64) (storesqlite.SessionForkOperation, bool, error)
 	FailPreparedSessionFork(context.Context, string, string, string, int64) (storesqlite.SessionForkOperation, bool, error)
 	RecordSessionForkProviderResult(context.Context, storesqlite.SessionForkProviderResult) (storesqlite.SessionForkOperation, bool, error)
 	CommitSessionFork(context.Context, string, string, int64) (storesqlite.SessionForkCommitResult, error)
@@ -99,8 +100,10 @@ type SessionForkContextPolicy interface {
 
 // SessionForkProviderStateBinder transfers only the accepted provider child
 // state needed by the target runtime namespace. A failure is delivery-unknown:
-// the provider mutation may already exist and must never be dispatched again.
+// the provider mutation may already exist. Only a driver with an attested
+// deterministic target identity may reconcile it by replaying the same UUID.
 type SessionForkProviderStateBinder interface {
+	SupportsSessionForkProviderStateBinding(provider string) bool
 	BindSessionForkProviderState(context.Context, SessionForkProviderStateBinding) error
 }
 
@@ -130,6 +133,15 @@ type SessionBatchManagementStore interface {
 	PlanClearSessions(context.Context, string) (storesqlite.DeleteSessionsPlan, error)
 	PlanDeleteSessions(context.Context, storesqlite.DeleteSessionsBatchInput) (storesqlite.DeleteSessionsPlan, error)
 	DeleteSessionsBatch(context.Context, storesqlite.DeleteSessionsBatchInput) (storesqlite.DeleteSessionsBatchResult, error)
+}
+
+// SessionDeletionGuard lets a host adapter enforce product policy around the
+// provider-neutral canonical closure. Admission is authoritative and occurs
+// before runtime or canonical side effects. Reporting is observational and
+// cannot change the Host command result.
+type SessionDeletionGuard interface {
+	AdmitDeleteSessions(context.Context, DeleteSessionsPlan) error
+	ReportDeleteSessions(context.Context, DeleteSessionsReport)
 }
 
 // SessionPurgeStore is the narrow permanent-removal boundary. Retention and

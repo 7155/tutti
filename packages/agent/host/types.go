@@ -160,20 +160,27 @@ type SessionForkTargetContext struct {
 }
 
 type SessionForkDriverDescriptor struct {
-	Kind                        string
-	Version                     string
-	FullSession                 bool
-	ThroughTurn                 bool
-	ThroughProviderTurnIDs      []string
-	ThroughProviderTurnIDsKnown bool
+	Kind             string
+	Version          string
+	StateBindingMode SessionForkStateBindingMode
+	// DeterministicTargetSessionID guarantees that ForkSession honors
+	// TargetProviderSessionID and that repeating the same input reconciles or
+	// creates that one provider child instead of allocating another identity.
+	DeterministicTargetSessionID bool
+	FullSession                  bool
+	ThroughTurn                  bool
+	ThroughProviderTurnIDs       []string
+	ThroughProviderTurnIDsKnown  bool
 }
 
 type RuntimeSessionForkInput struct {
-	Source                ProviderRuntimeSession
-	SourceProviderTurnID  string
-	SourceProviderTurnIDs []string
-	RequestID             string
-	Driver                SessionForkDriverDescriptor
+	Source                  ProviderRuntimeSession
+	SourceProviderTurnID    string
+	SourceProviderTurnIDs   []string
+	TargetProviderSessionID string
+	TargetTitle             string
+	RequestID               string
+	Driver                  SessionForkDriverDescriptor
 }
 
 type SessionForkDeliveryDisposition string
@@ -186,9 +193,19 @@ const (
 )
 
 type RuntimeSessionForkResult struct {
-	ProviderSessionID   string
-	DeliveryDisposition SessionForkDeliveryDisposition
+	ProviderSessionID     string
+	TargetProviderTurnIDs []string
+	StateBindingMode      SessionForkStateBindingMode
+	StateBindingReceipt   string
+	DeliveryDisposition   SessionForkDeliveryDisposition
 }
+
+type SessionForkStateBindingMode string
+
+const (
+	SessionForkStateBindingHostCopy      SessionForkStateBindingMode = "host_copy"
+	SessionForkStateBindingProviderOwned SessionForkStateBindingMode = "provider_owned"
+)
 
 // SessionForkProviderStateBinding describes the provider-local durable state
 // that must become independently discoverable from the target Tutti session's
@@ -251,18 +268,19 @@ type RuntimeResumeInput struct {
 }
 
 type RuntimeExecInput struct {
-	WorkspaceID       string
-	AgentSessionID    string
-	TurnID            string
-	ClientSubmitID    string
-	CapabilityRefs    []CapabilityReference
-	Content           []PromptContentBlock
-	DisplayPrompt     string
-	InitialTitle      string
-	InitialTitleBase  string
-	Metadata          map[string]any
-	Guidance          bool
-	TuttiModeSnapshot *TuttiModeTurnSnapshot
+	WorkspaceID                     string
+	AgentSessionID                  string
+	TurnID                          string
+	ClientSubmitID                  string
+	CanonicalSubmitOccurredAtUnixMS int64
+	CapabilityRefs                  []CapabilityReference
+	Content                         []PromptContentBlock
+	DisplayPrompt                   string
+	InitialTitle                    string
+	InitialTitleBase                string
+	Metadata                        map[string]any
+	Guidance                        bool
+	TuttiModeSnapshot               *TuttiModeTurnSnapshot
 }
 
 type CapabilityReference struct {
@@ -272,12 +290,21 @@ type CapabilityReference struct {
 
 // TuttiModeTurnSnapshot is the immutable activation revision observed by one
 // turn. It is an execution input, not a reconstruction from capability refs.
+const TuttiModePreferenceVersionEffectSpeed = 1
+
 type TuttiModeTurnSnapshot struct {
-	ActivationID           string
-	RevisionID             string
-	Revision               int64
-	State                  string
-	Source                 string
+	ActivationID      string
+	RevisionID        string
+	Revision          int64
+	State             string
+	Source            string
+	PreferenceVersion int
+	Effect            int
+	Speed             int
+	// OrchestrationIntensity is the legacy single-axis alias of Effect.
+	//
+	// Deprecated: use Effect and Speed with PreferenceVersion set to
+	// TuttiModePreferenceVersionEffectSpeed.
 	OrchestrationIntensity int
 }
 
@@ -292,13 +319,14 @@ type RuntimeExecResult struct {
 }
 
 type RuntimeSubmitProvenanceInput struct {
-	WorkspaceID    string
-	AgentSessionID string
-	TurnID         string
-	ClientSubmitID string
-	Content        []PromptContentBlock
-	DisplayPrompt  string
-	Guidance       bool
+	WorkspaceID                     string
+	AgentSessionID                  string
+	TurnID                          string
+	ClientSubmitID                  string
+	CanonicalSubmitOccurredAtUnixMS int64
+	Content                         []PromptContentBlock
+	DisplayPrompt                   string
+	Guidance                        bool
 }
 
 type CompletedCommand struct {
@@ -594,12 +622,29 @@ type DeleteSessionsInput struct {
 	SessionIDs  []string
 }
 
+// DeleteSessionsPlan is the exact canonical deletion closure resolved by Host.
+// Adapters may inspect it through SessionDeletionGuard but must not expand or
+// replace it with product-specific ownership semantics.
+type DeleteSessionsPlan struct {
+	WorkspaceID string
+	SessionIDs  []string
+}
+
 type DeleteSessionsResult struct {
 	RemovedSessionIDs []string
 	RemovedSessions   int
 	RemovedMessages   int
 	RuntimeClosedIDs  []string
 	CleanupFailedIDs  []string
+}
+
+// DeleteSessionsReport describes the terminal outcome of one admitted plan.
+// Err is non-nil when that attempt failed, including when the canonical closure
+// changed and Host must replan before admitting another attempt.
+type DeleteSessionsReport struct {
+	Plan   DeleteSessionsPlan
+	Result DeleteSessionsResult
+	Err    error
 }
 
 type ClearSessionsResult = DeleteSessionsResult

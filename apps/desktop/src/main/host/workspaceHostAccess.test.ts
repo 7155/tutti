@@ -25,6 +25,42 @@ function createTransportClient(
   overrides: Partial<TuttidClient> = {}
 ): TuttidClient {
   const client: TuttidClient = {
+    async appendAgentSessionRecordingActivityEvents() {
+      throw new Error("not used");
+    },
+    async listAgentSessionRecordings() {
+      return [];
+    },
+    async startAgentSessionRecording() {
+      throw new Error("not used");
+    },
+    async getAgentSessionRecording() {
+      throw new Error("not used");
+    },
+    async renameAgentSessionRecording() {
+      throw new Error("not used");
+    },
+    async completeAgentSessionRecording() {
+      throw new Error("not used");
+    },
+    async cancelAgentSessionRecording() {
+      throw new Error("not used");
+    },
+    async prepareAgentSessionReplayRun() {
+      throw new Error("not used");
+    },
+    async listAgentSessionReplayRuns() {
+      return [];
+    },
+    async markAgentSessionReplayRunRunning() {
+      throw new Error("not used");
+    },
+    async completeAgentSessionReplayRun() {
+      throw new Error("not used");
+    },
+    async failAgentSessionReplayRun() {
+      throw new Error("not used");
+    },
     async createAgentQuickPrompt() {
       throw new Error("not used");
     },
@@ -534,6 +570,9 @@ function createTransportClient(
       throw new Error("not used");
     },
     async cancelWorkspaceIssueExecution() {
+      throw new Error("not used");
+    },
+    async cancelTuttiModeExecution() {
       throw new Error("not used");
     }
   };

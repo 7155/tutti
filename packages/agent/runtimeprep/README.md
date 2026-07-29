@@ -101,9 +101,14 @@ provider runtime policy and dynamic skill bundles by default; set
 `PolicySection.Delivery` when a section is valid for only one delivery path.
 
 `StandardProfile` includes `CoreSkillsPack`, `TuttiDesktopHostPack`, browser
-use, and computer use. A non-desktop deployment should compose its own profile
-from `CoreSkillsPack` and deployment-owned packs instead of copying the
-desktop-host policy:
+use, and computer use. `CoreSkillsPack` includes the provider-neutral Tutti
+workflow skills plus `tutti-model-allocation`, whose C0-C3 policy combines the
+current Tutti Mode effect/speed preferences with live composer model catalogs
+and derives speed's bounded 1-4 parallel planning target. Allocation compares
+joint Agent/model candidates across every plausible target without favoring the
+planning Agent, its current model, or provider defaults.
+A non-desktop deployment should compose its own profile from `CoreSkillsPack`
+and deployment-owned packs instead of copying the desktop-host policy:
 
 ```go
 profile := runtimeprep.DeploymentProfile{
@@ -172,6 +177,14 @@ an isolated extra skill.
 
 `Prepare` and `RenderSkillBundle` use the same resolver, so provider files and
 the skill-bundle API cannot drift.
+
+The canonical Tutti CLI skill treats the daemon and CLI as the only supported
+execution control plane. Provider Agents must not inspect or modify Tutti's
+backing SQLite databases to infer runtime state or bypass a rejected command.
+When the source Agent has the Tutti execution snapshot capability, the skill
+also renders the checkpoint/action matrix and a bounded recovery protocol:
+refresh an outdated fence once, correct a documented mutation schema once, and
+report a repeated rejection with its stable reason and hint.
 
 ## Product Boundaries
 

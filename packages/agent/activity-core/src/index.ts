@@ -131,7 +131,9 @@ export {
   selectTuttiModeActivationPresentation,
   selectTuttiModeDraftIsActive,
   selectTuttiModeDraftOrchestrationIntensity,
+  selectTuttiModeDraftPreferences,
   tuttiModeActivationPresentationsEqual,
+  type ResolvedTuttiModeActivationPresentation,
   type TuttiModeActivationPresentation
 } from "./engine/tuttiModeActivation.selectors.ts";
 export type {
@@ -145,9 +147,14 @@ export {
   selectSessionAttention
 } from "./engine/attentionReadState.selectors.ts";
 export {
+  selectSessionMessageWindow,
   selectSessionMessages,
   selectSessionMessagesById
 } from "./engine/sessionMessages.selectors.ts";
+export {
+  createAgentSessionFamilySnapshotSelector,
+  type AgentSessionFamilySnapshot
+} from "./engine/sessionFamily.selectors.ts";
 export type { SessionMessagesState } from "./engine/sessionMessages.types.ts";
 export {
   selectComposerOptions,

@@ -1,7 +1,6 @@
 import { renderHook } from "@testing-library/react";
 import {
   AGENT_CAPABILITY_KEYS,
-  createEmptyAgentActivitySnapshot,
   normalizeAgentActivitySession,
   type AgentActivityComposerOptions,
   type AgentActivitySessionCapabilities,
@@ -9,6 +8,7 @@ import {
 } from "@tutti-os/agent-activity-core";
 import { describe, expect, it } from "vitest";
 import { useAgentGUIComposerCapabilities } from "./useAgentGUIComposerCapabilities";
+import { createTestAgentSessionEngine } from "../../../shared/testing/createTestAgentSessionEngine";
 
 describe("useAgentGUIComposerCapabilities", () => {
   function engineSession(input: {
@@ -97,7 +97,6 @@ describe("useAgentGUIComposerCapabilities", () => {
         activeConversationId: "session-1",
         activeEngineSession,
         activeSessionState: null,
-        agentActivitySnapshot: createEmptyAgentActivitySnapshot("workspace-1"),
         data,
         draftSettingsBySessionId: {},
         selectedComposerTargetData: {
@@ -105,7 +104,8 @@ describe("useAgentGUIComposerCapabilities", () => {
           data,
           provider: "opencode",
           targetId: "local:opencode"
-        }
+        },
+        sessionEngine: createTestAgentSessionEngine("workspace-1")
       })
     );
 
@@ -139,7 +139,6 @@ describe("useAgentGUIComposerCapabilities", () => {
         activeConversationId: activeEngineSession.agentSessionId,
         activeEngineSession,
         activeSessionState: null,
-        agentActivitySnapshot: createEmptyAgentActivitySnapshot("workspace-1"),
         data,
         draftSettingsBySessionId: {},
         selectedComposerTargetData: {
@@ -147,7 +146,8 @@ describe("useAgentGUIComposerCapabilities", () => {
           data,
           provider: "opencode",
           targetId: "local:opencode"
-        }
+        },
+        sessionEngine: createTestAgentSessionEngine("workspace-1")
       })
     );
 
@@ -190,7 +190,6 @@ describe("useAgentGUIComposerCapabilities", () => {
         activeConversationId: activeEngineSession.agentSessionId,
         activeEngineSession,
         activeSessionState: null,
-        agentActivitySnapshot: createEmptyAgentActivitySnapshot("workspace-1"),
         data,
         draftSettingsBySessionId: {},
         selectedComposerTargetData: {
@@ -198,7 +197,8 @@ describe("useAgentGUIComposerCapabilities", () => {
           data,
           provider: "opencode",
           targetId: "local:opencode"
-        }
+        },
+        sessionEngine: createTestAgentSessionEngine("workspace-1")
       })
     );
 
@@ -223,20 +223,31 @@ describe("useAgentGUIComposerCapabilities", () => {
       agentTargetId: "extension:hermes",
       lastActiveAgentSessionId: "session-1"
     };
-    const snapshot = createEmptyAgentActivitySnapshot("workspace-1");
-    snapshot.composerOptionsByTargetKey = {
-      "extension:hermes": composerOptions({
+    const sessionEngine = createTestAgentSessionEngine("workspace-1");
+    sessionEngine.dispatch({
+      type: "composerOptions/loadRequested",
+      commandId: "composer-options-1",
+      targetKey: "extension:hermes",
+      provider: "acp:hermes",
+      workspaceId: "workspace-1"
+    });
+    sessionEngine.dispatch({
+      type: "engine/commandResult",
+      commandId: "composer-options-1",
+      commandType: "composerOptions/load",
+      correlationId: "extension:hermes",
+      outcome: "succeeded",
+      value: composerOptions({
         provider: "acp:hermes",
         capabilities: ["interrupt", "browserUse", "skills"]
       })
-    };
+    });
 
     const { result } = renderHook(() =>
       useAgentGUIComposerCapabilities({
         activeConversationId: "session-1",
         activeEngineSession,
         activeSessionState: null,
-        agentActivitySnapshot: snapshot,
         data,
         draftSettingsBySessionId: {},
         selectedComposerTargetData: {
@@ -244,7 +255,8 @@ describe("useAgentGUIComposerCapabilities", () => {
           data,
           provider: "acp:hermes",
           targetId: "extension:hermes"
-        }
+        },
+        sessionEngine
       })
     );
 

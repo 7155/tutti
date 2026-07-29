@@ -159,7 +159,7 @@ func agentModelCatalogSpecFromDescriptor(descriptor providerregistry.ProviderDes
 				if c.TuttiAgent != nil {
 					return c.TuttiAgent
 				}
-				return defaultTuttiAgentModelLister()
+				return defaultTuttiAgentModelLister(descriptor.Identity.ID, c.ProviderCommands)
 			},
 			configuredDefaultModel: func() string { return "" },
 		}, true, nil
@@ -188,6 +188,7 @@ type CachedAgentModelCatalog struct {
 	TuttiAgent        AgentModelLister
 	OpenCode          AgentModelLister
 	ModelCapabilities ModelCapabilitiesResolver
+	ProviderCommands  ProviderCommandResolver
 	Now               func() time.Time
 
 	mu    sync.Mutex
@@ -262,11 +263,13 @@ func codexCustomProviderRequiresConfiguredModelOnly(models []AgentModelOption, c
 	return true
 }
 
-func defaultTuttiAgentModelLister() CodexCLIModelLister {
+func defaultTuttiAgentModelLister(provider string, providerCommands ProviderCommandResolver) CodexCLIModelLister {
 	return CodexCLIModelLister{
-		Command:    "tutti-agent",
-		ClientName: "tutti_agent",
-		PrepareEnv: prepareTuttiAgentModelListEnv,
+		Command:          "tutti-agent",
+		ClientName:       "tutti_agent",
+		Provider:         provider,
+		ProviderCommands: providerCommands,
+		PrepareEnv:       prepareTuttiAgentModelListEnv,
 	}
 }
 

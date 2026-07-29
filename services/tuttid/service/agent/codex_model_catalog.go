@@ -15,6 +15,7 @@ import (
 
 	"github.com/tutti-os/tutti/packages/agent/daemon/modelcatalog"
 	"github.com/tutti-os/tutti/packages/agent/daemon/runtimecmd"
+	agentstatusservice "github.com/tutti-os/tutti/services/tuttid/service/agentstatus"
 )
 
 const (
@@ -28,12 +29,18 @@ type CodexCLIModelLister struct {
 	Command          string
 	Args             []string
 	ClientName       string
+	Provider         string
+	ProviderCommands ProviderCommandResolver
 	Timeout          time.Duration
 	Environ          func() []string
 	PrepareEnv       func([]string) ([]string, error)
 	HomeDir          func() (string, error)
 	IsExecutableFile func(string) bool
 	LookPath         func(string) (string, error)
+}
+
+type ProviderCommandResolver interface {
+	ResolveProviderCommand(context.Context, string) (agentstatusservice.ProviderCommandResolution, error)
 }
 
 type truncatingBuffer struct {
@@ -70,13 +77,27 @@ func (l CodexCLIModelLister) ListModels(ctx context.Context) (AgentModelListResu
 	if command == "" {
 		command = "codex"
 	}
+	args := append([]string{}, l.Args...)
 	resolver := runtimecmd.Resolver{
 		Environ:          l.Environ,
 		HomeDir:          l.HomeDir,
 		IsExecutableFile: l.IsExecutableFile,
 		LookPath:         l.LookPath,
 	}
-	env := resolver.Env(nil)
+	var envOverrides []string
+	if l.ProviderCommands != nil && strings.TrimSpace(l.Provider) != "" {
+		resolution, err := l.ProviderCommands.ResolveProviderCommand(processCtx, l.Provider)
+		if err != nil {
+			return AgentModelListResult{}, fmt.Errorf("resolve %s model-list command: %w", l.Provider, err)
+		}
+		if len(resolution.Command) == 0 || strings.TrimSpace(resolution.Command[0]) == "" {
+			return AgentModelListResult{}, fmt.Errorf("resolve %s model-list command: command is empty", l.Provider)
+		}
+		command = resolution.Command[0]
+		args = append([]string{}, resolution.Command[1:]...)
+		envOverrides = resolution.Env
+	}
+	env := resolver.Env(envOverrides)
 	if l.PrepareEnv != nil {
 		var err error
 		env, err = l.PrepareEnv(env)
@@ -85,7 +106,6 @@ func (l CodexCLIModelLister) ListModels(ctx context.Context) (AgentModelListResu
 		}
 	}
 	command = resolver.Resolve(command, env)
-	args := append([]string{}, l.Args...)
 	if len(args) == 0 {
 		args = []string{"app-server"}
 	}

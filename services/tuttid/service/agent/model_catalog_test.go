@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	agentstatusservice "github.com/tutti-os/tutti/services/tuttid/service/agentstatus"
 )
 
 func writeCodexModelCatalogConfig(t *testing.T, contents string) {
@@ -388,7 +390,7 @@ func TestDefaultTuttiAgentModelListerUsesTuttiHomeAndClearsCodexHome(t *testing.
 		t.Fatal(err)
 	}
 
-	lister := defaultTuttiAgentModelLister()
+	lister := defaultTuttiAgentModelLister("tutti-agent", nil)
 	env, err := lister.PrepareEnv([]string{
 		"TUTTI_AGENT_HOME=" + filepath.Join(home, "ignored-agent-home"),
 		"CODEX_HOME=" + filepath.Join(home, "codex-home"),
@@ -492,7 +494,7 @@ func TestDefaultTuttiAgentModelListerBootstrapsExpiredTuttiAgentAuth(t *testing.
 	t.Setenv("TUTTI_AGENT_LOGIN_CAPTURE", capturePath)
 	installFakeTuttiAgentModelListBinary(t)
 
-	lister := defaultTuttiAgentModelLister()
+	lister := defaultTuttiAgentModelLister("tutti-agent", nil)
 	if _, err := lister.PrepareEnv(nil); err != nil {
 		t.Fatalf("PrepareEnv() error = %v", err)
 	}
@@ -509,6 +511,94 @@ func TestDefaultTuttiAgentModelListerBootstrapsExpiredTuttiAgentAuth(t *testing.
 	if !strings.Contains(string(loginJSON), `"access_token":"lat_new"`) {
 		t.Fatalf("login payload = %s, want issued access token", string(loginJSON))
 	}
+}
+
+func TestDefaultTuttiAgentModelListerUsesProviderManagedNodeEnvironment(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	stateDir := filepath.Join(home, "state")
+	t.Setenv("TUTTI_STATE_DIR", stateDir)
+
+	userAgentHome := filepath.Join(home, ".tutti-agent")
+	if err := os.MkdirAll(userAgentHome, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	accessExpiresAt := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	authJSON := `{"tutti_llm":{"access_token":"access","access_token_expires_at":` + strconv.Quote(accessExpiresAt) + `,"refresh_token":"refresh"}}`
+	if err := os.WriteFile(filepath.Join(userAgentHome, "auth.json"), []byte(authJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	binDir := filepath.Join(home, "bin")
+	nodeBinDir := filepath.Join(home, "managed-node", "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(nodeBinDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	launcher := filepath.Join(binDir, "tutti-agent")
+	if err := os.WriteFile(launcher, []byte("#!/usr/bin/env node\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	node := filepath.Join(nodeBinDir, "node")
+	nodeScript := `#!/bin/sh
+while IFS= read -r line; do
+  case "$line" in
+    *'"method":"initialize"'*)
+      echo '{"id":"1","result":{}}'
+      ;;
+    *model/list*)
+      echo '{"id":"2","result":{"data":[{"id":"glm-5.2","displayName":"GLM-5.2"}]}}'
+      exit 0
+      ;;
+  esac
+done
+`
+	if err := os.WriteFile(node, []byte(nodeScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	resolver := &fakeProviderCommandResolver{
+		resolution: agentstatusservice.ProviderCommandResolution{
+			Command: []string{"tutti-agent", "app-server"},
+			Env:     []string{"PATH=" + nodeBinDir + string(os.PathListSeparator) + binDir},
+		},
+	}
+	lister := defaultTuttiAgentModelLister("tutti-agent", resolver)
+	lister.Environ = func() []string {
+		// The daemon environment deliberately finds the npm launcher but not
+		// Node. The provider resolver must inject Tutti's managed Node runtime.
+		return []string{"PATH=" + binDir}
+	}
+	lister.HomeDir = func() (string, error) {
+		return home, nil
+	}
+
+	result, err := lister.ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels() error = %v", err)
+	}
+	if resolver.calls != 1 {
+		t.Fatalf("provider command resolver calls = %d, want 1", resolver.calls)
+	}
+	if len(result.Models) != 1 || result.Models[0].ID != "glm-5.2" {
+		t.Fatalf("models = %#v, want managed-Node model/list result", result.Models)
+	}
+}
+
+type fakeProviderCommandResolver struct {
+	resolution agentstatusservice.ProviderCommandResolution
+	err        error
+	calls      int
+}
+
+func (r *fakeProviderCommandResolver) ResolveProviderCommand(
+	context.Context,
+	string,
+) (agentstatusservice.ProviderCommandResolution, error) {
+	r.calls++
+	return r.resolution, r.err
 }
 
 func installFakeTuttiAgentModelListBinary(t *testing.T) {

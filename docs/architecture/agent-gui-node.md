@@ -643,6 +643,11 @@ disable submission, but must not change editor editability.
   Event callbacks that need current canonical data read the engine snapshot at
   event time instead of retaining a whole-workspace render snapshot
 - lifecycle writes use semantic Engine operations or typed intents/commands
+- composer-option reads use `engine.loadComposerOptions`; the Engine owns
+  request identity, signature-aware cache reuse, identical in-flight joining,
+  supersession, exact settlement, caller abort, and disposal. Desktop and
+  Mobile retain only transport and DTO mapping in their
+  `EngineExtensionCommand` adapters
 - the Engine alone translates shared activation, prompt send, settings update,
   turn cancel, Interaction response, rename, pin, and batch-delete commands
   into `AgentSessionEffectPort` calls. Desktop and Mobile implement those
@@ -854,11 +859,13 @@ rows.
 
 Cross-platform hosts may reuse the DOM-free Composer policy from
 `@tutti-os/agent-gui/composer-projection`. Composer-option loading remains an
-`AgentSessionEngine` command keyed by the exact Agent Target; the generated
-tuttid DTO is mapped once by `@tutti-os/agent-activity-tuttid-adapter` into
-`AgentActivityComposerOptions`. Hosts render provider-authored options and use
-the shared support projection, but keep Native/DOM menus and temporary open
-state local. Existing-session setting changes enter the engine as
+`AgentSessionEngine` semantic operation keyed by the exact Agent Target. Both
+Desktop and Mobile call `engine.loadComposerOptions`; the generated tuttid DTO
+is mapped once by `@tutti-os/agent-activity-tuttid-adapter` into
+`AgentActivityComposerOptions`, while the host extension adapter remains the
+transport seam. Hosts render provider-authored options and use the shared
+support projection, but keep Native/DOM menus and temporary open state local.
+Existing-session setting changes enter the engine as
 `session/settingsUpdateRequested`; new-session draft settings travel on the
 activation intent. A renderer must not call the settings endpoint from a
 component or invent a provider-specific settings schema.

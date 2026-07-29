@@ -196,11 +196,12 @@ It owns:
   validation for rename and pin, validated delete-result tombstone projection,
   shared mutation settlement, and a serialized settings-precondition state
   machine
-- semantic `AgentSessionEngine` methods for rename, pin, and batch delete;
-  these methods hide workspace projection, mutation identity, timeout,
-  cancellation, settlement waiting, and canonical result projection from
-  product hosts; hosts retain transport, DTO mapping, AbortSignal propagation,
-  and product-specific command extensions (see
+- semantic `AgentSessionEngine` methods for composer-option loading, rename,
+  pin, and batch delete; these methods hide target/workspace projection,
+  command identity, cache or mutation coordination, settlement waiting, and
+  canonical result projection from product hosts; mutation methods also own
+  timeout and cancellation policy; hosts retain transport, DTO mapping,
+  AbortSignal propagation, and product-specific command extensions (see
   [Agent GUI Node](./agent-gui-node.md#4-workspace-frontend-engine))
 
 The public host-effect seam is `AgentSessionEffectPort`; the public
@@ -589,7 +590,13 @@ The activity snapshot also exposes the composer-options request lifecycle per
 opaque target key. Consumers use `loading` only for the initial request when no
 cached options exist; background refreshes keep rendering the last successful
 catalog, and failures transition to `error` instead of leaving indefinite
-loading UI.
+loading UI. Desktop and Mobile request options through the semantic
+`AgentSessionEngine.loadComposerOptions` method. It owns request identity,
+signature-aware cache reuse, identical in-flight joining, supersession, exact
+settlement, caller abort, and engine disposal. The host extension adapter owns
+only the transport call and DTO mapping; hosts must not reconstruct this
+protocol with raw `composerOptions/loadRequested` dispatch plus snapshot
+subscriptions.
 Provider context-window and quota updates enter the daemon at the runtime
 adapter boundary, are split into typed durable session metadata, and reach
 Agent GUI through the protocol-v2 `usage` field. GUI projections must not read

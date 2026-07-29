@@ -431,6 +431,15 @@ export type AgentSessionEngineListener = (
 
 export type AgentSessionEngineIntentObserver = (intent: EngineIntent) => void;
 
+export interface AgentSessionLoadComposerOptionsInput {
+  cwd?: string | null;
+  force?: boolean;
+  provider: string;
+  settings?: AgentActivityComposerSettings | null;
+  signal?: AbortSignal;
+  targetKey: string;
+}
+
 export interface AgentSessionEngine {
   readonly identity: AgentSessionEngineIdentity;
   deleteSessions(
@@ -441,6 +450,9 @@ export interface AgentSessionEngine {
   dispatch(intent: EngineIntent, options?: EngineDispatchOptions): void;
   dispose(): void;
   getSnapshot(): AgentSessionEngineState;
+  loadComposerOptions(
+    input: AgentSessionLoadComposerOptionsInput
+  ): Promise<AgentActivityComposerOptions>;
   renameSession(
     input: Omit<AgentActivityRenameSessionInput, "signal" | "workspaceId"> & {
       signal?: AbortSignal;
@@ -512,6 +524,8 @@ import type {
 } from "./tuttiModeActivation.types.ts";
 import type {
   AgentActivityCancelTurnInput,
+  AgentActivityComposerOptions,
+  AgentActivityComposerSettings,
   AgentActivityDeleteSessionsInput,
   AgentActivityDeleteSessionsResult,
   AgentActivityInitialGoalControl,

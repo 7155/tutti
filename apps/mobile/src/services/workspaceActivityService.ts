@@ -658,16 +658,15 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
     if (this.disposed || this.paused) return;
     const target = this.currentComposerTarget();
     if (!target) return;
-    this.engine.dispatch({
-      commandId: createMobileActivityCommandId(),
-      ...(target.cwd ? { cwd: target.cwd } : {}),
-      ...(options?.force ? { force: true } : {}),
-      provider: target.provider,
-      settings: target.settings,
-      targetKey: target.agentTargetId,
-      type: "composerOptions/loadRequested",
-      workspaceId: this.workspace.id
-    });
+    void this.engine
+      .loadComposerOptions({
+        ...(target.cwd ? { cwd: target.cwd } : {}),
+        ...(options?.force ? { force: true } : {}),
+        provider: target.provider,
+        settings: target.settings,
+        targetKey: target.agentTargetId
+      })
+      .catch(() => undefined);
   }
 
   private currentComposerTarget() {

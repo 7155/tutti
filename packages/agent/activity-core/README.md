@@ -56,12 +56,14 @@ Engine rules:
 - Normalized observations and advanced lifecycle intents enter through
   `dispatch(intent)`. Session rename, pin, and batch delete enter through the
   semantic `engine.renameSession`, `engine.setSessionPinned`, and
-  `engine.deleteSessions` methods. Those methods derive workspace identity,
-  allocate mutation identity, own the default timeout and caller cancellation,
-  await settlement, and return canonical results without exposing reducer
-  protocol to hosts. Cancellation aborts the host effect; once delivery may
-  have started, the mutation remains delivery-unknown rather than becoming a
-  confirmed failure.
+  `engine.deleteSessions` methods. Composer-option reads enter through
+  `engine.loadComposerOptions`. These methods derive workspace identity or
+  target scope, allocate command identity, await exact settlement, and return
+  canonical results without exposing reducer protocol to hosts. Session
+  mutations additionally own the default timeout and caller cancellation.
+  Cancellation aborts a mutation host effect; once delivery may have started,
+  the mutation remains delivery-unknown rather than becoming a confirmed
+  failure.
 - Reducers are pure and return new state plus command descriptions; the effect
   executor performs commands and feeds every settlement (success, failure,
   timeout) back into the loop as command-result intents.
@@ -170,13 +172,18 @@ current snapshot reference and does not notify subscribers.
 
 ## Composer Options Cache
 
-`loadComposerOptions({ targetKey, provider, ... })` caches results in a single
-key space, `composerOptionsByTargetKey`. `targetKey` is an **opaque** cache key:
-the controller round-trips it verbatim to the adapter (as `agentTargetId`) and
-uses it as the snapshot key — it never parses, derives meaning from, or rewrites
-it. Callers pass the already-resolved directory target id; two distinct targets
-that share a `provider` therefore keep isolated caches (no provider-dimension
-fallback).
+`engine.loadComposerOptions({ targetKey, provider, ... })` caches results in a
+single key space, `composerOptionsByTargetKey`. After non-empty boundary
+normalization, `targetKey` is an **opaque** cache key: the engine never parses
+or derives meaning from it. Callers pass the already-resolved directory target
+id; two distinct targets that share a `provider` therefore keep isolated caches
+(no provider-dimension fallback).
+
+The semantic Engine method owns request identity, signature-aware cache reuse,
+joining an identical in-flight request, supersession by a newer request, exact
+settlement, caller abort, and engine disposal. Desktop and Mobile hosts call
+this method instead of dispatching `composerOptions/loadRequested` and
+subscribing to reducer state themselves.
 
 `invalidateComposerOptions({ providers })` drops freshness markers so the next
 non-forced load refetches, while the last known options stay renderable. It
@@ -322,15 +329,18 @@ execution helper or its precondition port. The reducer-only continuation is not
 part of public `EngineIntent`, and its execution ledger is omitted from
 `AgentSessionEngineState`, `getSnapshot()`, and subscription callbacks.
 
-Host-only commands such as Desktop attention persistence or composer-options
-transport loading remain in an `EngineExtensionCommand` adapter. The Engine,
-not the host adapter, decides whether a validated settings result requires a
-provider-declared options refresh. That refresh is target-scoped and
-non-blocking for the current send. Timeout, abort, observation, and
-command-result dispatch remain owned by the Engine effect executor. Every typed
-effect receives its own Engine command's `AbortSignal`; hosts must propagate it
-through their transport. The legacy full-command `execute` path is
-compatibility-only for existing published-package consumers such as tsh.
+Host-only commands such as Desktop attention persistence or the
+composer-options transport call remain in an `EngineExtensionCommand` adapter.
+The public `engine.loadComposerOptions` method owns the shared load/cache
+protocol; the extension adapter only maps the resulting command to host
+transport. The Engine, not the host adapter, decides whether a validated
+settings result requires a provider-declared options refresh. That refresh is
+target-scoped and non-blocking for the current send. Timeout, abort,
+observation, and command-result dispatch remain owned by the Engine effect
+executor. Every typed effect receives its own Engine command's `AbortSignal`;
+hosts must propagate it through their transport. The legacy full-command
+`execute` path is compatibility-only for existing published-package consumers
+such as tsh.
 
 ## Message Merge Rules
 

@@ -9,10 +9,14 @@ import type { AgentActivitySessionInput } from "../sessionNormalization.ts";
 export type SessionReconcileScope = "messages" | "state" | "state_and_messages";
 
 /**
- * Host-neutral authoritative detail aggregate consumed by reconcile flows.
- * Transport adapters map their DTOs into this contract before Core sees them.
+ * Host-neutral projection-qualified detail aggregate consumed by reconcile
+ * flows. Transport adapters preserve projection authority so Core can use an
+ * unprojected discovery snapshot for cursors without applying its capability
+ * values as canonical state.
  */
 export interface AgentActivitySessionDetailSnapshot {
+  projection: "authoritative" | "message_hydration";
+  lifecycleCapabilitiesProjected: boolean;
   session: AgentActivitySession;
   childSessions: readonly AgentActivitySession[];
   turns: readonly AgentActivityTurn[];

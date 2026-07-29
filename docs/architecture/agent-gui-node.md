@@ -656,6 +656,19 @@ rows never advance this cursor. This child policy is separate from the root
 conversation's user-boundary repair policy, which may intentionally restart an
 incremental read at zero.
 
+The discovery detail request uses the daemon's `messageHydration` projection.
+That projection retains the hierarchy and `messageVersion` cursors needed by
+the shared executor but does not resolve provider-backed lifecycle
+capabilities. The final detail request uses the full projection and is the only
+read in one combined reconcile that may perform a historical provider
+capability probe. Desktop and Mobile derive this choice from the same
+activity-core request purpose; host adapters must not infer it from timing or
+add a TTL cache for capability results. The detail response echoes the selected
+projection and an explicit lifecycle-capability projection flag. The shared
+tuttid client rejects mismatched responses, and consumers must not treat
+false-valued capabilities from an unresolved hydration projection as
+authoritative.
+
 A `waiting` Turn does not imply user action. Only a pending Interaction produces approval/question attention.
 
 ### 4.4 Prompt queue
@@ -847,10 +860,13 @@ Selecting an already hydrated Session must not start another detail reconcile;
 the selection controller alone decides whether hydration is missing. Composer
 option synchronization does not own Session detail reloads. On Desktop the
 selection controller also owns activation guards and Rail projection
-coordination before requesting a forced detail hydration. The message paging
-adapter owns only focused message-controller lifetime, transport mapping,
-diagnostics, and initial/older commands; it does not call back into selection
-or Rail state. There is no separate messages-only Engine reconcile helper.
+coordination before requesting idempotent initial hydration. A repeated
+automatic selection restoration must not become a forced refresh or append
+pending demand to the in-flight reconcile; explicit user refresh is a separate
+intent. The message paging adapter owns only focused message-controller
+lifetime, transport mapping, diagnostics, and initial/older commands; it does
+not call back into selection or Rail state. There is no separate messages-only
+Engine reconcile helper.
 
 Timeline projection is pure, deterministic, and provider-neutral. React views render rows/cards and dispatch actions.
 Transcript Turn membership and order come only from timeline items in the

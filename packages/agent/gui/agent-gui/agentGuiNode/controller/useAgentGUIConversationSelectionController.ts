@@ -412,17 +412,15 @@ export function useAgentGUIConversationSelectionController(
         conversationIdsRef.current.has(agentSessionId)
     },
     detail: {
+      ensureHydrated: (agentSessionId) => {
+        void loadSelectedConversationMessages(agentSessionId);
+      },
       isHydrated: (agentSessionId) =>
         selectEngineSessionDetailHydrated(
           sessionEngine.getSnapshot(),
           agentSessionId
         ),
       markPending: markSelectedConversationDetailPending,
-      reload: (agentSessionId) => {
-        void loadSelectedConversationMessages(agentSessionId, {
-          force: true
-        });
-      },
       setLoading: setIsLoadingMessages
     },
     hasConversationListQuery: () => Boolean(conversationListQuery),

@@ -211,6 +211,7 @@ export abstract class WorkspaceAgentActivityReconcileBridge {
     workspaceId: string,
     agentSessionId: string,
     source: string,
+    projection: "full" | "messageHydration" = "full",
     signal?: AbortSignal
   ): Promise<AgentActivitySessionDetailSnapshot> {
     const normalizedWorkspaceId = normalizeWorkspaceId(workspaceId);
@@ -225,6 +226,7 @@ export abstract class WorkspaceAgentActivityReconcileBridge {
       await this.reconcileDependencies.tuttidClient.getWorkspaceAgentSession(
         normalizedWorkspaceId,
         agentSessionId,
+        projection,
         { signal }
       );
     const mapped = agentActivitySessionDetailFromTuttid(
@@ -692,11 +694,12 @@ export abstract class WorkspaceAgentActivityReconcileBridge {
         });
       },
       port: {
-        getSessionDetail: ({ agentSessionId, signal }) =>
+        getSessionDetail: ({ agentSessionId, projection, signal }) =>
           this.fetchActivitySessionDetail(
             normalizedWorkspaceId,
             agentSessionId,
             "",
+            projection === "message_hydration" ? "messageHydration" : "full",
             signal
           ),
         listSessionMessages: (query) => entry.adapter.listSessionMessages(query)

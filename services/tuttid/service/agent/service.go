@@ -577,8 +577,30 @@ func (s *Service) Get(ctx context.Context, workspaceID string, agentSessionID st
 	return s.get(ctx, workspaceID, agentSessionID, true)
 }
 
+type SessionDetailProjection string
+
+const (
+	SessionDetailProjectionFull             SessionDetailProjection = "full"
+	SessionDetailProjectionMessageHydration SessionDetailProjection = "messageHydration"
+)
+
 func (s *Service) GetDetail(ctx context.Context, workspaceID string, agentSessionID string) (SessionDetail, error) {
-	session, err := s.Get(ctx, workspaceID, agentSessionID)
+	return s.GetDetailWithProjection(
+		ctx,
+		workspaceID,
+		agentSessionID,
+		SessionDetailProjectionFull,
+	)
+}
+
+func (s *Service) GetDetailWithProjection(
+	ctx context.Context,
+	workspaceID string,
+	agentSessionID string,
+	projection SessionDetailProjection,
+) (SessionDetail, error) {
+	resolveProviderCapabilities := projection != SessionDetailProjectionMessageHydration
+	session, err := s.get(ctx, workspaceID, agentSessionID, resolveProviderCapabilities)
 	if err != nil {
 		return SessionDetail{}, err
 	}
@@ -646,7 +668,7 @@ func (s *Service) LocalAttachmentPath(ctx context.Context, workspaceID string, a
 	return store.LocalPath(workspaceID, agentSessionID, attachmentID, mimeType)
 }
 
-func (s *Service) get(ctx context.Context, workspaceID string, agentSessionID string, _ bool) (Session, error) {
+func (s *Service) get(ctx context.Context, workspaceID string, agentSessionID string, resolveProviderCapabilities bool) (Session, error) {
 	result, err := s.ApplicationHost().GetSession(ctx, agenthost.SessionRef{
 		WorkspaceID: workspaceID, AgentSessionID: agentSessionID,
 	})
@@ -660,7 +682,14 @@ func (s *Service) get(ctx context.Context, workspaceID string, agentSessionID st
 		}
 		return Session{}, ErrSessionNotFound
 	}
-	return s.projectHostSessionResult(ctx, result.Canonical, result.Session, result.Live, true)
+	return s.projectHostSessionResult(
+		ctx,
+		result.Canonical,
+		result.Session,
+		result.Live,
+		true,
+		resolveProviderCapabilities,
+	)
 }
 
 func (s *Service) UpdatePin(ctx context.Context, workspaceID string, agentSessionID string, pinned bool) (Session, error) {
@@ -672,7 +701,7 @@ func (s *Service) UpdatePin(ctx context.Context, workspaceID string, agentSessio
 	if err != nil {
 		return Session{}, err
 	}
-	return s.projectHostSessionResult(ctx, result.Canonical, result.Session, result.Live, false)
+	return s.projectHostSessionResult(ctx, result.Canonical, result.Session, result.Live, false, true)
 }
 
 func (s *Service) cleanupRuntime(ctx context.Context, workspaceID string, agentSessionID string) error {

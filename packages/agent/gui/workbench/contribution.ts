@@ -33,22 +33,13 @@ import type {
 } from "./types.ts";
 import type { AgentGUIAgentDirectoryPort } from "../types.ts";
 import {
-  AGENT_GUI_WORKBENCH_SESSION_ACTION_EVENT,
-  dispatchAgentGuiWorkbenchSessionAction,
+  dispatchAgentGuiWorkbenchCommand,
   isAgentGuiWorkbenchSessionAction
-} from "./sessionActions.ts";
+} from "./commands.ts";
 import type {
   AgentGuiWorkbenchSessionAction,
-  AgentGuiWorkbenchSessionActionDetail,
-  AgentGuiWorkbenchSessionActionRequest,
   AgentGuiWorkbenchSessionMenuCopy
-} from "./sessionActions.ts";
-
-export const AGENT_GUI_WORKBENCH_CONVERSATION_RAIL_TOGGLE_EVENT =
-  "tutti:agent-gui-workbench-conversation-rail-toggle";
-
-export const AGENT_GUI_WORKBENCH_NEW_CONVERSATION_EVENT =
-  "tutti:agent-gui-workbench-new-conversation";
+} from "./commands.ts";
 
 /**
  * Fired when the empty-hero "Import session" suggestion is chosen. The host
@@ -58,24 +49,9 @@ export const AGENT_GUI_WORKBENCH_NEW_CONVERSATION_EVENT =
 export const AGENT_GUI_WORKBENCH_OPEN_EXTERNAL_IMPORT_EVENT =
   "tutti:agent-gui-workbench-open-external-import";
 
-export interface AgentGuiWorkbenchConversationRailToggleDetail {
-  conversationRailCollapsed: boolean;
-  instanceId: string;
-}
-
-export interface AgentGuiWorkbenchNewConversationDetail {
-  instanceId: string;
-}
-
-export {
-  AGENT_GUI_WORKBENCH_SESSION_ACTION_EVENT,
-  dispatchAgentGuiWorkbenchSessionAction,
-  isAgentGuiWorkbenchSessionAction
-};
+export { dispatchAgentGuiWorkbenchCommand, isAgentGuiWorkbenchSessionAction };
 export type {
   AgentGuiWorkbenchSessionAction,
-  AgentGuiWorkbenchSessionActionDetail,
-  AgentGuiWorkbenchSessionActionRequest,
   AgentGuiWorkbenchSessionMenuCopy
 };
 
@@ -292,38 +268,20 @@ export function createAgentGuiWorkbenchContribution(
               typeId: agentGuiWorkbenchTypeId
             });
           };
-          const announceConversationRailCollapsed = (collapsed: boolean) => {
-            window.dispatchEvent(
-              new CustomEvent<AgentGuiWorkbenchConversationRailToggleDetail>(
-                AGENT_GUI_WORKBENCH_CONVERSATION_RAIL_TOGGLE_EVENT,
-                {
-                  detail: {
-                    conversationRailCollapsed: collapsed,
-                    instanceId
-                  }
-                }
-              )
-            );
-          };
           const announceNewConversation = () => {
-            window.dispatchEvent(
-              new CustomEvent<AgentGuiWorkbenchNewConversationDetail>(
-                AGENT_GUI_WORKBENCH_NEW_CONVERSATION_EVENT,
-                {
-                  detail: {
-                    instanceId
-                  }
-                }
-              )
-            );
+            dispatchAgentGuiWorkbenchCommand({
+              instanceId,
+              type: "new-conversation"
+            });
           };
           const announceSessionAction = (
             action: AgentGuiWorkbenchSessionAction
           ) => {
-            dispatchAgentGuiWorkbenchSessionAction({
+            dispatchAgentGuiWorkbenchCommand({
               action,
               agentSessionId: workbenchState.lastActiveAgentSessionId,
-              instanceId
+              instanceId,
+              type: "session-action"
             });
           };
 
@@ -364,7 +322,6 @@ export function createAgentGuiWorkbenchContribution(
               }
             },
             onToggleConversationRail: (nextCollapsed) => {
-              announceConversationRailCollapsed(nextCollapsed);
               if (
                 isConversationRailCollapsed &&
                 nextCollapsed === false &&

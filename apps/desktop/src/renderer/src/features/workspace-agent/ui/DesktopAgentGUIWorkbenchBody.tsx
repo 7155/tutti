@@ -70,13 +70,10 @@ import {
   type DesktopAgentGUISurfaceProps,
   type DesktopAgentGUIWorkbenchBodyProps
 } from "./desktopAgentGUIWorkbenchModel.ts";
-export { DESKTOP_AGENT_GUI_CONVERSATION_RAIL_TOGGLE_EVENT } from "./desktopAgentGUIWorkbenchModel.ts";
-export type { DesktopAgentGUIConversationRailToggleDetail } from "./desktopAgentGUIWorkbenchModel.ts";
 import { useDesktopAgentStatusController } from "./useDesktopAgentStatusController.ts";
 import { useDesktopAgentGUIContextMentions } from "./useDesktopAgentGUIContextMentions.ts";
 import { useDesktopAgentGUIReadiness } from "./useDesktopAgentGUIReadiness.ts";
 import { useDesktopAgentGUIOpenConversationWindow } from "./useDesktopAgentGUIOpenConversationWindow.ts";
-import { useDesktopAgentGUIWorkbenchEvents } from "./useDesktopAgentGUIWorkbenchEvents.ts";
 import { useStableDesktopAgentGUIHostProps } from "./useStableDesktopAgentGUIHostProps.ts";
 import { resolveDesktopAgentGUIEmbeddedDesktopSize } from "./desktopAgentGUIEmbeddedFrame.ts";
 import { scheduleDesktopAgentGUIWorkbenchHydration } from "./desktopAgentGUIWorkbenchHydration.ts";
@@ -107,6 +104,7 @@ function DesktopAgentGUISurfaceImpl({
   dockPreviewCache,
   onLinkAction,
   onCapabilitySettingsRequest,
+  onWorkbenchConversationRailToggle,
   onOpenAgentConversationWindow,
   onStateChange,
   prefillPromptBootstrapRequest = null,
@@ -446,19 +444,6 @@ function DesktopAgentGUISurfaceImpl({
     }
   }, [surface.activation, surface.host, surface.nodeId, handleUpdateNode]);
 
-  const {
-    newConversationSequence: newConversationRequestSequence,
-    sessionActionRequest
-  } = useDesktopAgentGUIWorkbenchEvents({
-    instanceId: surface.instanceId,
-    onConversationRailToggle: (conversationRailCollapsed) => {
-      handleUpdateNode((current) => ({
-        ...current,
-        conversationRailCollapsed
-      }));
-    }
-  });
-
   const handleOpenConversationWindow = useDesktopAgentGUIOpenConversationWindow(
     {
       agentTargetId: workbenchAgentTargetId,
@@ -682,8 +667,10 @@ function DesktopAgentGUISurfaceImpl({
     runtimeRequests: {
       composerAppend: composerAppendRequest,
       composerFocusSequence: composerFocusRequestSequence,
-      newConversationSequence: newConversationRequestSequence,
-      sessionAction: sessionActionRequest,
+      workbench: {
+        instanceId: surface.instanceId,
+        onConversationRailToggle: onWorkbenchConversationRailToggle
+      },
       openSession: openSessionRequest,
       prefillPrompt: prefillPromptRequest,
       agentStatusController: agentStatusController

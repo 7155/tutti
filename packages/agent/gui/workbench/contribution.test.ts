@@ -15,7 +15,6 @@ import type {
   AgentGUIProvider
 } from "../types.ts";
 import {
-  AGENT_GUI_WORKBENCH_NEW_CONVERSATION_EVENT,
   agentGuiWorkbenchDefaultCopy,
   agentGuiWorkbenchProviderRailWidthPx,
   buildAgentGuiDockEntries,
@@ -24,6 +23,7 @@ import {
   resolveAgentGuiWorkbenchDefaultLaunchFrame,
   resolveAgentGuiWorkbenchContributionCopy
 } from "./contribution.ts";
+import { AGENT_GUI_WORKBENCH_COMMAND_EVENT } from "./commands.ts";
 import {
   agentGuiWorkbenchPrefillPromptActivationType,
   agentGuiWorkbenchUnifiedDockEntryId,
@@ -1341,10 +1341,7 @@ describe("agent GUI workbench contribution copy", () => {
     const handler = (event: Event) => {
       events.push(event as CustomEvent);
     };
-    window.addEventListener(
-      AGENT_GUI_WORKBENCH_NEW_CONVERSATION_EVENT,
-      handler
-    );
+    window.addEventListener(AGENT_GUI_WORKBENCH_COMMAND_EVENT, handler);
 
     try {
       render(
@@ -1388,15 +1385,13 @@ describe("agent GUI workbench contribution copy", () => {
         })
       );
     } finally {
-      window.removeEventListener(
-        AGENT_GUI_WORKBENCH_NEW_CONVERSATION_EVENT,
-        handler
-      );
+      window.removeEventListener(AGENT_GUI_WORKBENCH_COMMAND_EVENT, handler);
     }
 
     expect(events).toHaveLength(1);
     expect(events[0]?.detail).toEqual({
-      instanceId: "agent-gui:codex:panel:test-1"
+      instanceId: "agent-gui:codex:panel:test-1",
+      type: "new-conversation"
     });
   });
 

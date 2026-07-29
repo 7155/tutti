@@ -81,6 +81,7 @@ export function collectWorkspaceAgentGeneratedFiles(
 type ChangedFilePathNormalizer = (value: unknown) => string | null;
 
 interface ChangedFileCollectionOptions {
+  canonicalFileChanges?: readonly Record<string, unknown>[];
   requireSuccessfulFileChangeTool?: boolean;
 }
 
@@ -100,6 +101,12 @@ export function changedFilesForSession(
     });
   };
 
+  for (const fileChanges of options.canonicalFileChanges ?? []) {
+    for (const path of canonicalFileChangePaths(fileChanges, normalizePath)) {
+      appendPath(path);
+    }
+  }
+
   for (const message of messages) {
     for (const path of changedFilePathsFromMessage(
       message,
@@ -111,6 +118,40 @@ export function changedFilesForSession(
   }
 
   return applyShortestUniqueFileLabels(Array.from(changedFilesByPath.values()));
+}
+
+function canonicalFileChangePaths(
+  fileChanges: Record<string, unknown>,
+  normalizePath: ChangedFilePathNormalizer
+): string[] {
+  const files = arrayValue(fileChanges.files);
+  if ("files" in fileChanges) {
+    return (files ?? [])
+      .map((file) =>
+        normalizeCanonicalFileChangePath(objectValue(file)?.path, normalizePath)
+      )
+      .filter((path): path is string => path !== null);
+  }
+
+  const paths =
+    "changes" in fileChanges
+      ? fileChangePathsFromChanges(fileChanges.changes)
+      : "coverage" in fileChanges
+        ? []
+        : fileChangePathsFromChanges(fileChanges);
+  return paths
+    .map((path) => normalizeCanonicalFileChangePath(path, normalizePath))
+    .filter((path): path is string => path !== null);
+}
+
+function normalizeCanonicalFileChangePath(
+  value: unknown,
+  normalizePath: ChangedFilePathNormalizer
+): string | null {
+  return (
+    normalizePath(value) ??
+    normalizedChangedFilePath(value, { allowRelative: true })
+  );
 }
 
 function changedFilePathsFromMessage(

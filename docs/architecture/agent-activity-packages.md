@@ -229,6 +229,14 @@ It owns:
 - Message Center snapshot model and UI while it shares AgentGUI activity and
   interaction ownership
 
+The published `@tutti-os/agent-gui/activity-list-projection` entrypoint is the
+single high-level projection for compact Agent Activity cards. Hosts first map
+transport DTOs to canonical Sessions, Presences, Messages, and Turn
+file-change snapshots, then call this projection. Product hosts may enrich the
+result with viewer-relative identity, avatars, board lanes, and navigation
+actions; they must not rebuild status, title, summary, ordering, provider, or
+artifact semantics.
+
 Room-scoped attention consumers that need every actionable target use the
 Agent GUI package's `selectWorkspaceAgentAttentionItems` projection. Unlike the
 conversation-shaped Message Center model, this projection returns one entry per

@@ -440,6 +440,11 @@ export interface AgentSessionLoadComposerOptionsInput {
   targetKey: string;
 }
 
+export interface AgentSessionUpdateSettingsInput {
+  agentSessionId: string;
+  settings: AgentActivitySessionSettings;
+}
+
 export interface AgentSessionEngine {
   readonly identity: AgentSessionEngineIdentity;
   deleteSessions(
@@ -467,6 +472,7 @@ export interface AgentSessionEngine {
     }
   ): Promise<AgentActivitySession>;
   subscribe(listener: AgentSessionEngineListener): () => void;
+  updateSessionSettings(input: AgentSessionUpdateSettingsInput): void;
 }
 import type {
   PromptQueueIntent,

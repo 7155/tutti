@@ -650,13 +650,18 @@ disable submission, but must not change editor editability.
   `EngineExtensionCommand` adapters
 - the Engine alone translates shared activation, prompt send, settings update,
   turn cancel, Interaction response, rename, pin, and batch-delete commands
-  into `AgentSessionEffectPort` calls. Desktop and Mobile implement those
-  semantic methods and must not duplicate a command-type switch for them.
-  Host activity facades call `engine.renameSession`,
+  into `AgentSessionEffectPort` calls. Desktop and Mobile effect ports retain
+  transport and DTO mapping but must not duplicate a command-type switch for
+  these shared effects. Host activity facades call
+  `engine.updateSessionSettings`, `engine.renameSession`,
   `engine.setSessionPinned`, and `engine.deleteSessions`; these deep methods
-  own workspace projection, mutation identity, default timeout, cancellation,
-  settlement waiting, and canonical result projection. Hosts must not
-  reconstruct that protocol with `dispatchSessionMutation` and snapshot reads.
+  own the applicable workspace projection, command or mutation identity,
+  timeout, cancellation, settlement, and canonical result projection. Settings
+  update is fire-and-observe intent admission rather than a settlement Promise:
+  the existing settings-operation selector remains the source of pending,
+  failed, and unknown state. Hosts must not reconstruct mutation protocol with
+  `dispatchSessionMutation` and snapshot reads or construct raw
+  `session/settingsUpdateRequested` fields for an existing Session.
   Platform-only commands remain in each host's `EngineExtensionCommand`
   adapter. Every effect propagates the Engine-owned AbortSignal to its
   transport. Rename, pin, and delete settle through the shared Session-mutation
@@ -673,8 +678,9 @@ disable submission, but must not change editor editability.
   while a failed or timed-out precondition prevents delivery. A timed-out
   settings write remains delivery-unknown and does not release queued writes
   automatically. A fresh explicit settings selection is the user's retry:
-  Desktop AgentGUI and Native Mobile derive that retry from the exact Engine
-  settings-operation state
+  `engine.updateSessionSettings` recognizes the exact Engine
+  settings-operation state, so Desktop AgentGUI and Native Mobile do not derive
+  retry flags independently
 - consumers do not read reducer maps directly
 - consumers do not create canonical session/message mirrors
 - optimistic records define confirmation, rejection, timeout, and uncertain-delivery paths
@@ -865,10 +871,14 @@ is mapped once by `@tutti-os/agent-activity-tuttid-adapter` into
 `AgentActivityComposerOptions`, while the host extension adapter remains the
 transport seam. Hosts render provider-authored options and use the shared
 support projection, but keep Native/DOM menus and temporary open state local.
-Existing-session setting changes enter the engine as
-`session/settingsUpdateRequested`; new-session draft settings travel on the
-activation intent. A renderer must not call the settings endpoint from a
-component or invent a provider-specific settings schema.
+Existing-Session setting changes enter through
+`engine.updateSessionSettings`. The Engine allocates command identity, fixes
+timeout and retry policy, and translates the semantic call to its internal
+`session/settingsUpdateRequested` intent. New-Session draft settings travel on
+the activation intent instead; provider-independent draft projection and
+Desktop-persisted defaults remain surface policy until activation. A renderer
+must not call the settings endpoint from a component or invent a
+provider-specific settings schema.
 
 An activation intent's shared Session settings are not an HTTP create-field
 allowlist. Each host must construct a typed

@@ -2,7 +2,6 @@ import {
   AGENT_SESSION_ENGINE_LOCAL_ORIGIN,
   createAgentActivitySnapshotProjector,
   createAgentSessionEngine,
-  selectEngineSessionSettingsUpdate,
   selectEngineSessionRuntimeAvailability,
   type AgentActivitySessionSettings,
   type AgentActivityInteraction,
@@ -335,18 +334,9 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
       return;
     }
     if (!target.agentSessionId) return;
-    const settingsUpdate = selectEngineSessionSettingsUpdate(
-      this.engine.getSnapshot(),
-      target.agentSessionId
-    );
-    this.engine.dispatch({
+    this.engine.updateSessionSettings({
       agentSessionId: target.agentSessionId,
-      commandId: createMobileActivityCommandId(),
-      retry: settingsUpdate?.status === "unknown",
-      settings,
-      timeoutMs: COMMAND_TIMEOUT_MS,
-      type: "session/settingsUpdateRequested",
-      workspaceId: this.workspace.id
+      settings
     });
   }
 

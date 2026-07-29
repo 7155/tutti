@@ -50,6 +50,13 @@ list entries remain first, Tutti session roots are appended next, and the user's
 native skill root is appended last. Exact duplicate paths are ignored after
 their first occurrence. Invalid YAML or an incompatible target key shape stops
 runtime preparation with a clear error instead of silently omitting skills.
+The merge uses the repository YAML parser (`yaml.v3`) and only the constrained
+string-list merge declared by the signed profile; runtimeprep must not maintain
+a Hermes-specific line parser or silently return an unmodified config after a
+failed merge. The Tutti-managed skill files are mirrored into the session
+runtime root before being referenced from `skills.external_dirs`, so two Hermes
+sessions from the same workspace do not share rendered `SKILL.md` files that
+contain session or target context.
 There is no provider-ID migration branch to remove; if Hermes later exposes a
 native ACP/runtime option for additive skill roots and home isolation, remove the
 signed `runtimePrep` declaration from the Hermes package and let the generic

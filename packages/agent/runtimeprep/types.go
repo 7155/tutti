@@ -60,7 +60,9 @@ type PrepareInput struct {
 	// native tutti skills materialize into these roots instead of the
 	// hard-coded providerSkillRoot, so acp: extension agents (hermes and
 	// future ones) load tutti-handoff/tutti-cli. Paths are safe relative
-	// paths validated by the extension profile and resolved against Cwd.
+	// paths validated by the extension profile; the selected runtime preparer
+	// chooses whether they are resolved against Cwd or mirrored into the
+	// session RuntimeRoot for provider isolation.
 	ExtensionSkillRoots []string
 	// ExtensionRuntimePrep carries a signed agent-extension runtime overlay.
 	// It is provider-neutral: package profiles describe any required per-run

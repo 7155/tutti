@@ -205,6 +205,69 @@ func TestExtensionRuntimePreparerPrepareTwiceIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestExtensionRuntimePreparerIsolatesSkillRootsPerSession(t *testing.T) {
+	globalHome := t.TempDir()
+	t.Setenv("HERMES_HOME", globalHome)
+	if err := os.WriteFile(filepath.Join(globalHome, "config.yaml"), []byte("model: test\n"), 0o600); err != nil {
+		t.Fatalf("write global config: %v", err)
+	}
+
+	stateDir := t.TempDir()
+	cwd := t.TempDir()
+	prep := NewDefaultPreparer(stateDir)
+	prep.CommandCatalog = staticCommandCatalog(testCommandCapabilities())
+	baseInput := PrepareInput{
+		WorkspaceID:          "workspace-1",
+		AgentTargetID:        "local:hermes",
+		Provider:             "acp:hermes",
+		Cwd:                  cwd,
+		ExtensionRuntimePrep: hermesRuntimePrep(),
+		ExtensionSkillRoots:  []string{".agent_context/skills"},
+	}
+
+	sessionRoots := map[string]string{}
+	for _, sessionID := range []string{"session-a", "session-b"} {
+		input := baseInput
+		input.AgentSessionID = sessionID
+		prepared, err := prep.Prepare(t.Context(), input)
+		if err != nil {
+			t.Fatalf("Prepare(%s) error = %v", sessionID, err)
+		}
+		hermesHome := preparedEnvValue(prepared.Env, "HERMES_HOME")
+		if hermesHome == "" {
+			t.Fatalf("Prepare(%s) missing HERMES_HOME: %v", sessionID, prepared.Env)
+		}
+		runtimeRoot, err := LocalStore{StateDir: stateDir}.RuntimeRoot("workspace-1", sessionID)
+		if err != nil {
+			t.Fatalf("RuntimeRoot(%s) error = %v", sessionID, err)
+		}
+		sessionSkillRoot := filepath.Join(runtimeRoot, "extension-skills", ".agent_context", "skills")
+		sessionRoots[sessionID] = sessionSkillRoot
+
+		config, err := os.ReadFile(filepath.Join(hermesHome, "config.yaml"))
+		if err != nil {
+			t.Fatalf("session %s config.yaml missing: %v", sessionID, err)
+		}
+		if !strings.Contains(string(config), sessionSkillRoot) {
+			t.Fatalf("session %s config missing isolated skill root %q:\n%s", sessionID, sessionSkillRoot, config)
+		}
+		skill, err := os.ReadFile(filepath.Join(sessionSkillRoot, tuttiSkillName, "SKILL.md"))
+		if err != nil {
+			t.Fatalf("session %s tutti skill missing: %v", sessionID, err)
+		}
+		if !strings.Contains(string(skill), "The current AgentGUI session is `"+sessionID+"`.") {
+			t.Fatalf("session %s skill should be rendered with its own session id", sessionID)
+		}
+	}
+
+	if sessionRoots["session-a"] == sessionRoots["session-b"] {
+		t.Fatalf("sessions must not share extension skill roots: %v", sessionRoots)
+	}
+	if _, err := os.Stat(filepath.Join(cwd, ".agent_context", "skills")); !os.IsNotExist(err) {
+		t.Fatalf("Hermes runtimePrep must not write shared cwd extension skill roots, err=%v", err)
+	}
+}
+
 func TestExtensionRuntimePreparerMaterializesBrowserUseSkillWhenEnabled(t *testing.T) {
 	t.Setenv("HERMES_HOME", t.TempDir())
 	stateDir := t.TempDir()
@@ -231,6 +294,16 @@ func TestExtensionRuntimePreparerMaterializesBrowserUseSkillWhenEnabled(t *testi
 	if _, err := os.Stat(skillPath); err != nil {
 		t.Fatalf("browser-use SKILL.md missing in extension skill root: %v", err)
 	}
+}
+
+func preparedEnvValue(env []string, name string) string {
+	prefix := name + "="
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			return strings.TrimPrefix(entry, prefix)
+		}
+	}
+	return ""
 }
 
 func TestExtensionRuntimePreparerSkipsGlobalCopiesWhenHomeUnavailable(t *testing.T) {

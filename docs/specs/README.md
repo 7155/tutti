@@ -17,4 +17,4 @@ There are currently seven active specs:
 - [Agent Goal Control Design](./2026-07-15-agent-goal-control-design.md): implemented, pending final review and merge.
 - [Mobile AgentGUI And DeviceLink Design](./2026-07-23-mobile-agentgui-device-link-design.md): accepted architecture; Android M0 transport slice passed, physical-network validation and M1+ remain active.
 - [Agent Session Fork Design](./2026-07-27-agent-session-fork-design.md): throughTurn implemented; supersedes the 2026-07-01 draft and implementation plan.
-- [Tutti Agent `skills/list` Integration](./2026-07-30-tutti-agent-skills-list-integration.md): implemented; pending cross-platform artifact and end-to-end environment validation.
+- [Tutti Agent `skills/list` Integration](./2026-07-30-tutti-agent-skills-list-integration.md): implemented; local Desktop end-to-end validation passed, pending cross-platform artifact validation.

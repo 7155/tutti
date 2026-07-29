@@ -1,7 +1,6 @@
 # Tutti Agent `skills/list` 接入方案
 
-Status: implemented; pending cross-platform artifact and end-to-end environment
-validation
+Status: implemented; pending cross-platform artifact validation
 
 ## 1. 背景与目标
 
@@ -351,13 +350,13 @@ AgentGUI
 
 ## 8. 风险与回滚
 
-| 风险                                           | 控制                                                                                  |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------- |
-| 修改固定 pending 集合导致 Codex 回归           | 用现有四 RPC fixture 做完整回归                                                       |
-| skills-only 仍误发其他 RPC                     | fake app-server 断言只收到 initialize/initialized/skills/list                         |
-| Tutti app-server 超时                          | 沿用现有 8 秒超时、非致命降级和 30 秒缓存                                             |
-| disabled skill 被展示                          | 沿用 parser 的 disabled status 和 GUI 的 available filter                             |
-| app-server home/environment 与真实运行环境不同 | **待验证**：端到端对比 catalog 与实际 Tutti session；只有出现证据后再增加环境准备逻辑 |
+| 风险                                           | 控制                                                                               |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------- |
+| 修改固定 pending 集合导致 Codex 回归           | 用现有四 RPC fixture 做完整回归                                                    |
+| skills-only 仍误发其他 RPC                     | fake app-server 断言只收到 initialize/initialized/skills/list                      |
+| Tutti app-server 超时                          | 沿用现有 8 秒超时、非致命降级和 30 秒缓存                                          |
+| disabled skill 被展示                          | 沿用 parser 的 disabled status 和 GUI 的 available filter                          |
+| app-server home/environment 与真实运行环境不同 | 本机 `make dev-gui` 已验证；其他平台仍待验证，只有出现差异证据后再增加环境准备逻辑 |
 
 回滚只需从 Tutti descriptor 移除
 `CapabilityCatalogKindAppServerSkills`，即可恢复当前空 catalog；没有数据需要
@@ -396,6 +395,15 @@ pnpm check:changed
 
 ### 9.2 人工验收
 
+2026-07-30 已使用本 worktree 的 `make dev-gui` 完成本机验收：
+
+- Composer 当前 Provider 为 Tutti Agent。
+- 输入 `$` 展示 49 个 skills。
+- 输入 `$skill-cre` 只剩 `skill-creator`，选择后生成的编辑器 token 保留
+  `trigger="$skill-creator"` 和 `data-agent-mention-kind="skill"`。
+- 输入 `/skill-cre` 不展示 `skill-creator`。
+- 验证未发送消息，结束后已清空 Composer 草稿。
+
 - 选择 `local:tutti-agent` 后 Composer 状态为 ready。
 - Composer Options 的 `capabilityCatalog` 中存在 available skill，字段包含
   `$trigger`、path、`invocation=promptItem`。
@@ -412,8 +420,8 @@ pnpm check:changed
 2. 给现有 lister 增加 skills-only request set，并补 Codex/Tutti RPC 测试。
 3. 验证 Composer capability projection、缓存和错误降级。
 4. 跑 API、AgentGUI、runtime 既有链路回归测试。
-5. 使用发布版 Tutti Agent `0.0.10` 做端到端验收；只有发现真实环境差异时
-   再补最小环境适配。
+5. 使用发布版 Tutti Agent `0.0.10` 做端到端验收；本机已完成，其他平台
+   artifact 仍待验证。只有发现真实环境差异时再补最小环境适配。
 
 ## 11. 复杂度结论
 

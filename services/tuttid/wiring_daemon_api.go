@@ -318,6 +318,7 @@ func buildDaemonAPI(
 	agentModelCapabilities := agentservice.NewModelCapabilitiesService()
 	agentModelCatalog := agentservice.NewAgentModelCatalog()
 	agentModelCatalog.ModelCapabilities = agentModelCapabilities
+	agentModelCatalog.ProviderCommands = &agentStatusService
 	agentSessionService.ModelCatalog = agentModelCatalog
 	agentSessionService.ConfigureModelPlanBinding(modelBindingsStore, modelPlansStore)
 	agentSessionService.ModelCapabilities = agentModelCapabilities

@@ -417,6 +417,41 @@ file or directory`. If the CLI path exists but `codex app-server` cannot
   [runtimeprep tutti_agent.go](../../../packages/agent/runtimeprep/tutti_agent.go)
   [tuttid tuttiagent service.go](../../../services/tuttid/service/tuttiagent/service.go)
 
+### Tutti Agent unexpectedly loses login after a host auth read failure
+
+- Symptom:
+  Tutti Agent was previously authenticated, but provider preparation or model
+  discovery changes it to `auth_required` after the desktop account auth file is
+  temporarily missing, unreadable, or malformed. A token issue rejection may
+  produce the same symptom.
+- Root cause:
+  Provider preparation used to treat one failed observation of the host Account
+  session as a completed logout and removed the durable
+  `~/.tutti-agent/auth.json`. The token issue 401 path used the same cleanup
+  helper, even though neither condition proves that the user requested logout.
+- Invariants:
+  Missing, unreadable, malformed, or session-less host auth retains existing
+  Tutti Agent credentials. Failed token issue, validation, provider login, or
+  verification safely restores the previous auth file. Bootstrap and explicit
+  logout resolve a symlinked auth file to the same final target as Tutti Agent,
+  then use its sibling `auth.json.refresh.lock`. Go `flock` and Rust `fs2`
+  coordinate through the same OS advisory lock on a local filesystem; this is
+  not a distributed lock. Only the completed Account logout callback may
+  delete local provider auth and revoke its refresh token. Logs identify these
+  decisions with
+  `event=tutti_agent.auth_bootstrap`, `action`, and `reason`, without including
+  cookies or tokens.
+- Validation:
+  Run the `service/tuttiagent` tests covering
+  `RetainsAuthWithoutHostSession`, `RetainsAuthWhenHostAuthIsInvalidJSON`,
+  `RetainsAuthWhenHostAuthIsUnreadable`,
+  `RetainsAuthAfterUnauthorizedTokenIssue`, and
+  `LogoutTuttiAgentUserAuthRemovesAuthAndRevokesToken`, plus the reconciliation
+  restoration and refresh-lock serialization tests in the same package.
+- References:
+  [service.go](../../../services/tuttid/service/tuttiagent/service.go)
+  [tutti-agent-readiness-bootstrap.md](../../architecture/tutti-agent-readiness-bootstrap.md)
+
 ### Agent sandbox cannot reach local daemon
 
 - Symptom:

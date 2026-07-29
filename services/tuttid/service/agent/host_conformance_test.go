@@ -315,9 +315,7 @@ func (d *legacyHostConformanceDriver) Reset(_ context.Context, fixture hostconfo
 		SessionBatchManagement: d.deletionStore,
 		SessionDeletionGuard:   d.deletionGuard,
 		Runtime:                serviceHostRuntime{service: d.service},
-		SessionLocker: serviceHostLocker{
-			mu: &d.service.sessionSettingsMu, locks: &d.service.sessionSettingsLocks,
-		},
+		SessionLocker:          serviceHostLocker{service: d.service},
 	})
 	d.deletionAdapter = newUnconfiguredIsolatedAgentService(d.runtime)
 	d.deletionAdapter.SetApplicationHost(d.deletionHost)

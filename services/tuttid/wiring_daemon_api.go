@@ -62,6 +62,22 @@ import (
 	tuttitypes "github.com/tutti-os/tutti/services/tuttid/types"
 )
 
+type workspaceAgentTargetResolverSetter interface {
+	SetWorkspaceAgentTargetResolver(agentservice.WorkspaceAgentTargetResolver)
+}
+
+func configureWorkspaceAgentResolution(
+	agentSessions *agentservice.Service,
+	activityProjection workspaceAgentTargetResolverSetter,
+	workspaceAgents *workspaceagentservice.Service,
+	workspaceAgentTargets agentservice.WorkspaceAgentTargetResolver,
+) {
+	agentSessions.WorkspaceAgentResolver = workspaceAgents
+	if workspaceAgentTargets != nil {
+		activityProjection.SetWorkspaceAgentTargetResolver(workspaceAgentTargets)
+	}
+}
+
 func buildDaemonAPI(
 	ctx context.Context,
 	store workspacedata.CatalogStore,
@@ -282,15 +298,39 @@ func buildDaemonAPI(
 	agentRuntime.Controller().SetStreamEventObserver(agentRuntimeActivityEventBridge{
 		publisher: eventstreamservice.AgentActivityPublisher{Service: events},
 	})
+	agentSessionService := agentservice.NewService(agentRuntimeController)
+	agentSessionService.ModelGateway = modelGateway
+	if browserService != nil {
+		agentSessionService.AgentSessionResourceReleaser = browserService
+	}
+	agentActivityProjection.SetRootTurnObserver(agentRuntimeController)
+	agentSessionService.AnalyticsReporter = analyticsReporter
 	agentModelCapabilities := agentservice.NewModelCapabilitiesService()
 	agentModelCatalog := agentservice.NewAgentModelCatalog()
 	agentModelCatalog.ModelCapabilities = agentModelCapabilities
 	agentModelCatalog.ProviderCommands = &agentStatusService
+	agentSessionService.ModelCatalog = agentModelCatalog
+	agentSessionService.ConfigureModelPlanBinding(modelBindingsStore, modelPlansStore)
+	agentSessionService.ModelCapabilities = agentModelCapabilities
+	agentSessionService.AgentTargetStore = agentTargetStore
+	configureWorkspaceAgentResolution(
+		agentSessionService,
+		agentActivityProjection,
+		workspaceAgents,
+		workspaceAgentsStore,
+	)
+	agentSessionService.AgentComposerDefaultsReader = preferences
+	preferences.AgentComposerDefaultsValidator = agentSessionService
+	agentSessionService.ExtensionComposerProfiles = agentExtensionComposerProfileResolver{
+		manager: agentExtensionManager,
+	}
+	agentSessionService.SessionInitializer = agentActivityProjection
+	agentSessionService.SessionReader = agentActivityProjection
 	agentSessionPurgeStore, ok := agentActivityRepo.(agenthost.SessionPurgeStore)
 	if !ok {
 		return tuttiapi.DaemonAPI{}, nil, nil, nil, fmt.Errorf("agent session purge store is unavailable")
 	}
-	var sessionDeletionGuard agenthost.SessionDeletionGuard
+	agentSessionService.SessionPurgeStore = agentSessionPurgeStore
 	if tuttiModeDeletionAdmissionStore != nil {
 		sourceDeletionGuard := &tuttimodeexecutionservice.SourceDeletionGuard{
 			Store:   tuttiModeDeletionAdmissionStore,
@@ -301,15 +341,30 @@ func buildDaemonAPI(
 				"recover source session deletion admissions: %w", err,
 			)
 		}
-		sessionDeletionGuard = sourceDeletionGuard
+		agentSessionService.SessionDeletionGuard = sourceDeletionGuard
 	}
+	agentSessionService.UserProjectReader = userProjectService
+	agentSessionService.MessageReader = agentActivityProjection
+	agentSessionService.ExternalImportStore = agentActivityRepo
+	agentSessionService.TurnStore = agentActivityRepo
+	agentSessionService.TurnSummaryReader = agentActivityRepo
+	agentSessionService.RuntimeOperationStore = agentActivityRepo
+	agentSessionService.GoalStateStore = agentActivityRepo
+	agentSessionService.GoalGenerationFenceStore = agentActivityRepo
+	agentSessionService.CommitObserver = agentActivityProjection
 	agentSessionRecordingService, err := buildAgentSessionRecordingService(
-		store, sessionRecordingTransport,
+		store, sessionRecordingTransport, agentSessionService,
 	)
 	if err != nil {
 		return tuttiapi.DaemonAPI{}, nil, nil, nil, err
 	}
-	configureAgentSessionRecordingObservers(agentActivityProjection, agentRuntimeController, agentSessionRecordingService)
+	configureAgentSessionRecordingObservers(agentActivityProjection, agentSessionService, agentRuntimeController, agentSessionRecordingService)
+	agentSessionService.SubmitClaimStore = agentActivityRepo
+	agentSessionService.RuntimeOperationEventPublisher = agentActivityProjection
+	agentSessionService.TuttiModeActivations = tuttiModeActivations
+	agentSessionService.RuntimeOperationOwner = uuid.NewString()
+	agentSessionService.StaleTurnSettler = agentActivityProjection
+	agentSessionService.GoalOperationOwner = uuid.NewString()
 	goalReconcileInbox, ok := agentActivityRepo.(interface {
 		agentservice.GoalReconcileInboxStore
 		agentservice.GoalReconcileInboxWriter
@@ -317,29 +372,46 @@ func buildDaemonAPI(
 	if !ok {
 		return tuttiapi.DaemonAPI{}, nil, nil, nil, fmt.Errorf("agent goal reconcile inbox store is unavailable")
 	}
+	agentSessionService.GoalReconcileInboxStore = goalReconcileInbox
 	agentActivityProjection.SetGoalReconcileInboxWriter(goalReconcileInbox)
 	goalProvenanceLedger, ok := agentActivityRepo.(agentservice.GoalProvenanceLedgerStore)
 	if !ok {
 		return tuttiapi.DaemonAPI{}, nil, nil, nil, fmt.Errorf("agent goal provenance ledger store is unavailable")
 	}
 	agentActivityProjection.SetGoalProvenanceLedger(goalProvenanceLedger)
-	workspaceIDs := agentWorkspaceIDs(store)
-	promptAttachments := agentservice.PromptAttachmentStore{
+	agentSessionService.SessionDirectoryAllocator = agentservice.LocalSessionDirectoryAllocator{
+		StateDir: tuttitypes.DefaultStateDir(),
+	}
+	agentSessionService.WorktreeStateDir = tuttitypes.DefaultStateDir()
+	agentSessionService.WorkspaceIDs = func(ctx context.Context) ([]string, error) {
+		workspaces, err := store.List(ctx)
+		if err != nil {
+			return nil, err
+		}
+		ids := make([]string, 0, len(workspaces))
+		for _, workspace := range workspaces {
+			ids = append(ids, workspace.ID)
+		}
+		return ids, nil
+	}
+	agentSessionService.PromptAttachmentStore = agentservice.PromptAttachmentStore{
 		RootDir:       tuttitypes.DefaultStateDir(),
 		SourceRootDir: filepath.Join(tuttitypes.DefaultStateDir(), "agent-prompt-assets"),
 	}
-	var agentRuntimePreparation runtimeprep.Preparer
-	var computerUseAvailable func() bool
-	var availabilityChecker agentservice.ProviderAvailabilityChecker
 	if !replayComposition {
-		agentRuntimePreparation = agentRuntimePreparer
-		computerUseAvailable = agentRuntimePreparer.ComputerUseAvailable
-		availabilityChecker = agentservice.AgentStatusProviderAvailabilityChecker{
+		agentSessionService.RuntimePreparer = agentRuntimePreparer
+		agentSessionService.ComputerUseAvailable = agentRuntimePreparer.ComputerUseAvailable
+		agentSessionService.AvailabilityChecker = agentservice.AgentStatusProviderAvailabilityChecker{
 			Service: &agentStatusService,
 		}
 	} else {
-		availabilityChecker = replayProviderAvailabilityChecker{}
+		agentSessionService.AvailabilityChecker = replayProviderAvailabilityChecker{}
 	}
+	modelPlans.NativeSubscriptionProbe = modelPlanNativeSubscriptionProbe{Agents: agentSessionService}
+	automationExecutor := &automationruleservice.DaemonExecutor{Agents: agentSessionService, Ledger: automationRulesStore}
+	automationRules.Executor = automationExecutor
+	automationRules.Sources = automationExecutor
+
 	canonicalStoreProvider, ok := store.(interface {
 		AgentCanonicalStore() *agentstoresqlite.Store
 	})
@@ -353,98 +425,15 @@ func buildDaemonAPI(
 		Observer:             agentActivityProjection,
 		InitializationPolicy: agentActivityProjection,
 	}
-	var agentSessionResourceReleaser agentservice.AgentSessionResourceReleaser
-	if browserService != nil {
-		agentSessionResourceReleaser = browserService
-	}
-	configureWorkspaceAgentProjection(agentActivityProjection, workspaceAgentsStore)
-	sourceActivityObservers := &agentservice.TuttiModeSourceActivityObservers{}
-	turnCancelObservers := &agentservice.TurnCancelObservers{}
-	agentSessionConfig := agentservice.ServiceConfig{
-		Runtime: agentservice.ServiceRuntimeConfig{
-			Preparer:                 agentRuntimePreparation,
-			ModelGateway:             modelGateway,
-			ComputerUseAvailable:     computerUseAvailable,
-			RuntimeOperationStore:    agentActivityRepo,
-			RuntimeOperationOwner:    uuid.NewString(),
-			StaleTurnSettler:         agentActivityProjection,
-			GoalStateStore:           agentActivityRepo,
-			GoalGenerationFenceStore: agentActivityRepo,
-			GoalReconcileInboxStore:  goalReconcileInbox,
-			GoalOperationOwner:       uuid.NewString(),
-			ModelBindings:            modelBindingsStore,
-			ModelPlans:               modelPlansStore,
-		},
-		Sessions: agentservice.ServiceSessionConfig{
-			Initializer:       agentActivityProjection,
-			Reader:            agentActivityProjection,
-			PurgeStore:        agentSessionPurgeStore,
-			DeletionGuard:     sessionDeletionGuard,
-			UserProjectReader: userProjectService,
-			MessageReader:     agentActivityProjection,
-			TurnStore:         agentActivityRepo,
-			TurnSummaryReader: agentActivityRepo,
-			SubmitClaimStore:  agentActivityRepo,
-		},
-		Composer: agentservice.ServiceComposerConfig{
-			AvailabilityChecker:         availabilityChecker,
-			ModelCatalog:                agentModelCatalog,
-			ModelCapabilities:           agentModelCapabilities,
-			AgentTargetStore:            agentTargetStore,
-			WorkspaceAgentResolver:      workspaceAgents,
-			AgentComposerDefaultsReader: preferences,
-			ExtensionComposerProfiles: agentExtensionComposerProfileResolver{
-				manager: agentExtensionManager,
-			},
-		},
-		ExternalImport: agentservice.ServiceExternalImportConfig{
-			Store: agentActivityRepo,
-		},
-		Resources: agentservice.ServiceResourceConfig{
-			AgentSessionResourceReleaser: agentSessionResourceReleaser,
-			SessionDirectoryAllocator: agentservice.LocalSessionDirectoryAllocator{
-				StateDir: tuttitypes.DefaultStateDir(),
-			},
-			WorktreeStateDir:      tuttitypes.DefaultStateDir(),
-			WorkspaceIDs:          workspaceIDs,
-			PromptAttachmentStore: promptAttachments,
-		},
-		Observers: agentservice.ServiceObserverConfig{
-			AnalyticsReporter:              analyticsReporter,
-			CommitObserver:                 agentCommitObservers{agentActivityProjection},
-			RuntimeOperationEventPublisher: agentActivityProjection,
-			TuttiModeActivations:           tuttiModeActivations,
-			TuttiModeSourceActivity:        sourceActivityObservers,
-			TurnCancelObserver:             turnCancelObservers,
-		},
-	}
-	agentHostRuntime := &agenthostadapter.RuntimeController{
-		Backend: agentRuntime.Controller(),
-	}
-	agentServiceComponents := agentservice.NewServiceComponents(
-		agentRuntimeController,
-		agentSessionConfig,
-		canonicalHostStore,
-	)
 	agentHost := agentservice.NewApplicationHostWithPorts(
-		agentServiceComponents.HostSupportPorts(),
+		agentSessionService,
 		canonicalHostStore,
 		canonicalStoreProvider.AgentCanonicalStore(),
-		agentHostRuntime,
+		&agenthostadapter.RuntimeController{
+			Backend: agentRuntime.Controller(),
+		},
 	)
-	if agentHost == nil {
-		return tuttiapi.DaemonAPI{}, nil, nil, nil, fmt.Errorf("compose agent host")
-	}
-	agentSessionConfig.Host = agentservice.ServiceHostConfig{
-		ApplicationHost: agentHost,
-		Components:      agentServiceComponents,
-	}
-	agentSessionService := agentservice.NewService(agentRuntimeController, agentSessionConfig)
-	preferences.AgentComposerDefaultsValidator = agentSessionService
-	modelPlans.NativeSubscriptionProbe = modelPlanNativeSubscriptionProbe{Agents: agentSessionService}
-	automationExecutor := &automationruleservice.DaemonExecutor{Agents: agentSessionService, Ledger: automationRulesStore}
-	automationRules.Executor = automationExecutor
-	automationRules.Sources = automationExecutor
+	agentSessionService.SetApplicationHost(agentHost)
 	// Host fixes startup order: durable runtime operations first, then goal
 	// operations and reconcile inbox work, and only then stale turns.
 	if err := agentHost.Recover(ctx); err != nil {
@@ -492,7 +481,7 @@ func buildDaemonAPI(
 	tuttiModeSourceActivity := tuttiModeSourceActivityAdapter{
 		Executions: tuttiModeExecutions,
 	}
-	sourceActivityObservers.Add(tuttiModeSourceActivity)
+	agentSessionService.TuttiModeSourceActivity = tuttiModeSourceActivity
 	tuttiModeMainWakeRecovery := &tuttiModeMainWakeReadyRecovery{
 		Delegate: tuttiModeExecutions,
 	}
@@ -546,7 +535,7 @@ func buildDaemonAPI(
 	tuttiModeExecutions.ArchiveRuns = issueExecutionCoordinator
 	// A user's stop on a planning conversation cascades to every running task
 	// run its accepted plan dispatched.
-	turnCancelObservers.Add(issueExecutionCoordinator)
+	agentSessionService.TurnCancelObserver = issueExecutionCoordinator
 	issueService.ExecutionRecoveryQueue = workspaceservice.NewWorkspaceExecutionRecoveryQueue(workspaceservice.WorkspaceExecutionRecoveryQueueOptions{
 		Context:  ctx,
 		Delay:    3 * time.Second,

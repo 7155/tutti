@@ -12,6 +12,7 @@ import (
 	agentservice "github.com/tutti-os/tutti/services/tuttid/service/agent"
 	reporterservice "github.com/tutti-os/tutti/services/tuttid/service/reporter"
 	workspaceservice "github.com/tutti-os/tutti/services/tuttid/service/workspace"
+	workspaceagentservice "github.com/tutti-os/tutti/services/tuttid/service/workspaceagent"
 	tuttitypes "github.com/tutti-os/tutti/services/tuttid/types"
 )
 
@@ -227,15 +228,25 @@ func (fakeWorkspaceAgentTargetResolver) GetWorkspaceAgent(
 	return workspaceagentbiz.Agent{}, nil
 }
 
-func TestConfigureWorkspaceAgentProjectionWiresProjectionResolver(t *testing.T) {
+func TestConfigureWorkspaceAgentResolutionWiresLaunchAndProjection(t *testing.T) {
+	agentSessions := &agentservice.Service{}
 	activityProjection := &recordingWorkspaceAgentTargetResolverSetter{}
+	workspaceAgents := &workspaceagentservice.Service{}
 	workspaceAgentTargets := fakeWorkspaceAgentTargetResolver{}
 
-	configureWorkspaceAgentProjection(
+	configureWorkspaceAgentResolution(
+		agentSessions,
 		activityProjection,
+		workspaceAgents,
 		workspaceAgentTargets,
 	)
 
+	if agentSessions.WorkspaceAgentResolver != workspaceAgents {
+		t.Fatalf(
+			"agent session WorkspaceAgentResolver = %T, want workspace agent service",
+			agentSessions.WorkspaceAgentResolver,
+		)
+	}
 	if activityProjection.resolver != workspaceAgentTargets {
 		t.Fatalf(
 			"activity projection WorkspaceAgentTargetResolver = %T, want workspace agent service",

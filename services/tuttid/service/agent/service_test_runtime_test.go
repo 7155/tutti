@@ -59,6 +59,37 @@ type fakeRuntime struct {
 	validateCalls          []RuntimeExecInput
 }
 
+type controlledDeadlineContext struct {
+	context.Context
+	done chan struct{}
+	once sync.Once
+}
+
+func newControlledDeadlineContext() (*controlledDeadlineContext, func()) {
+	ctx := &controlledDeadlineContext{
+		Context: context.Background(),
+		done:    make(chan struct{}),
+	}
+	return ctx, func() {
+		ctx.once.Do(func() {
+			close(ctx.done)
+		})
+	}
+}
+
+func (c *controlledDeadlineContext) Done() <-chan struct{} {
+	return c.done
+}
+
+func (c *controlledDeadlineContext) Err() error {
+	select {
+	case <-c.done:
+		return context.DeadlineExceeded
+	default:
+		return nil
+	}
+}
+
 type fakeAgentTargetStore struct {
 	err     error
 	targets map[string]agenttargetbiz.Target

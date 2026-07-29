@@ -378,7 +378,6 @@ func TestServiceCreateResolvesProviderFromAgentTarget(t *testing.T) {
 	}
 	if visibleStart == nil {
 		t.Fatalf("start calls = %#v, want one visible (user-facing) start call", runtime.startCalls)
-		return
 	}
 	if got := visibleStart.Provider; got != "claude-code" {
 		t.Fatalf("runtime provider = %q, want claude-code", got)

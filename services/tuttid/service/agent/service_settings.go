@@ -14,20 +14,6 @@ func (s *Service) clampReasoningEffortForModel(
 	model string,
 	selected string,
 ) string {
-	var catalog AgentModelCatalog
-	if s != nil {
-		catalog = s.ModelCatalog
-	}
-	return clampReasoningEffortForModelWithCatalog(ctx, catalog, provider, model, selected)
-}
-
-func clampReasoningEffortForModelWithCatalog(
-	ctx context.Context,
-	catalog AgentModelCatalog,
-	provider string,
-	model string,
-	selected string,
-) string {
 	selected = strings.TrimSpace(selected)
 	// Only Codex-derived providers currently treat model-advertised reasoning
 	// values as authoritative. OpenCode uses its model catalog for discovery but
@@ -35,10 +21,10 @@ func clampReasoningEffortForModelWithCatalog(
 	if !composerProviderUsesModelReasoningCatalog(provider) {
 		return normalizeReasoningEffortForProvider(provider, selected)
 	}
-	if strings.TrimSpace(model) == "" && catalog != nil {
-		model = composerDefaultModel(ctx, provider, "", catalog)
+	if strings.TrimSpace(model) == "" && s.ModelCatalog != nil {
+		model = composerDefaultModel(ctx, provider, "", s.ModelCatalog)
 	}
-	catalogOptions, ok := composerModelOptionsFromCatalog(ctx, catalog, provider, "", model)
+	catalogOptions, ok := composerModelOptionsFromCatalog(ctx, s.ModelCatalog, provider, "", model)
 	if !ok || !catalogOptions.Selection.ReasoningEffortsAdvertised {
 		return normalizeReasoningEffortForProvider(provider, selected)
 	}

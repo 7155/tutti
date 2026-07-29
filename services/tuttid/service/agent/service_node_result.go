@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/tutti-os/tutti/services/tuttid/biz/agentanalytics"
-	reporterservice "github.com/tutti-os/tutti/services/tuttid/service/reporter"
 	agentnoderesult "github.com/tutti-os/tutti/services/tuttid/service/reporter/events/agent/node_result"
 )
 
@@ -22,18 +21,7 @@ type agentServiceNodeResultInput struct {
 }
 
 func (s *Service) reportAgentServiceNodeResult(ctx context.Context, input agentServiceNodeResultInput) {
-	if s == nil {
-		return
-	}
-	reportAgentServiceNodeResult(ctx, s.AnalyticsReporter, input)
-}
-
-func reportAgentServiceNodeResult(
-	ctx context.Context,
-	reporter reporterservice.Reporter,
-	input agentServiceNodeResultInput,
-) {
-	if reporter == nil {
+	if s == nil || s.AnalyticsReporter == nil {
 		return
 	}
 	status := strings.TrimSpace(input.Status)
@@ -53,7 +41,7 @@ func reportAgentServiceNodeResult(
 		elapsed := time.Since(input.StartedAt).Milliseconds()
 		durationMS = &elapsed
 	}
-	agentnoderesult.Track(ctx, reporter, agentnoderesult.BuildParams(agentnoderesult.NodeResultInput{
+	agentnoderesult.Track(ctx, s.AnalyticsReporter, agentnoderesult.BuildParams(agentnoderesult.NodeResultInput{
 		AgentSessionID: input.AgentSessionID,
 		DurationMS:     durationMS,
 		ErrorCode:      errorCode,

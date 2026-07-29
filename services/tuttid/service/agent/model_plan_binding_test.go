@@ -105,7 +105,6 @@ func TestResolveModelPlanEndpointMatchesProviderProtocol(t *testing.T) {
 	endpoint, models := service.resolveModelPlanEndpoint(ctx, "ws", "local:codex", "codex", "")
 	if endpoint == nil {
 		t.Fatalf("resolveModelPlanEndpoint() = nil, want endpoint")
-		return
 	}
 	if endpoint.Model != "plan-default" || endpoint.APIKey != "sk-plan" || endpoint.Protocol != "openai" {
 		t.Fatalf("endpoint = %#v", endpoint)
@@ -474,7 +473,6 @@ func TestResolveModelPlanNamespacesOpenCodeModelValues(t *testing.T) {
 	endpoint, models := service.resolveModelPlanEndpoint(ctx, "ws", "local:opencode", "opencode", "")
 	if endpoint == nil {
 		t.Fatalf("resolveModelPlanEndpoint() = nil, want endpoint for opencode")
-		return
 	}
 	if endpoint.Model != "tutti-model-plan/plan-default" {
 		t.Fatalf("endpoint model = %q, want namespaced plan default", endpoint.Model)

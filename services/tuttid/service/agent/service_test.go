@@ -199,6 +199,7 @@ func TestServiceCreateGeneratesClientSubmitIDForSubmitProvenance(t *testing.T) {
 	projection := NewActivityProjection(store)
 	service.SessionInitializer = projection
 	service.SessionReader = projection
+	service.SubmitClaimStore = store
 
 	created, err := service.CreateWithResult(ctx, "ws-provenance", CreateSessionInput{
 		AgentSessionID: "33333333-3333-4333-8333-333333333333",

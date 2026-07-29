@@ -1109,6 +1109,14 @@ target/cwd/settings request cache. It does not force a refresh; force is
 reserved for explicit invalidation, completed Session creation, and documented
 provider prewarm behavior.
 
+For an active Session, the composer treats `agentSessionId`, `agentTargetId`,
+and `provider` as one Engine-owned identity projection. It must not combine a
+target id from the canonical Session with a provider from lagging Workbench
+node data. If the Engine target is not yet available or belongs to a different
+selected Session, composer-option loading waits instead of issuing a guessed
+request. The home composer continues to use its selected Agent Target as one
+atomic projection.
+
 Trusted host/daemon code resolves a target-backed request through `agent_targets`, then derives provider and runtime reference. If a client supplies both target and provider, daemon rejects a mismatch.
 
 ### 5.2 Provider strategy

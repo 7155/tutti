@@ -38,6 +38,10 @@ describe("composer target presentation", () => {
     expect(
       composerTargetDataForConversation({
         activeConversationId: "session-new",
+        activeSessionTarget: {
+          ...selectedTarget,
+          agentSessionId: "session-new"
+        },
         data: staleNodeData,
         optimisticTarget,
         selectedTarget
@@ -56,6 +60,10 @@ describe("composer target presentation", () => {
     expect(
       composerTargetDataForConversation({
         activeConversationId: "session-new",
+        activeSessionTarget: {
+          ...selectedTarget,
+          agentSessionId: "session-new"
+        },
         data: echoedNodeData,
         optimisticTarget,
         selectedTarget
@@ -92,8 +100,12 @@ describe("composer target presentation", () => {
 
     expect(
       composerTargetDataForConversation({
-        activeAgentTargetId: "extension:hermes",
         activeConversationId: "session-1",
+        activeSessionTarget: {
+          agentTargetId: "extension:hermes",
+          agentSessionId: "session-1",
+          provider: "acp:hermes"
+        },
         data: staleNodeData,
         optimisticTarget: null,
         selectedTarget
@@ -106,6 +118,55 @@ describe("composer target presentation", () => {
         agentTargetId: "extension:hermes",
         provider: "acp:hermes"
       }
+    });
+  });
+
+  it("keeps the active session target identity atomic while node data catches up", () => {
+    const staleNodeData: AgentGUINodeData = {
+      agentTargetId: "local:opencode",
+      provider: "opencode",
+      lastActiveAgentSessionId: null
+    };
+
+    expect(
+      composerTargetDataForConversation({
+        activeConversationId: "session-codex",
+        activeSessionTarget: {
+          agentTargetId: "local:codex",
+          agentSessionId: "session-codex",
+          provider: "codex"
+        },
+        data: staleNodeData,
+        optimisticTarget: null,
+        selectedTarget
+      })
+    ).toMatchObject({
+      agentTargetId: "local:codex",
+      provider: "codex",
+      targetId: "local:codex",
+      data: {
+        agentTargetId: "local:codex",
+        provider: "codex"
+      }
+    });
+  });
+
+  it("waits when the Engine target belongs to a different session", () => {
+    expect(
+      composerTargetDataForConversation({
+        activeConversationId: "session-new",
+        activeSessionTarget: {
+          agentSessionId: "session-old",
+          agentTargetId: "local:opencode",
+          provider: "opencode"
+        },
+        data: selectedTarget.data,
+        optimisticTarget: null,
+        selectedTarget
+      })
+    ).toMatchObject({
+      agentTargetId: null,
+      targetId: "__active_session_loading__"
     });
   });
 

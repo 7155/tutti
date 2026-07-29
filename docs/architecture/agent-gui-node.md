@@ -378,6 +378,12 @@ transactionally rejects an unverified prefix, descendant lane, or
 session-scoped local attachment. This prevents a later unavailable Turn from
 hiding an earlier valid Turn while preserving a fail-closed commit.
 
+Session Fork is also a default-off Lab capability. Desktop maps
+`lab.agentSessionFork` to an explicit AgentGUI host opt-in, so provider support
+alone does not expose the action. Tuttid independently enforces the same flag
+on new Fork writes; disabling it leaves existing lineage, operation reads, and
+operation acknowledgements available.
+
 Tuttid currently rejects worktree-isolated sources at the Session capability
 layer. A provider-native thread Fork keeps the provider cwd; copying the
 source worktree ownership or silently selecting another checkout would be
@@ -592,6 +598,10 @@ disable submission, but must not change editor editability.
   command. Concurrent AgentGUI surfaces subscribe through exact
   Session-family or target selectors; a selector preserves its selected
   reference when another root Session changes
+- AgentGUI transcript presentation subscribes to projected messages for only
+  the selected root Session and its current child Sessions. This projection
+  includes optimistic `message_delta` text before durable confirmation, while
+  preserving message-array references for every unrelated Session
 - whole-workspace `AgentActivitySnapshot` projections remain valid for bounded
   aggregate reads, but do not belong in high-frequency AgentGUI render paths.
   Event callbacks that need current canonical data read the engine snapshot at
@@ -602,8 +612,15 @@ disable submission, but must not change editor editability.
   `AgentSessionEffectPort` calls. Desktop and Mobile implement those semantic
   methods and must not duplicate a command-type switch for them. Platform-only
   commands remain in each host's `EngineExtensionCommand` adapter. Every effect
-  propagates the Engine-owned AbortSignal to its transport; a required settings
-  precondition rechecks cancellation before prompt send
+  propagates the Engine-owned AbortSignal to its transport. Direct settings
+  changes, post-activation persistence, and prompt-required settings share one
+  per-Session Engine lane. Owner boundaries are serialization barriers rather
+  than coalescing opportunities. A validated precondition updates canonical
+  Session state before the Engine starts send, while a failed or timed-out
+  precondition prevents delivery. A timed-out settings write remains
+  delivery-unknown and does not release queued writes automatically. A fresh
+  explicit settings selection is the user's retry: Desktop AgentGUI and Native
+  Mobile derive that retry from the exact Engine settings-operation state
 - consumers do not read reducer maps directly
 - consumers do not create canonical session/message mirrors
 - optimistic records define confirmation, rejection, timeout, and uncertain-delivery paths
@@ -615,6 +632,9 @@ disable submission, but must not change editor editability.
 - newest-to-oldest reads attach their authoritative message-window coverage to
   the same snapshot intent; incremental/realtime updates preserve that coverage
 - realtime authoritative entities use upsert intents
+- optimistic `message_delta` updates invalidate the exact Session projection;
+  they do not write an unconfirmed message into canonical Engine state.
+  Terminal `message_update` reconciliation replaces that optimistic projection
 - an authoritative Session detail result enters through
   `session/detailSnapshotReceived`; `agent-activity-core` expands the root
   Session, Turns, child Sessions, and optional message coverage in one engine
@@ -687,6 +707,11 @@ The busy-session prompt queue is ephemeral durable-intent coordination in the wo
 - a provider with native guidance capability may guide the active Turn
 - otherwise send-now performs exact cancel-then-send
 - user Stop pauses the queue; cancellation must not leak the next prompt
+- a prompt settings precondition is an explicit preparation stage, not a nested
+  host effect. It serializes with direct and post-activation settings writes,
+  updates the canonical Session on success, starts send before releasing later
+  settings writes, and fails the logical prompt without delivery when the
+  settings result is not valid
 - a visible failed queue entry continues to own its submitted content for retry;
   draft settlement must not duplicate that content back into the composer
 - uncertain delivery reconciles by `clientSubmitId` and exact `turnId`; it never resends merely because the Session appears idle
@@ -912,12 +937,13 @@ modes. User scroll-away intent detaches synchronously, before the first scroll
 frame. A mounted detail view retains the scroll anchor and follow-end mode for
 each exact Agent Session it visits. First selection follows the end; returning
 to a detached Session restores its retained position, while returning to a
-following Session stays at the end. This memory expires with the mounted view
-and never enters navigation, Engine, or Session state. Prompt submission, an
-explicit scroll-to-end request, or the user actually reaching the end may
-reattach. Content growth, layout effects, observers, virtualizer geometry, and
-near-end thresholds are sensors or executors only; they must not transition the
-mode.
+following Session stays at the end. This mounted-view memory retains at most 64
+recently used Sessions and evicts the least recently used entry beyond that
+limit. It expires with the mounted view and never enters navigation, Engine, or
+Session state. Prompt submission, an explicit scroll-to-end request, or the
+user actually reaching the end may reattach. Content growth, layout effects,
+observers, virtualizer geometry, and near-end thresholds are sensors or
+executors only; they must not transition the mode.
 
 Turn-level virtualization has one geometry owner. When the transcript is
 virtualized and the state machine is `following`, TanStack Virtual owns append
@@ -1030,12 +1056,29 @@ provider ID
 
 An unknown provider produces explicit unsupported behavior. Provider adapters normalize their own wire; shared renderers consume canonical message/tool/notice contracts only.
 
+Desktop managed-provider setup reads the generated provider catalog's
+`statusKind` strategy before requesting a provider-specific runtime candidate
+catalog. The setup service and view must not keep a second provider-id list or
+branch directly on provider names.
+
 Skill invocation follows the same boundary. Filesystem and runtime adapters
 discover skill identity, source, and plugin ownership; `providerregistry`
 projects the provider-authored trigger and invocation strategy. Composer and
 host adapters consume that projection and must not rebuild `$` versus `/`,
 plugin namespaces, or prompt-item versus text-trigger behavior from provider
 names.
+
+Native Composer plugins are a separate projection from Skills and MCP
+discovery. The daemon issues a small descriptor with a stable `semantic`,
+status, trigger, and `plugin://` path; AgentGUI uses that descriptor for
+presentation, setup actions, and structured mentions without branching on a
+provider id or reading local plugin icon paths. For Codex, `$` is the native
+plugin surface while `/` remains commands and product capabilities. A
+session-scoped runtime-preparation plan remains authoritative for whether a
+selected native plugin can actually run. The provider descriptor carries
+`behavior.nativePluginCatalogAuthoritative` to say that this native catalog is
+the complete Composer plugin surface, including when it is empty; other
+providers retain the ordinary Skills and connector projection.
 
 ### 5.3 Agent Directory and setup
 

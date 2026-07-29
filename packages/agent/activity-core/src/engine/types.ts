@@ -92,6 +92,10 @@ export interface EngineIntentExpiredIntent {
   dueAtUnixMs: number;
 }
 
+/**
+ * Host-dispatchable and host-observable Engine input. Reducer-only
+ * continuations belong to the private root-reducer contract.
+ */
 export type EngineIntent =
   | AttentionReadIntent
   | EngineCommandResultIntent
@@ -103,7 +107,6 @@ export type EngineIntent =
   | WorkspaceReconcileRequestedIntent
   | PendingIntentsIntent
   | PlanDecisionIntent
-  | PromptExecutionIntent
   | PromptQueueIntent
   | SessionReconcileIntent
   | SessionMutationsIntent
@@ -244,12 +247,15 @@ export interface EngineRuntimeState {
   };
 }
 
+/**
+ * Host-observable Engine snapshot. Reducer execution ledgers are deliberately
+ * omitted from this public state contract.
+ */
 export interface AgentSessionEngineState {
   attentionReadState: AttentionReadState;
   engineRuntime: EngineRuntimeState;
   pendingIntents: PendingIntentsState;
   planDecisions: PlanDecisionState;
-  promptExecutions: PromptExecutionState;
   promptQueue: PromptQueueState;
   sessionReconcile: SessionReconcileState;
   sessionMutations: SessionMutationsState;
@@ -425,10 +431,6 @@ export interface AgentSessionEngine {
   getSnapshot(): AgentSessionEngineState;
   subscribe(listener: AgentSessionEngineListener): () => void;
 }
-import type {
-  PromptExecutionIntent,
-  PromptExecutionState
-} from "./promptExecution.types.ts";
 import type {
   PromptQueueIntent,
   PromptQueueSendCommand,

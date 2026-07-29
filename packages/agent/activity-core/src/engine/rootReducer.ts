@@ -32,10 +32,10 @@ import {
   sessionReconcileReducer
 } from "./sessionReconcile.reducer.ts";
 import type {
-  AgentSessionEngineState,
-  EngineIntent,
-  EngineReducerResult
-} from "./types.ts";
+  RootAgentSessionEngineState,
+  RootEngineIntent,
+  RootEngineReducerResult
+} from "./rootReducer.types.ts";
 import {
   attentionReadStateReducer,
   createInitialAttentionReadState
@@ -76,7 +76,7 @@ import {
 // Cross-domain read-only context is passed explicitly; domains still own all
 // decisions and state transitions in their own reducer.
 
-export function createInitialAgentSessionEngineState(): AgentSessionEngineState {
+export function createInitialAgentSessionEngineState(): RootAgentSessionEngineState {
   return {
     attentionReadState: createInitialAttentionReadState(),
     engineRuntime: createInitialEngineRuntimeState(),
@@ -95,9 +95,25 @@ export function createInitialAgentSessionEngineState(): AgentSessionEngineState 
 }
 
 export function rootEngineReducer(
-  state: AgentSessionEngineState,
-  intent: EngineIntent
-): EngineReducerResult<AgentSessionEngineState> {
+  state: RootAgentSessionEngineState,
+  intent: RootEngineIntent
+): RootEngineReducerResult<RootAgentSessionEngineState> {
+  if (intent.type === "prompt/executionRequested") {
+    const promptExecutions = promptExecutionReducer(
+      state.promptExecutions,
+      intent
+    );
+    return {
+      commands: promptExecutions.commands,
+      ...(promptExecutions.followUpIntents
+        ? { followUpIntents: promptExecutions.followUpIntents }
+        : {}),
+      state:
+        promptExecutions.state === state.promptExecutions
+          ? state
+          : { ...state, promptExecutions: promptExecutions.state }
+    };
+  }
   const sendResultValidation =
     intent.type === "engine/commandResult" &&
     intent.commandType === "queue/sendPrompt" &&

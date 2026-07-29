@@ -199,7 +199,9 @@ It owns:
 
 The public seam is `AgentSessionEffectPort`. Prompt precondition ordering and
 its helper port are Engine implementation details and are not exported from the
-package root.
+package root. Reducer-only prompt continuation intents are absent from public
+`EngineIntent`; their bookkeeping is also absent from
+`AgentSessionEngineState`, `getSnapshot()`, and subscription callbacks.
 
 It does not own:
 

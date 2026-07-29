@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { createAgentSessionEngine } from "./createAgentSessionEngine.ts";
 import type { EngineDiagnosticEvent } from "./diagnostics.ts";
 import type {
+  AgentSessionEngine,
   AgentSessionEngineState,
   EngineClock,
   EngineCommandPort,
@@ -325,6 +326,28 @@ test("command success feeds back into the loop as a result intent", async () => 
   });
 });
 
+test("command execution observes the state produced by its triggering intent", () => {
+  const timer = createManualTimer();
+  let engine: AgentSessionEngine;
+  let snapshotDuringExecution: AgentSessionEngineState | undefined;
+  const commandPort: EngineCommandPort = {
+    execute() {
+      snapshotDuringExecution = engine.getSnapshot();
+      return new Promise(() => {});
+    }
+  };
+  engine = createAgentSessionEngine({
+    clock: timer.clock,
+    commandPort,
+    identity: { origin: "local-tuttid", workspaceId: "ws-1" },
+    scheduler: timer.scheduler
+  });
+
+  engine.dispatch({ probeId: "snapshot-order", type: "engine/probeRequested" });
+
+  assert.equal(snapshotDuringExecution?.engineRuntime.processedIntentCount, 1);
+});
+
 test("command failure feeds back as a failed result with the error message", async () => {
   const { commandPort, engine } = createHarness();
   engine.dispatch({ probeId: "p-2", type: "engine/probeRequested" });
@@ -415,6 +438,49 @@ test("settings precondition updates canonical Session before send and survives s
       "submit-settings"
     ]?.status,
     "failed"
+  );
+});
+
+test("public snapshots omit private prompt execution bookkeeping", () => {
+  const harness = createHarness({ workspaceId: "workspace-1" });
+  assert.equal(
+    Object.hasOwn(harness.engine.getSnapshot(), "promptExecutions"),
+    false
+  );
+
+  harness.engine.dispatch({
+    sessions: [
+      activitySession("session-private-state", {
+        agentTargetId: "target-1",
+        settings: { browserUse: false }
+      })
+    ],
+    type: "session/snapshotReceived"
+  });
+  harness.engine.dispatch({
+    agentSessionId: "session-private-state",
+    clientSubmitId: "submit-private-state",
+    content: [{ text: "browse", type: "text" }],
+    expiresAtUnixMs: 120_000,
+    requestedAtUnixMs: 1,
+    requiredSettingsPatch: { browserUse: true },
+    type: "submit/requested",
+    workspaceId: "workspace-1"
+  });
+
+  assert.equal(
+    Object.hasOwn(harness.engine.getSnapshot(), "promptExecutions"),
+    false
+  );
+  assert.equal(
+    harness.notifiedStates.some((state) =>
+      Object.hasOwn(state, "promptExecutions")
+    ),
+    false
+  );
+  assert.equal(
+    harness.commandPort.executedCommands.at(-1)?.type,
+    "session/updateSettings"
   );
 });
 

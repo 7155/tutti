@@ -7,9 +7,12 @@ import type { PromptQueueSendCommand } from "./promptQueue.types.ts";
 import type {
   EngineCommand,
   EngineCommandResultIntent,
-  EngineIntent,
   EngineReducerResult
 } from "./types.ts";
+import type {
+  RootEngineIntent,
+  RootEngineReducerResult
+} from "./rootReducer.types.ts";
 
 const NO_COMMANDS: readonly EngineCommand[] = [];
 
@@ -19,11 +22,11 @@ export function createInitialPromptExecutionState(): PromptExecutionState {
 
 export function promptExecutionReducer(
   state: PromptExecutionState,
-  intent: EngineIntent,
+  intent: RootEngineIntent,
   context: {
     settingsResultValidation?: ScopedSessionResultValidation | null;
   } = {}
-): EngineReducerResult<PromptExecutionState> {
+): RootEngineReducerResult<PromptExecutionState> {
   if (intent.type === "prompt/executionRequested") {
     return requestPromptExecution(state, intent.command);
   }

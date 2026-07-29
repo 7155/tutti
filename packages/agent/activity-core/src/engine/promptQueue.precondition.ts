@@ -4,6 +4,7 @@ import type {
   EngineCommandResultIntent,
   EngineReducerResult
 } from "./types.ts";
+import type { RootEngineReducerResult } from "./rootReducer.types.ts";
 import type {
   PromptQueueSendCommand,
   PromptQueueState
@@ -14,7 +15,7 @@ const NO_COMMANDS: readonly EngineCommand[] = [];
 export function requestPromptExecution(
   state: PromptQueueState,
   command: PromptQueueSendCommand
-): EngineReducerResult<PromptQueueState> {
+): RootEngineReducerResult<PromptQueueState> {
   return {
     commands: NO_COMMANDS,
     followUpIntents: [

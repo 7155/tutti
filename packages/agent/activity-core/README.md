@@ -291,7 +291,9 @@ for external hosts that use them for goal setup or idempotency.
 
 Prompt command ordering is an Engine implementation detail. Consumers implement
 `AgentSessionEffectPort`; the package root does not expose the internal prompt
-execution helper or its precondition port.
+execution helper or its precondition port. The reducer-only continuation is not
+part of public `EngineIntent`, and its execution ledger is omitted from
+`AgentSessionEngineState`, `getSnapshot()`, and subscription callbacks.
 
 Host-only commands such as Desktop attention persistence or composer-options
 transport loading remain in an `EngineExtensionCommand` adapter. The Engine,

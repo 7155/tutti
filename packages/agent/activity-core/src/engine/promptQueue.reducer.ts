@@ -41,6 +41,7 @@ import {
   requestPromptExecution,
   settlePromptSettingsPrecondition
 } from "./promptQueue.precondition.ts";
+import type { RootEngineReducerResult } from "./rootReducer.types.ts";
 
 const NO_COMMANDS: readonly EngineCommand[] = [];
 const QUEUE_SEND_TIMEOUT_MS = 30_000;
@@ -64,7 +65,7 @@ export function promptQueueReducer(
   state: PromptQueueState,
   intent: EngineIntent,
   context: PromptQueueReducerContext
-): EngineReducerResult<PromptQueueState> {
+): RootEngineReducerResult<PromptQueueState> {
   const reduced = reduceQueueOwnedState(state, intent, context);
   if (intent.type === "submit/requested" && intent.routing === "immediate") {
     return reduced;
@@ -83,7 +84,7 @@ function reduceQueueOwnedState(
   state: PromptQueueState,
   intent: EngineIntent,
   context: PromptQueueReducerContext
-): EngineReducerResult<PromptQueueState> {
+): RootEngineReducerResult<PromptQueueState> {
   switch (intent.type) {
     case "session/removed":
     case "queue/sessionCleaned":
@@ -203,7 +204,7 @@ function enqueueSubmit(
   state: PromptQueueState,
   intent: Extract<EngineIntent, { type: "submit/requested" }>,
   lifecycle: CanonicalSessionLifecycleView
-): EngineReducerResult<PromptQueueState> {
+): RootEngineReducerResult<PromptQueueState> {
   if (intent.routing === "immediate") {
     const command = sendCommandFromImmediateSubmit(intent);
     return command.requiredSettingsPatch
@@ -537,10 +538,10 @@ function exactConfirmedTurns(
 }
 
 function drainAffectedSessions(
-  reduced: EngineReducerResult<PromptQueueState>,
+  reduced: RootEngineReducerResult<PromptQueueState>,
   affected: readonly string[],
   lifecycle: CanonicalSessionLifecycleView
-): EngineReducerResult<PromptQueueState> {
+): RootEngineReducerResult<PromptQueueState> {
   let state = reduced.state;
   const commands = [...reduced.commands];
   const followUpIntents = [...(reduced.followUpIntents ?? [])];
@@ -565,7 +566,7 @@ function drainSession(
   state: PromptQueueState,
   agentSessionId: string,
   lifecycle: CanonicalSessionLifecycleView
-): EngineReducerResult<PromptQueueState> {
+): RootEngineReducerResult<PromptQueueState> {
   const originalState = state;
   let record = state.recordsBySessionId[agentSessionId];
   if (!record) return unchanged(state);

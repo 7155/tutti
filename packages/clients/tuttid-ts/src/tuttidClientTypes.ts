@@ -917,7 +917,8 @@ export interface TuttidClient
   updateWorkspaceAgentSessionPin(
     workspaceID: string,
     agentSessionID: string,
-    request: UpdateWorkspaceAgentSessionPinRequest
+    request: UpdateWorkspaceAgentSessionPinRequest,
+    requestOptions?: TuttidRequestOptions
   ): Promise<WorkspaceAgentSession>;
   updateWorkspaceAgentSessionTitle(
     workspaceID: string,

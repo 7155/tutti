@@ -215,6 +215,14 @@ function executeCommand(
         },
         { signal }
       );
+    case "sessions/delete":
+      return effects.deleteSessions(
+        {
+          agentSessionIds: [...command.agentSessionIds],
+          workspaceId: command.workspaceId
+        },
+        { signal }
+      );
     case "interaction/respond":
       return effects.respondToInteraction(
         {
@@ -224,6 +232,15 @@ function executeCommand(
           ...(command.payload ? { payload: { ...command.payload } } : {}),
           requestId: command.requestId,
           turnId: command.turnId,
+          workspaceId: command.workspaceId
+        },
+        { signal }
+      );
+    case "session/setPinned":
+      return effects.setSessionPinned(
+        {
+          agentSessionId: command.agentSessionId,
+          pinned: command.pinned,
           workspaceId: command.workspaceId
         },
         { signal }

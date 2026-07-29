@@ -309,4 +309,68 @@ describe("createWorkspaceActivityEffectPort", () => {
       { signal: controller.signal }
     );
   });
+
+  test("projects pin and delete mutations with the Engine cancellation signal", async () => {
+    const controller = new AbortController();
+    const updateWorkspaceAgentSessionPin = jest.fn().mockResolvedValue({});
+    const deleteWorkspaceAgentSessionsBatch = jest.fn().mockResolvedValue({
+      cleanupFailedSessionIds: [],
+      removedMessages: 3,
+      removedSessionIds: ["session-1", "session-2"],
+      removedSessions: 2
+    });
+    const activitySession = {
+      agentSessionId: "session-1",
+      workspaceId: "workspace-1"
+    } as AgentActivitySession;
+    const port = createWorkspaceActivityEffectPort(() => ({
+      client: {
+        deleteWorkspaceAgentSessionsBatch,
+        updateWorkspaceAgentSessionPin
+      } as unknown as TuttidClient,
+      engine: {} as AgentSessionEngine,
+      loadComposerOptions() {},
+      mapSession: () => activitySession,
+      mapSessionDetail() {
+        throw new Error("unexpected detail mapping");
+      },
+      async reconcileSession() {},
+      async reconcileWorkspace() {}
+    }));
+
+    const pinResult = await port.setSessionPinned(
+      {
+        agentSessionId: "session-1",
+        pinned: true,
+        workspaceId: "workspace-1"
+      },
+      { signal: controller.signal }
+    );
+    const deleteResult = await port.deleteSessions(
+      {
+        agentSessionIds: ["session-1", "session-2"],
+        workspaceId: "workspace-1"
+      },
+      { signal: controller.signal }
+    );
+
+    expect(updateWorkspaceAgentSessionPin).toHaveBeenCalledWith(
+      "workspace-1",
+      "session-1",
+      { pinned: true },
+      { signal: controller.signal }
+    );
+    expect(deleteWorkspaceAgentSessionsBatch).toHaveBeenCalledWith(
+      "workspace-1",
+      { sessionIds: ["session-1", "session-2"] },
+      { signal: controller.signal }
+    );
+    expect(pinResult).toEqual({ session: activitySession });
+    expect(deleteResult).toEqual({
+      cleanupFailedSessionIds: [],
+      removedMessages: 3,
+      removedSessionIds: ["session-1", "session-2"],
+      removedSessions: 2
+    });
+  });
 });

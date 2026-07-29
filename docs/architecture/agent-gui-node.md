@@ -598,7 +598,7 @@ disable submission, but must not change editor editability.
   event time instead of retaining a whole-workspace render snapshot
 - lifecycle writes use typed intents/commands
 - the Engine alone translates shared activation, prompt send, settings update,
-  turn cancel, and Interaction response commands into
+  turn cancel, Interaction response, pin, and batch-delete commands into
   `AgentSessionEffectPort` calls. Desktop and Mobile implement those semantic
   methods and must not duplicate a command-type switch for them. Platform-only
   commands remain in each host's `EngineExtensionCommand` adapter. Every effect

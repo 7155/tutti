@@ -191,10 +191,10 @@ It owns:
   command-description effect executor, expiry-intent clock, and intent frame
   batching, with scheduler/clock/command ports injected by the host
 - the typed frontend effect seam for activation, prompt send, settings update,
-  turn cancellation, and Interaction response, including lossless command
-  projection and required-settings-before-send ordering; hosts retain
-  transport, DTO mapping, AbortSignal propagation, and product-specific command
-  extensions (see
+  turn cancellation, Interaction response, pin, and batch delete, including
+  lossless command projection and required-settings-before-send ordering; hosts
+  retain transport, DTO mapping, AbortSignal propagation, and product-specific
+  command extensions (see
   [Agent GUI Node](./agent-gui-node.md#4-workspace-frontend-engine))
 
 The public seam is `AgentSessionEffectPort`. Prompt precondition ordering and

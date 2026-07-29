@@ -1603,14 +1603,23 @@ The controller's new-conversation command must distinguish rail placement from
 the active Session's runtime working directory before entering the home
 composer. A Session in the Chats section may have a generated `cwd`, but that
 path is not a selected user project and must be cleared. A Session in a
-canonical project section keeps its working directory, while a command already
-on the home composer preserves the user's explicit project selection. Views
-only forward new-conversation intent; unresolved active rail membership fails
-closed rather than guessing from composer presentation fields.
+canonical project section resolves that section key back to the registered
+project root; its runtime `cwd` may instead be a nested directory or isolated
+worktree and is never reused as project identity. “Continue in new
+conversation” uses the same resolution before moving the mention draft to
+Home. A command already on the home composer preserves the user's explicit
+project selection. Views only forward new-conversation intent; unresolved
+active rail membership fails closed rather than guessing from composer
+presentation fields.
 For delegated/shared execution, the initiating caller remains the placement
 authority: the adapter forwards that caller-selected `RailPlacement` through
 the binding to the owner Host. The owner persists the same section key and does
 not recompute it from the owner's user-project list.
+The Agent CLI handoff adapter also inherits the caller Session's runtime `cwd`
+so the delegate starts inside the same checkout or linked worktree. If a
+project-backed caller has no runtime `cwd`, its canonical project path is the
+fallback. A supplied caller Session ID that cannot be resolved fails the start
+instead of creating a detached Session in an allocator directory.
 
 ### 7.2 Existing conversation submit
 

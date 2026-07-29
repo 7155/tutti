@@ -101,8 +101,6 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
     const commandContext = () => ({
       client: this.client,
       engine: this.engine,
-      loadComposerOptions: (options?: { force?: boolean }) =>
-        this.loadComposerOptions(options),
       mapSession: this.mapping.mapSession,
       mapSessionDetail: this.mapping.mapSessionDetail,
       reconcileSession: (

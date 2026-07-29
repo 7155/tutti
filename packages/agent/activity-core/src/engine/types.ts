@@ -103,6 +103,7 @@ export type EngineIntent =
   | WorkspaceReconcileRequestedIntent
   | PendingIntentsIntent
   | PlanDecisionIntent
+  | PromptExecutionIntent
   | PromptQueueIntent
   | SessionReconcileIntent
   | SessionMutationsIntent
@@ -248,6 +249,7 @@ export interface AgentSessionEngineState {
   engineRuntime: EngineRuntimeState;
   pendingIntents: PendingIntentsState;
   planDecisions: PlanDecisionState;
+  promptExecutions: PromptExecutionState;
   promptQueue: PromptQueueState;
   sessionReconcile: SessionReconcileState;
   sessionMutations: SessionMutationsState;
@@ -423,6 +425,10 @@ export interface AgentSessionEngine {
   getSnapshot(): AgentSessionEngineState;
   subscribe(listener: AgentSessionEngineListener): () => void;
 }
+import type {
+  PromptExecutionIntent,
+  PromptExecutionState
+} from "./promptExecution.types.ts";
 import type {
   PromptQueueIntent,
   PromptQueueSendCommand,

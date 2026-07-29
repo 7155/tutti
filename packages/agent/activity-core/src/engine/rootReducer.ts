@@ -7,6 +7,11 @@ import {
   promptQueueReducer
 } from "./promptQueue.reducer.ts";
 import {
+  createInitialPromptExecutionState,
+  promptExecutionReducer,
+  selectPromptSettingsExecution
+} from "./promptExecution.reducer.ts";
+import {
   resolvePromptSendNowStrategy,
   resolveQueuedPromptSendNowStrategy
 } from "./promptQueue.sendNow.ts";
@@ -77,6 +82,7 @@ export function createInitialAgentSessionEngineState(): AgentSessionEngineState 
     engineRuntime: createInitialEngineRuntimeState(),
     pendingIntents: createInitialPendingIntentsState(),
     planDecisions: createInitialPlanDecisionState(),
+    promptExecutions: createInitialPromptExecutionState(),
     promptQueue: createInitialPromptQueueState(),
     sessionReconcile: createInitialSessionReconcileState(),
     sessionMutations: createInitialSessionMutationsState(),
@@ -151,6 +157,11 @@ export function rootEngineReducer(
               })(),
           true
         )
+      : null;
+  const promptSettingsExecution =
+    intent.type === "engine/commandResult" &&
+    intent.commandType === "session/updateSettings"
+      ? selectPromptSettingsExecution(state.promptExecutions, intent.commandId)
       : null;
   const cancelEntry =
     intent.type === "engine/commandResult" &&
@@ -322,6 +333,11 @@ export function rootEngineReducer(
       cancelResultValidation
     }
   );
+  const promptExecutions = promptExecutionReducer(
+    state.promptExecutions,
+    intent,
+    { settingsResultValidation }
+  );
   const promptQueue = promptQueueReducer(state.promptQueue, intent, {
     cancelResultValidation,
     deletedSessionIds: sessionLifecycle.state.deletedSessionIds,
@@ -331,6 +347,8 @@ export function rootEngineReducer(
     sendResultValidation,
     submitRequestAccepted,
     sendNowStrategy,
+    settingsPreconditionPromptCommandId:
+      promptSettingsExecution?.promptCommand.commandId ?? null,
     settingsResultValidation
   });
   const attentionReadState = attentionReadStateReducer(
@@ -379,7 +397,13 @@ export function rootEngineReducer(
       sessionsById: sessionLifecycle.state.sessionsById
     }
   );
-  const composerOptions = composerOptionsReducer(state.composerOptions, intent);
+  const composerOptions = composerOptionsReducer(
+    state.composerOptions,
+    intent,
+    {
+      settingsResultValidation
+    }
+  );
   const tuttiModeActivation = tuttiModeActivationReducer(
     state.tuttiModeActivation,
     intent,
@@ -390,6 +414,7 @@ export function rootEngineReducer(
     engineRuntime.state === state.engineRuntime &&
     pendingIntents.state === state.pendingIntents &&
     planDecisions.state === state.planDecisions &&
+    promptExecutions.state === state.promptExecutions &&
     promptQueue.state === state.promptQueue &&
     sessionReconcile.state === state.sessionReconcile &&
     sessionMutations.state === state.sessionMutations &&
@@ -405,6 +430,7 @@ export function rootEngineReducer(
         engineRuntime: engineRuntime.state,
         pendingIntents: pendingIntents.state,
         planDecisions: planDecisions.state,
+        promptExecutions: promptExecutions.state,
         promptQueue: promptQueue.state,
         sessionReconcile: sessionReconcile.state,
         sessionMutations: sessionMutations.state,
@@ -416,7 +442,10 @@ export function rootEngineReducer(
       };
   const followUpIntents = [
     ...(sessionReconcile.followUpIntents ?? []),
-    ...(sessionMutations.followUpIntents ?? [])
+    ...(sessionMutations.followUpIntents ?? []),
+    ...(pendingIntents.followUpIntents ?? []),
+    ...(promptExecutions.followUpIntents ?? []),
+    ...(promptQueue.followUpIntents ?? [])
   ];
   return {
     commands: [
@@ -424,6 +453,7 @@ export function rootEngineReducer(
       ...engineRuntime.commands,
       ...pendingIntents.commands,
       ...planDecisions.commands,
+      ...promptExecutions.commands,
       ...sessionReconcile.commands,
       ...sessionMutations.commands,
       ...sessionCommands.commands,

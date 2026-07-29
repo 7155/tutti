@@ -352,6 +352,27 @@ func (e AgentProviderCapabilityOptionKind) Valid() bool {
 	}
 }
 
+// Defines values for AgentProviderCapabilityOptionSemantic.
+const (
+	BrowserUse  AgentProviderCapabilityOptionSemantic = "browserUse"
+	ComputerUse AgentProviderCapabilityOptionSemantic = "computerUse"
+	Sites       AgentProviderCapabilityOptionSemantic = "sites"
+)
+
+// Valid indicates whether the value is a known member of the AgentProviderCapabilityOptionSemantic enum.
+func (e AgentProviderCapabilityOptionSemantic) Valid() bool {
+	switch e {
+	case BrowserUse:
+		return true
+	case ComputerUse:
+		return true
+	case Sites:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AgentProviderCapabilityOptionStatus.
 const (
 	AgentProviderCapabilityOptionStatusAuthRequired  AgentProviderCapabilityOptionStatus = "authRequired"
@@ -394,6 +415,81 @@ func (e AgentProviderProbeStatus) Valid() bool {
 	case AgentProviderProbeStatusReady:
 		return true
 	case AgentProviderProbeStatusSkipped:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentProviderRuntimeCandidateSources.
+const (
+	AgentProviderRuntimeCandidateSourceBunGlobal  AgentProviderRuntimeCandidateSources = "bun_global"
+	AgentProviderRuntimeCandidateSourceHomebrew   AgentProviderRuntimeCandidateSources = "homebrew"
+	AgentProviderRuntimeCandidateSourceNpmGlobal  AgentProviderRuntimeCandidateSources = "npm_global"
+	AgentProviderRuntimeCandidateSourcePath       AgentProviderRuntimeCandidateSources = "path"
+	AgentProviderRuntimeCandidateSourcePnpmGlobal AgentProviderRuntimeCandidateSources = "pnpm_global"
+)
+
+// Valid indicates whether the value is a known member of the AgentProviderRuntimeCandidateSources enum.
+func (e AgentProviderRuntimeCandidateSources) Valid() bool {
+	switch e {
+	case AgentProviderRuntimeCandidateSourceBunGlobal:
+		return true
+	case AgentProviderRuntimeCandidateSourceHomebrew:
+		return true
+	case AgentProviderRuntimeCandidateSourceNpmGlobal:
+		return true
+	case AgentProviderRuntimeCandidateSourcePath:
+		return true
+	case AgentProviderRuntimeCandidateSourcePnpmGlobal:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentProviderRuntimeCandidateState.
+const (
+	AgentProviderRuntimeCandidateStateFailed      AgentProviderRuntimeCandidateState = "failed"
+	AgentProviderRuntimeCandidateStateReady       AgentProviderRuntimeCandidateState = "ready"
+	AgentProviderRuntimeCandidateStateUnsupported AgentProviderRuntimeCandidateState = "unsupported"
+)
+
+// Valid indicates whether the value is a known member of the AgentProviderRuntimeCandidateState enum.
+func (e AgentProviderRuntimeCandidateState) Valid() bool {
+	switch e {
+	case AgentProviderRuntimeCandidateStateFailed:
+		return true
+	case AgentProviderRuntimeCandidateStateReady:
+		return true
+	case AgentProviderRuntimeCandidateStateUnsupported:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentProviderRuntimeSelectionState.
+const (
+	AgentProviderRuntimeSelectionStateImplicitUnique    AgentProviderRuntimeSelectionState = "implicit_unique"
+	AgentProviderRuntimeSelectionStateSelected          AgentProviderRuntimeSelectionState = "selected"
+	AgentProviderRuntimeSelectionStateSelectionRequired AgentProviderRuntimeSelectionState = "selection_required"
+	AgentProviderRuntimeSelectionStateStale             AgentProviderRuntimeSelectionState = "stale"
+	AgentProviderRuntimeSelectionStateUnavailable       AgentProviderRuntimeSelectionState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the AgentProviderRuntimeSelectionState enum.
+func (e AgentProviderRuntimeSelectionState) Valid() bool {
+	switch e {
+	case AgentProviderRuntimeSelectionStateImplicitUnique:
+		return true
+	case AgentProviderRuntimeSelectionStateSelected:
+		return true
+	case AgentProviderRuntimeSelectionStateSelectionRequired:
+		return true
+	case AgentProviderRuntimeSelectionStateStale:
+		return true
+	case AgentProviderRuntimeSelectionStateUnavailable:
 		return true
 	default:
 		return false
@@ -1585,6 +1681,24 @@ func (e DesktopWorkbenchWindowSnappingShortcutPreset) Valid() bool {
 	}
 }
 
+// Defines values for ExternalAgentImportArchiveKind.
+const (
+	Chatgpt ExternalAgentImportArchiveKind = "chatgpt"
+	Claude  ExternalAgentImportArchiveKind = "claude"
+)
+
+// Valid indicates whether the value is a known member of the ExternalAgentImportArchiveKind enum.
+func (e ExternalAgentImportArchiveKind) Valid() bool {
+	switch e {
+	case Chatgpt:
+		return true
+	case Claude:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HealthStatusResponseStatus.
 const (
 	Ok HealthStatusResponseStatus = "ok"
@@ -2392,6 +2506,117 @@ func (e WorkspaceAgentCompletedCommandStatus) Valid() bool {
 	case WorkspaceAgentCompletedCommandStatusCompleted:
 		return true
 	case WorkspaceAgentCompletedCommandStatusFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkspaceAgentEditRetryAvailabilityRecoveryState.
+const (
+	WorkspaceAgentEditRetryAvailabilityRecoveryStateCompleted        WorkspaceAgentEditRetryAvailabilityRecoveryState = "completed"
+	WorkspaceAgentEditRetryAvailabilityRecoveryStatePrepared         WorkspaceAgentEditRetryAvailabilityRecoveryState = "prepared"
+	WorkspaceAgentEditRetryAvailabilityRecoveryStateRecoveryRequired WorkspaceAgentEditRetryAvailabilityRecoveryState = "recovery_required"
+	WorkspaceAgentEditRetryAvailabilityRecoveryStateResendPending    WorkspaceAgentEditRetryAvailabilityRecoveryState = "resend_pending"
+	WorkspaceAgentEditRetryAvailabilityRecoveryStateRollingBack      WorkspaceAgentEditRetryAvailabilityRecoveryState = "rolling_back"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceAgentEditRetryAvailabilityRecoveryState enum.
+func (e WorkspaceAgentEditRetryAvailabilityRecoveryState) Valid() bool {
+	switch e {
+	case WorkspaceAgentEditRetryAvailabilityRecoveryStateCompleted:
+		return true
+	case WorkspaceAgentEditRetryAvailabilityRecoveryStatePrepared:
+		return true
+	case WorkspaceAgentEditRetryAvailabilityRecoveryStateRecoveryRequired:
+		return true
+	case WorkspaceAgentEditRetryAvailabilityRecoveryStateResendPending:
+		return true
+	case WorkspaceAgentEditRetryAvailabilityRecoveryStateRollingBack:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkspaceAgentEditRetryReasonCode.
+const (
+	WorkspaceAgentEditRetryReasonCodeHistoryRevisionConflict    WorkspaceAgentEditRetryReasonCode = "history_revision_conflict"
+	WorkspaceAgentEditRetryReasonCodeOperationConflict          WorkspaceAgentEditRetryReasonCode = "operation_conflict"
+	WorkspaceAgentEditRetryReasonCodeProviderOutcomeUnknown     WorkspaceAgentEditRetryReasonCode = "provider_outcome_unknown"
+	WorkspaceAgentEditRetryReasonCodeProviderUnsupported        WorkspaceAgentEditRetryReasonCode = "provider_unsupported"
+	WorkspaceAgentEditRetryReasonCodeRecoveryRequired           WorkspaceAgentEditRetryReasonCode = "recovery_required"
+	WorkspaceAgentEditRetryReasonCodeReplacementNotProvenAbsent WorkspaceAgentEditRetryReasonCode = "replacement_not_proven_absent"
+	WorkspaceAgentEditRetryReasonCodeTurnNotFound               WorkspaceAgentEditRetryReasonCode = "turn_not_found"
+	WorkspaceAgentEditRetryReasonCodeTurnNotLatest              WorkspaceAgentEditRetryReasonCode = "turn_not_latest"
+	WorkspaceAgentEditRetryReasonCodeTurnNotSettled             WorkspaceAgentEditRetryReasonCode = "turn_not_settled"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceAgentEditRetryReasonCode enum.
+func (e WorkspaceAgentEditRetryReasonCode) Valid() bool {
+	switch e {
+	case WorkspaceAgentEditRetryReasonCodeHistoryRevisionConflict:
+		return true
+	case WorkspaceAgentEditRetryReasonCodeOperationConflict:
+		return true
+	case WorkspaceAgentEditRetryReasonCodeProviderOutcomeUnknown:
+		return true
+	case WorkspaceAgentEditRetryReasonCodeProviderUnsupported:
+		return true
+	case WorkspaceAgentEditRetryReasonCodeRecoveryRequired:
+		return true
+	case WorkspaceAgentEditRetryReasonCodeReplacementNotProvenAbsent:
+		return true
+	case WorkspaceAgentEditRetryReasonCodeTurnNotFound:
+		return true
+	case WorkspaceAgentEditRetryReasonCodeTurnNotLatest:
+		return true
+	case WorkspaceAgentEditRetryReasonCodeTurnNotSettled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkspaceAgentEditRetryRecoveryAction.
+const (
+	WorkspaceAgentEditRetryRecoveryActionReconcile        WorkspaceAgentEditRetryRecoveryAction = "reconcile"
+	WorkspaceAgentEditRetryRecoveryActionRetryReplacement WorkspaceAgentEditRetryRecoveryAction = "retry_replacement"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceAgentEditRetryRecoveryAction enum.
+func (e WorkspaceAgentEditRetryRecoveryAction) Valid() bool {
+	switch e {
+	case WorkspaceAgentEditRetryRecoveryActionReconcile:
+		return true
+	case WorkspaceAgentEditRetryRecoveryActionRetryReplacement:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkspaceAgentEditRetryResponseState.
+const (
+	WorkspaceAgentEditRetryResponseStateCompleted        WorkspaceAgentEditRetryResponseState = "completed"
+	WorkspaceAgentEditRetryResponseStatePrepared         WorkspaceAgentEditRetryResponseState = "prepared"
+	WorkspaceAgentEditRetryResponseStateRecoveryRequired WorkspaceAgentEditRetryResponseState = "recovery_required"
+	WorkspaceAgentEditRetryResponseStateResendPending    WorkspaceAgentEditRetryResponseState = "resend_pending"
+	WorkspaceAgentEditRetryResponseStateRollingBack      WorkspaceAgentEditRetryResponseState = "rolling_back"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceAgentEditRetryResponseState enum.
+func (e WorkspaceAgentEditRetryResponseState) Valid() bool {
+	switch e {
+	case WorkspaceAgentEditRetryResponseStateCompleted:
+		return true
+	case WorkspaceAgentEditRetryResponseStatePrepared:
+		return true
+	case WorkspaceAgentEditRetryResponseStateRecoveryRequired:
+		return true
+	case WorkspaceAgentEditRetryResponseStateResendPending:
+		return true
+	case WorkspaceAgentEditRetryResponseStateRollingBack:
 		return true
 	default:
 		return false
@@ -3800,11 +4025,14 @@ type AgentProviderCapabilityOption struct {
 	Name        string                                  `json:"name"`
 	Path        *string                                 `json:"path,omitempty"`
 	PluginName  *string                                 `json:"pluginName,omitempty"`
-	ServerName  *string                                 `json:"serverName,omitempty"`
-	Source      *string                                 `json:"source,omitempty"`
-	Status      AgentProviderCapabilityOptionStatus     `json:"status"`
-	ToolName    *string                                 `json:"toolName,omitempty"`
-	Trigger     *string                                 `json:"trigger,omitempty"`
+
+	// Semantic Stable provider-native presentation and interaction key. It does not identify an executable, filesystem path, or provider wire implementation.
+	Semantic   *AgentProviderCapabilityOptionSemantic `json:"semantic,omitempty"`
+	ServerName *string                                `json:"serverName,omitempty"`
+	Source     *string                                `json:"source,omitempty"`
+	Status     AgentProviderCapabilityOptionStatus    `json:"status"`
+	ToolName   *string                                `json:"toolName,omitempty"`
+	Trigger    *string                                `json:"trigger,omitempty"`
 }
 
 // AgentProviderCapabilityOptionInvocation defines model for AgentProviderCapabilityOption.Invocation.
@@ -3812,6 +4040,9 @@ type AgentProviderCapabilityOptionInvocation string
 
 // AgentProviderCapabilityOptionKind defines model for AgentProviderCapabilityOption.Kind.
 type AgentProviderCapabilityOptionKind string
+
+// AgentProviderCapabilityOptionSemantic Stable provider-native presentation and interaction key. It does not identify an executable, filesystem path, or provider wire implementation.
+type AgentProviderCapabilityOptionSemantic string
 
 // AgentProviderCapabilityOptionStatus defines model for AgentProviderCapabilityOption.Status.
 type AgentProviderCapabilityOptionStatus string
@@ -3828,11 +4059,12 @@ type AgentProviderCliStatus struct {
 
 // AgentProviderComposerBehavior defines model for AgentProviderComposerBehavior.
 type AgentProviderComposerBehavior struct {
-	CollapseModelOptionsToLatest        bool `json:"collapseModelOptionsToLatest"`
-	ModelOptionsAuthoritative           bool `json:"modelOptionsAuthoritative"`
-	PlanModeExclusiveWithPermissionMode bool `json:"planModeExclusiveWithPermissionMode"`
-	PrewarmDraftSession                 bool `json:"prewarmDraftSession"`
-	RefreshModelOptionsAfterSettings    bool `json:"refreshModelOptionsAfterSettings"`
+	CollapseModelOptionsToLatest        bool  `json:"collapseModelOptionsToLatest"`
+	ModelOptionsAuthoritative           bool  `json:"modelOptionsAuthoritative"`
+	NativePluginCatalogAuthoritative    *bool `json:"nativePluginCatalogAuthoritative,omitempty"`
+	PlanModeExclusiveWithPermissionMode bool  `json:"planModeExclusiveWithPermissionMode"`
+	PrewarmDraftSession                 bool  `json:"prewarmDraftSession"`
+	RefreshModelOptionsAfterSettings    bool  `json:"refreshModelOptionsAfterSettings"`
 }
 
 // AgentProviderComposerCommandOption defines model for AgentProviderComposerCommandOption.
@@ -3933,6 +4165,47 @@ type AgentProviderProbeResponse struct {
 
 // AgentProviderProbeStatus defines model for AgentProviderProbeStatus.
 type AgentProviderProbeStatus string
+
+// AgentProviderRuntimeCandidate defines model for AgentProviderRuntimeCandidate.
+type AgentProviderRuntimeCandidate struct {
+	AppServerReady bool `json:"appServerReady"`
+
+	// Id Opaque identifier valid only for the enclosing catalog revision
+	Id              string                                 `json:"id"`
+	LauncherPath    string                                 `json:"launcherPath"`
+	PackageLayoutOk bool                                   `json:"packageLayoutOk"`
+	PackageRoot     *string                                `json:"packageRoot"`
+	ReasonCode      *string                                `json:"reasonCode"`
+	Sources         []AgentProviderRuntimeCandidateSources `json:"sources"`
+	State           AgentProviderRuntimeCandidateState     `json:"state"`
+	Version         *string                                `json:"version"`
+}
+
+// AgentProviderRuntimeCandidateSources defines model for AgentProviderRuntimeCandidate.Sources.
+type AgentProviderRuntimeCandidateSources string
+
+// AgentProviderRuntimeCandidateState defines model for AgentProviderRuntimeCandidateState.
+type AgentProviderRuntimeCandidateState string
+
+// AgentProviderRuntimeCatalogResponse defines model for AgentProviderRuntimeCatalogResponse.
+type AgentProviderRuntimeCatalogResponse struct {
+	Candidates []AgentProviderRuntimeCandidate `json:"candidates"`
+	CapturedAt time.Time                       `json:"capturedAt"`
+	Provider   WorkspaceAgentProvider          `json:"provider"`
+	Revision   string                          `json:"revision"`
+	Selection  AgentProviderRuntimeSelection   `json:"selection"`
+}
+
+// AgentProviderRuntimeSelection defines model for AgentProviderRuntimeSelection.
+type AgentProviderRuntimeSelection struct {
+	CandidateId  *string                            `json:"candidateId"`
+	LauncherPath *string                            `json:"launcherPath"`
+	State        AgentProviderRuntimeSelectionState `json:"state"`
+	UpdatedAt    *time.Time                         `json:"updatedAt"`
+}
+
+// AgentProviderRuntimeSelectionState defines model for AgentProviderRuntimeSelectionState.
+type AgentProviderRuntimeSelectionState string
 
 // AgentProviderSkillOption defines model for AgentProviderSkillOption.
 type AgentProviderSkillOption struct {
@@ -4222,6 +4495,12 @@ type AgentTargetAuthMethod struct {
 	Description *string `json:"description,omitempty"`
 	Id          string  `json:"id"`
 	Name        string  `json:"name"`
+
+	// TerminalCommand Ready-to-run interactive sign-in command for terminal-type methods.
+	TerminalCommand *string `json:"terminalCommand,omitempty"`
+
+	// Type Provider-declared method kind (for example "terminal").
+	Type *string `json:"type,omitempty"`
 }
 
 // AgentTargetAuthenticatedAccount defines model for AgentTargetAuthenticatedAccount.
@@ -5228,6 +5507,13 @@ type DuplicateModelPlanRequest struct {
 	Name *string `json:"name,omitempty"`
 }
 
+// EditRetryWorkspaceAgentTurnRequest defines model for EditRetryWorkspaceAgentTurnRequest.
+type EditRetryWorkspaceAgentTurnRequest struct {
+	ClientOperationId       string `json:"clientOperationId"`
+	EditedText              string `json:"editedText"`
+	ExpectedHistoryRevision int64  `json:"expectedHistoryRevision"`
+}
+
 // EstimateIssueManagerAutoTokenBudgetRequest defines model for EstimateIssueManagerAutoTokenBudgetRequest.
 type EstimateIssueManagerAutoTokenBudgetRequest struct {
 	ExecutionProfile IssueManagerExecutionProfile           `json:"executionProfile"`
@@ -5249,6 +5535,9 @@ type ExportWorkspaceAppResponse struct {
 	Version           string `json:"version"`
 	WorkspaceId       string `json:"workspaceId"`
 }
+
+// ExternalAgentImportArchiveKind Selects which provider data-export archive format to parse. Omit for backward compatibility with clients that only send archivePath; the daemon then defaults to the Claude data-export format.
+type ExternalAgentImportArchiveKind string
 
 // ExternalAgentImportError defines model for ExternalAgentImportError.
 type ExternalAgentImportError struct {
@@ -5295,6 +5584,9 @@ type ExternalAgentImportResultResponse struct {
 
 // ExternalAgentImportScanRequest defines model for ExternalAgentImportScanRequest.
 type ExternalAgentImportScanRequest struct {
+	// ArchiveKind Selects which provider data-export archive format to parse. Omit for backward compatibility with clients that only send archivePath; the daemon then defaults to the Claude data-export format.
+	ArchiveKind *ExternalAgentImportArchiveKind `json:"archiveKind,omitempty"`
+
 	// ArchivePath Absolute path to a supported provider data-export ZIP archive. When supplied, scan the archive instead of local CLI history.
 	ArchivePath *string `json:"archivePath,omitempty"`
 
@@ -5321,7 +5613,7 @@ type ExternalAgentImportSession struct {
 	MessageCount        int                    `json:"messageCount"`
 	ProjectPath         string                 `json:"projectPath"`
 	Provider            WorkspaceAgentProvider `json:"provider"`
-	SourcePath          string                 `json:"sourcePath"`
+	SourcePath          *string                `json:"sourcePath,omitempty"`
 	Title               string                 `json:"title"`
 }
 
@@ -5377,6 +5669,9 @@ type HealthStatusResponseStatus string
 
 // ImportExternalAgentSessionsRequest defines model for ImportExternalAgentSessionsRequest.
 type ImportExternalAgentSessionsRequest struct {
+	// ArchiveKind Selects which provider data-export archive format to parse. Omit for backward compatibility with clients that only send archivePath; the daemon then defaults to the Claude data-export format.
+	ArchiveKind *ExternalAgentImportArchiveKind `json:"archiveKind,omitempty"`
+
 	// ArchivePath Absolute path to the same provider data-export ZIP archive used for the preceding scan. The daemon revalidates and rereads the archive before importing the selected conversations.
 	ArchivePath          *string                               `json:"archivePath,omitempty"`
 	ImportSessions       *bool                                 `json:"importSessions,omitempty"`
@@ -6144,6 +6439,11 @@ type PutWorkspaceWorkbenchRequest struct {
 	Snapshot WorkbenchSnapshot `json:"snapshot"`
 }
 
+// RecoverWorkspaceAgentEditRetryRequest defines model for RecoverWorkspaceAgentEditRetryRequest.
+type RecoverWorkspaceAgentEditRetryRequest struct {
+	Action WorkspaceAgentEditRetryRecoveryAction `json:"action"`
+}
+
 // ReloadLocalWorkspaceAppRequest defines model for ReloadLocalWorkspaceAppRequest.
 type ReloadLocalWorkspaceAppRequest struct {
 	// RestartRunning Restart the app runtime if it is already running.
@@ -6230,6 +6530,15 @@ type SetAgentModelBindingRequest struct {
 	DefaultModel  *string `json:"defaultModel,omitempty"`
 	ModelPlanId   *string `json:"modelPlanId,omitempty"`
 	ModelPolicyId *string `json:"modelPolicyId,omitempty"`
+}
+
+// SetAgentProviderRuntimeSelectionRequest defines model for SetAgentProviderRuntimeSelectionRequest.
+type SetAgentProviderRuntimeSelectionRequest struct {
+	// CandidateId Opaque identifier from the current runtime candidate catalog
+	CandidateId string `json:"candidateId"`
+
+	// Revision Must match the catalog revision that supplied candidateId
+	Revision string `json:"revision"`
 }
 
 // SetAgentSessionAutomationRuleOverrideRequest defines model for SetAgentSessionAutomationRuleOverrideRequest.
@@ -6792,6 +7101,40 @@ type WorkspaceAgentCompletedCommandKind string
 // WorkspaceAgentCompletedCommandStatus defines model for WorkspaceAgentCompletedCommand.Status.
 type WorkspaceAgentCompletedCommandStatus string
 
+// WorkspaceAgentEditRetryAvailability defines model for WorkspaceAgentEditRetryAvailability.
+type WorkspaceAgentEditRetryAvailability struct {
+	AvailableActions []WorkspaceAgentEditRetryRecoveryAction          `json:"availableActions"`
+	Eligible         bool                                             `json:"eligible"`
+	HistoryRevision  int64                                            `json:"historyRevision"`
+	OperationId      *string                                          `json:"operationId,omitempty"`
+	ReasonCode       *WorkspaceAgentEditRetryReasonCode               `json:"reasonCode,omitempty"`
+	RecoveryState    WorkspaceAgentEditRetryAvailabilityRecoveryState `json:"recoveryState"`
+	Supported        bool                                             `json:"supported"`
+	TurnId           *string                                          `json:"turnId,omitempty"`
+}
+
+// WorkspaceAgentEditRetryAvailabilityRecoveryState defines model for WorkspaceAgentEditRetryAvailability.RecoveryState.
+type WorkspaceAgentEditRetryAvailabilityRecoveryState string
+
+// WorkspaceAgentEditRetryReasonCode defines model for WorkspaceAgentEditRetryReasonCode.
+type WorkspaceAgentEditRetryReasonCode string
+
+// WorkspaceAgentEditRetryRecoveryAction defines model for WorkspaceAgentEditRetryRecoveryAction.
+type WorkspaceAgentEditRetryRecoveryAction string
+
+// WorkspaceAgentEditRetryResponse defines model for WorkspaceAgentEditRetryResponse.
+type WorkspaceAgentEditRetryResponse struct {
+	HistoryRevision   int64                                `json:"historyRevision"`
+	OperationId       string                               `json:"operationId"`
+	ReasonCode        *WorkspaceAgentEditRetryReasonCode   `json:"reasonCode,omitempty"`
+	ReplacementTurnId *string                              `json:"replacementTurnId,omitempty"`
+	RetractedTurnId   string                               `json:"retractedTurnId"`
+	State             WorkspaceAgentEditRetryResponseState `json:"state"`
+}
+
+// WorkspaceAgentEditRetryResponseState defines model for WorkspaceAgentEditRetryResponse.State.
+type WorkspaceAgentEditRetryResponseState string
+
 // WorkspaceAgentGeneratedFileEntry defines model for WorkspaceAgentGeneratedFileEntry.
 type WorkspaceAgentGeneratedFileEntry struct {
 	Label string `json:"label"`
@@ -6986,7 +7329,8 @@ type WorkspaceAgentSessionDetailProjection string
 // WorkspaceAgentSessionDetailResponse defines model for WorkspaceAgentSessionDetailResponse.
 type WorkspaceAgentSessionDetailResponse struct {
 	// ChildSessions Flat collection of every nested child session below session. Clients reconstruct the tree from the immutable parent fields.
-	ChildSessions []WorkspaceAgentSession `json:"childSessions"`
+	ChildSessions []WorkspaceAgentSession             `json:"childSessions"`
+	EditRetry     WorkspaceAgentEditRetryAvailability `json:"editRetry"`
 
 	// LifecycleCapabilitiesProjected Whether provider-backed lifecycle capability projection ran for session and childSessions. A full projection reports true even when a provider probe fails closed, because false then means the action is unavailable for this response. When false, projection was intentionally skipped and capability values must not be applied as authoritative.
 	LifecycleCapabilitiesProjected bool `json:"lifecycleCapabilitiesProjected"`
@@ -8356,6 +8700,9 @@ type DismissAccountRegistrationCreditsRewardJSONRequestBody = DismissAccountRegi
 // GetAgentProviderComposerOptionsJSONRequestBody defines body for GetAgentProviderComposerOptions for application/json ContentType.
 type GetAgentProviderComposerOptionsJSONRequestBody = GetAgentProviderComposerOptionsRequest
 
+// SetAgentProviderRuntimeSelectionJSONRequestBody defines body for SetAgentProviderRuntimeSelection for application/json ContentType.
+type SetAgentProviderRuntimeSelectionJSONRequestBody = SetAgentProviderRuntimeSelectionRequest
+
 // CreateAgentQuickPromptJSONRequestBody defines body for CreateAgentQuickPrompt for application/json ContentType.
 type CreateAgentQuickPromptJSONRequestBody = CreateAgentQuickPromptRequest
 
@@ -8437,6 +8784,9 @@ type ScanWorkspaceExternalAgentSessionImportsJSONRequestBody = ExternalAgentImpo
 // SetAgentSessionAutomationRuleOverrideJSONRequestBody defines body for SetAgentSessionAutomationRuleOverride for application/json ContentType.
 type SetAgentSessionAutomationRuleOverrideJSONRequestBody = SetAgentSessionAutomationRuleOverrideRequest
 
+// RecoverWorkspaceAgentEditRetryJSONRequestBody defines body for RecoverWorkspaceAgentEditRetry for application/json ContentType.
+type RecoverWorkspaceAgentEditRetryJSONRequestBody = RecoverWorkspaceAgentEditRetryRequest
+
 // ForkWorkspaceAgentSessionJSONRequestBody defines body for ForkWorkspaceAgentSession for application/json ContentType.
 type ForkWorkspaceAgentSessionJSONRequestBody = ForkWorkspaceAgentSessionRequest
 
@@ -8460,6 +8810,9 @@ type UpdateWorkspaceAgentSessionSettingsJSONRequestBody = AgentSessionComposerSe
 
 // UpdateWorkspaceAgentSessionTitleJSONRequestBody defines body for UpdateWorkspaceAgentSessionTitle for application/json ContentType.
 type UpdateWorkspaceAgentSessionTitleJSONRequestBody = UpdateWorkspaceAgentSessionTitleRequest
+
+// EditRetryWorkspaceAgentTurnJSONRequestBody defines body for EditRetryWorkspaceAgentTurn for application/json ContentType.
+type EditRetryWorkspaceAgentTurnJSONRequestBody = EditRetryWorkspaceAgentTurnRequest
 
 // SubmitWorkspaceAgentPlanDecisionJSONRequestBody defines body for SubmitWorkspaceAgentPlanDecision for application/json ContentType.
 type SubmitWorkspaceAgentPlanDecisionJSONRequestBody = SubmitWorkspaceAgentPlanDecisionRequest

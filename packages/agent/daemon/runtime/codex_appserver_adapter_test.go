@@ -97,9 +97,13 @@ type scriptedAppServerConnection struct {
 	interruptTurnIDMismatch         string            // reject the first turn/interrupt with "expected active turn id X but found <this>"; a retry against the reported id succeeds
 	interruptAttempts               []string          // turnId requested on every turn/interrupt call, in order
 	childNicknames                  map[string]string // thread/read agentNickname responses by threadId
+	historyTurns                    []any             // authoritative turns returned by thread/read
+	rollbackHistoryTurns            []any             // authoritative turns returned by thread/rollback
+	rollbackUnsupported             bool
 	turnStartEntered                chan struct{}
 	turnStartRelease                chan struct{}
 	hangTurnStart                   bool
+	turnStartError                  bool
 	hangSteer                       bool
 	threadName                      string
 	commandApproval                 bool
@@ -509,6 +513,7 @@ func (c *scriptedAppServerConnection) Send(data []byte) error {
 			turnStartEntered := c.turnStartEntered
 			turnStartRelease := c.turnStartRelease
 			hangTurnStart := c.hangTurnStart
+			turnStartError := c.turnStartError
 			c.mu.Unlock()
 			if turnStartEntered != nil {
 				close(turnStartEntered)
@@ -517,6 +522,16 @@ func (c *scriptedAppServerConnection) Send(data []byte) error {
 				<-turnStartRelease
 			}
 			if hangTurnStart {
+				continue
+			}
+			if turnStartError {
+				c.sendJSON(map[string]any{
+					"id": message.ID,
+					"error": map[string]any{
+						"code":    -32000,
+						"message": "turn/start rejected by test",
+					},
+				})
 				continue
 			}
 			if steered {
@@ -709,6 +724,7 @@ func (c *scriptedAppServerConnection) Send(data []byte) error {
 			c.mu.Lock()
 			nickname := c.childNicknames[asString(message.Params["threadId"])]
 			turnIDs := append([]string(nil), c.threadReadTurnIDs...)
+			historyTurns := slices.Clone(c.historyTurns)
 			c.mu.Unlock()
 			thread := map[string]any{"id": message.Params["threadId"]}
 			if nickname != "" {
@@ -716,16 +732,20 @@ func (c *scriptedAppServerConnection) Send(data []byte) error {
 			}
 			includeTurns, _ := message.Params["includeTurns"].(bool)
 			if includeTurns {
-				if len(turnIDs) == 0 {
-					turnIDs = []string{"provider-turn-1", "provider-turn-2"}
+				if len(historyTurns) > 0 {
+					thread["turns"] = historyTurns
+				} else {
+					if len(turnIDs) == 0 {
+						turnIDs = []string{"provider-turn-1", "provider-turn-2"}
+					}
+					turns := make([]any, 0, len(turnIDs))
+					for _, turnID := range turnIDs {
+						turns = append(turns, map[string]any{
+							"id": turnID, "status": "completed",
+						})
+					}
+					thread["turns"] = turns
 				}
-				turns := make([]any, 0, len(turnIDs))
-				for _, turnID := range turnIDs {
-					turns = append(turns, map[string]any{
-						"id": turnID, "status": "completed",
-					})
-				}
-				thread["turns"] = turns
 			}
 			c.sendJSON(map[string]any{"id": message.ID, "result": map[string]any{"thread": thread}})
 		case appServerMethodTurnInterrupt:
@@ -801,9 +821,26 @@ func (c *scriptedAppServerConnection) Send(data []byte) error {
 				"turn":     map[string]any{"id": "turn-compact", "status": "completed", "items": []any{}},
 			})
 		case appServerMethodThreadRollback:
+			c.mu.Lock()
+			rollbackUnsupported := c.rollbackUnsupported
+			rollbackHistoryTurns := slices.Clone(c.rollbackHistoryTurns)
+			c.mu.Unlock()
+			if rollbackUnsupported {
+				c.sendJSON(map[string]any{
+					"id": message.ID,
+					"error": map[string]any{
+						"code":    -32601,
+						"message": "method not found: thread/rollback",
+					},
+				})
+				continue
+			}
 			c.sendJSON(map[string]any{
-				"id":     message.ID,
-				"result": map[string]any{"thread": map[string]any{"id": "codex-thread-1"}},
+				"id": message.ID,
+				"result": map[string]any{"thread": map[string]any{
+					"id":    "codex-thread-1",
+					"turns": rollbackHistoryTurns,
+				}},
 			})
 		case appServerMethodThreadGoalSet:
 			c.mu.Lock()
@@ -2136,6 +2173,31 @@ func TestCodexAppServerAdapterExecImagePrompt(t *testing.T) {
 	}
 }
 
+func TestCodexAppServerAdapterExecMaterializesRemoteImageAtProviderBoundary(t *testing.T) {
+	t.Parallel()
+
+	adapter, transport, session := startedAppServerAdapter(t)
+	imageURL, materializer := testRemotePromptImageMaterializer(t)
+	adapter.promptImageMaterializer = materializer
+
+	if _, err := adapter.Exec(context.Background(), session, []PromptContentBlock{
+		{Type: "text", Text: "look at this"},
+		{Type: "image", MimeType: "image/png", URL: imageURL},
+	}, "", "turn-remote-image", nil, nil); err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+
+	turnStart := appServerRequestParams(t, transport.conn, appServerMethodTurnStart)
+	input, _ := turnStart["input"].([]any)
+	if len(input) != 2 {
+		t.Fatalf("turn/start input = %#v, want text+image", turnStart["input"])
+	}
+	image := payloadObject(input[1])
+	if got := asString(image["url"]); got != "data:image/png;base64,aGk=" {
+		t.Fatalf("turn/start image URL = %q, want inline data URL", got)
+	}
+}
+
 func TestCodexAppServerAdapterExecTurnFailed(t *testing.T) {
 	t.Parallel()
 
@@ -3140,6 +3202,48 @@ func TestCodexAppServerAdapterGuideActiveTurnUsesTurnSteer(t *testing.T) {
 	}
 }
 
+func TestCodexAppServerAdapterGuideMaterializesRemoteImageAtProviderBoundary(t *testing.T) {
+	t.Parallel()
+
+	adapter, transport, session := startedAppServerAdapter(t)
+	imageURL, materializer := testRemotePromptImageMaterializer(t)
+	adapter.promptImageMaterializer = materializer
+	transport.conn.holdTurn = true
+
+	execDone := make(chan struct{})
+	go func() {
+		_, _ = adapter.Exec(context.Background(), session, textPrompt("long task"), "", "turn-local-1", nil, nil)
+		close(execDone)
+	}()
+	waitForCondition(t, func() bool {
+		return adapter.sessionActiveTurnID(session.AgentSessionID) == "turn-1"
+	})
+
+	if _, err := adapter.GuideActiveTurn(context.Background(), session, []PromptContentBlock{
+		{Type: "text", Text: "use this screenshot"},
+		{Type: "image", MimeType: "image/png", URL: imageURL},
+	}, "", "turn-guidance", nil, nil); err != nil {
+		t.Fatalf("GuideActiveTurn: %v", err)
+	}
+
+	steer := appServerRequestParams(t, transport.conn, appServerMethodTurnSteer)
+	input, _ := steer["input"].([]any)
+	if len(input) != 2 {
+		t.Fatalf("turn/steer input = %#v, want text+image", steer["input"])
+	}
+	image := payloadObject(input[1])
+	if got := asString(image["url"]); got != "data:image/png;base64,aGk=" {
+		t.Fatalf("turn/steer image URL = %q, want inline data URL", got)
+	}
+
+	transport.conn.completePendingTurn()
+	select {
+	case <-execDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Exec did not finish after guidance")
+	}
+}
+
 func TestCodexAppServerAdapterGuidanceStartsProviderContinuationOnSameRootTurn(t *testing.T) {
 	t.Parallel()
 
@@ -3203,6 +3307,217 @@ func TestCodexAppServerAdapterGuidanceStartsProviderContinuationOnSameRootTurn(t
 	})
 	if requests := appServerRequestParamsList(t, transport.conn, appServerMethodTurnStart); len(requests) < 2 {
 		t.Fatalf("turn/start requests = %#v, want initial turn and same-root continuation", requests)
+	}
+}
+
+func TestCodexAppServerAdapterGuidanceContinuationMaterializationFailureClosesProvisionalProviderTurn(t *testing.T) {
+	t.Parallel()
+
+	adapter, transport, session := startedAppServerAdapter(t)
+	if _, err := adapter.Exec(context.Background(), session, textPrompt("delegate work"), "", "root-turn-1", nil, nil); err != nil {
+		t.Fatalf("initial Exec: %v", err)
+	}
+	_, childEvents := adapter.rememberAppServerChildThreads(
+		session,
+		session.ProviderSessionID,
+		session.AgentSessionID,
+		"root-turn-1",
+		session.AgentSessionID,
+		"root-turn-1",
+		map[string]any{
+			"type":              "collabAgentToolCall",
+			"id":                "spawn-child-1",
+			"tool":              "spawnAgent",
+			"receiverThreadIds": []any{"child-thread-1"},
+		},
+	)
+	if len(childEvents) != 1 || childEvents[0].Type != activityshared.EventSessionStarted {
+		t.Fatalf("child creation events = %#v", childEvents)
+	}
+	adapter.promptImageMaterializer = func(context.Context, []PromptContentBlock) ([]PromptContentBlock, error) {
+		return nil, errors.New("signed image expired")
+	}
+
+	var mu sync.Mutex
+	var streamed []activityshared.Event
+	returned, err := adapter.GuideActiveTurn(
+		context.Background(),
+		session,
+		[]PromptContentBlock{
+			{Type: "text", Text: "include this image"},
+			{Type: "image", MimeType: "image/png", URL: "https://public.example/image.png"},
+		},
+		"",
+		"root-turn-1",
+		func(events []activityshared.Event) {
+			mu.Lock()
+			streamed = append(streamed, events...)
+			mu.Unlock()
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("GuideActiveTurn: %v", err)
+	}
+	if len(returned) != 1 || returned[0].Type != activityshared.EventRootProviderTurnStarted {
+		t.Fatalf("guidance return events = %#v, want provisional provider continuation", returned)
+	}
+	attemptID := returned[0].Payload.ProviderTurnID
+	waitForCondition(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, event := range streamed {
+			if event.Type == activityshared.EventRootProviderTurnCompleted &&
+				event.Payload.ProviderTurnID == attemptID &&
+				event.Payload.TurnOutcome == string(activityshared.TurnOutcomeFailed) {
+				return true
+			}
+		}
+		return false
+	})
+	if requests := appServerRequestParamsList(t, transport.conn, appServerMethodTurnStart); len(requests) != 1 {
+		t.Fatalf("turn/start requests = %#v, want no continuation provider request", requests)
+	}
+}
+
+func TestCodexAppServerAdapterConcurrentGuidancePublishesSingleProvisionalContinuation(t *testing.T) {
+	t.Parallel()
+
+	adapter, transport, session := startedAppServerAdapter(t)
+	if _, err := adapter.Exec(context.Background(), session, textPrompt("delegate work"), "", "root-turn-1", nil, nil); err != nil {
+		t.Fatalf("initial Exec: %v", err)
+	}
+	_, childEvents := adapter.rememberAppServerChildThreads(
+		session,
+		session.ProviderSessionID,
+		session.AgentSessionID,
+		"root-turn-1",
+		session.AgentSessionID,
+		"root-turn-1",
+		map[string]any{
+			"type":              "collabAgentToolCall",
+			"id":                "spawn-child-1",
+			"tool":              "spawnAgent",
+			"receiverThreadIds": []any{"child-thread-1"},
+		},
+	)
+	if len(childEvents) != 1 || childEvents[0].Type != activityshared.EventSessionStarted {
+		t.Fatalf("child creation events = %#v", childEvents)
+	}
+	transport.conn.holdTurn = true
+
+	type guidanceCallResult struct {
+		events []activityshared.Event
+		err    error
+	}
+	var streamedMu sync.Mutex
+	var streamed []activityshared.Event
+	emit := func(events []activityshared.Event) {
+		streamedMu.Lock()
+		defer streamedMu.Unlock()
+		streamed = append(streamed, events...)
+	}
+	start := make(chan struct{})
+	results := make(chan guidanceCallResult, 2)
+	for index := 0; index < 2; index++ {
+		index := index
+		go func() {
+			<-start
+			events, err := adapter.GuideActiveTurn(
+				context.Background(),
+				session,
+				textPrompt(fmt.Sprintf("guidance %d", index)),
+				"",
+				"root-turn-1",
+				emit,
+				nil,
+			)
+			results <- guidanceCallResult{events: events, err: err}
+		}()
+	}
+	close(start)
+
+	provisionalStarts := 0
+	for index := 0; index < 2; index++ {
+		select {
+		case result := <-results:
+			for _, event := range result.events {
+				if event.Type == activityshared.EventRootProviderTurnStarted &&
+					strings.HasPrefix(event.Payload.ProviderTurnID, "continuation:") {
+					provisionalStarts++
+				}
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for concurrent guidance")
+		}
+	}
+	if provisionalStarts != 1 {
+		t.Fatalf("provisional provider starts = %d, want exactly 1", provisionalStarts)
+	}
+	waitForCondition(t, func() bool {
+		streamedMu.Lock()
+		defer streamedMu.Unlock()
+		started := 0
+		for _, event := range streamed {
+			if event.Type == activityshared.EventTurnStarted {
+				started++
+			}
+		}
+		return started >= 1
+	})
+	streamedMu.Lock()
+	started := 0
+	for _, event := range streamed {
+		if event.Type == activityshared.EventTurnStarted {
+			started++
+		}
+	}
+	streamedMu.Unlock()
+	if started != 1 {
+		t.Fatalf("streamed turn starts = %d, want exactly 1 admitted continuation", started)
+	}
+
+	waitForCondition(t, func() bool {
+		return adapter.sessionActiveTurnID(session.AgentSessionID) != ""
+	})
+	transport.conn.completePendingTurn()
+	waitForCondition(t, func() bool {
+		return adapter.sessionActiveTurnID(session.AgentSessionID) == ""
+	})
+}
+
+func TestCodexAppServerAdapterRejectedContinuationAdmissionEmitsNoTurnStart(t *testing.T) {
+	t.Parallel()
+
+	adapter, _, session := startedAppServerAdapter(t)
+	blockingTurn := &codexAppServerActiveTurn{turnID: "blocking-turn"}
+	if !adapter.beginActiveTurn(session.AgentSessionID, blockingTurn) {
+		t.Fatal("failed to reserve blocking turn")
+	}
+	defer adapter.endActiveTurn(session.AgentSessionID, blockingTurn)
+
+	var streamed []activityshared.Event
+	continuation := newCodexGuidanceContinuationAdmission("continuation:rejected")
+	events, err := adapter.execBlocking(
+		context.Background(),
+		session,
+		textPrompt("guidance"),
+		"",
+		"root-turn-1",
+		func(next []activityshared.Event) {
+			streamed = append(streamed, next...)
+		},
+		nil,
+		codexTurnExecOptions{continuation: continuation},
+	)
+	if !errors.Is(err, ErrSessionActiveTurn) {
+		t.Fatalf("execBlocking error = %v, want ErrSessionActiveTurn", err)
+	}
+	if admittedErr := <-continuation.admitted; !errors.Is(admittedErr, ErrSessionActiveTurn) {
+		t.Fatalf("admission error = %v, want ErrSessionActiveTurn", admittedErr)
+	}
+	if len(events) != 0 || len(streamed) != 0 {
+		t.Fatalf("rejected continuation events = %#v, streamed = %#v; want none", events, streamed)
 	}
 }
 

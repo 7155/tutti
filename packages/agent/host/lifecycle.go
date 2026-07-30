@@ -30,8 +30,28 @@ func (h *Host) CreateSession(ctx context.Context, workspaceID string, input Crea
 		return CreateSessionResult{}, err
 	}
 	typedGoal, isTypedGoal := ParseTypedGoalControl(normalized, false)
+	if input.InitialGoalControl != nil {
+		if len(normalized) != 0 {
+			return CreateSessionResult{}, ErrInvalidArgument
+		}
+		typedGoal, err = normalizeTypedGoalControl(*input.InitialGoalControl)
+		if err != nil {
+			return CreateSessionResult{}, err
+		}
+		isTypedGoal = true
+	}
 	metadata := submissionMetadata(input.Metadata, input.ClientSubmitID)
 	goalMetadata := clonePayload(metadata)
+	goalInput := GoalControlInput{
+		WorkspaceID: workspaceID, AgentSessionID: input.AgentSessionID,
+		Action: typedGoal.Action, Objective: typedGoal.Objective,
+		ClientSubmitID: input.ClientSubmitID, SubmissionMetadata: goalMetadata,
+	}
+	if isTypedGoal {
+		if replay, found, replayErr := h.replayInitialGoalCreate(ctx, input, goalInput); found || replayErr != nil {
+			return replay, replayErr
+		}
+	}
 	claimMetadata := metadata
 	if isTypedGoal || len(normalized) == 0 {
 		normalized = nil
@@ -143,11 +163,8 @@ func (h *Host) CreateSession(ctx context.Context, workspaceID string, input Crea
 		return CreateSessionResult{Session: session, Canonical: canonicalSession}, nil
 	}
 	if isTypedGoal {
-		goalResult, goalErr := h.goalControl(ctx, GoalControlInput{
-			WorkspaceID: workspaceID, AgentSessionID: session.ID,
-			Action: typedGoal.Action, Objective: typedGoal.Objective,
-			SubmissionMetadata: goalMetadata,
-		})
+		goalInput.AgentSessionID = session.ID
+		goalResult, goalErr := h.goalControl(ctx, goalInput)
 		if goalErr != nil {
 			// A typed goal starts from a non-provisional, already published
 			// session. Preserve that canonical session on command failure just as
@@ -371,6 +388,7 @@ func (h *Host) SendInput(ctx context.Context, ref SessionRef, input SendInput) (
 		goalResult, goalErr := h.goalControl(ctx, GoalControlInput{
 			WorkspaceID: ref.WorkspaceID, AgentSessionID: ref.AgentSessionID,
 			Action: typedGoal.Action, Objective: typedGoal.Objective,
+			ClientSubmitID:     input.ClientSubmitID,
 			SubmissionMetadata: metadata,
 		})
 		if goalErr != nil {

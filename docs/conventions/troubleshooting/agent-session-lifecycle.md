@@ -3391,6 +3391,53 @@ convergence deadline`.
   [goal_operation_worker.go](../../../packages/agent/host/goal_operation_worker.go)
   [goal_scenarios.go](../../../packages/agent/host/conformance/goal_scenarios.go)
 
+### Cleared Goal reappears as a newer provider-authored Goal
+
+- Symptom:
+  Goal clear returns success and briefly shows “目标已移除”, but the active Goal
+  banner returns. The Goal table contains a completed clear followed by a new
+  provider-adoption `set` revision for the same objective. In a projection-only
+  variant, the table remains tombstoned with no later `set`, while the banner
+  still shows the pre-clear Goal.
+- Quick checks:
+  Correlate `workspace_agent_session.goal_control.completed action=clear` with
+  `agent_session.app_server.goal.provider_adopted`. If adoption was scheduled
+  before clear but completed immediately after it, inspect the adoption's
+  expected revision and the canonical revision committed by clear.
+  If no later adoption exists, inspect the Goal Control response: `goal` must
+  be present as `null`, and its embedded `session.goal` must also be null.
+- Root cause:
+  Provider Goal adoption runs off the app-server read loop. An observation
+  captured before clear could wait behind the serialized Goal actor; the old
+  implementation read the revision only after acquiring that actor, so the
+  delayed observation was mistaken for a new provider-authored Goal and
+  cleared the tombstone.
+  The projection-only variant made nullable `goal` optional on the wire. Go
+  therefore omitted a successful clear, the client fell back to a stale
+  runtime `session.goal`, and the Engine promoted that stale field after the
+  operation settled.
+- Fix:
+  Capture the canonical Goal revision while scheduling provider adoption and
+  carry it through the runtime, Host, and store boundary. The store compares
+  it with the current revision inside the same transaction that would advance
+  the Goal. Mutable progress snapshots from an already owned provider Goal
+  bind to that Goal's current operation identity instead of entering adoption.
+  Goal Control responses require a nullable `goal`, project the Host result
+  onto `session.goal`, and let the Engine normalize a synced Session from that
+  same authoritative field.
+- Validation:
+  Block provider adoption after it captures revision N, complete clear at
+  revision N+1, then release adoption. It must fail as superseded, leave the
+  Goal tombstoned at N+1, create no later `set` operation, and keep the runtime
+  Goal banner empty. Also return a synced clear beside a deliberately stale
+  Session Goal; JSON must contain `"goal": null`, and the Engine presentation
+  must remain empty.
+- References:
+  [goal_provider_adoption.go](../../../packages/agent/host/goal_provider_adoption.go)
+  [codex_appserver_provider_goal_adoption.go](../../../packages/agent/daemon/runtime/codex_appserver_provider_goal_adoption.go)
+  [daemon_agent_sessions_goal.go](../../../services/tuttid/api/daemon_agent_sessions_goal.go)
+  [sessionGoalControl.validation.ts](../../../packages/agent/activity-core/src/engine/sessionGoalControl.validation.ts)
+
 ### Revoked shared Goal starts again after handoff or desktop restart
 
 - Symptom:

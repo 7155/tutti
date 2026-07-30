@@ -195,17 +195,19 @@ It owns:
   `src/engine/`): intent dispatch loop, domain-composed pure reducers,
   command-description effect executor, expiry-intent clock, and intent frame
   batching, with scheduler/clock/command ports injected by the host
-- the typed frontend effect seam for activation, prompt send, settings update,
-  turn cancellation, Interaction response, rename, pin, and batch delete,
+- the typed frontend effect seam for activation, prompt send, Goal Control,
+  settings update, turn cancellation, Interaction response, rename, pin, and
+  batch delete,
   including lossless command projection, authoritative Session result
   validation for rename and pin, validated delete-result tombstone projection,
   shared mutation settlement, and a serialized settings-precondition state
   machine
 - semantic `AgentSessionEngine` methods for composer-option loading, Session
-  activation, existing-Session Prompt submission, Session stop, Interaction
-  response submission, existing-Session settings updates, rename, pin, and
-  batch delete. Activation, Prompt, stop, Interaction, and settings updates are
-  intent admission: the Engine owns workspace and protocol construction.
+  activation, existing-Session Prompt submission, Goal Control, Session stop,
+  Interaction response submission, existing-Session settings updates, rename,
+  pin, and batch delete. Activation, Prompt, Goal Control, stop, Interaction,
+  and settings updates are intent admission: the Engine owns workspace and
+  protocol construction.
   Activation owns requested/expiry timestamps, the 120-second confirmation
   window, and the accepted result. This window contains the 90-second
   new-Session activation command instead of allowing presentation expiry to
@@ -257,6 +259,12 @@ is not authoritative remain opaque. An untagged or opaque result from the
 legacy complete-command port remains an acknowledgement and is never
 reinterpreted as an authoritative projection, so published consumers can
 migrate without payload-shape heuristics.
+New-Session Goal Control uses the same activation path. The Engine carries a
+typed `initialGoalControl`; Desktop and Mobile send it through the typed Create
+contract with empty initial content. Agent Host creates the Session and durable
+Goal operation without creating a Turn. Non-empty initial content and typed
+initial Goal are mutually exclusive, and product adapters must not reconstruct
+the command from display text.
 Desktop AgentGUI and Mobile call `stopSession` instead of constructing
 `session/stopRequested` protocol fields. The same method stops an active Turn
 or records a bounded request that cancels the first Turn produced by an
@@ -272,6 +280,35 @@ AgentGUI, Message Center, Desktop notifications, and Mobile call
 constructing `interaction/responseRequested` protocol fields. A failed
 submission becomes retryable only when the surface explicitly submits the same
 answer again; a missing or changed answer fails closed.
+AgentGUI calls `controlGoal` for an existing Session instead of calling the
+runtime adapter or constructing `goal/controlRequested`. The caller proposes
+a stable client-submit identity and admission returns the effective identity
+used by the Engine; the Engine owns command identity, 30-second
+timeout, one in-flight admission per Session, optimistic Goal projection,
+typed result validation, and exact-identity retry after unknown delivery.
+Desktop and Mobile `controlGoal` effects only forward transport and map the
+authoritative Session, Goal, durable operation identity, and Goal state. Goal
+Control responses carry `goal` as a required nullable field so a successful
+clear is an explicit `null`, never an omitted value that can fall back to a
+stale runtime Session projection. The daemon overlays that Host-owned result
+onto `session.goal`, and the Engine applies the same invariant when a synced
+typed result reaches its canonical Session state.
+Engine-originated requests always send their caller-stable identity through to
+the existing Agent Host Goal saga.
+Every admitted mutation reaches Host; frontend Goal equality is not a no-op
+rule because Host owns durable revision and audit creation. Pending/applying
+Host state settles the frontend request as accepted, while transport loss,
+timeout, opaque/malformed success, or Host unknown/diverged state stays
+unknown. A retry of the same unknown mutation reuses the original
+`clientSubmitId`, while a definitive failure releases that identity so the
+next explicit attempt is a new operation. Generic Session reconciliation and
+Goal value equality cannot settle that operation because neither proves its
+durable identity.
+Desktop and Mobile keep a submitted Goal draft until that settlement reaches
+`accepted` or `succeeded`, and clear it only if the user has not edited the
+draft in the meantime. A definitive failure retains the text but releases the
+pending identity; an unknown result retains both the text and identity for
+explicit retry.
 Rename and pin effects return an authoritative Session envelope, and batch
 delete returns the complete typed deletion result. Reducers still validate
 those results before applying canonical state, while the public port prevents
@@ -527,6 +564,16 @@ the semantic rename, pin, and delete methods and never allocates mutation
 identity, chooses timeout policy, or reads mutation records. The command port is
 the only transport executor. Settled mutation records use a bounded window;
 they are workflow evidence, not an unbounded history store.
+Goal Control follows the same single-core rule without becoming a Session
+metadata mutation: `goalControl.operationsBySessionId` retains only the latest
+frontend operation for each Session. A validated typed response applies its
+Session through the canonical lifecycle reducer and retains Goal operation
+identity/state as settlement evidence. Canonical Session Goal equality is only
+presentation data and never confirms a pending or unknown operation. Durable
+Goal revision, provider application, recovery, audit, and idempotency remain
+owned by `packages/agent/host`. The package root exposes a narrow settlement
+projection rather than the internal operation ledger, and `getSnapshot()` does
+not carry that ledger at runtime.
 Fork is long-lived: an HTTP `202 accepted` keeps the mutation in flight until
 the canonical target Session with matching durable lineage is upserted. The
 Engine disables only another Fork for that exact source Turn. Source activity,

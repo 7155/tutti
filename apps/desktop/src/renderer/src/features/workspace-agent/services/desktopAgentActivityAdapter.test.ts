@@ -7,6 +7,7 @@ import type {
   SendWorkspaceAgentSessionInputRequest,
   SendWorkspaceAgentSessionInputResponse,
   WorkspaceAgentSession,
+  WorkspaceAgentSessionGoalControlRequest,
   WorkspaceAgentSessionForkOperation,
   WorkspaceAgentSessionMessage
 } from "@tutti-os/client-tuttid-ts";
@@ -18,6 +19,68 @@ import {
 } from "./desktopAgentActivityAdapter.ts";
 
 const workspaceId = "workspace-1";
+
+test("desktop Goal Control forwards Engine identity and maps durable evidence", async () => {
+  const calls: unknown[] = [];
+  const controller = new AbortController();
+  const adapter = createDesktopAgentActivityAdapter({
+    runtimeApi: createRuntimeApi(),
+    tuttidClient: createTuttidClient({
+      async goalControlWorkspaceAgentSession(
+        receivedWorkspaceId: string,
+        agentSessionId: string,
+        request: WorkspaceAgentSessionGoalControlRequest,
+        options?: Parameters<
+          TuttidClient["goalControlWorkspaceAgentSession"]
+        >[3]
+      ) {
+        calls.push({ agentSessionId, options, request, receivedWorkspaceId });
+        return {
+          goal: { objective: "ship it", status: "active" },
+          operationId: "operation-1",
+          session: createSession({
+            goal: { objective: "ship it", status: "active" }
+          }),
+          state: {
+            desired: { objective: "ship it", status: "active" },
+            lastEvidence: { source: "desktop-test" },
+            observed: { objective: "ship it", status: "active" },
+            pendingOperationId: null,
+            revision: 2,
+            syncStatus: "synced",
+            tombstoned: false,
+            updatedAtUnixMs: 3
+          }
+        };
+      }
+    })
+  });
+
+  const result = await adapter.goalControl({
+    action: "set",
+    agentSessionId: "agent-session-1",
+    clientSubmitId: "goal-submit-1",
+    objective: "ship it",
+    signal: controller.signal,
+    workspaceId
+  });
+
+  assert.deepEqual(calls, [
+    {
+      agentSessionId: "agent-session-1",
+      options: { signal: controller.signal },
+      receivedWorkspaceId: workspaceId,
+      request: {
+        action: "set",
+        clientSubmitId: "goal-submit-1",
+        objective: "ship it"
+      }
+    }
+  ]);
+  assert.equal(result.operationId, "operation-1");
+  assert.equal(result.state?.revision, 2);
+  assert.deepEqual(result.goal, { objective: "ship it", status: "active" });
+});
 
 test("desktop agent activity adapter preserves durable message sequence", () => {
   const message = agentActivityMessageFromTuttidMessage(
@@ -507,6 +570,37 @@ test("desktop agent activity adapter marks empty-cwd creates as no-project", asy
   });
 
   assert.deepEqual((createBody as { noProject?: boolean }).noProject, true);
+});
+
+test("desktop agent activity adapter uses typed initial Goal without command text", async () => {
+  const createBodies: CreateWorkspaceAgentSessionRequest[] = [];
+  const adapter = createDesktopAgentActivityAdapter({
+    tuttidClient: createTuttidClient({
+      async createWorkspaceAgentSession(_workspaceId, body) {
+        createBodies.push(body);
+        return createSession({
+          id: body.agentSessionId,
+          goal: { objective: "ship it", status: "active" }
+        });
+      }
+    }),
+    runtimeApi: createRuntimeApi()
+  });
+
+  await adapter.createSession({
+    agentSessionId: "11111111-1111-4111-8111-111111111111",
+    agentTargetId: "local:codex",
+    clientSubmitId: "goal-submit-1",
+    initialContent: [{ type: "text", text: "/goal ship it" }],
+    initialGoalControl: { action: "set", objective: "ship it" },
+    workspaceId
+  });
+
+  assert.deepEqual(createBodies[0]?.initialContent, []);
+  assert.deepEqual(createBodies[0]?.initialGoalControl, {
+    action: "set",
+    objective: "ship it"
+  });
 });
 
 test("desktop agent activity adapter consumes the armed recording for one new session", async () => {

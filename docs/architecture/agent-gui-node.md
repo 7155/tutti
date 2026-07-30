@@ -592,7 +592,8 @@ The engine owns:
 - canonical Session, Turn, Interaction, and Message indexes
 - pending activation/submit intents and optimistic projections
 - prompt queue, send-now, and cancel-then-send coordination
-- session mutation, settings, composer options, and operation state
+- session mutation, Goal Control, settings, composer options, and operation
+  state
 - workspace/session reconciliation state
 - ephemeral per-Session runtime command availability projected by the host
 - attention/read state and cross-surface selectors
@@ -680,12 +681,12 @@ disable submission, but must not change editor editability.
   Mobile retain only transport and DTO mapping in their
   `EngineExtensionCommand` adapters
 - the Engine alone translates shared activation, prompt send, settings update,
-  turn cancel, Interaction response, rename, pin, and batch-delete commands
-  into `AgentSessionEffectPort` calls. Desktop and Mobile effect ports retain
-  transport and DTO mapping but must not duplicate a command-type switch for
-  these shared effects. Host activity facades call
-  `engine.activateSession`, `engine.submitPrompt`, `engine.stopSession`,
-  `engine.updateSessionSettings`, `engine.renameSession`,
+  Goal Control, turn cancel, Interaction response, rename, pin, and
+  batch-delete commands into `AgentSessionEffectPort` calls. Desktop and Mobile
+  effect ports retain transport and DTO mapping but must not duplicate a
+  command-type switch for these shared effects. Host activity facades call
+  `engine.activateSession`, `engine.submitPrompt`, `engine.controlGoal`,
+  `engine.stopSession`, `engine.updateSessionSettings`, `engine.renameSession`,
   `engine.setSessionPinned`, and `engine.deleteSessions`; these deep methods own
   the applicable workspace projection, protocol or mutation identity, timeout,
   cancellation, settlement, and canonical result projection. Settings
@@ -698,6 +699,15 @@ disable submission, but must not change editor editability.
   identity, 30-second cancellation timeout, duplicate fence, and 30-second
   first-Turn waiting window. Desktop AgentGUI and Native Mobile call
   `engine.stopSession` and never construct raw `session/stopRequested` fields.
+  Existing-Session Goal Control is also fire-and-observe admission. The caller
+  proposes one stable `clientSubmitId`; the Engine admission returns the
+  effective identity used for settlement. The Engine owns workspace scope,
+  command identity, the 30-second transport timeout, one in-flight operation
+  per Session, optimistic Goal projection, typed result validation, and
+  delivery-unknown reconciliation. AgentGUI reads
+  `selectSessionGoalControlPresentation` and never stores a parallel optimistic
+  Goal or settles the transport Promise itself. Desktop and Mobile effects send
+  the request and map the authoritative Session/Goal/operation evidence only.
   Session activation enters through `engine.activateSession`. Desktop AgentGUI
   and Native Mobile keep product-specific target selection, placement, initial
   content/settings, and stable request identities, while the Engine owns
@@ -1807,13 +1817,18 @@ back to the engine draft when no snapshot exists. `capabilityRefs` remain
 independent audit provenance and must never substitute for
 `initialTuttiModeActivation`.
 An activation may instead carry `initialGoalControl`. In that branch the engine
-and runtime adapter preserve the structured `{action, objective}` command, the
-host integration creates a non-provisional Session without initial content,
-and Goal control completes without manufacturing a Turn. The structured field
-is authoritative; integrations must not reparse the display prompt to recover
-Goal semantics. AgentGUI represents the pending control and its durable audit
-with the same client-submit presentation identity, so canonical replacement
-does not remove and recreate the visible `goal-control` row.
+and runtime adapter preserve the structured `{action, objective}` command.
+Desktop and Mobile map it to the typed `initialGoalControl` Create field and
+send an empty `initialContent`; the daemon delegates that field to Agent Host,
+which creates a non-provisional Session and the durable Goal operation without
+manufacturing a Turn. Typed initial Goal and non-empty initial content are
+mutually exclusive. The structured field is authoritative; integrations must
+not reparse the display prompt or forward `/goal ...` as backend command text
+to recover Goal semantics. Host retains text parsing only for compatibility
+callers that omit the structured field. AgentGUI represents the pending control
+and its durable audit with the same client-submit presentation identity, so
+canonical replacement does not remove and recreate the visible `goal-control`
+row.
 The pending activation carries the same resolved project section key as the
 create command. Exact rail projection therefore shows the conversation as soon
 as the intent is accepted; it does not wait for provider startup or invent a
@@ -1862,6 +1877,38 @@ composer submit
 ```
 
 A successful response includes the exact Turn. Clients must not repair a missing Turn by polling, sleeping, or synthesizing an entity.
+
+### 7.2.1 Existing conversation Goal Control
+
+```text
+AgentGUI goal action or structured /goal submit
+  -> engine.controlGoal(action, clientSubmitId)
+  -> Engine Goal operation + optimistic Goal projection
+  -> Desktop or Mobile AgentSessionEffectPort.controlGoal
+  -> tuttid HTTP request carrying the same clientSubmitId
+  -> Agent Host durable Goal saga
+  -> typed Session/Goal/operation result
+  -> Engine validates Goal state and applies the returned canonical Session
+```
+
+Every admitted action reaches Host, even when the projected Goal already has
+the requested value, because Host owns the durable revision, operation, and
+audit. A typed response with `pending` or `applying` Goal state is `accepted`;
+`synced` is `succeeded`; explicit `failed`, `diverged`, and `unknown` states
+remain distinct. Only definitive protocol rejections become frontend
+`failed`. Timeout, transport loss, an opaque legacy acknowledgement, or a
+malformed typed success remains `unknown`; generic Session reconciliation does
+not prove the outcome of a particular Goal operation. Retrying the same action
+from `unknown` reuses its original `clientSubmitId`, so Host resolves the same
+durable operation instead of creating a second one. A canonical Session Goal
+cannot settle the operation by value equality because it carries no operation
+identity. At most one operation record is retained per Session and Session
+removal clears it. The package root exposes presentation and settlement
+selectors, and the public Engine snapshot contains only their derived state,
+not the raw Goal operation ledger. A definitive failure releases the old
+identity; only an unknown result retains it for an explicit retry. The legacy
+`AgentActivityRuntime.goalControl` adapter remains a compatibility surface,
+but shared AgentGUI does not call it.
 
 ### 7.3 Interaction response
 

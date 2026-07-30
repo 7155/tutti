@@ -3,6 +3,7 @@ package conformance
 var (
 	createEmptySessionScenario       = Scenario{Name: "create empty session", run: runCreateEmptySession}
 	createWithInitialContentScenario = Scenario{Name: "create with initial content", run: runCreateWithInitialContent}
+	createWithInitialGoalScenario    = Scenario{Name: "create with typed initial goal", run: runCreateWithInitialGoal}
 	createWithRailPlacementScenario  = Scenario{Name: "create with explicit rail placement", run: runCreateWithRailPlacement}
 	resumePersistedSessionScenario   = Scenario{Name: "resume persisted session", run: runResumePersistedSession}
 	sendInputScenario                = Scenario{Name: "send input", run: runSendInput}
@@ -49,6 +50,7 @@ func Scenarios() []Scenario {
 	return []Scenario{
 		createEmptySessionScenario,
 		createWithInitialContentScenario,
+		createWithInitialGoalScenario,
 		createWithRailPlacementScenario,
 		resumePersistedSessionScenario,
 		sendInputScenario,
@@ -124,6 +126,7 @@ func GoalScenarios() []Scenario {
 		{Name: "provider authored goal active conflict", run: runProviderAuthoredGoalActiveConflict},
 		{Name: "provider authored goal terminal advancement", run: runProviderAuthoredGoalTerminalAdvancement},
 		{Name: "provider authored goal cleared advancement", run: runProviderAuthoredGoalClearedAdvancement},
+		{Name: "provider authored goal stale after clear", run: runProviderAuthoredGoalStaleAfterClear},
 		{Name: "goal reconcile observation", run: runGoalReconcileObservation},
 		{Name: "goal revision actor fence", run: runGoalRevisionActorFence},
 		{Name: "goal generation fence preserves newer goal", run: runGoalGenerationFencePreservesNewerGoal},
@@ -158,6 +161,7 @@ func ApplicationCoreScenarios() []Scenario {
 	return []Scenario{
 		createEmptySessionScenario,
 		createWithInitialContentScenario,
+		createWithInitialGoalScenario,
 		createWithRailPlacementScenario,
 		resumePersistedSessionScenario,
 		sendInputScenario,

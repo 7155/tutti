@@ -6,6 +6,7 @@ import {
   type AgentPromptContentBlock
 } from "@tutti-os/agent-activity-core";
 import {
+  agentActivityGoalControlResultFromTuttid,
   agentActivityMessageFromTuttidMessage,
   agentActivitySessionDetailFromTuttid as mapAgentActivitySessionDetailFromTuttid,
   agentActivitySessionFromTuttidSession as mapAgentActivitySessionFromTuttidSession,
@@ -243,10 +244,13 @@ export function createDesktopAgentActivityAdapter({
             : {}),
           clientSubmitId: input.clientSubmitId,
           cwd: input.cwd ?? null,
-          initialContent: toTuttidPromptContentBlocks(
-            input.initialContent ?? []
-          ),
+          initialContent: input.initialGoalControl
+            ? []
+            : toTuttidPromptContentBlocks(input.initialContent ?? []),
           initialDisplayPrompt: input.initialDisplayPrompt ?? null,
+          ...(input.initialGoalControl
+            ? { initialGoalControl: { ...input.initialGoalControl } }
+            : {}),
           ...(input.initialTuttiModeActivation
             ? {
                 initialTuttiModeActivation: {
@@ -453,18 +457,20 @@ export function createDesktopAgentActivityAdapter({
         input.agentSessionId,
         {
           action: input.action,
+          ...(input.clientSubmitId
+            ? { clientSubmitId: input.clientSubmitId }
+            : {}),
           ...(input.objective !== undefined
             ? { objective: input.objective }
             : {})
-        }
+        },
+        { ...(input.signal ? { signal: input.signal } : {}) }
       );
-      return {
-        goal: result.session.goal ?? null,
-        session: agentActivitySessionFromTuttidSession(
-          input.workspaceId,
-          result.session
-        )
-      };
+      return agentActivityGoalControlResultFromTuttid(
+        input.workspaceId,
+        result,
+        { currentUserId: DESKTOP_AGENT_GUI_CURRENT_USER_ID }
+      );
     },
     async submitInteractive(input) {
       const request = {

@@ -77,6 +77,9 @@ Realtime events reduce latency but are not automatically complete truth:
 - normalized provider text/reasoning streams and explicitly appendable textual
   tool output arrive as optimistic `message_delta` payloads on the
   `/v1/events/ws` business-event WebSocket
+- canonical tool `output`/`error` bodies bound each `text`, `stdout`, and
+  `stderr` field to 1 MiB total, including nested tool steps, by retaining a
+  valid UTF-8 prefix and the fixed `[Output truncated]` marker
 - continuous, version-complete `message_update` events may merge inline
 - terminal `message_update` is the durable confirmation; message version gaps,
   invalid/unanchored deltas, nonterminal deltas after known terminal message

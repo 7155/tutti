@@ -15261,6 +15261,70 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkspaceFileUploadConflict"
+    WorkbenchLayoutPreset:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+      properties:
+        kind:
+          enum:
+            - balanced
+            - row
+            - column
+          type: string
+    WorkbenchNormalizedFrame:
+      type: object
+      additionalProperties: false
+      required:
+        - x
+        - y
+        - width
+        - height
+      properties:
+        x:
+          type: number
+          minimum: 0
+          maximum: 1
+        y:
+          type: number
+          minimum: 0
+          maximum: 1
+        width:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+          maximum: 1
+        height:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+          maximum: 1
+    WorkbenchLockedLayout:
+      type: object
+      additionalProperties: false
+      required:
+        - preset
+        - nodeIDs
+      properties:
+        preset:
+          $ref: "#/components/schemas/WorkbenchLayoutPreset"
+        nodeIDs:
+          type: array
+          minItems: 2
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 160
+        normalizedFrames:
+          type: object
+          propertyNames:
+            type: string
+            minLength: 1
+            maxLength: 160
+          additionalProperties:
+            $ref: "#/components/schemas/WorkbenchNormalizedFrame"
     WorkbenchSize:
       type: object
       additionalProperties: false
@@ -15446,6 +15510,8 @@ components:
           nullable: true
         layoutBasis:
           $ref: "#/components/schemas/WorkbenchLayoutBasis"
+        lockedLayout:
+          $ref: "#/components/schemas/WorkbenchLockedLayout"
         metadata:
           type: object
           additionalProperties: true

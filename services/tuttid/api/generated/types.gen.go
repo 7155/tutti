@@ -2386,6 +2386,27 @@ func (e UpdateAgentSessionReplayTransportPlaybackRequestTimingMode) Valid() bool
 	}
 }
 
+// Defines values for WorkbenchLayoutPresetKind.
+const (
+	Balanced WorkbenchLayoutPresetKind = "balanced"
+	Column   WorkbenchLayoutPresetKind = "column"
+	Row      WorkbenchLayoutPresetKind = "row"
+)
+
+// Valid indicates whether the value is a known member of the WorkbenchLayoutPresetKind enum.
+func (e WorkbenchLayoutPresetKind) Valid() bool {
+	switch e {
+	case Balanced:
+		return true
+	case Column:
+		return true
+	case Row:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WorkbenchSnapshotSchemaVersion.
 const (
 	WorkbenchSnapshotSchemaVersionN1 WorkbenchSnapshotSchemaVersion = 1
@@ -6985,6 +7006,29 @@ type WorkbenchLayoutConstraints struct {
 	SurfacePadding float32           `json:"surfacePadding"`
 }
 
+// WorkbenchLayoutPreset defines model for WorkbenchLayoutPreset.
+type WorkbenchLayoutPreset struct {
+	Kind WorkbenchLayoutPresetKind `json:"kind"`
+}
+
+// WorkbenchLayoutPresetKind defines model for WorkbenchLayoutPreset.Kind.
+type WorkbenchLayoutPresetKind string
+
+// WorkbenchLockedLayout defines model for WorkbenchLockedLayout.
+type WorkbenchLockedLayout struct {
+	NodeIDs          []string                             `json:"nodeIDs"`
+	NormalizedFrames *map[string]WorkbenchNormalizedFrame `json:"normalizedFrames,omitempty"`
+	Preset           WorkbenchLayoutPreset                `json:"preset"`
+}
+
+// WorkbenchNormalizedFrame defines model for WorkbenchNormalizedFrame.
+type WorkbenchNormalizedFrame struct {
+	Height float32 `json:"height"`
+	Width  float32 `json:"width"`
+	X      float32 `json:"x"`
+	Y      float32 `json:"y"`
+}
+
 // WorkbenchSafeArea defines model for WorkbenchSafeArea.
 type WorkbenchSafeArea struct {
 	Bottom float32 `json:"bottom"`
@@ -7004,6 +7048,7 @@ type WorkbenchSnapshot struct {
 	ActiveNodeId  *string                        `json:"activeNodeId,omitempty"`
 	ActiveSpaceId *string                        `json:"activeSpaceId,omitempty"`
 	LayoutBasis   *WorkbenchLayoutBasis          `json:"layoutBasis,omitempty"`
+	LockedLayout  *WorkbenchLockedLayout         `json:"lockedLayout,omitempty"`
 	Metadata      *map[string]interface{}        `json:"metadata,omitempty"`
 	NodeStack     *[]string                      `json:"nodeStack,omitempty"`
 	Nodes         []WorkbenchSnapshotNode        `json:"nodes"`

@@ -3581,6 +3581,25 @@ export type PreflightUploadWorkspaceFilesResponse = {
   conflicts: Array<WorkspaceFileUploadConflict>;
 };
 
+export type WorkbenchLayoutPreset = {
+  kind: "balanced" | "row" | "column";
+};
+
+export type WorkbenchNormalizedFrame = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type WorkbenchLockedLayout = {
+  preset: WorkbenchLayoutPreset;
+  nodeIDs: Array<string>;
+  normalizedFrames?: {
+    [key: string]: WorkbenchNormalizedFrame;
+  };
+};
+
 export type WorkbenchSize = {
   width: number;
   height: number;
@@ -3643,6 +3662,7 @@ export type WorkbenchSnapshot = {
   spaces?: Array<WorkbenchSnapshotSpace>;
   activeSpaceId?: string | null;
   layoutBasis?: WorkbenchLayoutBasis;
+  lockedLayout?: WorkbenchLockedLayout;
   metadata?: {
     [key: string]: unknown;
   };

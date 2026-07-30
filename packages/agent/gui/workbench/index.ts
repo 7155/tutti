@@ -8,6 +8,7 @@ export {
 } from "./contribution.ts";
 export type {
   AgentGuiWorkbenchProviderAvailability,
+  AgentGuiWorkbenchProviderAvailabilitySource,
   AgentGuiWorkbenchContributionCopy,
   AgentGuiWorkbenchContributionCopyOverrides,
   AgentGuiWorkbenchRenderBodyHelpers,

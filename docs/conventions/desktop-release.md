@@ -310,8 +310,8 @@ Promotion performs these checks before changing public state:
 
 - the GitHub Release exists and its stable, RC, or beta shape matches the tag
 - the tag still points to the staged commit
-- the production managed app runtime catalog publishes the target commit's
-  locked `runtimeVersion` for every supported platform
+- the production managed app runtime catalog publishes at least the target
+  commit's locked `runtimeVersion` for every supported platform
 - `SHA256SUMS.txt` exists and the downloaded draft assets match it
 - the target version does not move the selected public channel backwards
 

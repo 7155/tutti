@@ -27,6 +27,18 @@ test("validateTuttiAppRuntimeRelease accepts the locked version for every platfo
   });
 });
 
+test("validateTuttiAppRuntimeRelease accepts newer published runtimes", () => {
+  const catalog = runtimeCatalog("2026.08.0");
+  catalog.runtimes["linux-amd64"].version = "2027.01.2";
+
+  const result = validateTuttiAppRuntimeRelease({
+    catalog,
+    lock: runtimeLock("2026.07.3")
+  });
+
+  assert.equal(result.runtimeVersion, "2026.07.3");
+});
+
 test("validateTuttiAppRuntimeRelease rejects stale or missing platforms with release guidance", () => {
   const catalog = runtimeCatalog("2026.06.0");
   delete catalog.runtimes["linux-amd64"];
@@ -40,16 +52,35 @@ test("validateTuttiAppRuntimeRelease rejects stale or missing platforms with rel
     (error) => {
       assert.match(
         error.message,
-        /darwin-arm64: expected 2026\.07\.0, got 2026\.06\.0/
+        /darwin-arm64: expected at least 2026\.07\.0, got 2026\.06\.0/
       );
       assert.match(
         error.message,
-        /linux-amd64: expected 2026\.07\.0, got missing/
+        /linux-amd64: expected at least 2026\.07\.0, got missing/
       );
       assert.match(error.message, /Publish Tutti App Runtime/);
       assert.match(error.message, /before promoting the desktop release/);
       return true;
     }
+  );
+});
+
+test("validateTuttiAppRuntimeRelease rejects malformed runtime versions", () => {
+  assert.throws(
+    () =>
+      validateTuttiAppRuntimeRelease({
+        catalog: runtimeCatalog("2026.7.0"),
+        lock: runtimeLock("2026.07.0")
+      }),
+    /darwin-arm64: darwin-arm64 published runtime version must use YYYY\.MM\.PATCH/
+  );
+  assert.throws(
+    () =>
+      validateTuttiAppRuntimeRelease({
+        catalog: runtimeCatalog("2026.07.0"),
+        lock: runtimeLock("2026.13.0")
+      }),
+    /runtime lock runtimeVersion has an invalid month/
   );
 });
 

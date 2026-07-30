@@ -1034,6 +1034,7 @@ func TestServiceRunActionReinstallsCodexWhenPlatformPackageIncomplete(t *testing
 	platformBinary := requireTestCodexPlatformBinaryPath(t, pkgDir)
 
 	service := probeTestService(home)
+	service.ManagedRuntime = fakeManagedRuntimeResolver(t, fakeManagedRuntimeRoot(t))
 	// The default 1s probe timeout is tuned for the old "still alive after
 	// 200ms" liveness check; the real ACP handshake needs to actually spawn,
 	// write, and read a response, which is slower under test-suite load.

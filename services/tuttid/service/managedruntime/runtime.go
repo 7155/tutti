@@ -271,6 +271,11 @@ func RootReady(root string) bool {
 		runtime.NPM != ""
 }
 
+// NodeReady reports whether root contains a compatible managed Node component.
+func NodeReady(root string) bool {
+	return appRuntimeComponentReady(root, "node")
+}
+
 func appRuntimeComponentReady(root string, name string) bool {
 	if strings.TrimSpace(root) == "" {
 		return false

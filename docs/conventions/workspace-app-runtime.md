@@ -103,9 +103,12 @@ https://d1x7gb6wqsqmnm.cloudfront.net/tutti-app-runtimes/catalog.json
 
 Artifacts are immutable and should use long cache headers. The catalog is mutable and should use a short cache header.
 
-The production runtime catalog must publish the `runtimeVersion` locked by the
-desktop release target for every supported platform before that desktop release
-is promoted. The promotion workflow enforces this ordering with
+The production runtime catalog must publish at least the `runtimeVersion` locked
+by the desktop release target for every supported platform before that desktop
+release is promoted. Runtime versions use an ordered `YYYY.MM.PATCH` format and
+newer runtime releases remain compatible with older desktop releases because
+tuttid always resolves the mutable catalog's current entry. The promotion
+workflow enforces this ordering with
 `tools/scripts/verify-tutti-app-runtime-release.mjs`; publish the managed runtime
 first when the lock version changes.
 

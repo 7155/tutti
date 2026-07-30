@@ -10,6 +10,10 @@ export function validateTuttiAppRuntimeRelease({ catalog, lock }) {
     lock?.runtimeVersion,
     "runtimeVersion"
   );
+  const expectedVersionParts = parseRuntimeVersion(
+    expectedVersion,
+    "runtime lock runtimeVersion"
+  );
   const platforms = Object.keys(lock?.platforms ?? {});
   if (platforms.length === 0) {
     throw new Error("runtime lock must declare at least one platform");
@@ -23,9 +27,27 @@ export function validateTuttiAppRuntimeRelease({ catalog, lock }) {
   const mismatches = [];
   for (const platform of platforms) {
     const publishedVersion = catalog.runtimes?.[platform]?.version;
-    if (publishedVersion !== expectedVersion) {
+    if (typeof publishedVersion !== "string") {
       mismatches.push(
-        `${platform}: expected ${expectedVersion}, got ${publishedVersion ?? "missing"}`
+        `${platform}: expected at least ${expectedVersion}, got missing`
+      );
+      continue;
+    }
+    let publishedVersionParts;
+    try {
+      publishedVersionParts = parseRuntimeVersion(
+        publishedVersion,
+        `${platform} published runtime version`
+      );
+    } catch (error) {
+      mismatches.push(`${platform}: ${error.message}`);
+      continue;
+    }
+    if (
+      compareRuntimeVersions(publishedVersionParts, expectedVersionParts) < 0
+    ) {
+      mismatches.push(
+        `${platform}: expected at least ${expectedVersion}, got ${publishedVersion}`
       );
     }
   }
@@ -106,6 +128,29 @@ function requiredString(value, name) {
     throw new Error(`runtime lock ${name} is required`);
   }
   return value.trim();
+}
+
+function parseRuntimeVersion(value, name) {
+  const match = /^(\d{4})\.(\d{2})\.(0|[1-9]\d*)$/u.exec(value);
+  if (!match) {
+    throw new Error(
+      `${name} must use YYYY.MM.PATCH, got ${JSON.stringify(value)}`
+    );
+  }
+  const parts = match.slice(1).map(Number);
+  if (parts[1] < 1 || parts[1] > 12) {
+    throw new Error(`${name} has an invalid month in ${JSON.stringify(value)}`);
+  }
+  return parts;
+}
+
+function compareRuntimeVersions(left, right) {
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return left[index] - right[index];
+    }
+  }
+  return 0;
 }
 
 if (

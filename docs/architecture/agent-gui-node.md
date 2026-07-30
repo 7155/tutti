@@ -77,6 +77,9 @@ Realtime events reduce latency but are not automatically complete truth:
 - normalized provider text/reasoning streams and explicitly appendable textual
   tool output arrive as optimistic `message_delta` payloads on the
   `/v1/events/ws` business-event WebSocket
+- canonical tool `output`/`error` bodies bound each `text`, `stdout`, and
+  `stderr` field to 1 MiB total, including nested tool steps, by retaining a
+  valid UTF-8 prefix and the fixed `[Output truncated]` marker
 - continuous, version-complete `message_update` events may merge inline
 - terminal `message_update` is the durable confirmation; message version gaps,
   invalid/unanchored deltas, nonterminal deltas after known terminal message
@@ -466,6 +469,15 @@ Interaction. This publication gate applies equally to emitted events and
 request while the adapter waits for the later frame.
 
 A child Interaction may appear in the root conversation, but submission carries the exact `(agentSessionId, turnId, requestId)` tuple.
+Every AgentGUI, Message Center, Desktop notification, and Mobile action submits
+that tuple plus the user's current answer through
+`engine.submitInteractionResponse`. The Engine allocates command identity,
+applies the shared 30-second timeout, rejects non-pending or in-flight targets,
+and recognizes an explicit exact repeat after a confirmed failure. It does not
+silently reuse the previous answer when a caller omits fields, and it does not
+retry delivery-unknown responses. Plan-implementation actions remain their
+specialized plan-decision workflow rather than masquerading as ordinary
+Interaction responses.
 
 ### 3.4 Goal and operations
 
@@ -589,10 +601,13 @@ not disable Local Agent or another remote Session.
 
 Mobile projects pending Interactions from the root conversation plus its child
 Sessions and reads each exact Engine response record for submitting/failure
-state. Native cards dispatch semantic response intents only; they do not keep a
-parallel Promise lifecycle. Missing provider-authored Plan options fail closed,
-and runtime unavailability disables the exact response without discarding
-composer drafts or Interaction identity.
+state. Native cards call `engine.submitInteractionResponse`; they do not
+construct response intents, recover previous answer payloads, or keep a
+parallel Promise lifecycle. After a confirmed failure, Mobile keeps the
+canonical prompt and its explicit answer controls visible instead of replacing
+them with a payload-free retry button. Missing provider-authored Plan options
+fail closed, and runtime unavailability disables the exact response without
+discarding composer drafts or Interaction identity.
 
 Device connection presentation is target-scoped rather than Session-scoped.
 The host exposes a target connection source keyed by `agentTargetId` with the
@@ -653,15 +668,28 @@ disable submission, but must not change editor editability.
   into `AgentSessionEffectPort` calls. Desktop and Mobile effect ports retain
   transport and DTO mapping but must not duplicate a command-type switch for
   these shared effects. Host activity facades call
+  `engine.submitPrompt`, `engine.stopSession`,
   `engine.updateSessionSettings`, `engine.renameSession`,
-  `engine.setSessionPinned`, and `engine.deleteSessions`; these deep methods
-  own the applicable workspace projection, command or mutation identity,
-  timeout, cancellation, settlement, and canonical result projection. Settings
+  `engine.setSessionPinned`, and `engine.deleteSessions`; these deep methods own
+  the applicable workspace projection, protocol or mutation identity, timeout,
+  cancellation, settlement, and canonical result projection. Settings
   update is fire-and-observe intent admission rather than a settlement Promise:
   the existing settings-operation selector remains the source of pending,
   failed, and unknown state. Hosts must not reconstruct mutation protocol with
   `dispatchSessionMutation` and snapshot reads or construct raw
   `session/settingsUpdateRequested` fields for an existing Session.
+  Session stop is also fire-and-observe admission: the Engine owns its command
+  identity, 30-second cancellation timeout, duplicate fence, and 30-second
+  first-Turn waiting window. Desktop AgentGUI and Native Mobile call
+  `engine.stopSession` and never construct raw `session/stopRequested` fields.
+  Existing-Session Prompt submission enters through `engine.submitPrompt`.
+  The surface keeps the stable `clientSubmitId` used by its draft-recovery and
+  idempotent-retry bookkeeping; the Engine owns workspace scope, timestamps,
+  routing protocol, the shared 120-second confirmation window, and the
+  accepted/queued admission result. Desktop AgentGUI and Native Mobile clear a
+  submitted draft only after that result confirms admission, and never
+  construct raw `submit/requested` fields or rebuild admission from selectors.
+  New-Session initial content continues to travel with activation.
   Platform-only commands remain in each host's `EngineExtensionCommand`
   adapter. Every effect propagates the Engine-owned AbortSignal to its
   transport. Rename, pin, and delete settle through the shared Session-mutation
@@ -680,7 +708,12 @@ disable submission, but must not change editor editability.
   automatically. A fresh explicit settings selection is the user's retry:
   `engine.updateSessionSettings` recognizes the exact Engine
   settings-operation state, so Desktop AgentGUI and Native Mobile do not derive
-  retry flags independently
+  retry flags independently. Ordinary approval and question answers similarly
+  enter through `engine.submitInteractionResponse`; the Engine owns exact
+  Interaction identity, command identity, timeout, deduplication, and
+  confirmed-failure retry admission. Surfaces submit the current explicit
+  answer and never dispatch `interaction/responseRequested` or reconstruct a
+  previous answer themselves
 - consumers do not read reducer maps directly
 - consumers do not create canonical session/message mirrors
 - optimistic records define confirmation, rejection, timeout, and uncertain-delivery paths
@@ -879,6 +912,9 @@ the activation intent instead; provider-independent draft projection and
 Desktop-persisted defaults remain surface policy until activation. A renderer
 must not call the settings endpoint from a component or invent a
 provider-specific settings schema.
+Existing-Session Prompt sends similarly enter through `engine.submitPrompt`;
+Desktop and Mobile provide content plus a stable client submit identity, while
+the Engine owns common routing, confirmation expiry, and admission projection.
 
 An activation intent's shared Session settings are not an HTTP create-field
 allowlist. Each host must construct a typed
@@ -1152,25 +1188,10 @@ host adapters consume that projection and must not rebuild `$` versus `/`,
 plugin namespaces, or prompt-item versus text-trigger behavior from provider
 names.
 
-Native Composer plugins are a separate projection from Skills and MCP
-discovery. The daemon issues a small descriptor with a stable `semantic`,
-status, trigger, and `plugin://` path; AgentGUI uses that descriptor for
-presentation, setup actions, and structured mentions without branching on a
-provider id or reading local plugin icon paths. For Codex, `$` is the native
-plugin surface while `/` remains commands and product capabilities. A
-session-scoped runtime-preparation plan remains authoritative for whether a
-selected native plugin can actually run. The provider descriptor carries
-`behavior.nativePluginCatalogAuthoritative` to say that this native catalog is
-the complete Composer plugin surface, including when it is empty; other
-providers retain the ordinary Skills and connector projection.
-
-App-server-backed capability discovery also follows the descriptor boundary.
-Codex requests its complete native catalog and applies the authoritative plugin
-projection; Tutti Agent requests only `skills/list` and retains the ordinary
-Skill projection. Both providers share the app-server transport, capability
-contract, cache, and structured prompt-item submission path. AgentGUI continues
-to expose Skills only through `$`; `/` remains commands and product
-capabilities.
+App-server-backed skill discovery follows the descriptor boundary. Tutti Agent
+requests only `skills/list` and retains the ordinary Skill projection through
+the shared app-server transport, capability contract, cache, and structured
+prompt-item submission path.
 
 ### 5.3 Agent Directory and setup
 
@@ -1519,16 +1540,20 @@ start a Commerce request.
 The optional `renderSlots.agentConfigAccount` is a presentation-only Host
 chrome seam for the exact selected Agent Target. Its paired
 `hostActions.onAgentConfigMenuOpen` notification lets the Host refresh account
-state without hiding workflow in the render slot. Returning no content keeps
-the provider account and quota block unchanged. AgentGUI never derives billing
-ownership from provider identity.
+state without hiding workflow in the render slot. Returning no renderable
+content keeps the provider account and quota block unchanged. Returning the
+package-owned `AgentGUIConfigAccountFallbackSuppressed` marker suppresses those
+generic fallback rows without adding Host content.
 
 Tutti Desktop fills this seam only for its self-owned local Tutti Agent target.
 The Desktop Account service remains the source of account, membership, credit,
 and Commerce-link state; opening the target menu asks that service to refresh,
-and the render slot stays request-free. Signed-out, shared, and non-Tutti
-targets return no Host content and retain AgentGUI's provider account and quota
-presentation.
+and the render slot stays request-free. Its compact Agent menu omits the
+redundant Tutti account identity row while retaining credit, membership, and
+account-center actions. A signed-out local Tutti Agent returns the suppression
+marker because the generic provider-account and quota rows do not describe its
+Host-owned account model. Other providers return `null` and retain AgentGUI's
+default provider-account and quota presentation.
 The optional `renderSlots.agentTargetInfo` seam enriches the exact target icon
 in the provider Rail and Conversation Rail. The same
 `AgentGUIAgentTargetInfoRenderer` may be passed to
@@ -1941,19 +1966,24 @@ Do not start by adding a fallback to the visible component.
 
 The desktop settings panel's Agent section has General Settings, Agent Runtime,
 and Custom Agents available by default; Automation remains independently
-gated. The Agent
-Runtime tab renders provider rows from the authoritative
-identity catalog plus the live `IAgentProviderStatusService`; it does not copy
-a provider registry. Its Enable/Disable control reads all Agent Targets from
+gated. The Agent Runtime tab renders built-in provider rows from the
+authoritative identity catalog plus the live `IAgentProviderStatusService`.
+Stable Agent Extension maturity is declared separately from Early Access
+activation flags, and those rows consume their live `IAgentsService` Targets
+and package-provided identity assets rather than becoming built-in provider
+descriptors. Its Enable/Disable control reads all Agent Targets from
 `IAgentsService` and persists the daemon-owned Agent Target `enabled` field.
-Disabled targets remain in this settings control plane so they can be
+Tutti Agent is the built-in exception: its target is always enabled, its row
+cannot be disabled, and it has no separate developer visibility switch.
+Other disabled targets remain in this settings control plane so they can be
 re-enabled, but they are excluded from the AgentGUI agent projection and from
 CLI discovery and launch. The device-global provider-rail preferences remain
 presentation-only (ordering and optional sidebar personalization); they do not
 authorize an Agent Target or replace daemon enablement. Staged
 (Beta/Preview/in-progress) rows are gated by the `lab.previewAgents` switch via
-the provider-neutral `agentGuiWorkbenchPreviewProviders` predicate; stable rows
-always show in settings. Deep links publish the existing
+the provider-neutral `agentGuiWorkbenchPreviewProviders` predicate; stable
+built-in and Agent Extension rows always show in settings and launch surfaces.
+Deep links publish the existing
 `openWorkspaceSettingsPanel` intent with optional `pane`/`provider`; the
 Desktop Settings service is the single adapter that resolves legacy aliases
 and current destinations for workspace and standalone windows. An Agent

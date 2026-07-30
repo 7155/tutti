@@ -3,10 +3,10 @@ import type { TranslationDictionary } from "../core/resources.ts";
 export const zhCN = {
   browser: {
     chromeImportNotification: {
-      completed: "已从 Chrome 导入 {{imported}} 项 Cookie",
-      failed: "Chrome Cookie 导入未完成",
-      partial: "已从 Chrome 导入 {{imported}} 项 Cookie，部分条目被跳过或失败",
-      title: "Chrome 登录状态导入"
+      completed: "已导入 {{imported}} 项登录 Cookie",
+      failed: "登录 Cookie 导入未完成",
+      partial: "已导入 {{imported}} 项登录 Cookie，部分条目被跳过或失败",
+      title: "登录状态导入"
     }
   },
   common: {
@@ -245,7 +245,6 @@ export const zhCN = {
       dataUnavailable: "部分账号数据暂不可用",
       rewardToastTitle: "新用户积分",
       rewardToastCreditsUnit: "积分",
-      rewardToastDescription: "已添加到账户余额",
       rewardToastClose: "关闭积分奖励通知",
       insufficientCreditsUpgradeMessage:
         "您账户下可用的积分额度已耗尽，升级会员可获取更多额度",
@@ -1176,9 +1175,6 @@ export const zhCN = {
           "在应用中心卡片中展示应用作者和 GitHub 来源",
         showAppDeveloperSourcesLabel: "展示应用作者与来源",
         showAppDeveloperSourcesSaveFailed: "暂时无法更新应用中心来源展示设置",
-        tuttiAgentSwitchDescription: "显示账号与 Agent 开发控制项",
-        tuttiAgentSwitchLabel: "Tutti Agent Switch",
-        tuttiAgentSwitchSaveFailed: "暂时无法更新 Tutti Agent 可用状态",
         visibilityDescription:
           "在设置中隐藏此面板在「关于」里连续点击版本号七次即可重新显示",
         visibilityLabel: "显示开发者面板"

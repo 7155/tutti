@@ -445,6 +445,36 @@ export interface AgentSessionUpdateSettingsInput {
   settings: AgentActivitySessionSettings;
 }
 
+export interface AgentSessionSubmitInteractionResponseInput {
+  action?: string;
+  agentSessionId: string;
+  optionId?: string;
+  payload?: Readonly<Record<string, unknown>>;
+  requestId: string;
+  turnId: string;
+}
+
+export interface AgentSessionSubmitPromptInput {
+  agentSessionId: string;
+  capabilityRefs?: readonly AgentActivityCapabilityReference[];
+  clientSubmitId: string;
+  content: readonly AgentPromptContentBlock[];
+  displayPrompt?: string;
+  requiredSettingsPatch?: Readonly<AgentActivitySubmitSettingsPatch>;
+  routing?: "auto" | "immediate" | "send_now";
+  runtimeContent?: readonly AgentPromptContentBlock[];
+  submitDiagnostics?: Readonly<AgentActivitySubmitDiagnostics>;
+}
+
+export interface AgentSessionSubmitPromptResult {
+  accepted: boolean;
+  queued: boolean;
+}
+
+export interface AgentSessionStopInput {
+  agentSessionId: string;
+}
+
 export interface AgentSessionEngine {
   readonly identity: AgentSessionEngineIdentity;
   deleteSessions(
@@ -471,6 +501,13 @@ export interface AgentSessionEngine {
       signal?: AbortSignal;
     }
   ): Promise<AgentActivitySession>;
+  submitInteractionResponse(
+    input: AgentSessionSubmitInteractionResponseInput
+  ): boolean;
+  submitPrompt(
+    input: AgentSessionSubmitPromptInput
+  ): AgentSessionSubmitPromptResult;
+  stopSession(input: AgentSessionStopInput): void;
   subscribe(listener: AgentSessionEngineListener): () => void;
   updateSessionSettings(input: AgentSessionUpdateSettingsInput): void;
 }
@@ -542,6 +579,7 @@ import type {
   AgentActivitySessionSettings,
   AgentActivitySubmitDiagnostics,
   AgentActivitySubmitInteractiveInput,
+  AgentActivitySubmitSettingsPatch,
   AgentPromptContentBlock
 } from "../types.ts";
 import type { AgentActivityRailPlacement } from "../railPlacement.types.ts";

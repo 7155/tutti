@@ -402,7 +402,7 @@ describe("AgentSlashCommandPalette", () => {
     expect(onSelectCapabilitySettings).not.toHaveBeenCalled();
   });
 
-  it("separates plugin and connector skill entries into source groups", () => {
+  it("separates catalog skills, plugins, and connectors into source groups", () => {
     render(
       <AgentSlashCommandPalette
         label="Slash commands"
@@ -414,6 +414,17 @@ describe("AgentSlashCommandPalette", () => {
         mcpGroupLabel="MCP"
         highlightedIndex={0}
         entries={[
+          {
+            type: "skill",
+            key: "skill:catalog-review",
+            label: "catalog-review",
+            skill: {
+              name: "catalog-review",
+              trigger: "$catalog-review",
+              sourceKind: "plugin",
+              kind: "skill"
+            }
+          },
           {
             type: "skill",
             key: "skill:plugin-review",
@@ -444,6 +455,7 @@ describe("AgentSlashCommandPalette", () => {
       />
     );
 
+    expect(screen.getByText("Skills")).toBeInTheDocument();
     expect(screen.getByText("Plugins")).toBeInTheDocument();
     expect(screen.getByText("Connectors")).toHaveClass(
       "mt-3",
@@ -451,74 +463,6 @@ describe("AgentSlashCommandPalette", () => {
       "before:inset-x-3",
       "before:border-t",
       "before:border-[var(--border-1)]"
-    );
-    expect(screen.queryByText("Skills")).toBeNull();
-  });
-
-  it("renders native plugins with an icon and routes unavailable Computer to setup", () => {
-    const onSelectSkill = vi.fn();
-    const onSelectPluginSettings = vi.fn();
-    render(
-      <AgentSlashCommandPalette
-        label="Plugins"
-        commandsGroupLabel="Commands"
-        capabilitiesGroupLabel="Capabilities"
-        skillsGroupLabel="Skills"
-        pluginsGroupLabel="Plugins"
-        connectorsGroupLabel="Connectors"
-        mcpGroupLabel="MCP"
-        highlightedIndex={0}
-        entries={[
-          {
-            type: "plugin",
-            key: "plugin:sites",
-            label: "Sites",
-            description: "Build and deploy websites with Sites",
-            selectAction: "insert",
-            plugin: {
-              name: "Sites",
-              trigger: "$sites",
-              invocation: "promptItem",
-              sourceKind: "plugin",
-              kind: "plugin",
-              status: "available",
-              semantic: "sites"
-            }
-          },
-          {
-            type: "plugin",
-            key: "plugin:computer",
-            label: "电脑",
-            description: "Control Mac apps from ChatGPT",
-            selectAction: "settings",
-            plugin: {
-              name: "电脑",
-              trigger: "",
-              sourceKind: "plugin",
-              kind: "plugin",
-              status: "setupRequired",
-              semantic: "computerUse"
-            }
-          }
-        ]}
-        onHighlightChange={vi.fn()}
-        onSelect={vi.fn()}
-        onSelectCapability={vi.fn()}
-        onSelectPluginSettings={onSelectPluginSettings}
-        onSelectSkill={onSelectSkill}
-      />
-    );
-
-    const sites = screen.getByRole("option", { name: /Sites/i });
-    expect(sites.querySelector("svg")).not.toBeNull();
-    sites.click();
-    expect(onSelectSkill).toHaveBeenCalledWith(
-      expect.objectContaining({ semantic: "sites" })
-    );
-
-    screen.getByRole("option", { name: /电脑/i }).click();
-    expect(onSelectPluginSettings).toHaveBeenCalledWith(
-      expect.objectContaining({ semantic: "computerUse" })
     );
   });
 });

@@ -8,12 +8,15 @@ import { createEngineEffectExecutor } from "./effectExecutor.ts";
 import { createEngineExpiryClock } from "./expiryClock.ts";
 import {
   selectEngineActiveTurn,
+  selectEngineInteractionResponse,
   selectEngineInteractionsForSession,
   selectEngineLatestTurn,
   selectEnginePendingInteractions,
   selectEngineSession,
   selectEngineSessionSettingsUpdate
 } from "./sessionLifecycle.selectors.ts";
+import { selectPendingSubmitsForSession } from "./pendingIntents.selectors.ts";
+import { selectEngineHasVisibleQueuedSubmit } from "./promptQueue.selectors.ts";
 import {
   dispatchSessionMutationWithCancellation,
   type SessionMutationCancellation
@@ -29,6 +32,10 @@ import {
   type AgentSessionEngineIntentObserver,
   type AgentSessionEngineListener,
   type AgentSessionLoadComposerOptionsInput,
+  type AgentSessionStopInput,
+  type AgentSessionSubmitInteractionResponseInput,
+  type AgentSessionSubmitPromptInput,
+  type AgentSessionSubmitPromptResult,
   type AgentSessionUpdateSettingsInput,
   type EngineClock,
   type EngineCommandPort,
@@ -59,6 +66,9 @@ import type {
 export const ENGINE_INTENT_BATCH_DELAY_MS = 33;
 const SESSION_MUTATION_TIMEOUT_MS = 30_000;
 const SESSION_SETTINGS_UPDATE_TIMEOUT_MS = 30_000;
+const SESSION_STOP_TIMEOUT_MS = 30_000;
+const INTERACTION_RESPONSE_TIMEOUT_MS = 30_000;
+const SESSION_PROMPT_CONFIRMATION_TIMEOUT_MS = 120_000;
 
 export interface CreateAgentSessionEngineInput {
   batchDelayMs?: number;
@@ -100,8 +110,10 @@ export function createAgentSessionEngine({
   let draining = false;
   let disposed = false;
   let composerOptionsCommandSequence = 1;
+  let interactionResponseCommandSequence = 1;
   let sessionMutationSequence = 1;
   let sessionSettingsUpdateSequence = 1;
+  let sessionStopCommandSequence = 1;
   const pendingComposerOptionsDisposals = new Set<() => void>();
 
   const expiryClock = createEngineExpiryClock({
@@ -382,6 +394,127 @@ export function createAgentSessionEngine({
     return `settings:${clock.nowUnixMs()}:${sequence}`;
   }
 
+  function nextInteractionResponseCommandId(): string {
+    const sequence = interactionResponseCommandSequence++;
+    return `interaction:${clock.nowUnixMs()}:${sequence}`;
+  }
+
+  function stopSession(input: AgentSessionStopInput): void {
+    const agentSessionId = input.agentSessionId.trim();
+    if (!agentSessionId) {
+      return;
+    }
+    const requestedAtUnixMs = clock.nowUnixMs();
+    const sequence = sessionStopCommandSequence++;
+    dispatch({
+      agentSessionId,
+      awaitingTurnExpiresAtUnixMs: requestedAtUnixMs + SESSION_STOP_TIMEOUT_MS,
+      commandId: `stop:${requestedAtUnixMs}:${sequence}`,
+      timeoutMs: SESSION_STOP_TIMEOUT_MS,
+      type: "session/stopRequested",
+      workspaceId: engineIdentity.workspaceId
+    });
+  }
+
+  function submitInteractionResponse(
+    input: AgentSessionSubmitInteractionResponseInput
+  ): boolean {
+    const agentSessionId = input.agentSessionId.trim();
+    const requestId = input.requestId.trim();
+    const turnId = input.turnId.trim();
+    if (!agentSessionId || !requestId || !turnId) {
+      return false;
+    }
+    const action = input.action?.trim() || undefined;
+    const optionId = input.optionId?.trim() || undefined;
+    const payload = input.payload ? { ...input.payload } : undefined;
+    const current = selectEngineInteractionResponse(
+      publicSnapshot,
+      agentSessionId,
+      turnId,
+      requestId
+    );
+    const commandId = nextInteractionResponseCommandId();
+    dispatch({
+      ...(action ? { action } : {}),
+      agentSessionId,
+      commandId,
+      ...(optionId ? { optionId } : {}),
+      ...(payload ? { payload } : {}),
+      requestId,
+      retry: current?.status === "failed",
+      timeoutMs: INTERACTION_RESPONSE_TIMEOUT_MS,
+      turnId,
+      type: "interaction/responseRequested",
+      workspaceId: engineIdentity.workspaceId
+    });
+    const response = selectEngineInteractionResponse(
+      publicSnapshot,
+      agentSessionId,
+      turnId,
+      requestId
+    );
+    return (
+      response?.commandId === commandId && response.status === "responding"
+    );
+  }
+
+  function submitPrompt(
+    input: AgentSessionSubmitPromptInput
+  ): AgentSessionSubmitPromptResult {
+    const agentSessionId = input.agentSessionId.trim();
+    const clientSubmitId = input.clientSubmitId.trim();
+    const content = input.content.map((block) => ({ ...block }));
+    if (!agentSessionId || !clientSubmitId || content.length === 0) {
+      return { accepted: false, queued: false };
+    }
+    const requestedAtUnixMs = clock.nowUnixMs();
+    const displayPrompt = input.displayPrompt?.trim() || undefined;
+    dispatch({
+      agentSessionId,
+      ...(input.capabilityRefs?.length
+        ? {
+            capabilityRefs: input.capabilityRefs.map((reference) => ({
+              ...reference
+            }))
+          }
+        : {}),
+      clientSubmitId,
+      content,
+      ...(displayPrompt ? { displayPrompt } : {}),
+      expiresAtUnixMs:
+        requestedAtUnixMs + SESSION_PROMPT_CONFIRMATION_TIMEOUT_MS,
+      ...(input.requiredSettingsPatch
+        ? { requiredSettingsPatch: { ...input.requiredSettingsPatch } }
+        : {}),
+      requestedAtUnixMs,
+      routing: input.routing ?? "auto",
+      ...(input.runtimeContent
+        ? {
+            runtimeContent: input.runtimeContent.map((block) => ({
+              ...block
+            }))
+          }
+        : {}),
+      ...(input.submitDiagnostics
+        ? { submitDiagnostics: { ...input.submitDiagnostics } }
+        : {}),
+      type: "submit/requested",
+      workspaceId: engineIdentity.workspaceId
+    });
+    const snapshot = publicSnapshot;
+    return {
+      accepted: selectPendingSubmitsForSession(snapshot, agentSessionId).some(
+        (record) => record.clientSubmitId === clientSubmitId
+      ),
+      queued: selectEngineHasVisibleQueuedSubmit(
+        snapshot,
+        agentSessionId,
+        clientSubmitId
+      )
+    };
+  }
+
   function updateSessionSettings(input: AgentSessionUpdateSettingsInput): void {
     const agentSessionId = input.agentSessionId.trim();
     const settings = { ...input.settings };
@@ -522,6 +655,9 @@ export function createAgentSessionEngine({
       }
       return session;
     },
+    submitInteractionResponse,
+    submitPrompt,
+    stopSession,
     subscribe(listener) {
       listeners.add(listener);
       return () => {

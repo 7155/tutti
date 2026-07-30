@@ -275,12 +275,9 @@ func (r codexAppServerReducer) reduceNotification(
 		// sink so the GUI banner refreshes even while no turn context exists
 		// (returned reduction events are dropped without an active turn).
 		goal := payloadObject(params["goal"])
-		adoptedIdentity, adopted := a.adoptProviderGoalGeneration(session, goal)
 		a.observeGoalTurnGeneration(session, strings.TrimSpace(asString(params["turnId"])), goal)
 		_, newStatus, statusChanged := a.applyGoalUpdate(session.AgentSessionID, goal)
-		if adopted {
-			a.armGoalContinuationClaim(session.AgentSessionID, adoptedIdentity)
-		}
+		a.scheduleProviderGoalAdoption(session, goal)
 		goalEvents := []activityshared.Event{}
 		if event, ok := normalizedGoalUpdatedEvent(session, "thread_goal_update"); ok {
 			goalEvents = append(goalEvents, event)

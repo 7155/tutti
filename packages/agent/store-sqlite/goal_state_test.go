@@ -73,6 +73,15 @@ func TestProviderGoalAdoptionRejectsConflictingActiveGeneration(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _, _, err := store.AdoptProviderGoalOperation(ctx, ProviderGoalAdoption{
+		OperationID: "goal-provider-same-objective", WorkspaceID: "ws-provider-conflict",
+		AgentSessionID: "session-provider-conflict", ClientSubmitID: "provider-same-objective",
+		Goal:             map[string]any{"objective": "first", "status": "active"},
+		OccurredAtUnixMS: 25,
+	})
+	if !errors.Is(err, ErrGoalOperationConflict) {
+		t.Fatalf("same-objective generation replacement error = %v", err)
+	}
+	_, _, _, err = store.AdoptProviderGoalOperation(ctx, ProviderGoalAdoption{
 		OperationID: "goal-provider-second", WorkspaceID: "ws-provider-conflict",
 		AgentSessionID: "session-provider-conflict", ClientSubmitID: "provider-second",
 		Goal:             map[string]any{"objective": "second", "status": "active"},
@@ -108,6 +117,50 @@ func TestProviderGoalAdoptionRejectsConflictingActiveGeneration(t *testing.T) {
 	})
 	if !errors.Is(err, ErrGoalOperationConflict) {
 		t.Fatalf("stale adoption replay error = %v", err)
+	}
+}
+
+func TestProviderGoalAdoptionAdvancesAfterClearedGeneration(t *testing.T) {
+	t.Parallel()
+	store := openTestStore(t, testOptions(&staticProjectPaths{}))
+	ctx := context.Background()
+	if _, err := store.ReportSessionState(ctx, SessionStateReport{
+		WorkspaceID: "ws-provider-cleared", AgentSessionID: "session-provider-cleared",
+		Provider: "codex", OccurredAtUnixMS: 10,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := store.AdoptProviderGoalOperation(ctx, ProviderGoalAdoption{
+		OperationID: "goal-provider-before-clear", WorkspaceID: "ws-provider-cleared",
+		AgentSessionID: "session-provider-cleared", ClientSubmitID: "provider-before-clear",
+		Goal:             map[string]any{"objective": "first", "status": "active"},
+		OccurredAtUnixMS: 20,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := store.PrepareGoalControlOperation(ctx, GoalControlOperationPrepare{
+		OperationID: "goal-provider-clear", WorkspaceID: "ws-provider-cleared",
+		AgentSessionID: "session-provider-cleared", ClientSubmitID: "provider-clear",
+		Action: "clear", OccurredAtUnixMS: 30,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, cleared, changed, err := store.CompleteGoalControlOperation(ctx, GoalControlOperationComplete{
+		WorkspaceID: "ws-provider-cleared", OperationID: "goal-provider-clear",
+		Succeeded: true, OccurredAtUnixMS: 40,
+		Evidence: map[string]any{"source": "provider_ack", "confidence": "authoritative"},
+	}); err != nil || !changed || !cleared.Tombstoned || cleared.PendingOperationID != "" {
+		t.Fatalf("clear state=%#v changed=%v error=%v", cleared, changed, err)
+	}
+	next, state, changed, err := store.AdoptProviderGoalOperation(ctx, ProviderGoalAdoption{
+		OperationID: "goal-provider-after-clear", WorkspaceID: "ws-provider-cleared",
+		AgentSessionID: "session-provider-cleared", ClientSubmitID: "provider-after-clear",
+		Goal:             map[string]any{"objective": "second", "status": "active"},
+		OccurredAtUnixMS: 50,
+	})
+	if err != nil || !changed || next.GoalRevision != 3 || state.Revision != 3 ||
+		state.Tombstoned || state.SyncStatus != GoalSyncStatusSynced {
+		t.Fatalf("post-clear adoption operation=%#v state=%#v changed=%v error=%v", next, state, changed, err)
 	}
 }
 

@@ -133,6 +133,106 @@ func runProviderAuthoredGoalAdoption(ctx context.Context, driver Driver) error {
 	return nil
 }
 
+func runProviderAuthoredGoalActiveConflict(ctx context.Context, driver Driver) error {
+	if err := driver.Reset(ctx, liveSessionFixture("session-goal-provider-active-conflict", "")); err != nil {
+		return err
+	}
+	first := agenthost.ProviderGoalAdoptionInput{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-goal-provider-active-conflict",
+		ProviderSessionID: "provider-session-goal-provider-active-conflict",
+		Fingerprint:       "sha256:provider-goal-active-first",
+		Goal: map[string]any{
+			"threadId":  "provider-session-goal-provider-active-conflict",
+			"objective": "first", "status": "active",
+		},
+	}
+	if _, err := driver.AdoptProviderGoal(ctx, first); err != nil {
+		return fmt.Errorf("adopt first active provider goal: %w", err)
+	}
+	second := first
+	second.Fingerprint = "sha256:provider-goal-active-second"
+	second.Goal = map[string]any{
+		"threadId":  "provider-session-goal-provider-active-conflict",
+		"objective": "second", "status": "active",
+	}
+	if _, err := driver.AdoptProviderGoal(ctx, second); !errors.Is(err, storesqlite.ErrGoalOperationConflict) {
+		return fmt.Errorf("active provider goal replacement error=%v", err)
+	}
+	state, err := driver.GetGoalState(ctx, agenthost.SessionRef{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-goal-provider-active-conflict",
+	})
+	if err != nil {
+		return err
+	}
+	if state.Revision != 1 || metadataString(state.Goal, "objective") != "first" {
+		return fmt.Errorf("active provider goal changed after conflict: %#v", state)
+	}
+	return nil
+}
+
+func runProviderAuthoredGoalTerminalAdvancement(ctx context.Context, driver Driver) error {
+	fixture := liveSessionFixture("session-goal-provider-terminal-advance", "")
+	fixture.CompleteGoalOnSet = true
+	if err := driver.Reset(ctx, fixture); err != nil {
+		return err
+	}
+	if _, err := driver.GoalControl(ctx, agenthost.GoalControlInput{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-goal-provider-terminal-advance",
+		Action: "set", Objective: "terminal first",
+	}); err != nil {
+		return fmt.Errorf("create terminal provider goal: %w", err)
+	}
+	next, err := driver.AdoptProviderGoal(ctx, agenthost.ProviderGoalAdoptionInput{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-goal-provider-terminal-advance",
+		ProviderSessionID: "provider-session-goal-provider-terminal-advance",
+		Fingerprint:       "sha256:provider-goal-after-terminal",
+		Goal: map[string]any{
+			"threadId":  "provider-session-goal-provider-terminal-advance",
+			"objective": "after terminal", "status": "active",
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("advance terminal provider goal: %w", err)
+	}
+	if next.Revision != 2 || metadataString(next.Goal, "objective") != "after terminal" {
+		return fmt.Errorf("terminal provider goal did not advance: %#v", next)
+	}
+	return nil
+}
+
+func runProviderAuthoredGoalClearedAdvancement(ctx context.Context, driver Driver) error {
+	if err := driver.Reset(ctx, liveSessionFixture("session-goal-provider-cleared-advance", "")); err != nil {
+		return err
+	}
+	ref := agenthost.GoalControlInput{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-goal-provider-cleared-advance",
+		Action: "set", Objective: "clear first",
+	}
+	if _, err := driver.GoalControl(ctx, ref); err != nil {
+		return fmt.Errorf("create provider goal before clear: %w", err)
+	}
+	ref.Action, ref.Objective = "clear", ""
+	if _, err := driver.GoalControl(ctx, ref); err != nil {
+		return fmt.Errorf("clear provider goal: %w", err)
+	}
+	next, err := driver.AdoptProviderGoal(ctx, agenthost.ProviderGoalAdoptionInput{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-goal-provider-cleared-advance",
+		ProviderSessionID: "provider-session-goal-provider-cleared-advance",
+		Fingerprint:       "sha256:provider-goal-after-clear",
+		Goal: map[string]any{
+			"threadId":  "provider-session-goal-provider-cleared-advance",
+			"objective": "after clear", "status": "active",
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("advance cleared provider goal: %w", err)
+	}
+	if next.Revision != 3 || metadataString(next.Goal, "objective") != "after clear" {
+		return fmt.Errorf("cleared provider goal did not advance: %#v", next)
+	}
+	return nil
+}
+
 func runGoalReconcileObservation(ctx context.Context, driver Driver) error {
 	if err := driver.Reset(ctx, liveSessionFixture("session-goal-reconcile", "")); err != nil {
 		return err

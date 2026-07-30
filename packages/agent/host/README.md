@@ -57,6 +57,8 @@ dispatches another provider mutation. The provider session plus immutable
 generation fingerprint form its replay identity. A conflicting pending or
 active durable generation is rejected, so runtime continuation remains
 fail-closed instead of inheriting whichever Goal happens to be current.
+Terminal and cleared generations may advance to a new provider-authored Goal;
+that transition receives a new durable revision.
 A caller-stable `ClientSubmitID`
 makes one goal mutation idempotent across retries and Host restarts (and takes
 precedence over the legacy metadata field). `GetGoalState` is a pure canonical

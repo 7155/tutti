@@ -221,8 +221,13 @@ type codexAppServerSession struct {
 	goalGenerationBindings           map[string]codexGoalGenerationBinding
 	goalGenerationOrder              []string
 	currentGoalGenerationFingerprint string
-	goalTurnEvidence                 map[string]*codexGoalTurnEvidence
-	pendingGoalTurns                 map[string]*codexPendingGoalTurn
+	// providerGoalAdoptionsInFlight keeps provider-authored generation
+	// persistence off the app-server read loop while preventing a continuation
+	// turn from exhausting its provenance grace window before the durable
+	// identity is available.
+	providerGoalAdoptionsInFlight map[string]struct{}
+	goalTurnEvidence              map[string]*codexGoalTurnEvidence
+	pendingGoalTurns              map[string]*codexPendingGoalTurn
 	// goalContinuationClaim is an in-process, single-use compatibility fence
 	// for Codex versions whose thread/goal/updated notification omits turnId.
 	// A successful Goal RPC seeds the first claim; each adopted Goal turn may

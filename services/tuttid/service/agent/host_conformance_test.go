@@ -333,6 +333,9 @@ func (d *legacyHostConformanceDriver) Reset(_ context.Context, fixture hostconfo
 		switch input.Action {
 		case "set":
 			providerGoal = map[string]any{"objective": input.Objective, "status": "active"}
+			if fixture.CompleteGoalOnSet {
+				providerGoal["status"] = "completed"
+			}
 		case "pause":
 			providerGoal = clonePayload(providerGoal)
 			providerGoal["status"] = "paused"

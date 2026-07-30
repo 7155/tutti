@@ -83,28 +83,6 @@ func (s *Store) AdoptProviderGoalOperation(ctx context.Context, input ProviderGo
 	if state.PendingOperationID != "" {
 		return GoalControlOperation{}, state, false, ErrGoalOperationConflict
 	}
-	if state.Revision > 0 &&
-		goalStateConverged(state.Desired, input.Goal, state.Tombstoned) &&
-		goalStateConverged(state.Observed, input.Goal, state.Tombstoned) {
-		currentOperationID := strings.TrimSpace(asJSONMapString(state.LastEvidence, "operationId"))
-		currentRevision := jsonMapInt64(state.LastEvidence, "revision")
-		if currentOperationID != "" && currentRevision == state.Revision {
-			current, currentFound, currentErr := getGoalControlOperationTx(ctx, tx, input.WorkspaceID, currentOperationID)
-			if currentErr != nil {
-				return GoalControlOperation{}, SessionGoalState{}, false, currentErr
-			}
-			if currentFound && current.AgentSessionID == input.AgentSessionID &&
-				current.GoalRevision == state.Revision && current.Status == GoalOperationStatusCompleted &&
-				!current.RepairRequired {
-				if _, err := s.commitTransaction(ctx, tx, input.WorkspaceID, nil); err != nil {
-					return GoalControlOperation{}, SessionGoalState{}, false, err
-				}
-				committed = true
-				return current, state, false, nil
-			}
-		}
-		return GoalControlOperation{}, state, false, ErrGoalOperationConflict
-	}
 	if state.Revision > 0 && !providerGoalAdoptionMayAdvance(state) {
 		return GoalControlOperation{}, state, false, ErrGoalOperationConflict
 	}
@@ -174,7 +152,7 @@ INSERT INTO workspace_agent_goal_control_operations (
 }
 
 func providerGoalAdoptionMayAdvance(state SessionGoalState) bool {
-	if state.Revision == 0 {
+	if state.Revision == 0 || state.Tombstoned {
 		return true
 	}
 	switch strings.TrimSpace(asJSONMapString(state.Observed, "status")) {

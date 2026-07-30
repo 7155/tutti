@@ -59,6 +59,7 @@ type Fixture struct {
 	RecoverInteractive     bool
 	DisableGoalInbox       bool
 	AcceptGoalControlsOnly bool
+	CompleteGoalOnSet      bool
 	FailCommitObserver     bool
 	WorktreeGCSweepErr     error
 	DeleteAdmissionErr     error

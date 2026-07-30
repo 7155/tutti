@@ -48,6 +48,14 @@ func (m *Manager) reconcileConfiguredSource(
 	if reconcileErr != nil {
 		var fallbackErr error
 		installation, fallbackErr = m.loadActive(source.Key)
+		if fallbackErr == nil && !installationMatchesConfiguredSource(source, installation) {
+			fallbackErr = errors.New("active installation provenance does not match configured source")
+			if m.Store != nil {
+				if err := m.Store.DeleteAgentTarget(ctx, targetID(source.Key)); err != nil {
+					fallbackErr = errors.Join(fallbackErr, fmt.Errorf("remove stale target: %w", err))
+				}
+			}
+		}
 		if fallbackErr != nil {
 			return []error{fmt.Errorf(
 				"reconcile agent extension %s: %w",

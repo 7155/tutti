@@ -128,6 +128,14 @@ func TestGrokAgentExtensionSourcePinsApprovedSigningIdentity(t *testing.T) {
 	}
 }
 
+func TestKimiCodeAgentExtensionSourceUsesAuthenticationCompatibleIndex(t *testing.T) {
+	source := agentExtensionSourceByKey(t, ResolveAgentExtensionSources(), "kimi-code")
+	if !source.Enabled || source.SigningKeyID != "tutti-kimi-code-release-v1" ||
+		source.ReleaseIndexURL != "https://d1x7gb6wqsqmnm.cloudfront.net/tutti-agent-releases/agents/kimi-code/authentication-v1/versions.json" {
+		t.Fatalf("kimi-code source activation/key identity = %#v", source)
+	}
+}
+
 func agentExtensionSourceByKey(t *testing.T, sources []AgentExtensionSource, key string) AgentExtensionSource {
 	t.Helper()
 	for _, source := range sources {

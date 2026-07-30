@@ -1622,14 +1622,18 @@ invalid_grant`. Search `tuttid.log` for
   Confirm the daemon process inherited the feature-gate environment variable,
   inspect `<state>/agent/extensions/<agentKey>`, and query `agent_targets` for
   `extension:<agentKey>`. Verify the public ZIP's signature, digest, size, entry
-  modes, and package structure using the same daemon installation path.
+  modes, and package structure using the same daemon installation path. A
+  version containing `+local.` is a development snapshot; it is intentionally
+  ineligible once the matching package-directory override is removed.
 - Root cause:
   A failed remote reconciliation can be obscured when the subsequent offline
   fallback error replaces the original error. ZIP directory entries commonly
   use mode `0755`; treating their search bits as executable file content rejects
   an otherwise valid data-only package before it can be registered. Runtime
   discovery can fail similarly when the daemon's strict JSON decoder does not
-  model a signed profile field such as the standard `probe` declaration.
+  model a signed profile field such as the standard `probe` declaration. A
+  previously active local snapshot must also not silently become the offline
+  fallback for a source that is now configured as signed remote.
 - Fix:
   Preserve both the remote reconciliation error and the offline fallback error.
   Reject symlinks for every entry, accept safe directory entries before checking
@@ -1637,6 +1641,10 @@ invalid_grant`. Search `tuttid.log` for
   the daemon discovery DTO aligned with the release profile contract, including
   optional probe metadata, even while a later migration phase owns executing
   the ACP readiness probe.
+  Treat local and remote installations as different source modes: removing the
+  local override removes a stale local Target and requires a compatible signed
+  remote installation, while a verified remote installation remains eligible
+  for normal offline fallback.
 - Validation:
   Cover a release ZIP with explicit `0755` directory entries and non-executable
   data files, retain a separate executable-file rejection test, and confirm a

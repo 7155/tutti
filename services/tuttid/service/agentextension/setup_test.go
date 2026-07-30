@@ -514,23 +514,32 @@ func TestTerminalLoginCommand(t *testing.T) {
 	t.Parallel()
 
 	method := agentruntime.StandardACPAuthMethod{ID: "login", Type: "terminal", Args: []string{"login"}}
-	if got := terminalLoginCommand([]string{"/opt/agent/bin/kimi", "acp"}, method); got != "/opt/agent/bin/kimi login" {
+	if got := terminalLoginCommand([]string{"/opt/agent/bin/kimi", "acp"}, method, nil); got != "/opt/agent/bin/kimi login" {
 		t.Fatalf("terminalLoginCommand = %q", got)
 	}
-	// The native Kimi Code CLI declares its ACP terminal-auth entry point as
-	// launch-command flags (["--login"]), which must append to the full ACP
-	// launch command instead of replacing its serve arguments.
 	flagMethod := agentruntime.StandardACPAuthMethod{ID: "login", Type: "terminal", Args: []string{"--login"}}
-	if got := terminalLoginCommand([]string{"/opt/agent/bin/kimi", "acp"}, flagMethod); got != "/opt/agent/bin/kimi acp --login" {
+	if got := terminalLoginCommand([]string{"/opt/agent/bin/kimi", "acp"}, flagMethod, nil); got != "/opt/agent/bin/kimi acp --login" {
 		t.Fatalf("terminalLoginCommand with flag args = %q", got)
 	}
-	if got := terminalLoginCommand([]string{"/opt/agent dir/bin/kimi"}, method); got != `'/opt/agent dir/bin/kimi' login` {
+	var declared AuthenticationMethodProfile
+	declared.ID = "login"
+	declared.Type = "terminal"
+	declared.Command.Strategy = "runtime-subcommand"
+	declared.Command.Args = []string{"login"}
+	if got := terminalLoginCommand([]string{"/opt/agent/bin/kimi", "acp"}, flagMethod, &declared); got != "/opt/agent/bin/kimi login" {
+		t.Fatalf("terminalLoginCommand with extension declaration = %q", got)
+	}
+	browserMethod := agentruntime.StandardACPAuthMethod{ID: "login", Type: "browser", Args: []string{"runtime-browser"}}
+	if got := terminalLoginCommand([]string{"/opt/agent/bin/kimi", "acp"}, browserMethod, &declared); got != "" {
+		t.Fatalf("terminalLoginCommand with mismatched live type = %q", got)
+	}
+	if got := terminalLoginCommand([]string{"/opt/agent dir/bin/kimi"}, method, nil); got != `'/opt/agent dir/bin/kimi' login` {
 		t.Fatalf("terminalLoginCommand with spaces = %q", got)
 	}
-	if got := terminalLoginCommand([]string{"/opt/agent/bin/kimi"}, agentruntime.StandardACPAuthMethod{ID: "oauth"}); got != "" {
+	if got := terminalLoginCommand([]string{"/opt/agent/bin/kimi"}, agentruntime.StandardACPAuthMethod{ID: "oauth"}, nil); got != "" {
 		t.Fatalf("terminalLoginCommand for non-terminal method = %q", got)
 	}
-	if got := terminalLoginCommand(nil, method); got != "" {
+	if got := terminalLoginCommand(nil, method, nil); got != "" {
 		t.Fatalf("terminalLoginCommand without command = %q", got)
 	}
 }

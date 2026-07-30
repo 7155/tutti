@@ -275,16 +275,17 @@ func TestManagerReconcileSnapshotsDevelopmentLocalPackage(t *testing.T) {
 	}
 }
 
-func TestManagerRestoreActiveRegistersCachedInstallationWithoutNetwork(t *testing.T) {
+func TestManagerRestoreActiveSkipsCachedLocalInstallationWithoutOverride(t *testing.T) {
 	sourceDir := t.TempDir()
 	if err := extractPackage(testPackageZIP(t), sourceDir); err != nil {
 		t.Fatal(err)
 	}
 	stateDir := t.TempDir()
 	installationStore := agentextensiondata.NewFileInstallationStore(stateDir)
+	targets := &targetStoreStub{targets: map[string]agenttargetbiz.Target{}}
 	seedManager := Manager{
 		Installations: installationStore,
-		Store:         &targetStoreStub{targets: map[string]agenttargetbiz.Target{}},
+		Store:         targets,
 		Sources: []tuttitypes.AgentExtensionSource{{
 			Key: "gemini", LocalPackageDir: sourceDir, Enabled: true,
 		}},
@@ -298,7 +299,6 @@ func TestManagerRestoreActiveRegistersCachedInstallationWithoutNetwork(t *testin
 		requestCount++
 	}))
 	defer server.Close()
-	targets := &targetStoreStub{targets: map[string]agenttargetbiz.Target{}}
 	manager := Manager{
 		Installations: installationStore,
 		Store:         targets,
@@ -312,11 +312,48 @@ func TestManagerRestoreActiveRegistersCachedInstallationWithoutNetwork(t *testin
 	if len(errs) != 0 {
 		t.Fatalf("RestoreActive() errors = %v", errs)
 	}
-	if requiresSynchronousReconcile {
-		t.Fatal("RestoreActive() unexpectedly requires a synchronous reconcile")
+	if !requiresSynchronousReconcile {
+		t.Fatal("RestoreActive() did not require a synchronous reconcile")
 	}
 	if requestCount != 0 {
 		t.Fatalf("RestoreActive() network requests = %d, want 0", requestCount)
+	}
+	if len(targets.targets) != 0 {
+		t.Fatalf("RestoreActive() targets = %#v, want none", targets.targets)
+	}
+}
+
+func TestManagerRestoreActiveRegistersCachedLocalInstallationWithOverride(t *testing.T) {
+	sourceDir := t.TempDir()
+	if err := extractPackage(testPackageZIP(t), sourceDir); err != nil {
+		t.Fatal(err)
+	}
+	stateDir := t.TempDir()
+	installationStore := agentextensiondata.NewFileInstallationStore(stateDir)
+	source := tuttitypes.AgentExtensionSource{
+		Key: "gemini", LocalPackageDir: sourceDir, Enabled: true,
+	}
+	seedManager := Manager{
+		Installations: installationStore,
+		Store:         &targetStoreStub{targets: map[string]agenttargetbiz.Target{}},
+		Sources:       []tuttitypes.AgentExtensionSource{source},
+	}
+	if errs := seedManager.Reconcile(context.Background()); len(errs) != 0 {
+		t.Fatalf("seed Reconcile() errors = %v", errs)
+	}
+
+	targets := &targetStoreStub{targets: map[string]agenttargetbiz.Target{}}
+	manager := Manager{
+		Installations: installationStore,
+		Store:         targets,
+		Sources:       []tuttitypes.AgentExtensionSource{source},
+	}
+	requiresSynchronousReconcile, errs := manager.RestoreActive(context.Background())
+	if len(errs) != 0 {
+		t.Fatalf("RestoreActive() errors = %v", errs)
+	}
+	if requiresSynchronousReconcile {
+		t.Fatal("RestoreActive() unexpectedly requires a synchronous reconcile")
 	}
 	if target := targets.targets["extension:gemini"]; target.Provider != "acp:gemini" {
 		t.Fatalf("restored target = %#v", target)
@@ -1235,6 +1272,47 @@ func TestManagerReconcilePreservesRemoteErrorWhenNoOfflineInstallationExists(t *
 	}
 }
 
+func TestManagerReconcileDoesNotUseCachedLocalInstallationAsRemoteFallback(t *testing.T) {
+	sourceDir := t.TempDir()
+	if err := extractPackage(testPackageZIP(t), sourceDir); err != nil {
+		t.Fatal(err)
+	}
+	installationStore := agentextensiondata.NewFileInstallationStore(t.TempDir())
+	targets := &targetStoreStub{targets: map[string]agenttargetbiz.Target{}}
+	seedManager := Manager{
+		Installations: installationStore,
+		Store:         targets,
+		Sources: []tuttitypes.AgentExtensionSource{{
+			Key: "gemini", LocalPackageDir: sourceDir, Enabled: true,
+		}},
+	}
+	if errs := seedManager.Reconcile(context.Background()); len(errs) != 0 {
+		t.Fatalf("seed Reconcile() errors = %v", errs)
+	}
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	manager := Manager{
+		Installations: installationStore,
+		Store:         targets,
+		Client:        server.Client(),
+		Sources: []tuttitypes.AgentExtensionSource{{
+			Key:             "gemini",
+			ReleaseIndexURL: server.URL + "/versions.json",
+			Enabled:         true,
+		}},
+	}
+	errs := manager.Reconcile(context.Background())
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "provenance does not match") {
+		t.Fatalf("Reconcile() errors = %v", errs)
+	}
+	if len(targets.targets) != 0 {
+		t.Fatalf("Reconcile() targets = %#v, want none", targets.targets)
+	}
+}
+
 func TestExtractPackageRejectsExecutableEntry(t *testing.T) {
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)
@@ -1289,6 +1367,9 @@ func testPackageZIPFor(t *testing.T, manifest Manifest, discovery string) []byte
 		"profiles/tools.json":     []byte(`{"schemaVersion":"tutti.agent.tools.v1","tools":[{"match":{"ids":["replace"]},"canonicalId":"Edit","category":"file-change","presentation":{"renderer":"diff","titleKey":"tools.edit.title"},"fileEffect":{"source":"acp-content-diff"}}]}`),
 		"profiles/composer.json":  []byte(`{"schemaVersion":"tutti.agent.composer.v1","model":{"source":"acp-session-config"},"permission":{"source":"acp-session-config"},"permissionModes":[{"runtimeId":"default","semantic":"ask-before-write"},{"runtimeId":"auto_edit","semantic":"accept-edits"},{"runtimeId":"yolo","semantic":"full-access"},{"runtimeId":"plan","semantic":"read-only"}]}`),
 		"locales/en.json":         []byte(`{"agent.name":"Gemini CLI"}`),
+	}
+	if manifest.Profiles.Authentication != "" {
+		files[manifest.Profiles.Authentication] = []byte(`{"schemaVersion":"tutti.agent.authentication.v1","methods":[{"id":"login","type":"terminal","command":{"strategy":"runtime-subcommand","args":["login"]}}]}`)
 	}
 	for name, content := range files {
 		header := &zip.FileHeader{Name: name, Method: zip.Store}

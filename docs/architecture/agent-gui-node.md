@@ -195,7 +195,15 @@ A source emits at most one cached `snapshot` followed by at most one
 to fill a host-owned cache after the presentation request is canceled; late
 frames from the canceled request must not mutate AgentGUI. Errors crossing the
 port are structured codes, never provider stderr, account material, endpoints,
-or transport diagnostics.
+or transport diagnostics. The limits projection preserves stable codes such as
+`auth_required`, `session_expired`, and `subscription_required` through
+`AgentStatusValue.limitsErrorCode`; AgentGUI owns their localized presentation
+and maps unknown codes to one generic failure label.
+
+An explicit unsupported usage probe is a successful bounded read with no
+quotas and `limitsState: unavailable`; it must not become a refresh failure.
+Only real authentication, transport, parsing, timeout, or execution failures
+project `limitsState: error`.
 
 Closing `/status`, Agent Info, or Agent Config cancels only the request owned
 by that surface. Replaced requests remain fenced. A stream that completes

@@ -125,6 +125,15 @@ func (m *Manager) RestoreActive(ctx context.Context) (bool, []error) {
 			}
 			continue
 		}
+		if !installationMatchesConfiguredSource(source, installation) {
+			requiresSynchronousReconcile = true
+			if m.Store != nil {
+				if err := m.Store.DeleteAgentTarget(ctx, targetID(source.Key)); err != nil {
+					errs = append(errs, fmt.Errorf("remove stale agent extension %s target: %w", source.Key, err))
+				}
+			}
+			continue
+		}
 		if err := m.registerTarget(ctx, installation); err != nil {
 			errs = append(errs, fmt.Errorf("register active agent extension %s: %w", source.Key, err))
 		}
@@ -170,6 +179,12 @@ func sourceEnabled(source tuttitypes.AgentExtensionSource, featureFlags map[stri
 		return enabled
 	}
 	return source.Enabled
+}
+
+func installationMatchesConfiguredSource(source tuttitypes.AgentExtensionSource, installation Installation) bool {
+	expectsLocal := strings.TrimSpace(source.LocalPackageDir) != ""
+	isLocal := installation.HasLocalPackageProvenance()
+	return expectsLocal == isLocal
 }
 
 func (m *Manager) ResolveRuntime(ctx context.Context, installationID string) (RuntimeBinding, error) {
@@ -285,6 +300,10 @@ func (m *Manager) runtimeBinding(installation Installation, command []string, ve
 	if err != nil {
 		return RuntimeBinding{}, err
 	}
+	authenticationMethods, err := loadAuthenticationMethods(installation)
+	if err != nil {
+		return RuntimeBinding{}, err
+	}
 	permissionModes, planModeRuntimeID, err := loadComposerModes(installation)
 	if err != nil {
 		return RuntimeBinding{}, err
@@ -321,7 +340,7 @@ func (m *Manager) runtimeBinding(installation Installation, command []string, ve
 	}
 	return RuntimeBinding{
 		Installation: installation, Command: command, Version: version, Source: source,
-		ToolAliases: aliases, ModelConfigOptionID: modelConfigOptionID,
+		ToolAliases: aliases, AuthenticationMethods: authenticationMethods, ModelConfigOptionID: modelConfigOptionID,
 		PermissionConfigOptionID: permissionConfigOptionID, ReasoningConfigOptionID: reasoningConfigOptionID,
 		PermissionModes: permissionModes, AutomaticPermissionDecisions: composerProfile.AutomaticPermissionDecisions(),
 		PlanModeRuntimeID:            planModeRuntimeID,
@@ -563,7 +582,7 @@ func (m *Manager) validateInstallation(value Installation) (Installation, error)
 		return Installation{}, errors.New("extension installation package path is invalid")
 	}
 	var manifest Manifest
-	if strings.Contains(value.Version, localPackageVersionMarker) {
+	if value.HasLocalPackageProvenance() {
 		if !validPackageContentSHA256(value.PackageContentSHA256) {
 			return Installation{}, errors.New("local extension installation content identity is missing or invalid")
 		}
@@ -608,7 +627,7 @@ func (m *Manager) validateInstallation(value Installation) (Installation, error)
 }
 
 func legacyRemoteInstallationRecord(value Installation) bool {
-	return !strings.Contains(value.Version, localPackageVersionMarker) &&
+	return !value.HasLocalPackageProvenance() &&
 		value.ReleaseArtifactSHA256 == "" && value.ReleaseArtifactSizeBytes == 0
 }
 

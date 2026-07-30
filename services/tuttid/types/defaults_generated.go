@@ -78,7 +78,7 @@ var generatedDefaults = generatedDefaultsSpec{
 			},
 			{
 				Key:              "kimi-code",
-				ReleaseIndexURL:  "https://d1x7gb6wqsqmnm.cloudfront.net/tutti-agent-releases/agents/kimi-code/versions.json",
+				ReleaseIndexURL:  "https://d1x7gb6wqsqmnm.cloudfront.net/tutti-agent-releases/agents/kimi-code/authentication-v1/versions.json",
 				SigningKeyID:     "tutti-kimi-code-release-v1",
 				SigningPublicKey: "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAnO+V8MpPIY90uDINyaJjtENg/vPQpURo0AltBZLqvgw=\n-----END PUBLIC KEY-----\n",
 				Enabled:          true,

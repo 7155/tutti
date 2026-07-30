@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -69,6 +70,37 @@ func (h *Host) forkSessionSerialized(
 	)
 	if err != nil {
 		return ForkSessionResult{}, err
+	}
+	if !supported &&
+		boundary.RejectionReason == storesqlite.SessionForkBoundaryReasonProviderTurnMissing {
+		if err := h.recoverSessionForkTurnBinding(
+			ctx,
+			input.WorkspaceID,
+			input.SourceAgentSessionID,
+			input.Point.TurnID,
+		); err != nil {
+			slog.Warn(
+				"agent session fork provider turn binding recovery failed",
+				"workspace_id", input.WorkspaceID,
+				"agent_session_id", input.SourceAgentSessionID,
+				"turn_id", input.Point.TurnID,
+				"boundary_reason", boundary.RejectionReason,
+				"error", err,
+			)
+			if rejectionErr := boundary.RejectionError(); rejectionErr != nil {
+				return ForkSessionResult{}, rejectionErr
+			}
+			return ForkSessionResult{}, storesqlite.ErrSessionForkTurnState
+		}
+		boundary, supported, err = h.sessionForks.CheckSessionForkThroughTurn(
+			ctx,
+			input.WorkspaceID,
+			input.SourceAgentSessionID,
+			input.Point.TurnID,
+		)
+		if err != nil {
+			return ForkSessionResult{}, err
+		}
 	}
 	if !supported {
 		if rejectionErr := boundary.RejectionError(); rejectionErr != nil {

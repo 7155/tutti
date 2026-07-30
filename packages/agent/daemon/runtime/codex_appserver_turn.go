@@ -32,6 +32,28 @@ func (a *CodexAppServerAdapter) Exec(
 	)
 }
 
+func (a *CodexAppServerAdapter) ExecWithProviderAcceptance(
+	ctx context.Context,
+	session Session,
+	content []PromptContentBlock,
+	displayPrompt string,
+	turnID string,
+	emit EventSink,
+	emitCommands CommandSnapshotSink,
+	reportDispatch ProviderDispatchSink,
+) ([]activityshared.Event, error) {
+	return a.execBlocking(
+		ctx,
+		session,
+		content,
+		displayPrompt,
+		turnID,
+		emit,
+		emitCommands,
+		codexTurnExecOptions{reportDispatch: reportDispatch},
+	)
+}
+
 func (a *CodexAppServerAdapter) ExecAsync(
 	ctx context.Context,
 	session Session,
@@ -197,6 +219,52 @@ func (options codexTurnExecOptions) report(result ProviderDispatchResult) {
 	if options.reportDispatch != nil {
 		options.reportDispatch(result)
 	}
+}
+
+func reportCodexDispatchFailure(report ProviderDispatchSink, err error) {
+	if report == nil {
+		return
+	}
+	disposition := DispatchDispositionOutcomeUnknown
+	var callErr *acpCallError
+	if errors.As(err, &callErr) {
+		disposition = DispatchDispositionRejected
+	}
+	report(ProviderDispatchResult{Disposition: disposition})
+}
+
+func reportCodexAppliedWithoutProviderTurn(report ProviderDispatchSink) {
+	if report != nil {
+		report(ProviderDispatchResult{
+			Disposition: DispatchDispositionAppliedWithoutProviderTurn,
+		})
+	}
+}
+
+func reportCodexProviderTurnAccepted(
+	report ProviderDispatchSink,
+	providerSessionID string,
+	providerTurnID string,
+) {
+	if report == nil {
+		return
+	}
+	providerSessionID = strings.TrimSpace(providerSessionID)
+	providerTurnID = strings.TrimSpace(providerTurnID)
+	if providerSessionID == "" || providerTurnID == "" {
+		report(ProviderDispatchResult{
+			Disposition: DispatchDispositionOutcomeUnknown,
+		})
+		return
+	}
+	report(ProviderDispatchResult{
+		Disposition: DispatchDispositionApplied,
+		Acceptance: &ProviderAcceptanceReceipt{
+			Source:            AcceptanceSourceTurnStartResponse,
+			ProviderSessionID: providerSessionID,
+			ProviderTurnID:    providerTurnID,
+		},
+	})
 }
 
 func (a *CodexAppServerAdapter) GuideActiveTurn(
@@ -413,7 +481,7 @@ func (a *CodexAppServerAdapter) execBlocking(
 	execMetadata := execMetadataFromContext(ctx)
 	continuation := options.continuation
 	recordNotDispatched := func() {
-		if options.historyReplacement {
+		if options.reportDispatch != nil {
 			options.report(ProviderDispatchResult{
 				Disposition: DispatchDispositionNotDispatched,
 			})
@@ -450,7 +518,7 @@ func (a *CodexAppServerAdapter) execBlocking(
 			// Goal commands are thread-level control operations; steering them
 			// would paste "/goal …" into the running turn as prompt text
 			// instead of executing the RPC.
-			return a.execGoalControlCommand(ctx, appSession, session, args, turnID, content, explicitDisplayPrompt, visibleText, emit)
+			return a.execGoalControlCommand(ctx, appSession, session, args, turnID, content, explicitDisplayPrompt, visibleText, emit, options.reportDispatch)
 		}
 		providerContent := content
 		if mentionRoutingApplied {
@@ -459,9 +527,16 @@ func (a *CodexAppServerAdapter) execBlocking(
 		var err error
 		providerContent, err = materializeProviderPromptImagesAtBoundary(ctx, providerContent, a.promptImageMaterializer)
 		if err != nil {
+			recordNotDispatched()
 			return nil, err
 		}
-		return a.steerActiveTurn(ctx, appSession, session, content, providerContent, explicitDisplayPrompt, visibleText, turnID, activeTurnID, emit)
+		events, err := a.steerActiveTurn(ctx, appSession, session, content, providerContent, explicitDisplayPrompt, visibleText, turnID, activeTurnID, emit)
+		if err != nil {
+			reportCodexDispatchFailure(options.reportDispatch, err)
+			return events, err
+		}
+		reportCodexAppliedWithoutProviderTurn(options.reportDispatch)
+		return events, nil
 	}
 
 	normalizer := newACPTurnNormalizer()
@@ -546,7 +621,7 @@ func (a *CodexAppServerAdapter) execBlocking(
 	emitEvents(startEvents)
 
 	if !options.historyReplacement {
-		if handled, err := a.execSlashCommand(ctx, appSession, session, visibleText, turnID, appTurn, normalizer, emitEvents, emitTerminal, emitCommands); handled {
+		if handled, err := a.execSlashCommand(ctx, appSession, session, visibleText, turnID, appTurn, normalizer, emitEvents, emitTerminal, emitCommands, options.reportDispatch); handled {
 			return snapshotEvents(), err
 		}
 	}
@@ -578,10 +653,11 @@ func (a *CodexAppServerAdapter) execBlocking(
 		renderTuttiModeHostContext(tuttiModeTurnSnapshotFromContext(ctx)),
 		a.config.commandNetworkAccess,
 	)
-	if options.historyReplacement {
-		if clientUserMessageID := strings.TrimSpace(turnID); clientUserMessageID != "" {
-			turnParams["clientUserMessageId"] = clientUserMessageID
-		}
+	if clientUserMessageID := metadataString(execMetadata, "clientSubmitId"); clientUserMessageID != "" {
+		// clientSubmitId is an opaque, caller-stable recovery token. The
+		// canonical Turn id stays Tutti-owned and is never used as Codex client
+		// identity.
+		turnParams["clientUserMessageId"] = clientUserMessageID
 	}
 	trace.Log("turn.start.params", codexAppServerTraceTurnStartParams(session, turnParams, providerContent))
 	turnStartAckTimeout := a.turnStartAckTimeout
@@ -594,16 +670,7 @@ func (a *CodexAppServerAdapter) execBlocking(
 	turnStartedAt := time.Now()
 	result, err := appSession.client.TurnStart(ctx, turnStartAckTimeout, turnParams)
 	if err != nil {
-		disposition := DispatchDispositionOutcomeUnknown
-		var callErr *acpCallError
-		if errors.As(err, &callErr) {
-			disposition = DispatchDispositionRejected
-		}
-		if options.historyReplacement {
-			options.report(ProviderDispatchResult{
-				Disposition: disposition,
-			})
-		}
+		reportCodexDispatchFailure(options.reportDispatch, err)
 		durationMS := time.Since(turnStartedAt).Milliseconds()
 		appTurn.diagnostics.Finish("failed", "")
 		trace.Log("turn.start.failed", map[string]any{
@@ -658,20 +725,9 @@ func (a *CodexAppServerAdapter) execBlocking(
 		if a.setSessionActiveTurnID(session.AgentSessionID, appTurn, providerTurnID) {
 			a.interruptActiveTurnAsync(appSession, session, appTurn, providerTurnID, "queued cancel")
 		}
-		if options.historyReplacement {
-			options.report(ProviderDispatchResult{
-				Disposition: DispatchDispositionApplied,
-				Acceptance: &ProviderAcceptanceReceipt{
-					Source:            AcceptanceSourceTurnStartResponse,
-					ProviderSessionID: strings.TrimSpace(appSession.threadID),
-					ProviderTurnID:    strings.TrimSpace(providerTurnID),
-				},
-			})
-		}
-	} else if options.historyReplacement {
-		options.report(ProviderDispatchResult{
-			Disposition: DispatchDispositionOutcomeUnknown,
-		})
+		reportCodexProviderTurnAccepted(options.reportDispatch, appSession.threadID, providerTurnID)
+	} else {
+		reportCodexProviderTurnAccepted(options.reportDispatch, appSession.threadID, "")
 	}
 	go a.watchTurnExternalTermination(appSession, appTurn)
 	finalTurn, finishErr := a.awaitTurnCompletion(ctx, appSession, appTurn, initialTurn)
@@ -719,6 +775,8 @@ func (a *CodexAppServerAdapter) execBlocking(
 	emitTerminal(appServerTurnTerminalEvents(session, turnID, finalTurn, normalizer))
 	return snapshotEvents(), nil
 }
+
+var _ ProviderAcceptanceExecAdapter = (*CodexAppServerAdapter)(nil)
 
 func codexTurnStartClientUnhealthy(err error, client *codexAppServerClient) bool {
 	if errors.Is(err, context.Canceled) ||

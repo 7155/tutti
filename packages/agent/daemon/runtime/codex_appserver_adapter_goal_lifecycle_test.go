@@ -600,11 +600,26 @@ func TestCodexAppServerAdapterMidTurnGoalClearDoesNotSteer(t *testing.T) {
 		return adapter.sessionActiveTurnID(session.AgentSessionID) == "turn-1"
 	})
 
-	events, err := adapter.Exec(context.Background(), session, []PromptContentBlock{{
-		Type: "text", Text: "/goal clear",
-	}}, "", "turn-local-2", nil, nil)
+	dispatches := make(chan ProviderDispatchResult, 1)
+	events, err := adapter.ExecWithProviderAcceptance(
+		context.Background(),
+		session,
+		[]PromptContentBlock{{
+			Type: "text", Text: "/goal clear",
+		}},
+		"",
+		"turn-local-2",
+		nil,
+		nil,
+		func(result ProviderDispatchResult) { dispatches <- result },
+	)
 	if err != nil {
 		t.Fatalf("Exec /goal clear: %v", err)
+	}
+	dispatch := <-dispatches
+	if dispatch.Disposition != DispatchDispositionAppliedWithoutProviderTurn ||
+		dispatch.Acceptance != nil {
+		t.Fatalf("mid-turn goal dispatch = %#v", dispatch)
 	}
 	if requests := appServerRequestParamsList(t, transport.conn, appServerMethodTurnSteer); len(requests) != 0 {
 		t.Fatalf("mid-turn /goal clear must not steer, sent %#v", requests)

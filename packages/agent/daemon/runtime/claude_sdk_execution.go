@@ -18,14 +18,47 @@ func (a *ClaudeCodeSDKAdapter) Exec(
 	displayPrompt string,
 	turnID string,
 	emit EventSink,
-	_ CommandSnapshotSink,
+	emitCommands CommandSnapshotSink,
 ) ([]activityshared.Event, error) {
+	return a.exec(
+		ctx,
+		session,
+		content,
+		displayPrompt,
+		turnID,
+		emit,
+		emitCommands,
+		nil,
+	)
+}
+
+func (a *ClaudeCodeSDKAdapter) exec(
+	ctx context.Context,
+	session Session,
+	content []PromptContentBlock,
+	displayPrompt string,
+	turnID string,
+	emit EventSink,
+	_ CommandSnapshotSink,
+	reportDispatch ProviderDispatchSink,
+) ([]activityshared.Event, error) {
+	reportNotDispatched := func() {
+		if reportDispatch != nil {
+			reportDispatch(ProviderDispatchResult{
+				Disposition: DispatchDispositionNotDispatched,
+			})
+		}
+	}
 	adapterSession := a.getSession(session.AgentSessionID)
 	if adapterSession == nil {
+		reportNotDispatched()
 		return nil, ErrSessionDisconnected
 	}
 	session.ProviderSessionID = adapterSession.providerSessionID
-	promptCorrelationID := newID()
+	promptCorrelationID := firstNonEmptyString(
+		metadataString(execMetadataFromContext(ctx), "clientSubmitId"),
+		newID(),
+	)
 	a.beginClaudeSDKRootTurn(adapterSession, turnID, "")
 	explicitDisplayPrompt, visibleText := explicitAndVisiblePromptText(content, displayPrompt)
 	events := make([]activityshared.Event, 0, 4)
@@ -53,11 +86,13 @@ func (a *ClaudeCodeSDKAdapter) Exec(
 
 	providerContent, err := materializeProviderPromptImagesAtBoundary(ctx, content, a.promptImageMaterializer)
 	if err != nil {
+		reportNotDispatched()
 		events = append(events, a.claudeSDKRootProviderFailureEvents(adapterSession, session, turnID, promptCorrelationID, err)...)
 		return events, err
 	}
 	waiter := a.registerClaudeSDKTurn(adapterSession, turnID, emit)
 	if err := a.startClaudeSDKReader(session.AgentSessionID, adapterSession); err != nil {
+		reportNotDispatched()
 		a.unregisterClaudeSDKTurn(adapterSession, turnID, waiter)
 		events = append(events, a.claudeSDKRootProviderFailureEvents(adapterSession, session, turnID, promptCorrelationID, err)...)
 		return events, err
@@ -68,6 +103,7 @@ func (a *ClaudeCodeSDKAdapter) Exec(
 		Type:    "exec",
 		Payload: payload,
 	}); err != nil {
+		reportNotDispatched()
 		a.unregisterClaudeSDKTurn(adapterSession, turnID, waiter)
 		events = append(events, a.claudeSDKRootProviderFailureEvents(adapterSession, session, turnID, promptCorrelationID, err)...)
 		return events, err
@@ -97,6 +133,64 @@ func (a *ClaudeCodeSDKAdapter) Exec(
 		return events, ctx.Err()
 	}
 }
+
+func (a *ClaudeCodeSDKAdapter) ExecWithProviderAcceptance(
+	ctx context.Context,
+	session Session,
+	content []PromptContentBlock,
+	displayPrompt string,
+	turnID string,
+	emit EventSink,
+	emitCommands CommandSnapshotSink,
+	reportDispatch ProviderDispatchSink,
+) ([]activityshared.Event, error) {
+	adapterSession := a.getSession(session.AgentSessionID)
+	if adapterSession == nil {
+		if reportDispatch != nil {
+			reportDispatch(ProviderDispatchResult{
+				Disposition: DispatchDispositionNotDispatched,
+			})
+		}
+		return nil, ErrSessionDisconnected
+	}
+	wrappedEmit := func(events []activityshared.Event) {
+		for _, event := range events {
+			if event.Type != activityshared.EventRootProviderTurnStarted ||
+				strings.TrimSpace(event.Payload.TurnID) != strings.TrimSpace(turnID) {
+				continue
+			}
+			providerTurnID := strings.TrimSpace(event.Payload.ProviderTurnID)
+			if providerTurnID == "" {
+				continue
+			}
+			if reportDispatch != nil {
+				reportDispatch(ProviderDispatchResult{
+					Disposition: DispatchDispositionApplied,
+					Acceptance: &ProviderAcceptanceReceipt{
+						Source:            AcceptanceSourceTurnStartResponse,
+						ProviderSessionID: strings.TrimSpace(adapterSession.providerSessionID),
+						ProviderTurnID:    providerTurnID,
+					},
+				})
+			}
+		}
+		if emit != nil {
+			emit(events)
+		}
+	}
+	return a.exec(
+		ctx,
+		session,
+		content,
+		displayPrompt,
+		turnID,
+		wrappedEmit,
+		emitCommands,
+		reportDispatch,
+	)
+}
+
+var _ ProviderAcceptanceExecAdapter = (*ClaudeCodeSDKAdapter)(nil)
 
 func claudeSDKExecPayload(
 	ctx context.Context,

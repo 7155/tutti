@@ -152,6 +152,20 @@ type SessionForkProviderTurnBinding struct {
 	CheckpointMessageID string `json:"checkpointMessageId"`
 }
 
+type ProviderTurnBindingRecoveryInput struct {
+	Source               Session
+	CanonicalTurnID      string
+	RecoveryToken        string
+	LegacyTextHMACKey    string
+	LegacyTextHMACDigest string
+}
+
+type ProviderTurnBindingRecoveryResult struct {
+	ProviderSessionID           string
+	ProviderTurnID              string
+	ProviderCheckpointMessageID string
+}
+
 type ExecInput struct {
 	RoomID         string
 	AgentSessionID string
@@ -173,6 +187,12 @@ type ExecInput struct {
 	// The provider's complete EffectiveHistoryAdapter seam always returns one
 	// typed dispatch result before this call completes.
 	HistoryReplacement bool
+	// RequireProviderAcceptance keeps the canonical Turn of a fork-capable
+	// provider in its submitted boundary until the provider has returned an
+	// exact Turn identity and that binding has crossed the durable activity
+	// reporter. Compatibility-only adapters have no Fork entry or Turn binding
+	// contract and continue through the ordinary execution path.
+	RequireProviderAcceptance bool
 }
 
 // SubmitProvenanceInput describes the canonical user submit that an adapter
@@ -445,10 +465,11 @@ type ExecResult struct {
 type DispatchDisposition string
 
 const (
-	DispatchDispositionApplied        DispatchDisposition = "applied"
-	DispatchDispositionRejected       DispatchDisposition = "rejected"
-	DispatchDispositionNotDispatched  DispatchDisposition = "not_dispatched"
-	DispatchDispositionOutcomeUnknown DispatchDisposition = "outcome_unknown"
+	DispatchDispositionApplied                    DispatchDisposition = "applied"
+	DispatchDispositionAppliedWithoutProviderTurn DispatchDisposition = "applied_without_provider_turn"
+	DispatchDispositionRejected                   DispatchDisposition = "rejected"
+	DispatchDispositionNotDispatched              DispatchDisposition = "not_dispatched"
+	DispatchDispositionOutcomeUnknown             DispatchDisposition = "outcome_unknown"
 )
 
 type AcceptanceSource string

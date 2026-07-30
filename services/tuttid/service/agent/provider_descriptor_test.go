@@ -117,6 +117,7 @@ func TestOpenCodeSlashCommandPolicyComesFromProviderDescriptor(t *testing.T) {
 	policy := composerSlashCommandPolicy(agentprovider.OpenCode)
 	if policy == nil {
 		t.Fatal("slash command policy missing")
+		return
 	}
 	if !reflect.DeepEqual(policy.FallbackCommands, []string{"compact", "goal", "review"}) {
 		t.Fatalf("fallbackCommands = %#v", policy.FallbackCommands)
@@ -226,6 +227,7 @@ func TestCodexSlashCommandPolicyComesFromProviderDescriptor(t *testing.T) {
 	policy := composerSlashCommandPolicy(agentprovider.Codex)
 	if policy == nil {
 		t.Fatal("slash command policy missing")
+		return
 	}
 	if !reflect.DeepEqual(policy.FallbackCommands, []string{"compact", "status", "fast", "goal", "review"}) {
 		t.Fatalf("fallbackCommands = %#v", policy.FallbackCommands)

@@ -49,11 +49,22 @@ or another adapter-side view change never reassigns an existing session to
 Cancellation exposes durable intent acceptance, provider confirmation, and
 canonical settlement as separate facts. `GoalControl`, `GetGoalState`, and
 `ReconcileGoal` are provider-neutral Host APIs; typed `/goal` commands enter the
-same durable saga without opening a turn. A caller-stable `ClientSubmitID`
+same durable saga without opening a turn. `AdoptProviderGoal` is the narrow
+reverse boundary for a Goal created by a provider tool during an already
+accepted Turn. It atomically records the active provider generation as a
+completed, applied operation and converged desired/observed state; it never
+dispatches another provider mutation. The provider session plus immutable
+generation fingerprint form its replay identity. A conflicting pending or
+active durable generation is rejected, so runtime continuation remains
+fail-closed instead of inheriting whichever Goal happens to be current.
+Terminal and cleared generations may advance to a new provider-authored Goal;
+that transition receives a new durable revision.
+A caller-stable `ClientSubmitID`
 makes one goal mutation idempotent across retries and Host restarts (and takes
 precedence over the legacy metadata field). `GetGoalState` is a pure canonical
-read: only `GoalControl`, `ReconcileGoal`, and recovery workers may create or
-change the durable goal projection. `Recover` first requeues and recovers
+read: only `GoalControl`, `AdoptProviderGoal`, `ReconcileGoal`, and recovery
+workers may create or change the durable goal projection. `Recover` first
+requeues and recovers
 durable runtime operations, then goal operations and the goal reconcile inbox,
 then settles unrecoverable stale turns, and finally invokes the adapter's
 worktree-isolation sweep. Configuring a goal store

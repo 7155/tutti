@@ -296,6 +296,7 @@ type WorktreeGarbageCollector interface {
 
 type GoalStateStore interface {
 	PrepareGoalControlOperation(context.Context, storesqlite.GoalControlOperationPrepare) (storesqlite.GoalControlOperation, storesqlite.SessionGoalState, bool, error)
+	AdoptProviderGoalOperation(context.Context, storesqlite.ProviderGoalAdoption) (storesqlite.GoalControlOperation, storesqlite.SessionGoalState, bool, error)
 	GetGoalControlAudit(context.Context, string, string, string) (storesqlite.Message, bool, error)
 	MarkGoalControlOperationDispatched(context.Context, string, string, int64) (storesqlite.GoalControlOperation, bool, error)
 	AcknowledgeGoalControlOperation(context.Context, storesqlite.GoalControlOperationAcknowledge) (storesqlite.GoalControlOperation, storesqlite.SessionGoalState, bool, error)

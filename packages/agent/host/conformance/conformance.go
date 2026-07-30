@@ -59,6 +59,7 @@ type Fixture struct {
 	RecoverInteractive     bool
 	DisableGoalInbox       bool
 	AcceptGoalControlsOnly bool
+	CompleteGoalOnSet      bool
 	FailCommitObserver     bool
 	WorktreeGCSweepErr     error
 	DeleteAdmissionErr     error
@@ -162,6 +163,7 @@ type Driver interface {
 	DeleteSessions(context.Context, agenthost.DeleteSessionsInput) (agenthost.DeleteSessionsResult, error)
 	PurgeDeletedSessions(context.Context, agenthost.PurgeDeletedSessionsInput) (agenthost.PurgeDeletedSessionsResult, error)
 	GoalControl(context.Context, agenthost.GoalControlInput) (GoalObservation, error)
+	AdoptProviderGoal(context.Context, agenthost.ProviderGoalAdoptionInput) (GoalObservation, error)
 	FenceGoalGeneration(context.Context, agenthost.FenceGoalGenerationInput) (agenthost.FenceGoalGenerationResult, error)
 	GetGoalState(context.Context, agenthost.SessionRef) (GoalObservation, error)
 	ReconcileGoal(context.Context, agenthost.SessionRef) (GoalObservation, error)

@@ -210,6 +210,14 @@ func (s *observedGoalStateStore) PrepareGoalControlOperation(ctx context.Context
 	return op, state, changed, err
 }
 
+func (s *observedGoalStateStore) AdoptProviderGoalOperation(ctx context.Context, input storesqlite.ProviderGoalAdoption) (storesqlite.GoalControlOperation, storesqlite.SessionGoalState, bool, error) {
+	op, state, changed, err := s.GoalStateStore.AdoptProviderGoalOperation(ctx, input)
+	if err == nil && changed {
+		s.host.notifyCommitted(ctx, goalOperationDelta(GoalOperationCompleted, op, state, nil))
+	}
+	return op, state, changed, err
+}
+
 func (s *observedGoalStateStore) MarkGoalControlOperationDispatched(ctx context.Context, workspaceID, operationID string, occurredAt int64) (storesqlite.GoalControlOperation, bool, error) {
 	op, changed, err := s.GoalStateStore.MarkGoalControlOperationDispatched(ctx, workspaceID, operationID, occurredAt)
 	if err == nil && changed {

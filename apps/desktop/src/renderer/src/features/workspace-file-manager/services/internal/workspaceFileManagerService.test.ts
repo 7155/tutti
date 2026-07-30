@@ -1025,6 +1025,7 @@ function createDependenciesStub(): {
       listWorkspaceWorkflows: fail,
       decideWorkspaceWorkflowCheckpoint: fail,
       cancelWorkspaceIssueExecution: fail,
+      setCollaborationRunAdoption: fail,
       cancelTuttiModeExecution: fail
     },
     platformApi: {

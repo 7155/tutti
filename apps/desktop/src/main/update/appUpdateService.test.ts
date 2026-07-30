@@ -66,6 +66,59 @@ test("createAppUpdateService can simulate a dev prerelease update", async () => 
   }
 });
 
+test("mandatory update sessions exclusively own and restore the updater", async () => {
+  let checkCalls = 0;
+  const driver = createFakeDriver({
+    async checkForUpdates() {
+      checkCalls += 1;
+    }
+  });
+  const service = createAppUpdateService(driver, { supportsUpdates: true });
+
+  try {
+    await service.configure({ channel: "stable", policy: "auto" });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const checksAfterNormalConfigure = checkCalls;
+    const session = await service.acquireMandatorySession({
+      channel: "rc",
+      minimumVersion: "2.0.0-rc.1",
+      policyRevision: "revision-1",
+      releaseMeetsMinimum: () => true
+    });
+
+    await session.configure();
+    assert.equal(
+      checkCalls,
+      checksAfterNormalConfigure,
+      "mandatory configure must not start a competing background check"
+    );
+    await assert.rejects(
+      service.checkForUpdates(),
+      /owned by the mandatory update session/
+    );
+    await assert.rejects(
+      service.acquireMandatorySession({
+        channel: "stable",
+        minimumVersion: "2.0.0",
+        policyRevision: "revision-2",
+        releaseMeetsMinimum: () => true
+      }),
+      /already active/
+    );
+
+    await session.checkForUpdates();
+    assert.equal(checkCalls, checksAfterNormalConfigure + 1);
+    await session.release();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(service.getState().channel, "stable");
+    assert.equal(service.getState().policy, "auto");
+    assert.equal(checkCalls, checksAfterNormalConfigure + 2);
+    await assert.rejects(session.checkForUpdates(), /no longer active/);
+  } finally {
+    service.dispose();
+  }
+});
+
 test("createElectronAppUpdateDriver keeps downgrade checks disabled after setting channel", () => {
   const updater = createFakeElectronUpdater();
   const driver = createElectronAppUpdateDriver(updater as never);

@@ -34,35 +34,19 @@ const logRendererDiagnostic = createRendererDiagnosticSink();
 installBrowserCrashLogging({
   logRendererDiagnostic
 });
-const minimumVersionRoute =
-  new URLSearchParams(window.location.search).get("view") === "minimum-upgrade";
-let rendererApp: React.ReactElement;
-if (minimumVersionRoute) {
-  const [
-    { MinimumVersionUpgradeApp },
-    { createMinimumVersionUpgradeWindowContainer }
-  ] = await Promise.all([
-    import("./app/MinimumVersionUpgradeApp.tsx"),
-    import("./app/windows/minimumUpgrade/createMinimumVersionUpgradeWindowContainer.ts")
-  ]);
-  const minimumVersionContainer = createMinimumVersionUpgradeWindowContainer();
-  rendererApp = (
-    <MinimumVersionUpgradeApp port={minimumVersionContainer.port} />
-  );
-} else {
-  const [{ RendererApp }, { createWorkspaceWindowContainer }] =
-    await Promise.all([
-      import("./app/index.tsx"),
-      import("./app/windows/workspace/createWorkspaceWindowContainer.ts")
-    ]);
-  const application = (
-    <RendererApp workspaceWindowContainer={createWorkspaceWindowContainer()} />
-  );
-  rendererApp =
-    import.meta.env.DEV && import.meta.env.VITE_TUTTI_REACT_PROFILER === "1"
-      ? createProfiledRendererApp(logRendererDiagnostic, application)
-      : application;
-}
+const [{ RendererApp }, { createWorkspaceWindowContainer }] = await Promise.all(
+  [
+    import("./app/index.tsx"),
+    import("./app/windows/workspace/createWorkspaceWindowContainer.ts")
+  ]
+);
+const application = (
+  <RendererApp workspaceWindowContainer={createWorkspaceWindowContainer()} />
+);
+const rendererApp =
+  import.meta.env.DEV && import.meta.env.VITE_TUTTI_REACT_PROFILER === "1"
+    ? createProfiledRendererApp(logRendererDiagnostic, application)
+    : application;
 const logReactRootError = createReactRootErrorLogger({
   captureOwnerStack: React.captureOwnerStack,
   logRendererDiagnostic

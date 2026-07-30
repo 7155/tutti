@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Button, LoadingIcon } from "@tutti-os/ui-system";
 import type { MinimumVersionUpgradeState } from "@shared/contracts/ipc.ts";
-import type { DesktopUpdateApi } from "@preload/types";
+import type { DesktopMinimumVersionApi } from "@preload/types";
 import { useTranslation } from "../i18n";
 
-type MinimumVersionUpgradePort = DesktopUpdateApi["minimumVersion"];
+type MinimumVersionUpgradePort = DesktopMinimumVersionApi;
 
 function percent(value: number | null): string {
   return `${Math.max(0, Math.min(100, Math.round(value ?? 0)))}%`;

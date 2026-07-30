@@ -42,6 +42,9 @@ function createUpdateService(
   options: { quitAndInstallPending?: boolean } = {}
 ): AppUpdateService {
   return {
+    async acquireMandatorySession() {
+      throw new Error("not used");
+    },
     async checkForUpdates() {
       throw new Error("not used");
     },

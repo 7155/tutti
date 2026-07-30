@@ -23,9 +23,55 @@ export function resolveMinimumVersionRuntimeTarget(
   return { platform: normalizedPlatform, architecture: normalizedArchitecture };
 }
 
-function versionParts(value: string): number[] | null {
-  const match = /^(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?$/u.exec(value.trim());
-  return match ? match.slice(1).map((part) => Number(part || 0)) : null;
+type ManagedVersion = {
+  major: string;
+  minor: string;
+  patch: string;
+  rc: string | null;
+};
+
+function parseManagedVersion(value: string): ManagedVersion | null {
+  const match =
+    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-rc\.(0|[1-9]\d*))?$/u.exec(
+      value.trim()
+    );
+  if (!match) {
+    return null;
+  }
+  return {
+    major: match[1]!,
+    minor: match[2]!,
+    patch: match[3]!,
+    rc: match[4] === undefined ? null : match[4]
+  };
+}
+
+function compareNumericIdentifier(left: string, right: string): number {
+  if (left.length !== right.length) {
+    return left.length < right.length ? -1 : 1;
+  }
+  return left === right ? 0 : left < right ? -1 : 1;
+}
+
+function compareManagedVersions(
+  left: ManagedVersion,
+  right: ManagedVersion
+): number {
+  for (const key of ["major", "minor", "patch"] as const) {
+    if (left[key] !== right[key]) {
+      return compareNumericIdentifier(left[key], right[key]);
+    }
+  }
+  if (left.rc === right.rc) {
+    return 0;
+  }
+  if (left.rc === null) {
+    return 1;
+  }
+  if (right.rc === null) {
+    return -1;
+  }
+  return compareNumericIdentifier(left.rc, right.rc);
 }
 
 export function releaseMeetsMinimum(
@@ -35,17 +81,12 @@ export function releaseMeetsMinimum(
   if (!releaseVersion) {
     return false;
   }
-  const release = versionParts(releaseVersion);
-  const minimum = versionParts(minimumVersion);
+  const release = parseManagedVersion(releaseVersion);
+  const minimum = parseManagedVersion(minimumVersion);
   if (!release || !minimum) {
     return false;
   }
-  for (let index = 0; index < 4; index += 1) {
-    if (release[index] !== minimum[index]) {
-      return (release[index] ?? 0) > (minimum[index] ?? 0);
-    }
-  }
-  return true;
+  return compareManagedVersions(release, minimum) >= 0;
 }
 
 export function shouldCheckMinimumVersionAfterForeground(input: {

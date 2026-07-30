@@ -46,6 +46,7 @@ import {
   createMinimumVersionUpgradeController,
   type MinimumVersionUpgradeController
 } from "./update/minimumVersionUpgradeController.ts";
+import { createAppUpdateService } from "./update/appUpdateService.ts";
 
 function envFlagEnabled(value: string | undefined): boolean {
   return /^(1|true|yes|on)$/iu.test(value?.trim() ?? "");
@@ -145,6 +146,10 @@ export async function bootstrapDesktopApp(): Promise<void> {
 
   const currentDir = dirname(fileURLToPath(import.meta.url));
   const preloadPath = join(currentDir, "../preload/index.cjs");
+  const minimumVersionPreloadPath = join(
+    currentDir,
+    "../preload/minimum-version.cjs"
+  );
   const browserNodeGuestPreloadPath = join(
     currentDir,
     "../preload/browser-node-guest.cjs"
@@ -167,12 +172,50 @@ export async function bootstrapDesktopApp(): Promise<void> {
     return;
   }
 
+  const updateService = createAppUpdateService();
+  let desktopAppServices: Awaited<
+    ReturnType<typeof createDesktopAppServices>
+  > | null = null;
+  let releaseStartupGate: (() => void) | null = null;
+  let minimumVersionController: MinimumVersionUpgradeController | null =
+    createMinimumVersionUpgradeController({
+      logger,
+      normalUpdatePreferences: () => {
+        if (!desktopAppServices) {
+          throw new Error(
+            "desktop services are unavailable before minimum-version admission"
+          );
+        }
+        return {
+          channel: desktopAppServices.preferences.getUpdateChannel(),
+          policy: desktopAppServices.preferences.getUpdatePolicy()
+        };
+      },
+      onPolicyReleased: () => {
+        if (releaseStartupGate) {
+          const release = releaseStartupGate;
+          releaseStartupGate = null;
+          release();
+        }
+      },
+      preloadPath: minimumVersionPreloadPath,
+      rendererFilePath: join(currentDir, "../renderer/minimum-version.html"),
+      rendererUrl,
+      updateService
+    });
+  const startupBlocked = await minimumVersionController.runStartupCheck();
+  if (startupBlocked) {
+    await new Promise<void>((resolve) => {
+      releaseStartupGate = resolve;
+    });
+  }
+
   const workspaceFileIconCache = createWorkspaceFileIconCacheStore({
     directory: join(app.getPath("userData"), "workspace-file-icons")
   });
   registerTuttiAssetProtocol();
   registerWorkspaceFileIconProtocol(workspaceFileIconCache);
-  const desktopAppServices = await createDesktopAppServices({
+  desktopAppServices = await createDesktopAppServices({
     appVersion: app.getVersion(),
     enableDevelopmentReloadShortcut: Boolean(rendererUrl) && !app.isPackaged,
     fallbackLocale: systemLocale,
@@ -181,6 +224,7 @@ export async function bootstrapDesktopApp(): Promise<void> {
     logger,
     preloadPath,
     rendererUrl,
+    updateService,
     workspaceAppPreloadPath
   });
   const theme = applyDesktopThemeSource(
@@ -288,19 +332,6 @@ export async function bootstrapDesktopApp(): Promise<void> {
       focusPrimaryDesktopWindow();
     }
   };
-  let minimumVersionController: MinimumVersionUpgradeController | null =
-    createMinimumVersionUpgradeController({
-      logger,
-      normalUpdatePreferences: () => ({
-        channel: desktopAppServices.preferences.getUpdateChannel(),
-        policy: desktopAppServices.preferences.getUpdatePolicy()
-      }),
-      openBusinessWindow,
-      preloadPath,
-      rendererFilePath: join(currentDir, "../renderer/index.html"),
-      rendererUrl,
-      updateService: desktopAppServices.updateService
-    });
   const checkMinimumVersionAfterRestore = () => {
     void minimumVersionController?.checkAfterForegroundRestore();
   };
@@ -339,9 +370,6 @@ export async function bootstrapDesktopApp(): Promise<void> {
     workspaceLaunch: desktopAppServices.workspaceLaunch
   });
 
-  const startupBlocked = await minimumVersionController.runStartupCheck();
-  if (!startupBlocked) {
-    minimumVersionController.configureNormalUpdates();
-    await openBusinessWindow();
-  }
+  minimumVersionController.configureNormalUpdates();
+  await openBusinessWindow();
 }

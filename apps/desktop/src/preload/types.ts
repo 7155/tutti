@@ -298,15 +298,16 @@ export interface DesktopUpdateApi {
   getState(): Promise<AppUpdateState>;
   installUpdate(): Promise<void>;
   onState(listener: (state: AppUpdateState) => void): () => void;
-  minimumVersion: {
-    getState(): Promise<MinimumVersionUpgradeState | null>;
-    start(): Promise<MinimumVersionUpgradeState | null>;
-    retry(): Promise<MinimumVersionUpgradeState | null>;
-    later(): Promise<void>;
-    openManualDownload(): Promise<void>;
-    exit(): Promise<void>;
-    onState(listener: (state: MinimumVersionUpgradeState) => void): () => void;
-  };
+}
+
+export interface DesktopMinimumVersionApi {
+  getState(): Promise<MinimumVersionUpgradeState | null>;
+  start(): Promise<MinimumVersionUpgradeState | null>;
+  retry(): Promise<MinimumVersionUpgradeState | null>;
+  later(): Promise<void>;
+  openManualDownload(): Promise<void>;
+  exit(): Promise<void>;
+  onState(listener: (state: MinimumVersionUpgradeState) => void): () => void;
 }
 
 export interface DesktopWallpaperApi {

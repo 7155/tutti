@@ -1,13 +1,14 @@
-import type { DesktopUpdateApi } from "@preload/types";
-import { resolveDesktopEnvironment } from "@renderer/platform/desktop/resolveDesktopEnvironment";
+import type { DesktopMinimumVersionApi } from "@preload/types";
 
 export interface MinimumVersionUpgradeWindowContainer {
-  port: DesktopUpdateApi["minimumVersion"];
+  port: DesktopMinimumVersionApi;
 }
 
 export function createMinimumVersionUpgradeWindowContainer(): MinimumVersionUpgradeWindowContainer {
-  const environment = resolveDesktopEnvironment(window.tutti);
+  if (!window.tuttiMinimumVersion) {
+    throw new Error("minimum-version preload bridge is unavailable");
+  }
   return {
-    port: environment.desktopApi.update.minimumVersion
+    port: window.tuttiMinimumVersion
   };
 }

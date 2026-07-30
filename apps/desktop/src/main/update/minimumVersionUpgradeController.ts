@@ -6,14 +6,22 @@ import type {
 import { desktopIpcChannels } from "../../shared/contracts/ipc.ts";
 import type { DesktopLogger } from "../logging.ts";
 import { outboundFetch } from "../net/outboundFetch.ts";
-import type { AppUpdateService } from "./appUpdateService.ts";
+import type {
+  AppUpdateService,
+  MandatoryAppUpdateSession
+} from "./appUpdateService.ts";
 import {
   releaseMeetsMinimum,
   resolveMinimumVersionRuntimeTarget,
   shouldCheckMinimumVersionAfterForeground
 } from "./minimumVersionPolicy.ts";
+import {
+  type MinimumVersionCheckRequest,
+  validateMinimumVersionResponse
+} from "./minimumVersionContract.ts";
 
 const startupTimeoutMs = 3_000;
+const foregroundTimeoutMs = 10_000;
 const productionControlPlaneBaseUrl = "https://tutti.sh/api/desktop/v1";
 const officialDesktopDownloadUrl = "https://tutti.sh/desktop/download";
 
@@ -23,7 +31,7 @@ interface ControllerOptions {
   rendererFilePath: string;
   rendererUrl?: string;
   updateService: AppUpdateService;
-  openBusinessWindow(): Promise<void>;
+  onPolicyReleased(): void;
   normalUpdatePreferences(): {
     channel: "stable" | "rc";
     policy: "off" | "prompt" | "auto";
@@ -46,7 +54,7 @@ function logCheck(
   logger[level](`[minimum-version-check] ${JSON.stringify(details)}`);
 }
 
-function requestPayload() {
+function requestPayload(): MinimumVersionCheckRequest | null {
   const target = resolveMinimumVersionRuntimeTarget(
     process.platform,
     process.arch
@@ -65,27 +73,33 @@ async function checkMinimumVersion(
   payload: NonNullable<ReturnType<typeof requestPayload>>,
   signal?: AbortSignal
 ): Promise<MinimumVersionCheckResponse> {
-  const baseUrl = (
-    process.env.TUTTI_DESKTOP_CONTROL_PLANE_BASE_URL ??
-    productionControlPlaneBaseUrl
-  ).replace(/\/+$/u, "");
-  const response = await outboundFetch(
-    `${baseUrl}/public/desktop-version/check`,
-    {
-      body: JSON.stringify(payload),
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        "User-Agent": "Tutti Desktop"
-      },
-      method: "POST",
-      signal
-    }
-  );
+  const configuredDevelopmentBaseUrl =
+    !app.isPackaged && process.env.TUTTI_DESKTOP_CONTROL_PLANE_BASE_URL
+      ? process.env.TUTTI_DESKTOP_CONTROL_PLANE_BASE_URL
+      : productionControlPlaneBaseUrl;
+  const baseUrl = new URL(configuredDevelopmentBaseUrl);
+  if (
+    app.isPackaged &&
+    (baseUrl.protocol !== "https:" ||
+      baseUrl.origin !== new URL(productionControlPlaneBaseUrl).origin)
+  ) {
+    throw new Error("packaged minimum-version control plane origin is invalid");
+  }
+  const endpoint = `${baseUrl.toString().replace(/\/+$/u, "")}/public/desktop-version/check`;
+  const response = await outboundFetch(endpoint, {
+    body: JSON.stringify(payload),
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "Tutti Desktop"
+    },
+    method: "POST",
+    signal
+  });
   if (!response.ok) {
     throw new Error(`minimum version check returned HTTP ${response.status}`);
   }
-  return (await response.json()) as MinimumVersionCheckResponse;
+  return validateMinimumVersionResponse(await response.json(), payload);
 }
 
 export function createMinimumVersionUpgradeController(
@@ -102,6 +116,14 @@ export function createMinimumVersionUpgradeController(
   let disposed = false;
   let activeCheck: Promise<MinimumVersionCheckResponse | null> | null = null;
   let appQuitStarted = false;
+  let mandatoryUpdateSession: MandatoryAppUpdateSession | null = null;
+  let isolatedBusinessWindows: Array<{
+    window: BrowserWindow;
+    wasFocused: boolean;
+    wasMinimized: boolean;
+    wasVisible: boolean;
+  }> | null = null;
+  const lifecycleAbort = new AbortController();
 
   const handleBeforeQuit = () => {
     appQuitStarted = true;
@@ -128,6 +150,51 @@ export function createMinimumVersionUpgradeController(
       window.destroy();
     }
     window = null;
+  };
+  const isolateBusinessWindows = () => {
+    if (isolatedBusinessWindows) {
+      return;
+    }
+    isolatedBusinessWindows = BrowserWindow.getAllWindows()
+      .filter((candidate) => candidate !== window && !candidate.isDestroyed())
+      .map((candidate) => ({
+        window: candidate,
+        wasFocused: candidate.isFocused(),
+        wasMinimized: candidate.isMinimized(),
+        wasVisible: candidate.isVisible()
+      }));
+    for (const snapshot of isolatedBusinessWindows) {
+      snapshot.window.hide();
+    }
+  };
+  const restoreBusinessWindows = () => {
+    const snapshots = isolatedBusinessWindows;
+    isolatedBusinessWindows = null;
+    if (!snapshots) {
+      return;
+    }
+    let focusedWindow: BrowserWindow | null = null;
+    for (const snapshot of snapshots) {
+      if (snapshot.window.isDestroyed()) {
+        continue;
+      }
+      if (snapshot.wasMinimized) {
+        snapshot.window.show();
+        snapshot.window.minimize();
+      } else if (snapshot.wasVisible) {
+        snapshot.window.show();
+      }
+      if (snapshot.wasFocused) {
+        focusedWindow = snapshot.window;
+      }
+    }
+    if (
+      focusedWindow &&
+      !focusedWindow.isDestroyed() &&
+      !focusedWindow.isMinimized()
+    ) {
+      focusedWindow.focus();
+    }
   };
   const openWindow = (nextMode: "startup" | "foreground") => {
     if (window && !window.isDestroyed()) {
@@ -162,9 +229,11 @@ export function createMinimumVersionUpgradeController(
       }
     });
     window.once("ready-to-show", () => window?.show());
-    const search = `view=minimum-upgrade&mode=${nextMode}`;
+    const search = `mode=${nextMode}`;
     if (options.rendererUrl) {
-      void window.loadURL(`${options.rendererUrl}/?${search}`);
+      void window.loadURL(
+        `${options.rendererUrl}/minimum-version.html?${search}`
+      );
     } else {
       void window.loadFile(options.rendererFilePath, { search });
     }
@@ -188,19 +257,22 @@ export function createMinimumVersionUpgradeController(
     }
     const startedAt = now();
     const controller = new AbortController();
+    const abortForLifecycle = () => controller.abort();
+    lifecycleAbort.signal.addEventListener("abort", abortForLifecycle, {
+      once: true
+    });
     let timer: ReturnType<typeof setTimeout> | null = null;
     try {
-      const result = await (bounded
-        ? Promise.race([
-            checkMinimumVersion(payload, controller.signal),
-            new Promise<never>((_resolve, reject) => {
-              timer = setTimeout(() => {
-                controller.abort();
-                reject(new Error("minimum version startup check timed out"));
-              }, startupTimeoutMs);
-            })
-          ])
-        : checkMinimumVersion(payload));
+      const timeoutMs = bounded ? startupTimeoutMs : foregroundTimeoutMs;
+      const result = await Promise.race([
+        checkMinimumVersion(payload, controller.signal),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => {
+            controller.abort();
+            reject(new Error("minimum version check timed out"));
+          }, timeoutMs);
+        })
+      ]);
       lastCheckAt = now();
       logCheck(options.logger, "info", {
         stage: bounded ? "startup" : "foreground",
@@ -226,6 +298,7 @@ export function createMinimumVersionUpgradeController(
       if (timer) {
         clearTimeout(timer);
       }
+      lifecycleAbort.signal.removeEventListener("abort", abortForLifecycle);
     }
   };
   const checkPolicy = async (
@@ -256,18 +329,29 @@ export function createMinimumVersionUpgradeController(
     }
   };
 
-  const releaseBlock = () => {
-    forcedFlowStarted = false;
-    installRequested = false;
-    closeWindow();
-    void configureNormalUpdates();
-    void options.openBusinessWindow().catch((error) => {
+  const releaseMandatoryUpdater = async (
+    restoreNormal = true
+  ): Promise<void> => {
+    const session = mandatoryUpdateSession;
+    mandatoryUpdateSession = null;
+    try {
+      await session?.release({ restoreNormal });
+    } catch (error) {
       logCheck(options.logger, "error", {
-        stage: "business-window-open",
+        stage: "normal-update-restore",
         result: "failure",
         error: error instanceof Error ? error.message : String(error)
       });
-    });
+    }
+  };
+
+  const releaseBlock = async (): Promise<void> => {
+    forcedFlowStarted = false;
+    installRequested = false;
+    await releaseMandatoryUpdater();
+    closeWindow();
+    restoreBusinessWindows();
+    options.onPolicyReleased();
   };
 
   const installForcedUpdate = async (): Promise<void> => {
@@ -276,7 +360,10 @@ export function createMinimumVersionUpgradeController(
     }
     installRequested = true;
     try {
-      await options.updateService.installUpdate();
+      if (!mandatoryUpdateSession) {
+        throw new Error("mandatory update session is unavailable");
+      }
+      await mandatoryUpdateSession.installUpdate();
     } catch (error) {
       installRequested = false;
       throw error;
@@ -290,11 +377,15 @@ export function createMinimumVersionUpgradeController(
     try {
       forcedFlowStarted = true;
       applyState("checking");
-      await options.updateService.configure({
-        channel: state.check.channel === "rc" ? "rc" : "stable",
-        policy: "prompt"
-      });
-      const update = await options.updateService.checkForUpdates();
+      mandatoryUpdateSession ??=
+        await options.updateService.acquireMandatorySession({
+          channel: state.check.channel === "rc" ? "rc" : "stable",
+          minimumVersion: state.check.minimumVersion,
+          policyRevision: state.check.policyRevision,
+          releaseMeetsMinimum
+        });
+      await mandatoryUpdateSession.configure();
+      const update = await mandatoryUpdateSession.checkForUpdates();
       if (
         (update.status !== "available" && update.status !== "downloaded") ||
         !releaseMeetsMinimum(update.latestVersion, state.check.minimumVersion)
@@ -308,7 +399,7 @@ export function createMinimumVersionUpgradeController(
         return;
       }
       applyState("ready", update);
-      const downloaded = await options.updateService.downloadUpdate();
+      const downloaded = await mandatoryUpdateSession.downloadUpdate();
       if (
         downloaded.status !== "downloaded" ||
         !releaseMeetsMinimum(
@@ -351,19 +442,27 @@ export function createMinimumVersionUpgradeController(
     }
   });
 
-  ipcMain.handle(desktopIpcChannels.update.minimumGetState, () => state);
-  ipcMain.handle(desktopIpcChannels.update.minimumStart, async () => {
+  const assertUpgradeWindowSender = (senderId: number): void => {
+    if (!window || window.isDestroyed() || window.webContents.id !== senderId) {
+      throw new Error(
+        "minimum-version IPC is restricted to the upgrade window"
+      );
+    }
+  };
+  ipcMain.handle(desktopIpcChannels.update.minimumGetState, (event) => {
+    assertUpgradeWindowSender(event.sender.id);
+    return state;
+  });
+  ipcMain.handle(desktopIpcChannels.update.minimumStart, async (event) => {
+    assertUpgradeWindowSender(event.sender.id);
     if (mode === "foreground") {
-      for (const candidate of BrowserWindow.getAllWindows()) {
-        if (candidate !== window && !candidate.isDestroyed()) {
-          candidate.hide();
-        }
-      }
+      isolateBusinessWindows();
     }
     await prepareUpdate();
     return state;
   });
-  ipcMain.handle(desktopIpcChannels.update.minimumRetry, async () => {
+  ipcMain.handle(desktopIpcChannels.update.minimumRetry, async (event) => {
+    assertUpgradeWindowSender(event.sender.id);
     const response = await checkPolicy(false);
     if (!response) {
       applyState(
@@ -372,24 +471,30 @@ export function createMinimumVersionUpgradeController(
         "policyCheckFailed"
       );
     } else if (response.decision !== "upgradeRequired") {
-      releaseBlock();
+      await releaseBlock();
     } else if (state) {
+      await releaseMandatoryUpdater(false);
       state = { ...state, check: response };
       await prepareUpdate();
     }
     return state;
   });
-  ipcMain.handle(desktopIpcChannels.update.minimumLater, () => {
+  ipcMain.handle(desktopIpcChannels.update.minimumLater, (event) => {
+    assertUpgradeWindowSender(event.sender.id);
     if (mode === "foreground" && !forcedFlowStarted) {
       closeWindow();
     }
   });
-  ipcMain.handle(desktopIpcChannels.update.minimumManualDownload, () =>
-    shell.openExternal(
+  ipcMain.handle(desktopIpcChannels.update.minimumManualDownload, (event) => {
+    assertUpgradeWindowSender(event.sender.id);
+    return shell.openExternal(
       `${officialDesktopDownloadUrl}?channel=${state?.check.channel === "rc" ? "preview" : "stable"}&platform=macos&arch=universal&format=dmg`
-    )
-  );
-  ipcMain.handle(desktopIpcChannels.update.minimumExit, () => app.quit());
+    );
+  });
+  ipcMain.handle(desktopIpcChannels.update.minimumExit, (event) => {
+    assertUpgradeWindowSender(event.sender.id);
+    app.quit();
+  });
 
   return {
     async runStartupCheck() {
@@ -427,7 +532,7 @@ export function createMinimumVersionUpgradeController(
         return;
       }
       const response = await checkPolicy(false);
-      if (!response || response.decision !== "upgradeRequired") {
+      if (disposed || !response || response.decision !== "upgradeRequired") {
         return;
       }
       foregroundPrompted = true;
@@ -441,6 +546,8 @@ export function createMinimumVersionUpgradeController(
     },
     dispose() {
       disposed = true;
+      lifecycleAbort.abort();
+      void releaseMandatoryUpdater(false);
       app.removeListener("before-quit", handleBeforeQuit);
       unsubscribeUpdate();
       closeWindow();

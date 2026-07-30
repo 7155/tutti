@@ -173,6 +173,7 @@ export default defineConfig({
             "src/preload/entries/browserNodeGuest.ts"
           ),
           index: resolve("src/preload/index.ts"),
+          "minimum-version": resolve("src/preload/entries/minimumVersion.ts"),
           "workspace-app": resolve("src/preload/entries/workspaceApp.ts")
         },
         output: {
@@ -192,6 +193,14 @@ export default defineConfig({
     }
   },
   renderer: {
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve("src/renderer/index.html"),
+          "minimum-version": resolve("src/renderer/minimum-version.html")
+        }
+      }
+    },
     server: devServer,
     plugins: [
       emitTuttiAssetProtocolAssetsPlugin(),

@@ -135,6 +135,9 @@ function createHostServices(): DesktopHostServices {
 
 function createUpdateService(): AppUpdateService {
   return {
+    async acquireMandatorySession() {
+      throw new Error("not used");
+    },
     async checkForUpdates() {
       throw new Error("not used");
     },

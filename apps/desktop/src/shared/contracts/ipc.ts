@@ -891,8 +891,13 @@ export interface MinimumVersionCheckResponse {
   currentVersion: string;
   minimumVersion: string;
   decision: "allowed" | "upgradeRequired" | "notApplicable";
-  reason: string;
-  policySource: string;
+  reason:
+    | "unmanagedPrerelease"
+    | "productDisabled"
+    | "unsupportedRelease"
+    | "belowMinimum"
+    | "meetsMinimum";
+  policySource: "" | "defaultMinimum" | "platformOverride";
   policyRevision: string;
 }
 

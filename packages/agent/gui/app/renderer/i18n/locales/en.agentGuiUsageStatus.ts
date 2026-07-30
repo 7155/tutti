@@ -22,6 +22,13 @@ export const enAgentGuiUsageStatus = {
   slashStatusUsageUpdating: "Updating…",
   slashStatusUsageRefreshFailed: "Refresh failed",
   slashStatusUsageRefreshAria: "Refresh usage",
+  slashStatusUsageAuthRequired: "Configure an API key or sign in to continue",
+  slashStatusUsageSessionExpired: "Your sign-in expired. Sign in again",
+  slashStatusUsageSubscriptionRequired:
+    "A Coding Plan or subscription is required",
+  slashStatusUsageQuotaExhausted: "Account balance or usage quota is exhausted",
+  slashStatusUsageConfigInvalid: "Model or account configuration is incomplete",
+  slashStatusUsageError: "Unable to load account status",
   usageChipLabel: "Context {{percent}}%",
   usageTooltipLabel: "Context usage",
   usagePopoverTitle: "Context Usage",

@@ -361,6 +361,11 @@ export const AgentGUINode = memo(function AgentGUINode({
     t,
     viewModel
   });
+  const effectiveProviderAuthAccountLabels = projectProviderAccountLabel(
+    providerAuthAccountLabels,
+    railStatusProvider,
+    controllerRailStatus?.accountLabel
+  );
   const agentConfigMenuContext =
     viewModel.rail.conversationFilter.kind === "all"
       ? null
@@ -474,6 +479,9 @@ export const AgentGUINode = memo(function AgentGUINode({
                 controllerRailStatus?.capturedAtUnixMs ?? null
               }
               slashStatusUsageDidFail={controllerRailStatus?.didFail ?? false}
+              slashStatusUsageErrorMessage={
+                controllerRailStatus?.errorMessage ?? null
+              }
               slashStatusUsageAttempted={
                 controllerRailStatus?.attempted ?? false
               }
@@ -481,7 +489,7 @@ export const AgentGUINode = memo(function AgentGUINode({
                 controllerRailStatus?.resolvedEmpty ?? false
               }
               agentConfigAccountContent={agentConfigAccountContent}
-              providerAuthAccountLabels={providerAuthAccountLabels}
+              providerAuthAccountLabels={effectiveProviderAuthAccountLabels}
               onAgentConfigMenuClose={handleAgentConfigMenuClose}
               onAgentConfigMenuOpen={handleAgentConfigMenuOpen}
               onAgentUsageRefresh={handleAgentUsageRefresh}
@@ -563,6 +571,19 @@ export const AgentGUINode = memo(function AgentGUINode({
     </AgentGUIMentionServiceBoundary>
   );
 }, areAgentGUINodePropsEqual);
+
+function projectProviderAccountLabel(
+  labels: Partial<Record<string, string>> | undefined,
+  providerValue: string | null | undefined,
+  accountLabelValue: string | null | undefined
+): Partial<Record<string, string>> | undefined {
+  const provider = providerValue?.trim();
+  const accountLabel = accountLabelValue?.trim();
+  if (!provider || !accountLabel || labels?.[provider]?.trim()) {
+    return labels;
+  }
+  return { ...labels, [provider]: accountLabel };
+}
 
 function resolveAgentConfigMenuContext(
   target: AgentGUIAgentTarget

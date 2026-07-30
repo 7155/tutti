@@ -98,6 +98,46 @@ func TestStandardACPAdaptersReportProviderLifecycleWithoutSettlingCanonicalRoot(
 	}
 }
 
+func TestStandardACPAdapterFailsEmptyCompletedTurn(t *testing.T) {
+	t.Parallel()
+
+	transport := newStandardACPTransport("Kimi Code", "kimi-session-empty")
+	transport.conn.emptyPromptResult = true
+	adapterRaw, err := NewStandardACPAdapter(StandardACPAdapterConfig{
+		Provider: "acp:kimi-code",
+		Name:     "kimi-code-acp",
+		Command:  []string{"kimi", "acp"},
+	}, transport, LegacyHostMetadata())
+	if err != nil {
+		t.Fatalf("NewStandardACPAdapter: %v", err)
+	}
+	adapter := adapterRaw.(*standardACPAdapter)
+	session := standardTestSession("acp:kimi-code")
+	if _, err := adapter.Start(context.Background(), session); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	session.ProviderSessionID = "kimi-session-empty"
+
+	events, err := adapter.Exec(
+		context.Background(),
+		session,
+		textPrompt("hello"),
+		"",
+		"turn-empty",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+	completed := eventsOfType(events, activityshared.EventRootProviderTurnCompleted)
+	if len(completed) != 1 ||
+		completed[0].Payload.TurnOutcome != string(activityshared.TurnOutcomeFailed) ||
+		!strings.Contains(asString(completed[0].Payload.Metadata["error"]), "provider_empty_response") {
+		t.Fatalf("provider turn completion = %#v, want failed empty response", completed)
+	}
+}
+
 func TestStandardACPDropsLateTurnScopedUpdatesOutsidePromptCall(t *testing.T) {
 	t.Parallel()
 
@@ -808,6 +848,11 @@ func TestACPSessionHasNoUsableModel(t *testing.T) {
 		want bool
 	}{
 		{"empty list and no current model", `{"models":{"availableModels":[],"currentModelId":""}}`, true},
+		{"empty config option model selector", `{"configOptions":[{"id":"model","category":"model","currentValue":"","options":[]}]}`, true},
+		{"empty categorized model selector", `{"configOptions":[{"id":"model_choice","category":"model","currentValue":null,"options":[]}]}`, true},
+		{"populated config option model selector", `{"configOptions":[{"id":"model","currentValue":"m","options":[{"name":"M","value":"m"}]}]}`, false},
+		{"empty options with current config model", `{"configOptions":[{"id":"model","currentValue":"m","options":[]}]}`, false},
+		{"unrelated empty config option", `{"configOptions":[{"id":"sandbox","currentValue":"","options":[]}]}`, false},
 		{"populated list", `{"models":{"availableModels":[{"modelId":"m"}],"currentModelId":"m"}}`, false},
 		{"empty list but current model set", `{"models":{"availableModels":[],"currentModelId":"m"}}`, false},
 		{"models state without list", `{"models":{"currentModelId":"m"}}`, false},
@@ -4114,15 +4159,18 @@ type standardACPConnection struct {
 	// omitAssistantTextInPromptResults drops the agent_message_chunk from
 	// normal prompt results, emulating a tool-calls-only turn.
 	omitAssistantTextInPromptResults bool
-	setConfigOptionSnapshots         []map[string]any
-	setModelSnapshots                []map[string]any
-	configOptions                    []map[string]any
-	models                           map[string]any
-	modes                            map[string]any
-	authMethods                      []map[string]any
-	authenticateResult               map[string]any
-	authenticateError                *acpError
-	requireAuthentication            bool
+	// emptyPromptResult returns a normal ACP end_turn without any session
+	// updates, matching providers that hide a model/account failure.
+	emptyPromptResult        bool
+	setConfigOptionSnapshots []map[string]any
+	setModelSnapshots        []map[string]any
+	configOptions            []map[string]any
+	models                   map[string]any
+	modes                    map[string]any
+	authMethods              []map[string]any
+	authenticateResult       map[string]any
+	authenticateError        *acpError
+	requireAuthentication    bool
 }
 
 func (c *standardACPConnection) Send(data []byte) error {
@@ -4472,6 +4520,14 @@ func (c *standardACPConnection) Send(data []byte) error {
 						},
 					})
 				}
+				return nil
+			}
+			if c.emptyPromptResult {
+				c.sendJSON(map[string]any{
+					"jsonrpc": "2.0",
+					"id":      message.ID,
+					"result":  map[string]any{"stopReason": "end_turn"},
+				})
 				return nil
 			}
 			c.streamPromptResult(message.ID)

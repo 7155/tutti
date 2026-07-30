@@ -223,6 +223,8 @@ func visibleFailureCode(detail string) string {
 	case structuredCode == "no_biscuit_no_service" &&
 		(strings.Contains(normalized, "codex_apps") || strings.Contains(normalized, "mcp")):
 		return "plugin_unavailable"
+	case strings.Contains(normalized, "provider_empty_response"):
+		return "provider_empty_response"
 	// A tool MCP server's OAuth failure (Notion/Figma/...) crashes codex's MCP
 	// client and bubbles up here mentioning "access token"/"AuthRequired", which
 	// trips the auth pattern. That is the MCP SERVER needing re-auth, not codex's
@@ -260,6 +262,10 @@ func visibleFailureCode(detail string) string {
 	case strings.Contains(normalized, "quota") ||
 		strings.Contains(normalized, "rate limit") ||
 		strings.Contains(normalized, "limit exceeded") ||
+		strings.Contains(normalized, "membership expired") ||
+		strings.Contains(normalized, "renew your plan") ||
+		strings.Contains(normalized, "insufficient balance") ||
+		strings.Contains(normalized, "balance is insufficient") ||
 		// codex reports a depleted ChatGPT plan/credit cap as plain text — "You've
 		// hit your usage limit. Upgrade to Pro…" — with no structured codexErrorInfo
 		// and none of the other markers here, so it must be matched explicitly or it
@@ -473,6 +479,8 @@ func visibleFailureContent(provider string, phase string, code string) string {
 		return fmt.Sprintf("%s could not apply session settings before the request timed out. Try again in a moment.", name)
 	case "provider_stream_disconnected":
 		return fmt.Sprintf("%s response was interrupted before it completed. Try again in a moment.", name)
+	case "provider_empty_response":
+		return fmt.Sprintf("%s returned no response. Check its model and account configuration, including any API key, plan, or balance.", name)
 	case "session_interrupted":
 		return fmt.Sprintf("%s stopped unexpectedly before it finished responding. Try again.", name)
 	case "request_timed_out":

@@ -40,6 +40,12 @@ describe("classifyFailedAgentMessage", () => {
     expect(classifyFailedAgentMessage("Add a payment method to continue")).toBe(
       "quota_or_rate_limit"
     );
+    expect(
+      classifyFailedAgentMessage("Membership expired, please renew your plan")
+    ).toBe("quota_or_rate_limit");
+    expect(classifyFailedAgentMessage("Account balance is insufficient")).toBe(
+      "quota_or_rate_limit"
+    );
   });
 });
 
@@ -92,6 +98,10 @@ describe("resolveAgentErrorPresentation", () => {
         actionKey: "agentHost.agentGui.visibleErrorActionCheckNetwork"
       },
       runtime_unavailable: {
+        focus: "detect",
+        actionKey: "agentHost.agentGui.visibleErrorActionDetect"
+      },
+      provider_empty_response: {
         focus: "detect",
         actionKey: "agentHost.agentGui.visibleErrorActionDetect"
       }

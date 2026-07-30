@@ -280,6 +280,12 @@ export interface AgentComposerProps {
     slashStatusUsageUpdating: string;
     slashStatusUsageRefreshFailed: string;
     slashStatusUsageRefreshAria: string;
+    slashStatusUsageAuthRequired: string;
+    slashStatusUsageSessionExpired: string;
+    slashStatusUsageSubscriptionRequired: string;
+    slashStatusUsageQuotaExhausted: string;
+    slashStatusUsageConfigInvalid: string;
+    slashStatusUsageError: string;
     usageChipLabel: (input: { percent: number }) => string;
     usageTooltipLabel: string;
     usagePopoverTitle: string;
@@ -472,6 +478,7 @@ export interface AgentComposerSlashStatus {
   limitsUnavailable?: boolean;
   limitsResolvedEmpty?: boolean;
   limitsCapturedAtUnixMs?: number | null;
+  limitsErrorMessage?: string | null;
   refreshFailed?: boolean;
   isRefreshing?: boolean;
 }

@@ -30,6 +30,7 @@ test("desktop status combines an exact canonical session with one host probe rea
           provider: "codex",
           availability: { status: "available", detailsVisible: false },
           usage: {
+            accountTier: "API Usage Billing",
             capturedAtUnixMs: 450,
             quotas: [{ quotaType: "weekly", percentRemaining: 72 }]
           }
@@ -79,6 +80,7 @@ test("desktop status combines an exact canonical session with one host probe rea
       kind: "refreshed",
       value: {
         agentSessionId: "session-1",
+        accountLabel: "API Usage Billing",
         contextState: "available",
         contextWindow: { usedTokens: 120, totalTokens: 1_000 },
         quotas: [{ quotaType: "weekly", percentRemaining: 72 }],
@@ -89,6 +91,79 @@ test("desktop status combines an exact canonical session with one host probe rea
     }
   ]);
   assert.deepEqual(observed.errors, []);
+});
+
+test("desktop status preserves structured usage probe failures", async () => {
+  const observed = createObserver();
+  const source = createDesktopAgentStatusSource({
+    agentActivityRuntime: runtimeWithSessions([]),
+    agents: [agent] as never,
+    workspaceAgentProbes: {
+      list: async () => ({
+        workspaceId: "workspace-1",
+        capturedAtUnixMs: 500,
+        providers: [
+          {
+            provider: "codex",
+            availability: { status: "unavailable", detailsVisible: false },
+            lastError: { code: "auth_required" }
+          }
+        ]
+      })
+    } as never,
+    workspaceId: "workspace-1"
+  });
+
+  source.open(
+    {
+      scopeKey: "local:codex",
+      reason: "agent-info"
+    },
+    observed.observer
+  );
+  await observed.completed;
+
+  assert.equal(observed.frames[0]?.value.limitsState, "error");
+  assert.equal(observed.frames[0]?.value.limitsErrorCode, "auth_required");
+});
+
+test("desktop status preserves exhausted usage together with its error code", async () => {
+  const observed = createObserver();
+  const source = createDesktopAgentStatusSource({
+    agentActivityRuntime: runtimeWithSessions([]),
+    agents: [agent] as never,
+    workspaceAgentProbes: {
+      list: async () => ({
+        workspaceId: "workspace-1",
+        capturedAtUnixMs: 500,
+        providers: [
+          {
+            provider: "codex",
+            availability: { status: "available", detailsVisible: false },
+            lastError: { code: "quota_exhausted" },
+            usage: {
+              capturedAtUnixMs: 450,
+              quotas: [{ quotaType: "weekly", percentRemaining: 0 }]
+            }
+          }
+        ]
+      })
+    } as never,
+    workspaceId: "workspace-1"
+  });
+
+  source.open(
+    {
+      scopeKey: "local:codex",
+      reason: "agent-info"
+    },
+    observed.observer
+  );
+  await observed.completed;
+
+  assert.equal(observed.frames[0]?.value.limitsState, "error");
+  assert.equal(observed.frames[0]?.value.limitsErrorCode, "quota_exhausted");
+  assert.equal(observed.frames[0]?.value.quotas[0]?.percentRemaining, 0);
 });
 
 test("desktop status fails closed before probing a cross-target session", () => {

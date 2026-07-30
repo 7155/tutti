@@ -49,6 +49,30 @@ func TestVisibleFailureCodeClassifiesStreamDisconnected(t *testing.T) {
 	}
 }
 
+func TestVisibleFailureCodeClassifiesProviderEmptyResponse(t *testing.T) {
+	detail := "provider_empty_response: ACP agent ended the turn without assistant output or tool activity"
+	if got := visibleFailureCode(detail); got != "provider_empty_response" {
+		t.Fatalf("visibleFailureCode() = %q, want provider_empty_response", got)
+	}
+	got := visibleFailureContent("acp:kimi-code", "turn", "provider_empty_response")
+	want := "Agent returned no response. Check its model and account configuration, including any API key, plan, or balance."
+	if got != want {
+		t.Fatalf("visibleFailureContent() = %q, want %q", got, want)
+	}
+}
+
+func TestVisibleFailureCodeClassifiesProviderPlanAndBalanceFailures(t *testing.T) {
+	for _, detail := range []string{
+		"Membership expired, please renew your plan",
+		"Your account has insufficient balance",
+		"Account balance is insufficient",
+	} {
+		if got := visibleFailureCode(detail); got != "quota_or_rate_limit" {
+			t.Fatalf("visibleFailureCode(%q) = %q, want quota_or_rate_limit", detail, got)
+		}
+	}
+}
+
 func TestVisibleFailureCodeDoesNotTreatPatchContextLoginTextAsAuth(t *testing.T) {
 	// Test-function text in the stderr tail ("...Login...") must never read as
 	// codex auth. The process exited cleanly (code 0) with that apply_patch error

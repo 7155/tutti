@@ -17,6 +17,7 @@ export type AgentRunErrorCode =
   | "request_timed_out"
   | "provider_config_timeout"
   | "provider_stream_disconnected"
+  | "provider_empty_response"
   | "provider_concurrency_limit"
   | "insufficient_credits"
   | "quota_or_rate_limit"
@@ -114,6 +115,11 @@ const PRESENTATIONS: Record<AgentRunErrorCode, AgentErrorPresentation> = {
     messageKey: "agentHost.agentGui.visibleErrorStreamDisconnected",
     ...NO_CTA
   },
+  provider_empty_response: {
+    messageKey: "agentHost.agentGui.visibleErrorEmptyResponse",
+    focus: "detect",
+    actionKey: "agentHost.agentGui.visibleErrorActionDetect"
+  },
   provider_concurrency_limit: {
     messageKey: "agentHost.agentGui.visibleErrorConcurrencyLimit",
     ...NO_CTA
@@ -180,7 +186,14 @@ const FAILED_MESSAGE_CODE_MARKERS: ReadonlyArray<
   ],
   [
     "quota_or_rate_limit",
-    ["upgrade your plan to continue", "add a payment method to continue"]
+    [
+      "upgrade your plan to continue",
+      "add a payment method to continue",
+      "membership expired",
+      "renew your plan",
+      "insufficient balance",
+      "balance is insufficient"
+    ]
   ]
 ];
 

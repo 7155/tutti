@@ -114,6 +114,7 @@ export function AgentGUINodeView({
   slashStatusLimitsResolvedEmpty = false,
   slashStatusUsageCapturedAtUnixMs = null,
   slashStatusUsageDidFail = false,
+  slashStatusUsageErrorMessage = null,
   slashStatusUsageAttempted = false,
   agentConfigAccountContent,
   onAgentConfigMenuClose,
@@ -622,8 +623,13 @@ export function AgentGUINodeView({
                     slashStatusUsageCapturedAtUnixMs
                   }
                   slashStatusUsageDidFail={slashStatusUsageDidFail}
+                  slashStatusUsageErrorMessage={slashStatusUsageErrorMessage}
                   slashStatusUsageAttempted={slashStatusUsageAttempted}
                   provider={effectiveRailConfigProvider}
+                  providerIconUrl={
+                    viewModel.rail.selectedAgentTarget.iconUrl ?? null
+                  }
+                  providerLabel={viewModel.rail.selectedAgentTarget.label}
                   providerAuthAccountLabel={effectiveProviderAuthAccountLabel}
                   accountContent={agentConfigAccountContent}
                   onAgentConfigMenuClose={onAgentConfigMenuClose}

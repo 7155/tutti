@@ -89,6 +89,29 @@ export function slashStatusLimitsFromQuotas(
     .filter((limit): limit is AgentComposerSlashStatusLimit => limit !== null);
 }
 
+export function slashStatusUsageErrorMessage(
+  code: string | null | undefined,
+  t: TranslateFn
+): string | null {
+  if (!code) {
+    return null;
+  }
+  switch (code) {
+    case "auth_required":
+      return t("agentHost.agentGui.slashStatusUsageAuthRequired");
+    case "session_expired":
+      return t("agentHost.agentGui.slashStatusUsageSessionExpired");
+    case "subscription_required":
+      return t("agentHost.agentGui.slashStatusUsageSubscriptionRequired");
+    case "quota_exhausted":
+      return t("agentHost.agentGui.slashStatusUsageQuotaExhausted");
+    case "parse_failed":
+      return t("agentHost.agentGui.slashStatusUsageConfigInvalid");
+    default:
+      return t("agentHost.agentGui.slashStatusUsageError");
+  }
+}
+
 function filterSlashStatusQuotasForModel(
   quotas: readonly AgentUsageQuota[] | undefined,
   selectedModel: string | null | undefined

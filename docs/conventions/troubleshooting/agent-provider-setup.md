@@ -1342,6 +1342,54 @@ invalid_grant`. Search `tuttid.log` for
   [model_endpoint.go](../../../packages/agent/runtimeprep/model_endpoint.go)
   [messageRouter.ts](../../../packages/agent/claude-sdk-sidecar/src/messageRouter.ts)
 
+### Kimi Code shows no models and silently ends every turn
+
+- Symptom:
+  The Kimi Code model picker is empty. Sending a prompt appends the user
+  message, but no assistant message or visible error appears and the Turn
+  settles immediately.
+- Quick checks:
+  Inspect the ACP `session/new` result. Kimi may advertise the model selector
+  through `configOptions[id="model"]` with an empty `currentValue` and empty
+  `options`, rather than through the top-level `models` object. If
+  `session/prompt` then returns `stopReason: "end_turn"` without an assistant
+  chunk or tool call, treat it as a hidden provider failure rather than a
+  successful empty answer. Separately inspect the structured desktop usage
+  probe code: `auth_required` means the selected API-key provider has no key,
+  `subscription_required` means the managed usage endpoint rejected the
+  account with HTTP 402, and `quota_exhausted` means a returned usage window
+  has no remaining quota.
+  Check the configuration directory that matches the selected runtime:
+  standalone Kimi Code uses `~/.kimi-code` (or `KIMI_CODE_HOME`), while the
+  managed `kimi-cli` runtime uses `~/.kimi` (or `KIMI_SHARE_DIR`).
+- Root cause:
+  Kimi Code can create an ACP session while no model is configured. Its ACP
+  adapter maps some underlying model, authentication, plan, and balance
+  failures to a normal `end_turn` with no output because ACP has no failed stop
+  reason. The setup guard previously recognized only the top-level `models`
+  shape, while the desktop status port reduced provider probe failures to a
+  generic boolean.
+- Fix:
+  Reject both empty ACP model shapes during setup. Project Kimi configuration
+  only to non-secret billing-mode fields and API-key presence, query the
+  managed Coding Plan usage endpoint, select the configuration directory using
+  the active standalone/runtime convention, and preserve stable error codes
+  through the Agent status port so AgentGUI can render actionable localized copy. A
+  normal ACP terminal with neither assistant output nor tool activity must
+  settle as `provider_empty_response`, producing a visible conversation error
+  card that points users back to model and account setup.
+- Validation:
+  Cover empty and populated `models`/`configOptions` selectors, missing API
+  keys, Coding Plan HTTP 402, zero remaining quota, status-port error
+  projection, both Kimi configuration directory conventions, localized
+  configuration and `/status` errors, and an otherwise normal empty ACP
+  `end_turn`.
+- References:
+  [standard_acp_setup.go](../../../packages/agent/daemon/runtime/standard_acp_setup.go)
+  [standard_acp_turn.go](../../../packages/agent/daemon/runtime/standard_acp_turn.go)
+  [kimiCodeProviderUsageProbe.ts](../../../apps/desktop/src/main/kimiCodeProviderUsageProbe.ts)
+  [createDesktopAgentStatusSource.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/createDesktopAgentStatusSource.ts)
+
 ### Claude Code sessions fail with `effectiveSource: "none"` when CC-Switch or similar proxy tools are used
 
 - Symptom:

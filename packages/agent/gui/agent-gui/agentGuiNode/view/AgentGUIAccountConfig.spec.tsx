@@ -90,6 +90,66 @@ describe("AgentGUIConfigMenu", () => {
     expect(screen.getByText("Weekly")).toBeInTheDocument();
   });
 
+  it("shows the Kimi target name and API billing mode", () => {
+    render(
+      <AgentGUIConfigMenu
+        environmentSetupVisible={false}
+        labels={labels}
+        providerScopedActionsVisible
+        provider="acp:kimi-code"
+        providerIconUrl="kimi-code.svg"
+        providerLabel="Kimi Code"
+        providerAuthAccountLabel="API Usage Billing"
+        slashStatusLimits={[]}
+        slashStatusLimitsLoading={false}
+        slashStatusLimitsResolvedEmpty
+        slashStatusUsageCapturedAtUnixMs={500}
+        slashStatusUsageDidFail={false}
+        slashStatusUsageAttempted
+        onAgentConfigMenuOpen={vi.fn()}
+        onOpenAgentEnvSetup={vi.fn()}
+        onOpenAgentSettings={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+
+    expect(screen.getByText("Kimi Code account")).toBeInTheDocument();
+    expect(screen.getByText("API Usage Billing")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("agent-gui-config-usage-unavailable")
+    ).toHaveTextContent("--");
+  });
+
+  it("shows an actionable account error instead of an unavailable placeholder", () => {
+    render(
+      <AgentGUIConfigMenu
+        environmentSetupVisible
+        labels={labels}
+        providerScopedActionsVisible
+        provider="acp:kimi-code"
+        slashStatusLimits={[]}
+        slashStatusLimitsLoading={false}
+        slashStatusLimitsResolvedEmpty={false}
+        slashStatusUsageCapturedAtUnixMs={null}
+        slashStatusUsageDidFail
+        slashStatusUsageErrorMessage="Configure an API key or sign in"
+        slashStatusUsageAttempted
+        onOpenAgentEnvSetup={vi.fn()}
+        onOpenAgentSettings={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Configure an API key or sign in"
+    );
+    expect(
+      screen.queryByTestId("agent-gui-config-usage-unavailable")
+    ).not.toBeInTheDocument();
+  });
+
   it.each([false, true, 0, ""])(
     "preserves the provider fallback for non-rendering Host content %#",
     (accountContent) => {

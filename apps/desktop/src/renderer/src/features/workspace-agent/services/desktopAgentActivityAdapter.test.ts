@@ -74,6 +74,7 @@ test("desktop agent activity adapter preserves a settled latest turn on reload",
     outcome: "failed" as const,
     phase: "settled" as const,
     providerForkBindingAvailable: true,
+    providerForkBindingState: "bound" as const,
     settledAtUnixMs: 30,
     sourceGoalOperationId: "goal-operation-1",
     sourceGoalRepairEpoch: 4,
@@ -305,7 +306,7 @@ test("desktop agent activity adapter maps tuttid sessions and messages", async (
       order: null
     },
     event: "agent.activity.messages.list",
-    level: "info",
+    level: "debug",
     workspaceId
   });
   const resolvedDiagnostic = diagnostics[1] as {
@@ -315,7 +316,7 @@ test("desktop agent activity adapter maps tuttid sessions and messages", async (
     workspaceId?: string;
   };
   assert.equal(resolvedDiagnostic.event, "agent.activity.messages.list");
-  assert.equal(resolvedDiagnostic.level, "info");
+  assert.equal(resolvedDiagnostic.level, "debug");
   assert.equal(resolvedDiagnostic.workspaceId, workspaceId);
   assert.equal(resolvedDiagnostic.details?.agentSessionId, "agent-session-1");
   assert.equal(resolvedDiagnostic.details?.event, "resolved");
@@ -2229,6 +2230,7 @@ function createSession(
           phase:
             status === "waiting" ? ("waiting" as const) : ("running" as const),
           providerForkBindingAvailable: false,
+          providerForkBindingState: "unavailable" as const,
           startedAtUnixMs: createdAtUnixMs,
           settledAtUnixMs: null,
           turnId: "turn-active",
@@ -2246,6 +2248,7 @@ function createSession(
           outcome: status as "completed" | "failed" | "canceled",
           phase: "settled" as const,
           providerForkBindingAvailable: false,
+          providerForkBindingState: "recovery_required" as const,
           settledAtUnixMs: updatedAtUnixMs,
           startedAtUnixMs: createdAtUnixMs,
           turnId: "turn-latest",
@@ -2308,6 +2311,7 @@ function createSendInputResponse(session: WorkspaceAgentSession) {
       outcome: null,
       phase: "submitted" as const,
       providerForkBindingAvailable: false,
+      providerForkBindingState: "unavailable" as const,
       settledAtUnixMs: null,
       startedAtUnixMs: 1,
       turnId: "turn-1",

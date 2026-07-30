@@ -28,11 +28,26 @@ func TestCodexAppServerAdapterExecSteersActiveTurn(t *testing.T) {
 		return adapter.sessionActiveTurnID(session.AgentSessionID) == "turn-1"
 	})
 
-	events, err := adapter.Exec(context.Background(), session, []PromptContentBlock{{
-		Type: "text", Text: "also update the docs",
-	}}, "", "turn-local-2", nil, nil)
+	dispatches := make(chan ProviderDispatchResult, 1)
+	events, err := adapter.ExecWithProviderAcceptance(
+		context.Background(),
+		session,
+		[]PromptContentBlock{{
+			Type: "text", Text: "also update the docs",
+		}},
+		"",
+		"turn-local-2",
+		nil,
+		nil,
+		func(result ProviderDispatchResult) { dispatches <- result },
+	)
 	if err != nil {
 		t.Fatalf("steer Exec: %v", err)
+	}
+	dispatch := <-dispatches
+	if dispatch.Disposition != DispatchDispositionAppliedWithoutProviderTurn ||
+		dispatch.Acceptance != nil {
+		t.Fatalf("steer dispatch = %#v", dispatch)
 	}
 	steer := appServerRequestParams(t, transport.conn, appServerMethodTurnSteer)
 	if asString(steer["expectedTurnId"]) != "turn-1" {

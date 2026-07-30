@@ -11,11 +11,26 @@ func TestCodexAppServerAdapterSlashCompact(t *testing.T) {
 	t.Parallel()
 
 	adapter, transport, session := startedAppServerAdapter(t)
-	events, err := adapter.Exec(context.Background(), session, []PromptContentBlock{{
-		Type: "text", Text: "/compact",
-	}}, "", "turn-local-1", nil, nil)
+	dispatches := make(chan ProviderDispatchResult, 1)
+	events, err := adapter.ExecWithProviderAcceptance(
+		context.Background(),
+		session,
+		[]PromptContentBlock{{
+			Type: "text", Text: "/compact",
+		}},
+		"",
+		"turn-local-1",
+		nil,
+		nil,
+		func(result ProviderDispatchResult) { dispatches <- result },
+	)
 	if err != nil {
 		t.Fatalf("Exec: %v", err)
+	}
+	dispatch := <-dispatches
+	if dispatch.Disposition != DispatchDispositionAppliedWithoutProviderTurn ||
+		dispatch.Acceptance != nil {
+		t.Fatalf("compact dispatch = %#v", dispatch)
 	}
 	compact := appServerRequestParams(t, transport.conn, appServerMethodThreadCompact)
 	if asString(compact["threadId"]) != "codex-thread-1" {
@@ -106,11 +121,28 @@ func TestCodexAppServerAdapterSlashReview(t *testing.T) {
 	t.Parallel()
 
 	adapter, transport, session := startedAppServerAdapter(t)
-	events, err := adapter.Exec(context.Background(), session, []PromptContentBlock{{
-		Type: "text", Text: "/review check the auth flow",
-	}}, "", "turn-local-1", nil, nil)
+	dispatches := make(chan ProviderDispatchResult, 1)
+	events, err := adapter.ExecWithProviderAcceptance(
+		context.Background(),
+		session,
+		[]PromptContentBlock{{
+			Type: "text", Text: "/review check the auth flow",
+		}},
+		"",
+		"turn-local-1",
+		nil,
+		nil,
+		func(result ProviderDispatchResult) { dispatches <- result },
+	)
 	if err != nil {
 		t.Fatalf("Exec: %v", err)
+	}
+	dispatch := <-dispatches
+	if dispatch.Disposition != DispatchDispositionApplied ||
+		dispatch.Acceptance == nil ||
+		dispatch.Acceptance.ProviderSessionID != "codex-thread-1" ||
+		dispatch.Acceptance.ProviderTurnID != "turn-review" {
+		t.Fatalf("review dispatch = %#v", dispatch)
 	}
 	review := appServerRequestParams(t, transport.conn, appServerMethodReviewStart)
 	target := payloadObject(review["target"])

@@ -198,6 +198,20 @@ type SessionForkProviderTurnBinding struct {
 	CheckpointMessageID string
 }
 
+type RuntimeProviderTurnBindingRecoveryInput struct {
+	Source               ProviderRuntimeSession
+	CanonicalTurnID      string
+	RecoveryToken        string
+	LegacyTextHMACKey    string
+	LegacyTextHMACDigest string
+}
+
+type RuntimeProviderTurnBindingRecoveryResult struct {
+	ProviderSessionID           string
+	ProviderTurnID              string
+	ProviderCheckpointMessageID string
+}
+
 type SessionForkStateBindingMode string
 
 const (
@@ -322,10 +336,11 @@ type RuntimeExecResult struct {
 type RuntimeDispatchDisposition string
 
 const (
-	RuntimeDispatchDispositionApplied        RuntimeDispatchDisposition = "applied"
-	RuntimeDispatchDispositionRejected       RuntimeDispatchDisposition = "rejected"
-	RuntimeDispatchDispositionNotDispatched  RuntimeDispatchDisposition = "not_dispatched"
-	RuntimeDispatchDispositionOutcomeUnknown RuntimeDispatchDisposition = "outcome_unknown"
+	RuntimeDispatchDispositionApplied                    RuntimeDispatchDisposition = "applied"
+	RuntimeDispatchDispositionAppliedWithoutProviderTurn RuntimeDispatchDisposition = "applied_without_provider_turn"
+	RuntimeDispatchDispositionRejected                   RuntimeDispatchDisposition = "rejected"
+	RuntimeDispatchDispositionNotDispatched              RuntimeDispatchDisposition = "not_dispatched"
+	RuntimeDispatchDispositionOutcomeUnknown             RuntimeDispatchDisposition = "outcome_unknown"
 )
 
 type RuntimeAcceptanceSource string
@@ -386,7 +401,9 @@ type RuntimeProviderTurnAcceptanceInput struct {
 	RootTurnID                string
 	ExpectedProviderSessionID string
 	ExpectedProviderTurnID    string
-	ClientUserMessageID       string
+	// ClientUserMessageID is opaque provider correlation evidence. It must not
+	// reuse the canonical RootTurnID as provider-owned client identity.
+	ClientUserMessageID string
 }
 
 type RuntimeSubmitProvenanceInput struct {

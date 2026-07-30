@@ -15,7 +15,6 @@ import type {
   AgentGUIProvider
 } from "../types.ts";
 import {
-  AGENT_GUI_WORKBENCH_NEW_CONVERSATION_EVENT,
   agentGuiWorkbenchDefaultCopy,
   agentGuiWorkbenchProviderRailWidthPx,
   buildAgentGuiDockEntries,
@@ -24,6 +23,10 @@ import {
   resolveAgentGuiWorkbenchDefaultLaunchFrame,
   resolveAgentGuiWorkbenchContributionCopy
 } from "./contribution.ts";
+import {
+  AGENT_GUI_WORKBENCH_COMMAND_EVENT,
+  type AgentGuiWorkbenchCommand
+} from "./commands.ts";
 import {
   agentGuiWorkbenchPrefillPromptActivationType,
   agentGuiWorkbenchUnifiedDockEntryId,
@@ -1341,10 +1344,7 @@ describe("agent GUI workbench contribution copy", () => {
     const handler = (event: Event) => {
       events.push(event as CustomEvent);
     };
-    window.addEventListener(
-      AGENT_GUI_WORKBENCH_NEW_CONVERSATION_EVENT,
-      handler
-    );
+    window.addEventListener(AGENT_GUI_WORKBENCH_COMMAND_EVENT, handler);
 
     try {
       render(
@@ -1388,16 +1388,75 @@ describe("agent GUI workbench contribution copy", () => {
         })
       );
     } finally {
-      window.removeEventListener(
-        AGENT_GUI_WORKBENCH_NEW_CONVERSATION_EVENT,
-        handler
-      );
+      window.removeEventListener(AGENT_GUI_WORKBENCH_COMMAND_EVENT, handler);
     }
 
     expect(events).toHaveLength(1);
     expect(events[0]?.detail).toEqual({
-      instanceId: "agent-gui:codex:panel:test-1"
+      instanceId: "agent-gui:codex:panel:test-1",
+      type: "new-conversation"
     });
+  });
+
+  it("publishes rail toggles through the reusable Workbench command contract", () => {
+    const contribution = createTestAgentGuiWorkbenchContribution({
+      renderBody: () => null,
+      workspaceId: "workspace-1"
+    });
+    const commands: AgentGuiWorkbenchCommand[] = [];
+    const handler = (event: Event) => {
+      commands.push((event as CustomEvent<AgentGuiWorkbenchCommand>).detail);
+    };
+    window.addEventListener(AGENT_GUI_WORKBENCH_COMMAND_EVENT, handler);
+
+    try {
+      render(
+        contribution.nodes?.[0]?.renderHeader?.({
+          activation: null,
+          defaultActions: null,
+          displayMode: "floating",
+          dragHandleProps: {},
+          externalNodeState: {
+            conversationRailCollapsed: false,
+            lastActiveAgentSessionId: null
+          },
+          externalWorkspaceState: null,
+          instanceId: "agent-gui:codex:panel:test-1",
+          instanceKey: null,
+          isFocused: true,
+          node: {
+            data: {
+              runtimeNodeState: null
+            },
+            displayMode: "floating",
+            frame: { height: 560, width: 1040, x: 0, y: 0 },
+            id: "agent-gui-node-1",
+            title: "Codex"
+          },
+          surfaceSize: { height: 800, width: 1200 },
+          windowActions: {
+            applyQuickLayout: () => {},
+            close: () => {},
+            focus: () => {},
+            minimize: () => {},
+            resize: () => {},
+            toggleDisplayMode: () => {}
+          }
+        } as never) ?? null
+      );
+
+      fireEvent.click(screen.getByTestId("agent-gui-toggle-conversation-rail"));
+    } finally {
+      window.removeEventListener(AGENT_GUI_WORKBENCH_COMMAND_EVENT, handler);
+    }
+
+    expect(commands).toEqual([
+      {
+        conversationRailCollapsed: true,
+        instanceId: "agent-gui:codex:panel:test-1",
+        type: "conversation-rail-toggle"
+      }
+    ]);
   });
 
   it("shows the active session icon and title when the rail is collapsed", () => {

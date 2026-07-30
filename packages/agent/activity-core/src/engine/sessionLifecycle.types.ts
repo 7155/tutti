@@ -1,10 +1,13 @@
 import type {
+  AgentActivityDurableMessage,
   AgentActivityInteraction,
   AgentActivitySession,
   AgentActivityTurn,
   AgentActivityTurnCancelResponse
 } from "../types.ts";
 import type { AgentActivitySessionInput } from "../sessionNormalization.ts";
+import type { AgentActivitySessionMessageWindow } from "../messageWindow.types.ts";
+import type { AgentActivityEditRetryAvailability } from "./editRetry.types.ts";
 
 export type SessionCancelStatus =
   | "idle"
@@ -118,20 +121,49 @@ export interface SessionUpsertedIntent {
   session: AgentActivitySessionInput;
 }
 
+export type CanonicalSessionMetadataPatch = Partial<
+  Pick<
+    CanonicalAgentSession,
+    "cwd" | "pinnedAtUnixMs" | "resumable" | "title" | "updatedAtUnixMs"
+  >
+>;
+
 export interface SessionMetadataPatchedIntent {
   type: "session/metadataPatched";
   agentSessionId: string;
-  patch: Partial<
-    Pick<
-      CanonicalAgentSession,
-      "cwd" | "pinnedAtUnixMs" | "resumable" | "title" | "updatedAtUnixMs"
-    >
-  >;
+  patch: CanonicalSessionMetadataPatch;
 }
 
 export interface TurnUpsertedIntent {
   type: "turn/upserted";
   turn: AgentActivityTurn;
+}
+
+/**
+ * One authoritative realtime Turn projection. The Turn and the Session's
+ * active-turn reference are one wire fact and must enter the Engine atomically.
+ */
+export interface TurnProjectionReceivedIntent {
+  type: "turn/projectionReceived";
+  activeTurnId: string | null;
+  turn: AgentActivityTurn;
+  workspaceId: string;
+}
+
+export interface SessionHistoryAuthoritativeSnapshotReceivedIntent {
+  type: "session/historyAuthoritativeSnapshotReceived";
+  agentSessionId: string;
+  childSessions: readonly AgentActivitySessionInput[];
+  editRetry?: AgentActivityEditRetryAvailability;
+  historyRevision: number;
+  messages: readonly AgentActivityDurableMessage[];
+  session: AgentActivitySessionInput;
+  liveTurnId?: string;
+  sessionMessageWindows?: readonly (AgentActivitySessionMessageWindow & {
+    agentSessionId: string;
+  })[];
+  turns: readonly AgentActivityTurn[];
+  workspaceId: string;
 }
 
 export interface InteractionUpsertedIntent {
@@ -239,6 +271,7 @@ export type SessionLifecycleIntent =
   | SessionCancelRequestedIntent
   | SessionErrorClearedIntent
   | SessionErrorRecordedIntent
+  | SessionHistoryAuthoritativeSnapshotReceivedIntent
   | SessionMetadataPatchedIntent
   | SessionRemovedIntent
   | SessionRuntimeAvailabilityChangedIntent
@@ -249,6 +282,7 @@ export type SessionLifecycleIntent =
   | SessionSnapshotReceivedIntent
   | SessionStopRequestedIntent
   | SessionUpsertedIntent
+  | TurnProjectionReceivedIntent
   | TurnUpsertedIntent;
 
 export interface TurnCancelCommand {

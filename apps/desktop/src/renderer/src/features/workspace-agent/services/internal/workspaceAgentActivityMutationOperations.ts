@@ -30,12 +30,6 @@ export interface WorkspaceAgentActivityMutationOperationsDependencies {
     DesktopHostFilesApi,
     "createUserDocumentsProjectDirectory"
   >;
-  load(workspaceId: string, signal?: AbortSignal): Promise<unknown>;
-  markSessionDeleted(input: {
-    agentSessionId: string;
-    data?: unknown;
-    workspaceId: string;
-  }): void;
   runtimeApi: Pick<DesktopRuntimeApi, "logTerminalDiagnostic">;
   sessionCommandTarget(
     workspaceId: string
@@ -58,57 +52,6 @@ export class WorkspaceAgentActivityMutationOperations {
     dependencies: WorkspaceAgentActivityMutationOperationsDependencies
   ) {
     this.dependencies = dependencies;
-  }
-
-  async deleteSessionsBatch(
-    input: Parameters<IWorkspaceAgentActivityService["deleteSessionsBatch"]>[0]
-  ): ReturnType<IWorkspaceAgentActivityService["deleteSessionsBatch"]> {
-    const workspaceId = normalizeWorkspaceId(input.workspaceId);
-    const response =
-      await this.dependencies.tuttidClient.deleteWorkspaceAgentSessionsBatch(
-        workspaceId,
-        { sessionIds: input.sessionIds },
-        { signal: input.signal }
-      );
-    const removedSessionIds = response.removedSessionIds
-      .map((id) => id.trim())
-      .filter(Boolean);
-    for (const agentSessionId of removedSessionIds) {
-      this.dependencies.markSessionDeleted({
-        agentSessionId,
-        data: { deletedAtUnixMs: Date.now() },
-        workspaceId
-      });
-    }
-    if (removedSessionIds.length > 0) {
-      await this.dependencies.load(workspaceId, input.signal);
-    }
-    return {
-      cleanupFailedSessionIds: [...(response.cleanupFailedSessionIds ?? [])],
-      removedMessages: response.removedMessages,
-      removedSessionIds,
-      removedSessions: response.removedSessions
-    };
-  }
-
-  async setSessionPinned(input: {
-    agentSessionId: string;
-    pinned: boolean;
-    workspaceId: string;
-  }): Promise<AgentActivitySession> {
-    const workspaceId = normalizeWorkspaceId(input.workspaceId);
-    const session =
-      await this.dependencies.tuttidClient.updateWorkspaceAgentSessionPin(
-        workspaceId,
-        input.agentSessionId,
-        { pinned: input.pinned }
-      );
-    const activitySession = agentActivitySessionFromTuttidSession(
-      workspaceId,
-      session
-    );
-    this.dependencies.upsertAuthoritativeSession(activitySession, "pin_result");
-    return activitySession;
   }
 
   async createSession(
@@ -377,42 +320,6 @@ export class WorkspaceAgentActivityMutationOperations {
         promptKind: input.promptKind
       }
     );
-  }
-
-  async deleteSession(
-    input: Parameters<AgentActivityAdapter["deleteSession"]>[0]
-  ) {
-    const workspaceId = normalizeWorkspaceId(input.workspaceId);
-    const agentSessionId = input.agentSessionId.trim();
-    const target = this.dependencies.sessionCommandTarget(workspaceId);
-    const result = await target.adapter.deleteSession(input);
-    if (result.removed) {
-      this.dependencies.markSessionDeleted({
-        agentSessionId,
-        data: { deletedAtUnixMs: Date.now() },
-        workspaceId
-      });
-      await this.dependencies.load(workspaceId, input.signal);
-    }
-    return result;
-  }
-
-  async renameSession(
-    input: Parameters<AgentActivityAdapter["renameSession"]>[0]
-  ): Promise<AgentActivitySession> {
-    const workspaceId = normalizeWorkspaceId(input.workspaceId);
-    const agentSessionId = input.agentSessionId.trim();
-    const target = this.dependencies.sessionCommandTarget(workspaceId);
-    const session = await target.adapter.renameSession({
-      ...input,
-      agentSessionId,
-      workspaceId
-    });
-    this.dependencies.upsertAuthoritativeSession(
-      session,
-      "rename_session_result"
-    );
-    return session;
   }
 
   async updateSessionSettings(input: {

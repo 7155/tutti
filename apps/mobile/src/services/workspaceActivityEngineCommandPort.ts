@@ -2,6 +2,7 @@ import type {
   AgentSessionActivateEffectInput,
   AgentSessionEffectPort,
   AgentActivityCancelTurnInput,
+  AgentActivityDeleteSessionsResult,
   AgentActivitySendInput,
   AgentActivitySession,
   AgentActivitySessionDetailSnapshot,
@@ -48,6 +49,8 @@ export function createWorkspaceActivityEffectPort(
       cancelTurn(getContext(), input, options?.signal),
     deleteSessions: (input, options) =>
       deleteSessions(getContext(), input, options?.signal),
+    renameSession: (input, options) =>
+      renameSession(getContext(), input, options?.signal),
     respondToInteraction: (input, options) =>
       respondToInteraction(getContext(), input, options?.signal),
     sendInput: (input, options) =>
@@ -96,6 +99,10 @@ export function executeWorkspaceActivityExtensionCommand(
     case "session/forkThroughTurn":
     case "session/unactivate":
     case "tuttiMode/update":
+    // Mobile does not expose edit and retry yet. Keep this explicit so the
+    // shared Engine command union cannot silently reach the exhaustive case.
+    case "turn/editRetry":
+    case "turn/recoverEditRetry":
       return Promise.reject(
         new Error(`unsupported mobile agent command: ${command.type}`)
       );
@@ -218,7 +225,7 @@ function deleteSessions(
     workspaceId: string;
   },
   signal?: AbortSignal
-): Promise<unknown> {
+): Promise<AgentActivityDeleteSessionsResult> {
   return context.client
     .deleteWorkspaceAgentSessionsBatch(
       input.workspaceId,
@@ -254,6 +261,25 @@ function respondToInteraction(
     .then((session) => ({ session: context.mapSession(session) }));
 }
 
+function renameSession(
+  context: WorkspaceActivityEngineCommandContext,
+  input: {
+    agentSessionId: string;
+    title: string;
+    workspaceId: string;
+  },
+  signal?: AbortSignal
+): Promise<{ session: AgentActivitySession }> {
+  return context.client
+    .updateWorkspaceAgentSessionTitle(
+      input.workspaceId,
+      input.agentSessionId,
+      { title: input.title },
+      ...requestOptionsArgs(signal)
+    )
+    .then((session) => ({ session: context.mapSession(session) }));
+}
+
 function setSessionPinned(
   context: WorkspaceActivityEngineCommandContext,
   input: {
@@ -262,7 +288,7 @@ function setSessionPinned(
     workspaceId: string;
   },
   signal?: AbortSignal
-): Promise<unknown> {
+): Promise<{ session: AgentActivitySession }> {
   return context.client
     .updateWorkspaceAgentSessionPin(
       input.workspaceId,

@@ -160,9 +160,9 @@ func TestServiceImportsExternalAgentSessionsByProject(t *testing.T) {
 			message.Status == "completed" &&
 			message.Payload["toolName"] == "exec_command" &&
 			input["cmd"] == "git status --short" &&
-			output["output"] == "Chunk ID: abc\nOutput:\n M file.go"
+			output["text"] == "Chunk ID: abc\nOutput:\n M file.go"
 	}) {
-		t.Fatalf("imported messages = %#v, want structured Codex tool call", importedMessages.Messages)
+		t.Fatalf("imported messages = %#v, want canonical Codex tool call", importedMessages.Messages)
 	}
 	codexTurnID := ""
 	for _, message := range importedMessages.Messages {

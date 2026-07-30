@@ -96,23 +96,19 @@ test("forwards the host-owned Session fork experiment opt-in", () => {
 
 test("forwards every runtimeRequests field instead of silently dropping new ones", () => {
   // The manual field-keyed reconstruction below is exactly the pattern that
-  // let `sessionAction` silently vanish (dropped this exact way, then wired
-  // through the host chrome's dispatch->window-event->hook chain with no
-  // effect and no error, since the field is optional so TS never caught
-  // it). This test round-trips every runtimeRequests field so a future
+  // let an optional host request silently vanish. This test round-trips every
+  // runtimeRequests field so a future
   // field added upstream but forgotten here fails loudly instead of
   // shipping a menu action that does nothing.
   const runtimeRequests = {
     agentStatusController: { controller: "value" },
     composerAppend: { text: "hi" },
     composerFocusSequence: 1,
-    newConversationSequence: 2,
     openSession: { agentSessionId: "session-1" },
     prefillPrompt: { prompt: "hi" },
-    sessionAction: {
-      action: "copy-markdown",
-      agentSessionId: null,
-      sequence: 1
+    workbench: {
+      instanceId: "instance-1",
+      onConversationRailToggle: () => {}
     }
   };
 

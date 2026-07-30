@@ -10,6 +10,7 @@ import (
 
 type ApplicationHostRuntime interface {
 	agenthost.RuntimeController
+	agenthost.RuntimeHistoryController
 	agenthost.GoalRuntimeController
 }
 
@@ -19,6 +20,8 @@ type ApplicationHostCanonicalPorts interface {
 	agenthost.CanonicalStore
 	agenthost.SessionManagementStore
 	agenthost.SessionBatchManagementStore
+	agenthost.TurnSubmissionStore
+	agenthost.EffectiveHistoryStore
 	committedSessionForkReader
 }
 
@@ -26,32 +29,33 @@ type ApplicationHostCanonicalPorts interface {
 // It is complete before Host construction and intentionally has no Service
 // field, so Host cannot become a reverse container for the tuttid facade.
 type HostSupportPorts struct {
-	SessionPurge         agenthost.SessionPurgeStore
-	SessionDeletionGuard agenthost.SessionDeletionGuard
-	SessionForkContext   agenthost.SessionForkContextPolicy
-	SessionForkState     agenthost.SessionForkProviderStateBinder
-	RuntimePreparation   agenthost.RuntimePreparationPort
-	Attachments          agenthost.AttachmentMaterializer
-	SettingsPolicy       agenthost.SettingsPolicy
-	Clock                agenthost.Clock
-	SessionLocker        agenthost.SessionLocker
-	RuntimeStartGate     agenthost.RuntimeStartGate
-	LifecycleObserver    agenthost.LifecycleObserver
-	CommitObserver       agenthost.CommitObserver
-	RuntimeOperations    agenthost.RuntimeOperationStore
-	OperationEvents      agenthost.RuntimeOperationEventPublisher
-	OperationOwner       string
-	StaleTurnSettler     agenthost.StaleTurnSettler
-	WorktreeGC           agenthost.WorktreeGarbageCollector
-	GoalStore            agenthost.GoalStateStore
-	GoalFences           agenthost.GoalGenerationFenceStore
-	GoalInbox            agenthost.GoalReconcileInboxStore
-	GoalOwner            string
-	GoalClock            agenthost.Clock
-	GoalAttemptTimeout   time.Duration
-	GoalRecoveryBudget   time.Duration
-	GoalMaxAttempts      int
-	GoalDispatchDeadline time.Duration
+	SessionPurge           agenthost.SessionPurgeStore
+	SessionDeletionGuard   agenthost.SessionDeletionGuard
+	SessionForkContext     agenthost.SessionForkContextPolicy
+	SessionForkState       agenthost.SessionForkProviderStateBinder
+	SessionForkAttachments agenthost.SessionForkAttachmentStager
+	RuntimePreparation     agenthost.RuntimePreparationPort
+	Attachments            agenthost.AttachmentMaterializer
+	SettingsPolicy         agenthost.SettingsPolicy
+	Clock                  agenthost.Clock
+	SessionLocker          agenthost.SessionLocker
+	RuntimeStartGate       agenthost.RuntimeStartGate
+	LifecycleObserver      agenthost.LifecycleObserver
+	CommitObserver         agenthost.CommitObserver
+	RuntimeOperations      agenthost.RuntimeOperationStore
+	OperationEvents        agenthost.RuntimeOperationEventPublisher
+	OperationOwner         string
+	StaleTurnSettler       agenthost.StaleTurnSettler
+	WorktreeGC             agenthost.WorktreeGarbageCollector
+	GoalStore              agenthost.GoalStateStore
+	GoalFences             agenthost.GoalGenerationFenceStore
+	GoalInbox              agenthost.GoalReconcileInboxStore
+	GoalOwner              string
+	GoalClock              agenthost.Clock
+	GoalAttemptTimeout     time.Duration
+	GoalRecoveryBudget     time.Duration
+	GoalMaxAttempts        int
+	GoalDispatchDeadline   time.Duration
 }
 
 // ServiceComponents owns the narrow mutable components shared by production
@@ -84,6 +88,7 @@ func NewServiceComponents(
 		SessionForkState: serviceHostSessionForkProviderStateBinder{
 			runtimePreparer: config.Runtime.Preparer,
 		},
+		SessionForkAttachments: config.Resources.PromptAttachmentStore,
 		RuntimePreparation: serviceHostPreparation{
 			support:         runtimePreparation,
 			runtimePreparer: config.Runtime.Preparer,
@@ -172,16 +177,23 @@ func composeApplicationHost(
 		sessionForkRecovery, _ = canonical.(agenthost.SessionForkRecoveryStore)
 	}
 	sessionForkRuntime, _ := runtime.(agenthost.SessionForkRuntime)
+	turnSubmissions, _ := canonical.(agenthost.TurnSubmissionStore)
+	effectiveHistory, _ := canonical.(agenthost.EffectiveHistoryStore)
+	historyRuntime, _ := runtime.(agenthost.RuntimeHistoryController)
 	return agenthost.New(agenthost.Config{
 		CanonicalStore: canonical, SessionManagement: sessionManagement,
 		SessionBatchManagement: sessionBatchManagement, SessionPurge: support.SessionPurge,
 		SessionForks: sessionForks, SessionForkRecovery: sessionForkRecovery,
-		SessionForkRuntime:   sessionForkRuntime,
-		SessionForkContext:   support.SessionForkContext,
-		SessionForkState:     support.SessionForkState,
-		SessionDeletionGuard: support.SessionDeletionGuard,
-		Runtime:              runtime,
-		RuntimePreparation:   support.RuntimePreparation, Attachments: support.Attachments,
+		SessionForkRuntime:     sessionForkRuntime,
+		SessionForkContext:     support.SessionForkContext,
+		SessionForkState:       support.SessionForkState,
+		SessionForkAttachments: support.SessionForkAttachments,
+		SessionDeletionGuard:   support.SessionDeletionGuard,
+		TurnSubmissions:        turnSubmissions,
+		EffectiveHistory:       effectiveHistory,
+		Runtime:                runtime,
+		HistoryRuntime:         historyRuntime,
+		RuntimePreparation:     support.RuntimePreparation, Attachments: support.Attachments,
 		SettingsPolicy: support.SettingsPolicy,
 		Clock:          support.Clock, SessionLocker: support.SessionLocker,
 		RuntimeStartGate:  support.RuntimeStartGate,

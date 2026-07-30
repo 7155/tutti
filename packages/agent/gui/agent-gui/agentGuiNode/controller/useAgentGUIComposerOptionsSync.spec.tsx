@@ -27,7 +27,7 @@ describe("useAgentGUIComposerOptionsSync", () => {
         dataRef.current = target.data;
         selectedTargetRef.current = target;
         return useAgentGUIComposerOptionsSync({
-          activeAgentTargetId: null,
+          activeSessionTarget: null,
           activeConversationId: null,
           activeConversationIdRef,
           agentActivityRuntime: {
@@ -123,7 +123,7 @@ describe("useAgentGUIComposerOptionsSync", () => {
     const { rerender } = renderHook(
       ({ isCreatingConversation }) =>
         useAgentGUIComposerOptionsSync({
-          activeAgentTargetId: null,
+          activeSessionTarget: null,
           activeConversationId: null,
           activeConversationIdRef,
           agentActivityRuntime: {
@@ -182,7 +182,10 @@ describe("useAgentGUIComposerOptionsSync", () => {
       ({ activeConversationId }) => {
         activeConversationIdRef.current = activeConversationId;
         return useAgentGUIComposerOptionsSync({
-          activeAgentTargetId: null,
+          activeSessionTarget: {
+            ...target,
+            agentSessionId: activeConversationId
+          },
           activeConversationId,
           activeConversationIdRef,
           agentActivityRuntime: {
@@ -226,23 +229,28 @@ describe("useAgentGUIComposerOptionsSync", () => {
     );
   });
 
-  it("loads active session options with the session agent target", async () => {
+  it("loads options from one canonical active-session target identity", async () => {
     const getComposerOptions = vi.fn(async () => ({}));
     const provider = "acp:hermes" as AgentGUIProvider;
     const data: AgentGUINodeData = {
-      provider,
+      agentTargetId: "local:opencode",
+      provider: "opencode",
       lastActiveAgentSessionId: "session-1"
     };
     const selectedTarget: AgentGUIComposerTargetData = {
-      agentTargetId: "extension:hermes",
-      data: { ...data, agentTargetId: "extension:hermes" },
-      provider,
-      targetId: "extension:hermes"
+      agentTargetId: "local:opencode",
+      data,
+      provider: "opencode",
+      targetId: "local:opencode"
     };
 
     renderHook(() =>
       useAgentGUIComposerOptionsSync({
-        activeAgentTargetId: "extension:hermes",
+        activeSessionTarget: {
+          agentTargetId: "extension:hermes",
+          agentSessionId: "session-1",
+          provider
+        },
         activeConversationId: "session-1",
         activeConversationIdRef: { current: "session-1" },
         agentActivityRuntime: {
@@ -311,7 +319,7 @@ describe("useAgentGUIComposerOptionsSync", () => {
       createComposerDefaultsAuthorityReconcilerRef();
     const rendered = renderHook(() =>
       useAgentGUIComposerOptionsSync({
-        activeAgentTargetId: null,
+        activeSessionTarget: null,
         activeConversationId: null,
         activeConversationIdRef: { current: null },
         agentActivityRuntime: {
@@ -426,7 +434,7 @@ describe("useAgentGUIComposerOptionsSync", () => {
 
     renderHook(() =>
       useAgentGUIComposerOptionsSync({
-        activeAgentTargetId: null,
+        activeSessionTarget: null,
         activeConversationId: null,
         activeConversationIdRef: { current: null },
         agentActivityRuntime: {
@@ -487,7 +495,10 @@ describe("useAgentGUIComposerOptionsSync", () => {
       createComposerDefaultsAuthorityReconcilerRef();
     renderHook(() =>
       useAgentGUIComposerOptionsSync({
-        activeAgentTargetId: null,
+        activeSessionTarget: {
+          ...target,
+          agentSessionId: "session-1"
+        },
         activeConversationId: "session-1",
         activeConversationIdRef: { current: "session-1" },
         agentActivityRuntime: {

@@ -102,8 +102,7 @@ export function AgentGUINodeView({
   isVisible = true,
   onEngagementEvent,
   composerFocusRequestSequence = null,
-  newConversationRequestSequence = null,
-  sessionActionRequest = null,
+  workbenchCommandBridge = null,
   slashStatusLimits = [],
   slashStatusLimitsLoading = false,
   slashStatusLimitsUnavailable = false,
@@ -449,12 +448,11 @@ export function AgentGUINodeView({
   const { registerRailInteractionLockProbe } = useAgentGUIExternalRequests({
     createConversationDisabled,
     labels,
-    newConversationRequestSequence,
     requestCreateConversation,
     requestRenameConversation,
-    sessionActionRequest,
     uiLanguage,
-    viewModel
+    viewModel,
+    workbenchCommandBridge
   });
   const conversationRailStoreState = useMemo<AgentGUIConversationRailState>(
     () => ({

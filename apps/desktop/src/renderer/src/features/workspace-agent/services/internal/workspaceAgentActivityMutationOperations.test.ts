@@ -114,10 +114,6 @@ function createOperations(input: {
 }): WorkspaceAgentActivityMutationOperations {
   return new WorkspaceAgentActivityMutationOperations({
     getSession: async () => activitySession(),
-    load: async () => {
-      throw new Error("unexpected load");
-    },
-    markSessionDeleted: () => {},
     runtimeApi: { logTerminalDiagnostic: async () => {} },
     sessionCommandTarget: () => ({ adapter: input.adapter }),
     tuttidClient: {} as TuttidClient,

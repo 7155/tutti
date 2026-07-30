@@ -18,15 +18,11 @@ import {
 import type { AgentGUIComposerAppendRequest } from "@tutti-os/agent-gui";
 import { RichTextMentionServiceProvider } from "@tutti-os/ui-rich-text/editor";
 import type { WorkspaceSummary } from "@tutti-os/client-tuttid-ts";
+import { agentGuiWorkbenchProviderRailWidthPx } from "@tutti-os/agent-gui/workbench/contribution";
 import {
-  AGENT_GUI_WORKBENCH_CONVERSATION_RAIL_TOGGLE_EVENT,
-  AGENT_GUI_WORKBENCH_NEW_CONVERSATION_EVENT,
-  agentGuiWorkbenchProviderRailWidthPx,
-  dispatchAgentGuiWorkbenchSessionAction,
-  type AgentGuiWorkbenchConversationRailToggleDetail,
-  type AgentGuiWorkbenchNewConversationDetail,
+  dispatchAgentGuiWorkbenchCommand,
   type AgentGuiWorkbenchSessionAction
-} from "@tutti-os/agent-gui/workbench/contribution";
+} from "@tutti-os/agent-gui/workbench";
 import type {
   WorkbenchContribution,
   WorkbenchHostHandle
@@ -574,6 +570,7 @@ export function StandaloneAgentWindow({
   const surface = useMemo<DesktopAgentGUISurfaceContext>(
     () => ({
       activation,
+      conversationRailStateOwner: "surface",
       conversationRailAutoCollapseMode: "preserve-middle-content",
       displayMode: "floating",
       frame: agentGuiFrame,
@@ -613,21 +610,11 @@ export function StandaloneAgentWindow({
           );
         }
       }
-      setNodeState((current) => ({
-        ...current,
-        conversationRailCollapsed: collapsed
-      }));
-      window.dispatchEvent(
-        new CustomEvent<AgentGuiWorkbenchConversationRailToggleDetail>(
-          AGENT_GUI_WORKBENCH_CONVERSATION_RAIL_TOGGLE_EVENT,
-          {
-            detail: {
-              conversationRailCollapsed: collapsed,
-              instanceId
-            }
-          }
-        )
-      );
+      dispatchAgentGuiWorkbenchCommand({
+        conversationRailCollapsed: collapsed,
+        instanceId,
+        type: "conversation-rail-toggle"
+      });
     },
     [
       agentGuiFrame.width,
@@ -638,21 +625,18 @@ export function StandaloneAgentWindow({
     ]
   );
   const handleCreateConversation = useCallback(() => {
-    window.dispatchEvent(
-      new CustomEvent<AgentGuiWorkbenchNewConversationDetail>(
-        AGENT_GUI_WORKBENCH_NEW_CONVERSATION_EVENT,
-        {
-          detail: { instanceId }
-        }
-      )
-    );
+    dispatchAgentGuiWorkbenchCommand({
+      instanceId,
+      type: "new-conversation"
+    });
   }, [instanceId]);
   const handleSessionAction = useCallback(
     (action: AgentGuiWorkbenchSessionAction) => {
-      dispatchAgentGuiWorkbenchSessionAction({
+      dispatchAgentGuiWorkbenchCommand({
         action,
         agentSessionId: nodeState.lastActiveAgentSessionId,
-        instanceId
+        instanceId,
+        type: "session-action"
       });
     },
     [instanceId, nodeState.lastActiveAgentSessionId]

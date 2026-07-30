@@ -649,13 +649,10 @@ func claudeSDKToolActivityEvent(session Session, turnID string, payload map[stri
 	if content, ok := payload["content"].([]any); ok && len(content) > 0 {
 		metadata["content"] = content
 	}
-	if sidecarMetadata := payloadMap(payload, "metadata"); len(sidecarMetadata) > 0 {
+	if sidecarMetadata := claudeSDKCanonicalToolMetadata(payloadMap(payload, "metadata")); len(sidecarMetadata) > 0 {
 		metadata["metadata"] = sidecarMetadata
 		if parentToolUseID := payloadString(sidecarMetadata, "parentToolUseId"); parentToolUseID != "" {
 			metadata["parentToolUseId"] = parentToolUseID
-		}
-		if toolResponse := payloadMap(sidecarMetadata, "claudeToolResponse"); len(toolResponse) > 0 {
-			metadata["claudeToolResponse"] = toolResponse
 		}
 	}
 	body := map[string]any(nil)

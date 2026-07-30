@@ -8,6 +8,7 @@ import {
   type PendingIntentsState,
   type SessionActivationRequestedIntent
 } from "./pendingIntents.types.ts";
+import { reconcilePendingIntentsFromAuthoritativeHistory } from "./pendingIntents.authoritativeHistory.ts";
 import {
   pendingActivationGoalControlFields,
   pendingActivationRailSectionKeyFields
@@ -113,10 +114,22 @@ export function pendingIntentsReducer(
         : unchanged(state);
     case "message/snapshotReceived":
       return confirmFromMessages(state, intent.messages);
+    case "session/historyAuthoritativeSnapshotReceived": {
+      const confirmed = confirmFromMessages(state, intent.messages);
+      const reconciled = reconcilePendingIntentsFromAuthoritativeHistory(
+        confirmed.state,
+        intent
+      );
+      return {
+        commands: [...confirmed.commands, ...reconciled.commands],
+        state: reconciled.state
+      };
+    }
     case "session/snapshotReceived":
       return receiveSessionSnapshot(state, intent.sessions, context.turnsById);
     case "session/upserted":
       return confirmActivationsFromSessions(state, [intent.session]);
+    case "turn/projectionReceived":
     case "turn/upserted":
       return confirmFromSessions(state, context.turnsById);
     case "engine/commandResult":
@@ -246,6 +259,7 @@ function requestActivation(
     errorCode: null,
     errorMessage: null,
     expiresAtUnixMs: intent.expiresAtUnixMs,
+    initialPromptRetracted: false,
     initialTurnExpected:
       intent.initialTurnExpected ?? runtimeContent.length > 0,
     ...pendingActivationGoalControlFields(intent),
@@ -392,6 +406,7 @@ function recordActivationFailure(
       errorCode: intent.errorCode?.trim() || null,
       errorMessage: intent.errorMessage.trim() || null,
       expiresAtUnixMs: Number.MAX_SAFE_INTEGER,
+      initialPromptRetracted: false,
       initialTurnExpected: false,
       mode: "existing",
       requestedAtUnixMs: intent.occurredAtUnixMs,

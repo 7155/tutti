@@ -15,10 +15,6 @@ import type {
   AgentStatusSource
 } from "@tutti-os/agent-gui";
 import type { AgentContextMentionProvider } from "@tutti-os/agent-gui/context-mention-provider";
-import {
-  AGENT_GUI_WORKBENCH_CONVERSATION_RAIL_TOGGLE_EVENT,
-  type AgentGuiWorkbenchConversationRailToggleDetail
-} from "@tutti-os/agent-gui/workbench/contribution";
 import type { IWorkspaceAppCenterService } from "@renderer/features/workspace-app-center";
 import type { WorkspaceLinkAction } from "@contexts/workspace/presentation/renderer/actions/workspaceLinkActions";
 import type {
@@ -39,15 +35,10 @@ import type {
 import type { DesktopAgentGUIPrefillPromptRequest } from "../services/desktopAgentGUIPrefillPromptActivation.ts";
 import type { AgentSessionReplayService } from "../../agent-session-replay/services/agentSessionReplayService.ts";
 
-export const DESKTOP_AGENT_GUI_CONVERSATION_RAIL_TOGGLE_EVENT =
-  AGENT_GUI_WORKBENCH_CONVERSATION_RAIL_TOGGLE_EVENT;
-
-export type DesktopAgentGUIConversationRailToggleDetail =
-  AgentGuiWorkbenchConversationRailToggleDetail;
-
 export interface DesktopAgentGUISurfaceContext {
   activation: WorkbenchHostNodeBodyContext["activation"];
   conversationRailAutoCollapseMode?: "preserve-middle-content";
+  conversationRailStateOwner: "surface" | "workbench-node-source";
   displayMode: WorkbenchHostNodeBodyContext["displayMode"];
   frame: WorkbenchHostNodeBodyContext["node"]["frame"];
   host: WorkbenchHostNodeBodyContext["host"];

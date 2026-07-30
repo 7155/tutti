@@ -287,7 +287,7 @@ export const en = {
       runtimeTitle: "Choose Codex CLI",
       runtimeDiscovering: "Checking local Codex CLI installations…",
       runtimeSelectionRequiredDescription:
-        "More than one working Codex CLI was found. Choose the one Tutti should use.",
+        "Tutti found more than one working Codex CLI on this machine and won't guess which to use. Pick one below — each option shows where it's installed and its path. You can change this later in Agent setup.",
       runtimeStaleDescription:
         "The Codex CLI you chose is no longer available. Choose another working installation.",
       runtimeChangeDescription:
@@ -1232,6 +1232,9 @@ export const en = {
         agentSessionRecordingDescription:
           "Show the developer entry for recording and replaying sessions on Agent Home.",
         agentSessionRecordingLabel: "Agent session recording",
+        agentSessionForkDescription:
+          "Allow creating a new Agent conversation from a supported completed turn.",
+        agentSessionForkLabel: "Session Fork",
         removeFileDefaultOpener: "Remove .{{extension}}",
         releaseChannelDescription:
           "Choose stable release updates, or opt in to preview builds for internal verification.",
@@ -1266,9 +1269,6 @@ export const en = {
         agentInputHistoryDescription:
           "Use Up and Down in Agent input to recall earlier prompts from the current session.",
         agentInputHistoryLabel: "Agent input history",
-        agentSessionForkDescription:
-          "Allow branching a new Agent conversation from a supported completed turn.",
-        agentSessionForkLabel: "Agent session fork",
         backLabel: "Back",
         automationRulesDescription:
           "Shows Automation Rule configuration and session overrides.",
@@ -1361,6 +1361,7 @@ export const en = {
           "Unable to update the local agent right now. Try again in a moment.",
         updateFailedTimedOut: "Update timed out. Try again in a moment.",
         loginRequired: "Sign in to the local CLI to use this agent",
+        manageActionChoose: "Choose",
         manageActionConnect: "Connect",
         manageActionLogin: "Sign in",
         manageActionOpeningLogin: "Opening...",
@@ -1384,6 +1385,7 @@ export const en = {
         manageStatusAvailable: "Available to connect",
         manageStatusChecking: "Checking",
         manageStatusConnected: "Connected",
+        manageStatusSelectionRequired: "Multiple installs — choose one",
         manageStatusUnknown: "Status unavailable",
         manageStatusUnsupported: "Updating in background",
         manageTitle: "Manage Agents",

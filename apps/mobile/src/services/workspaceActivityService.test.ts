@@ -5,6 +5,7 @@ import {
 import type {
   TuttidClient,
   WorkspaceAgentInteraction,
+  WorkspaceAgentEditRetryAvailability,
   WorkspaceAgentSession,
   WorkspaceAgentSessionDetailResponse,
   WorkspaceAgentSessionMessage,
@@ -25,9 +26,20 @@ const workspace: WorkspaceSummary = {
 };
 
 const fullSessionDetailProjection = {
+  editRetry: createEditRetryAvailability(),
   lifecycleCapabilitiesProjected: true,
   projection: "full"
 } as const;
+
+function createEditRetryAvailability(): WorkspaceAgentEditRetryAvailability {
+  return {
+    availableActions: [],
+    eligible: false,
+    historyRevision: 0,
+    recoveryState: "completed",
+    supported: false
+  };
+}
 
 describe("WorkspaceActivityService", () => {
   test("disposes the conversation Rail it owns", () => {
@@ -113,6 +125,7 @@ describe("WorkspaceActivityService", () => {
       origin: "user_prompt",
       outcome: null,
       phase: "running",
+      providerForkBindingAvailable: false,
       settledAtUnixMs: null,
       startedAtUnixMs: 2,
       turnId: "turn-1",
@@ -284,9 +297,19 @@ describe("WorkspaceActivityService", () => {
 
     await service.start();
     await flushAsyncWork();
+    const engine = (
+      service as unknown as {
+        engine: AgentSessionEngine;
+      }
+    ).engine;
+    const updateSessionSettings = jest.spyOn(engine, "updateSessionSettings");
     service.updateComposerSettings({ planMode: true });
     await flushAsyncWork();
 
+    expect(updateSessionSettings).toHaveBeenCalledWith({
+      agentSessionId: "session-1",
+      settings: { planMode: true }
+    });
     expect(settingsRequests).toEqual([{ planMode: true }]);
     expect(service.getSnapshot().selectedSession?.settings.planMode).toBe(true);
 
@@ -514,7 +537,7 @@ describe("WorkspaceActivityService", () => {
     service.dispose();
   });
 
-  test("renames a session and reconciles the canonical rail snapshot", async () => {
+  test("renames a session through the engine without reloading rail membership", async () => {
     let session: WorkspaceAgentSession | null = createSession();
     const renameRequests: string[] = [];
     const client = createClient({
@@ -527,12 +550,15 @@ describe("WorkspaceActivityService", () => {
       session: () => session
     });
     const service = createService(client);
+    const reconcileRail = jest.spyOn(service.rail, "reconcile");
 
     await service.start();
     await flushAsyncWork();
+    reconcileRail.mockClear();
     await service.renameSession("session-1", "  Renamed session  ");
 
     expect(renameRequests).toEqual(["Renamed session"]);
+    expect(reconcileRail).not.toHaveBeenCalled();
     expect(service.getSnapshot().selectedSession?.title).toBe(
       "Renamed session"
     );
@@ -1418,6 +1444,7 @@ function createTurn(
     origin: "user_prompt",
     outcome: null,
     phase: "settled",
+    providerForkBindingAvailable: false,
     settledAtUnixMs: 3,
     startedAtUnixMs: 2,
     turnId,

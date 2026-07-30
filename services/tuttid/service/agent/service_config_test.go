@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"testing"
 
 	agenthost "github.com/tutti-os/tutti/packages/agent/host"
@@ -9,7 +10,9 @@ import (
 func TestConfiguredServiceReturnsPrecomposedApplicationHost(t *testing.T) {
 	runtime := newFakeRuntime()
 	storeService := newTestService(runtime)
-	canonical := serviceHostStore{service: storeService}
+	canonical := configuredServiceHostCanonical{
+		serviceHostStore: serviceHostStore{service: storeService},
+	}
 	hostRuntime := configuredServiceHostRuntime{
 		serviceHostRuntime:     serviceHostRuntime{service: storeService},
 		serviceHostGoalRuntime: serviceHostGoalRuntime{service: storeService},
@@ -44,6 +47,26 @@ func TestConfiguredServiceReturnsPrecomposedApplicationHost(t *testing.T) {
 type configuredServiceHostRuntime struct {
 	serviceHostRuntime
 	serviceHostGoalRuntime
+}
+
+func (configuredServiceHostRuntime) SupportsEffectiveHistory(context.Context, agenthost.RuntimeHistoryInput) (bool, error) {
+	return false, nil
+}
+
+func (configuredServiceHostRuntime) ReadEffectiveHistory(context.Context, agenthost.RuntimeHistoryInput) (agenthost.RuntimeHistorySnapshot, error) {
+	return agenthost.RuntimeHistorySnapshot{}, nil
+}
+
+func (configuredServiceHostRuntime) RollbackLatestTurn(context.Context, agenthost.RuntimeHistoryInput) (agenthost.RuntimeHistoryMutationResult, error) {
+	return agenthost.RuntimeHistoryMutationResult{}, nil
+}
+
+// This constructor-only fixture supplies the complete production composition
+// shape while its test intentionally avoids exercising canonical mutations.
+type configuredServiceHostCanonical struct {
+	serviceHostStore
+	agenthost.TurnSubmissionStore
+	agenthost.EffectiveHistoryStore
 }
 
 func TestConfiguredServiceRejectsIncompleteHostComposition(t *testing.T) {

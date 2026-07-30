@@ -486,6 +486,7 @@ export function useAgentGUINodeController({
     isMountedRef,
     loadDraftComposerOptions: () => loadDraftComposerOptionsRef.current(),
     loadSelectedConversationMessages,
+    loadSessionState,
     markSelectedConversationDetailPending,
     onDataChangeRef,
     sessionEngine,
@@ -583,9 +584,9 @@ export function useAgentGUINodeController({
 
   const { loadDraftComposerOptions, reloadComposerOptionsForTarget } =
     useAgentGUIComposerOptionsSync({
-      activeAgentTargetId: activeEngineSession?.agentTargetId ?? null,
       activeConversationId,
       activeConversationIdRef,
+      activeSessionTarget: activeEngineSession,
       agentActivityRuntime,
       composerTargetData,
       conversationFilter,

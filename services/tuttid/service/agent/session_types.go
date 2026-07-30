@@ -218,9 +218,10 @@ type ExtensionComposerPermissionMode struct {
 }
 
 type ExtensionComposerSkillProfile struct {
-	Invocation    string
-	TriggerPrefix string
-	Roots         []ExtensionComposerSkillRoot
+	Invocation               string
+	TriggerPrefix            string
+	RuntimeCommandProjection string
+	Roots                    []ExtensionComposerSkillRoot
 }
 
 type ExtensionComposerSkillRoot struct {
@@ -288,10 +289,8 @@ type SessionForkLineage struct {
 // These values are projected from canonical state and the attached runtime;
 // they are deliberately separate from provider/composer capabilities.
 type SessionLifecycleCapabilities struct {
-	Fork                    bool
-	ForkThroughTurn         bool
-	ForkThroughTurnIDs      []string
-	ForkThroughTurnIDsKnown bool
+	Fork            bool
+	ForkThroughTurn bool
 }
 
 type SessionIsolation struct {
@@ -471,6 +470,7 @@ type SessionDetail struct {
 	Session       Session
 	ChildSessions []Session
 	Turns         []agentactivitybiz.Turn
+	EditRetry     agenthost.EditRetryAvailability
 }
 
 type SessionSectionsReader interface {

@@ -1,8 +1,8 @@
 import type {
   AgentActivitySendInput,
   AgentActivitySession,
+  AgentActivitySessionDetailSnapshot,
   AgentSessionActivateEffectInput,
-  AgentSessionEngine,
   TurnEditRetryCommand,
   TurnRecoverEditRetryCommand
 } from "@tutti-os/agent-activity-core";
@@ -16,7 +16,6 @@ describe("createWorkspaceActivityEffectPort", () => {
   test("explicitly rejects edit-retry commands that Mobile does not support", async () => {
     const context = {
       client: {} as TuttidClient,
-      engine: {} as AgentSessionEngine,
       loadComposerOptions() {},
       mapSession(): AgentActivitySession {
         throw new Error("unexpected Session mapping");
@@ -93,7 +92,6 @@ describe("createWorkspaceActivityEffectPort", () => {
     await expect(
       createWorkspaceActivityEffectPort(() => ({
         client,
-        engine: {} as AgentSessionEngine,
         loadComposerOptions() {},
         mapSession(): AgentActivitySession {
           throw new Error("unexpected Session mapping");
@@ -162,7 +160,6 @@ describe("createWorkspaceActivityEffectPort", () => {
     await expect(
       createWorkspaceActivityEffectPort(() => ({
         client,
-        engine: {} as AgentSessionEngine,
         loadComposerOptions() {},
         mapSession(): AgentActivitySession {
           throw new Error("unexpected Session mapping");
@@ -208,7 +205,6 @@ describe("createWorkspaceActivityEffectPort", () => {
     await expect(
       createWorkspaceActivityEffectPort(() => ({
         client: { getWorkspaceAgentSession } as unknown as TuttidClient,
-        engine: {} as AgentSessionEngine,
         loadComposerOptions() {},
         mapSession(): AgentActivitySession {
           throw new Error("unexpected Session mapping");
@@ -237,8 +233,43 @@ describe("createWorkspaceActivityEffectPort", () => {
     );
   });
 
+  test("returns existing-session detail without writing host state", async () => {
+    const rawDetail = { session: { id: "session-1" } };
+    const activitySession = {
+      agentSessionId: "session-1",
+      workspaceId: "workspace-1"
+    } as AgentActivitySession;
+    const mappedDetail: AgentActivitySessionDetailSnapshot = {
+      childSessions: [],
+      lifecycleCapabilitiesProjected: true,
+      projection: "authoritative",
+      session: activitySession,
+      turns: []
+    };
+    const getWorkspaceAgentSession = jest.fn().mockResolvedValue(rawDetail);
+    const mapSessionDetail = jest.fn().mockReturnValue(mappedDetail);
+
+    const result = await createWorkspaceActivityEffectPort(() => ({
+      client: { getWorkspaceAgentSession } as unknown as TuttidClient,
+      mapSession: () => activitySession,
+      mapSessionDetail,
+      async reconcileSession() {},
+      async reconcileWorkspace() {}
+    })).activateSession({
+      agentSessionId: "session-1",
+      mode: "existing",
+      workspaceId: "workspace-1"
+    });
+
+    expect(mapSessionDetail).toHaveBeenCalledWith("session-1", rawDetail);
+    expect(result).toEqual({
+      activation: { mode: "existing", status: "already_attached" },
+      detail: mappedDetail,
+      session: activitySession
+    });
+  });
+
   test("returns authoritative settings data without host-owned projection", async () => {
-    const dispatch = jest.fn();
     const updateWorkspaceAgentSessionSettings = jest.fn().mockResolvedValue({});
     const activitySession = {
       agentSessionId: "session-1",
@@ -246,24 +277,10 @@ describe("createWorkspaceActivityEffectPort", () => {
       workspaceId: "workspace-1"
     } as AgentActivitySession;
     const controller = new AbortController();
-    const engine = {
-      dispatch,
-      getSnapshot: () => ({
-        composerOptions: {
-          optionsByTargetKey: {
-            "target-1": {
-              behavior: { refreshModelOptionsAfterSettings: true }
-            }
-          }
-        }
-      })
-    } as unknown as AgentSessionEngine;
-
     const result = await createWorkspaceActivityEffectPort(() => ({
       client: {
         updateWorkspaceAgentSessionSettings
       } as unknown as TuttidClient,
-      engine,
       mapSession: () => activitySession,
       mapSessionDetail() {
         throw new Error("unexpected detail mapping");
@@ -287,7 +304,6 @@ describe("createWorkspaceActivityEffectPort", () => {
       { model: "model-1" },
       { signal: controller.signal }
     );
-    expect(dispatch).not.toHaveBeenCalled();
     expect(result).toEqual({
       agentSessionId: "session-1",
       session: activitySession,
@@ -310,7 +326,6 @@ describe("createWorkspaceActivityEffectPort", () => {
         cancelWorkspaceAgentTurn,
         submitWorkspaceAgentInteractive
       } as unknown as TuttidClient,
-      engine: {} as AgentSessionEngine,
       loadComposerOptions() {},
       mapSession: () => activitySession,
       mapSessionDetail() {
@@ -378,7 +393,6 @@ describe("createWorkspaceActivityEffectPort", () => {
         updateWorkspaceAgentSessionPin,
         updateWorkspaceAgentSessionTitle
       } as unknown as TuttidClient,
-      engine: {} as AgentSessionEngine,
       loadComposerOptions() {},
       mapSession: () => activitySession,
       mapSessionDetail() {

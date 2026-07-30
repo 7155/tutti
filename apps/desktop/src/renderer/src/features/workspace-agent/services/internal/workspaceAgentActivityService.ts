@@ -5,6 +5,8 @@ import {
   type AgentActivityGoalControlResult,
   type AgentActivityMessagePage,
   type AgentActivitySession,
+  type AgentActivitySessionDetailSnapshot,
+  type AgentSessionActivateEffectResult,
   type AgentSessionEngine,
   type AgentActivitySnapshot,
   type EngineExternalCommand,
@@ -164,17 +166,13 @@ export class WorkspaceAgentActivityService
       tuttidClient: dependencies.tuttidClient
     });
     this.mutationOperations = new WorkspaceAgentActivityMutationOperations({
-      getSession: (workspaceId, agentSessionId, signal) =>
-        this.getSession(workspaceId, agentSessionId, signal),
-      hostFilesApi: dependencies.hostFilesApi,
       runtimeApi: dependencies.runtimeApi,
       sessionCommandTarget: (workspaceId) => ({
         adapter: this.entry(workspaceId).adapter
       }),
       tuttidClient: dependencies.tuttidClient,
       upsertAuthoritativeSession: (session, source) =>
-        this.upsertAuthoritativeSession(session, source),
-      workspaceUserProjectService: dependencies.workspaceUserProjectService
+        this.upsertAuthoritativeSession(session, source)
     });
   }
 
@@ -484,6 +482,14 @@ export class WorkspaceAgentActivityService
   async createSession(
     input: Parameters<AgentActivityAdapter["createSession"]>[0]
   ): Promise<AgentActivitySession> {
+    const session = await this.executeCreateSessionEffect(input);
+    this.upsertAuthoritativeSession(session, "create_session_result");
+    return session;
+  }
+
+  private async executeCreateSessionEffect(
+    input: Parameters<AgentActivityAdapter["createSession"]>[0]
+  ): Promise<AgentActivitySession> {
     try {
       return await this.mutationOperations.createSession(input);
     } catch (error) {
@@ -497,6 +503,21 @@ export class WorkspaceAgentActivityService
   async activateSession(
     input: Parameters<AgentActivityRuntime["activateSession"]>[0]
   ): ReturnType<IWorkspaceAgentActivityService["activateSession"]> {
+    const result = await this.executeSessionActivationEffect(input);
+    if ("detail" in result) {
+      this.upsertAuthoritativeSessionDetail(
+        result.detail,
+        "get_session_result"
+      );
+    } else {
+      this.upsertAuthoritativeSession(result.session, "create_session_result");
+    }
+    return result;
+  }
+
+  private async executeSessionActivationEffect(
+    input: Parameters<AgentActivityRuntime["activateSession"]>[0]
+  ): Promise<AgentSessionActivateEffectResult> {
     const workspaceId = normalizeWorkspaceId(input.workspaceId);
     const requestedAgentSessionId = input.agentSessionId.trim();
     reportAgentSubmitTraceDiagnostic(this.dependencies.runtimeApi, {
@@ -545,13 +566,17 @@ export class WorkspaceAgentActivityService
         }
       });
     }
+    let detail: AgentActivitySessionDetailSnapshot | null = null;
     let session: AgentActivitySession;
     if (input.mode === "existing") {
-      session = await this.getSession(
+      detail = await this.fetchActivitySessionDetail(
         workspaceId,
         requestedAgentSessionId,
+        "get_session",
+        "full",
         input.signal
       );
+      session = detail.session;
     } else {
       reportAgentSubmitTraceDiagnostic(this.dependencies.runtimeApi, {
         agentSessionId: requestedAgentSessionId,
@@ -566,7 +591,7 @@ export class WorkspaceAgentActivityService
             input.initialTuttiModeActivation != null
         }
       });
-      session = await this.createSession({
+      session = await this.executeCreateSessionEffect({
         clientSubmitId: input.clientSubmitId,
         workspaceId,
         agentSessionId: requestedAgentSessionId,
@@ -613,11 +638,18 @@ export class WorkspaceAgentActivityService
         latestTurnOutcome: session.latestTurn?.outcome ?? null
       }
     });
+    if (input.mode === "existing") {
+      if (!detail) {
+        throw new Error("workspace_agent_activation_detail_missing");
+      }
+      return {
+        activation: { mode: "existing", status: "already_attached" },
+        detail,
+        session
+      };
+    }
     return {
-      activation: {
-        mode: input.mode,
-        status: input.mode === "existing" ? "already_attached" : "attached"
-      },
+      activation: { mode: "new", status: "attached" },
       session
     };
   }
@@ -981,7 +1013,7 @@ export class WorkspaceAgentActivityService
         }
       },
       activateSession: async (input) => {
-        const activation = await this.activateSession(input);
+        const activation = await this.executeSessionActivationEffect(input);
         this.analytics.trackEngineActivation(input, activation);
         return activation;
       },

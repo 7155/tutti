@@ -95,7 +95,6 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
     this.projectActivity = createAgentActivitySnapshotProjector(workspace.id);
     const commandContext = () => ({
       client: this.client,
-      engine: this.engine,
       mapSession: this.mapping.mapSession,
       mapSessionDetail: this.mapping.mapSessionDetail,
       reconcileSession: (

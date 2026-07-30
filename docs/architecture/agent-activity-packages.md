@@ -245,7 +245,18 @@ placement, initial settings/content, and durable request identities; the Engine
 admits that domain request under one workspace scope and confirmation policy.
 Only an admitted activation may clear the new-Session draft. Actual Session
 creation, resume, and initial Turn lifecycle remain Agent Host semantics behind
-the host effect port.
+the host effect port. The typed effect returns an authoritative Session for a
+new activation and the complete authoritative detail aggregate for an existing
+activation. The Engine validates activation mode plus workspace/Session
+identity and nested Session/Turn/Interaction entities before applying that
+result through its canonical reducers. Desktop and Mobile effects may retain
+product-local integration and observability, but must not dispatch Session
+state before returning. The effect executor marks only typed activation results
+with the versioned `activation-v1` result contract; commands whose result shape
+is not authoritative remain opaque. An untagged or opaque result from the
+legacy complete-command port remains an acknowledgement and is never
+reinterpreted as an authoritative projection, so published consumers can
+migrate without payload-shape heuristics.
 Desktop AgentGUI and Mobile call `stopSession` instead of constructing
 `session/stopRequested` protocol fields. The same method stops an active Turn
 or records a bounded request that cancels the first Turn produced by an

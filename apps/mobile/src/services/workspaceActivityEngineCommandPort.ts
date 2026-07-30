@@ -1,5 +1,6 @@
 import type {
   AgentSessionActivateEffectInput,
+  AgentSessionActivateEffectResult,
   AgentSessionEffectPort,
   AgentActivityCancelTurnInput,
   AgentActivityDeleteSessionsResult,
@@ -8,7 +9,6 @@ import type {
   AgentActivitySessionDetailSnapshot,
   AgentActivitySessionSettings,
   AgentActivitySubmitInteractiveInput,
-  AgentSessionEngine,
   EngineEffectOptions,
   EngineExtensionCommand,
   SessionReconcileCommand
@@ -24,7 +24,6 @@ import { toTuttidPromptContent } from "./workspaceActivityCommandSupport";
 
 interface WorkspaceActivityEngineCommandContext {
   client: TuttidClient;
-  engine: AgentSessionEngine;
   mapSession(
     session: Parameters<typeof agentActivitySessionFromTuttidSession>[1]
   ): AgentActivitySession;
@@ -121,7 +120,7 @@ async function activateSession(
   context: WorkspaceActivityEngineCommandContext,
   input: AgentSessionActivateEffectInput,
   signal?: AbortSignal
-): Promise<unknown> {
+): Promise<AgentSessionActivateEffectResult> {
   if (input.mode === "existing") {
     if (signal?.aborted) throw signal.reason;
     const detail = await context.client.getWorkspaceAgentSession(
@@ -131,13 +130,9 @@ async function activateSession(
       ...requestOptionsArgs(signal)
     );
     const mapped = context.mapSessionDetail(input.agentSessionId, detail);
-    context.engine.dispatch({
-      ...mapped,
-      type: "session/detailSnapshotReceived",
-      workspaceId: input.workspaceId
-    });
     return {
       activation: { mode: "existing", status: "already_attached" },
+      detail: mapped,
       session: mapped.session
     };
   }
@@ -188,10 +183,6 @@ async function activateSession(
     { signal }
   );
   const activitySession = context.mapSession(session);
-  context.engine.dispatch({
-    session: activitySession,
-    type: "session/upserted"
-  });
   return {
     activation: { mode: "new", status: "attached" },
     session: activitySession

@@ -66,6 +66,13 @@ export interface EngineExpiryCancelRequestedIntent {
 export type EngineCommandOutcome = "failed" | "succeeded" | "timedOut";
 
 /**
+ * Describes the runtime result contract used by one command execution.
+ * Older command ports and manually dispatched results omit this field and
+ * retain opaque acknowledgement semantics.
+ */
+export type EngineCommandResultContract = "activation-v1" | "opaque";
+
+/**
  * Every command execution settles back into the loop as this intent, so
  * failure and timeout handling are explicit reducer transitions instead of
  * executor-side improvisation.
@@ -76,6 +83,7 @@ export interface EngineCommandResultIntent {
   commandType: EngineExternalCommand["type"];
   correlationId?: string;
   outcome: EngineCommandOutcome;
+  resultContract?: EngineCommandResultContract;
   value?: unknown;
   errorCode?: string;
   errorReason?: string;
@@ -337,11 +345,27 @@ export type AgentSessionActivateEffectInput =
       mode: "existing";
     });
 
+/**
+ * Authoritative activation payload returned by preferred typed hosts.
+ * Existing-session activation carries the complete detail aggregate so the
+ * Engine, rather than the host effect, applies Session/Turn state.
+ */
+export type AgentSessionActivateEffectResult =
+  | {
+      activation: { mode: "new"; status: "attached" };
+      session: AgentActivitySession;
+    }
+  | {
+      activation: { mode: "existing"; status: "already_attached" };
+      detail: AgentActivitySessionDetailSnapshot;
+      session: AgentActivitySession;
+    };
+
 export interface AgentSessionEffectPort {
   activateSession(
     input: AgentSessionActivateEffectInput,
     options?: EngineEffectOptions
-  ): Promise<unknown>;
+  ): Promise<AgentSessionActivateEffectResult>;
   cancelTurn(
     input: AgentActivityCancelTurnInput,
     options?: EngineEffectOptions
@@ -568,6 +592,7 @@ import type {
   TurnCancelCommand
 } from "./sessionLifecycle.types.ts";
 import type {
+  AgentActivitySessionDetailSnapshot,
   SessionReconcileCommand,
   SessionReconcileIntent,
   SessionReconcileState

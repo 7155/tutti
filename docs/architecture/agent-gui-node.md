@@ -689,6 +689,16 @@ disable submission, but must not change editor editability.
   accepted result, and one 120-second confirmation window. The confirmation
   deadline is later than the 90-second new-Session command timeout so a valid
   slow runtime startup cannot expire while the command may still succeed.
+  The typed activation effect returns either the created authoritative Session
+  or the resumed Session's authoritative detail aggregate. The Engine validates
+  the versioned `activation-v1` result contract, result scope, mode, and every
+  nested Session/Turn/Interaction entity, then projects the aggregate in its
+  own drain. Untagged or opaque legacy command-port results remain
+  acknowledgements and do not enter canonical state. Desktop and Mobile effects
+  retain transport, DTO mapping, and product-local integration/observability
+  concerns, but must not pre-dispatch those projections.
+  Canonical monotonicity guards prevent a late activation response from
+  regressing newer realtime state.
   Surfaces clear a new-Session draft only after activation admission succeeds.
   Existing-Session Prompt submission enters through `engine.submitPrompt`.
   The surface keeps the stable `clientSubmitId` used by its draft-recovery and

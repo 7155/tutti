@@ -17,15 +17,11 @@ import {
 
 export interface ConsumeDesktopAgentGUIOpenSessionActivationInput {
   activation: WorkbenchHostActivation | null;
-  agentActivityRuntime: Pick<AgentActivityRuntime, "activateSession">;
+  agentActivityRuntime: Pick<AgentActivityRuntime, "getSessionEngine">;
   clearNodeActivation?: (this: void, nodeId: string, sequence: number) => void;
   handledSequence: number | null;
   markHandled(this: void, sequence: number): void;
   nodeId: string;
-  onActivationError?(
-    this: void,
-    input: { agentSessionId: string; error: unknown }
-  ): void;
   onOpenSessionRequest?(
     this: void,
     request: { agentSessionId: string; sequence: number }
@@ -54,7 +50,6 @@ export function consumeDesktopAgentGUIOpenSessionActivation({
   handledSequence,
   markHandled,
   nodeId,
-  onActivationError,
   onOpenSessionRequest,
   onOpenSessionComposerRequest,
   onStateChange,
@@ -78,15 +73,17 @@ export function consumeDesktopAgentGUIOpenSessionActivation({
       ? composerRequest
       : null
   );
-  void agentActivityRuntime
-    .activateSession({
+  agentActivityRuntime.getSessionEngine(workspaceId).activateSession({
+    agentSessionId: request.agentSessionId,
+    mode: "existing",
+    requestId: [
+      "workbench-open-session",
       workspaceId,
-      agentSessionId: request.agentSessionId,
-      mode: "existing"
-    })
-    .catch((error: unknown) => {
-      onActivationError?.({ agentSessionId: request.agentSessionId, error });
-    });
+      nodeId,
+      request.agentSessionId,
+      request.sequence
+    ].join(":")
+  });
   updateNodeState((current) => {
     const currentAgentTargetId = current.agentTargetId?.trim() || null;
     const currentAgentTargetProvider = currentAgentTargetId

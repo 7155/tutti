@@ -1,20 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { AgentSessionEngine } from "@tutti-os/agent-activity-core";
 import type { AgentActivityRuntime } from "@tutti-os/agent-gui";
 import { desktopAgentGUIOpenSessionActivationType } from "../desktopAgentGUINodeState.ts";
 import { consumeDesktopAgentGUIOpenSessionActivation } from "./desktopAgentGUIOpenSessionActivation.ts";
 import { clearDesktopAgentGUIOpenSessionComposerRequest } from "./desktopAgentGUIOpenSessionComposerActivation.ts";
 
-test("source-session activation selects the exact session and requests a non-submitting composer append", async () => {
+test("source-session activation selects the exact session and requests a non-submitting composer append", () => {
   const selected: unknown[] = [];
   const composerRequests: unknown[] = [];
   const submissions: unknown[] = [];
   const runtime = {
-    async activateSession(input: unknown) {
-      selected.push(input);
-      return {};
+    getSessionEngine() {
+      return {
+        activateSession(input: unknown) {
+          selected.push(input);
+          return true;
+        }
+      } as AgentSessionEngine;
     }
-  } as unknown as Pick<AgentActivityRuntime, "activateSession">;
+  } as Pick<AgentActivityRuntime, "getSessionEngine">;
 
   consumeDesktopAgentGUIOpenSessionActivation({
     activation: {
@@ -51,13 +56,11 @@ test("source-session activation selects the exact session and requests a non-sub
     onSubmit(request: unknown): void;
   });
 
-  await Promise.resolve();
-
   assert.deepEqual(selected, [
     {
       agentSessionId: "source-session-9",
       mode: "existing",
-      workspaceId: "workspace-1"
+      requestId: "workbench-open-session:workspace-1:node-1:source-session-9:19"
     }
   ]);
   assert.deepEqual(composerRequests, [

@@ -201,6 +201,53 @@ test("WorkspaceAgentActivityService.sendInput preserves the authoritative ready 
   assert.equal(snapshotSession?.activeTurn, null);
 });
 
+test("Desktop Engine applies send results without a host-side Session dispatch", async () => {
+  const readySession = workspaceAgentSession({ status: "ready" });
+  const observedIntentTypes: string[] = [];
+  const service = new WorkspaceAgentActivityService({
+    tuttidClient: {
+      listWorkspaceAgentSessions: async () => ({
+        hasMore: false,
+        sessions: [readySession],
+        workspaceId: "ws-1"
+      }),
+      sendWorkspaceAgentSessionInput: async () => ({
+        kind: "turn",
+        session: readySession,
+        turnId: "turn-1",
+        turn: workspaceAgentTurn({ phase: "submitted" })
+      })
+    } as unknown as TuttidClient,
+    runtimeApi: { logTerminalDiagnostic: async () => {} }
+  });
+  await service.load("ws-1");
+  service.addSessionEngineActivityObserver("ws-1", {
+    observeCommand() {},
+    observeIntent(intent) {
+      observedIntentTypes.push(intent.type);
+    }
+  });
+  const engine = service.getSessionEngine("ws-1");
+
+  assert.deepEqual(
+    engine.submitPrompt({
+      agentSessionId: "session-1",
+      clientSubmitId: "submit-1",
+      content: [{ type: "text", text: "continue" }]
+    }),
+    { accepted: true, queued: false }
+  );
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.ok(observedIntentTypes.includes("submit/requested"));
+  assert.ok(observedIntentTypes.includes("engine/commandResult"));
+  assert.equal(observedIntentTypes.includes("session/upserted"), false);
+  assert.equal(
+    selectEngineTurnsForSession(engine.getSnapshot(), "session-1")[0]?.phase,
+    "submitted"
+  );
+});
+
 test("WorkspaceAgentActivityService.cancelTurn delegates the exact turn", async () => {
   const calls: unknown[][] = [];
   const controller = new AbortController();

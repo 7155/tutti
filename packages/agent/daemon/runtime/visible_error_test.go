@@ -160,6 +160,9 @@ func TestVisibleFailureCodeClassifiesUsageLimitAsQuota(t *testing.T) {
 	if got := visibleFailureCode(detail); got != "quota_or_rate_limit" {
 		t.Fatalf("visibleFailureCode() = %q, want quota_or_rate_limit", got)
 	}
+	if got := visibleFailureCode("API Error: 403 Key limit exceeded (total limit)"); got != "quota_or_rate_limit" {
+		t.Fatalf("visibleFailureCode() = %q, want quota_or_rate_limit", got)
+	}
 }
 
 func TestVisibleFailureCodeClassifiesInsufficientCredits(t *testing.T) {

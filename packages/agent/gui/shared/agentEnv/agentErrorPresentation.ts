@@ -195,6 +195,7 @@ const FAILED_MESSAGE_CODE_MARKERS: ReadonlyArray<
     [
       "quota",
       "rate limit",
+      "limit exceeded",
       "usage limit",
       "upgrade your plan to continue",
       "add a payment method to continue",

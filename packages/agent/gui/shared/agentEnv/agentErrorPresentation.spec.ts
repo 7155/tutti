@@ -54,6 +54,9 @@ describe("classifyFailedAgentMessage", () => {
     expect(classifyFailedAgentMessage("rate limit exceeded")).toBe(
       "quota_or_rate_limit"
     );
+    expect(classifyFailedAgentMessage("Key limit exceeded")).toBe(
+      "quota_or_rate_limit"
+    );
     expect(classifyFailedAgentMessage("Upgrade your plan to continue")).toBe(
       "quota_or_rate_limit"
     );

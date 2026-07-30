@@ -162,11 +162,14 @@ function normalizeLockedLayout(
 function normalizeNormalizedFrame(
   frame: WorkbenchSnapshotNormalizedFrameV1
 ): WorkbenchSnapshotNormalizedFrameV1 {
+  const x = normalizeNumber(frame.x);
+  const y = normalizeNumber(frame.y);
+
   return {
-    x: normalizeNumber(frame.x),
-    y: normalizeNumber(frame.y),
-    width: normalizeNumber(frame.width),
-    height: normalizeNumber(frame.height)
+    x,
+    y,
+    width: Math.min(normalizeNumber(frame.width), normalizeNumber(1 - x)),
+    height: Math.min(normalizeNumber(frame.height), normalizeNumber(1 - y))
   };
 }
 

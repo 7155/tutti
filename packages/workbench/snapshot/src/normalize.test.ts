@@ -152,3 +152,38 @@ test("preserves a locked layout and normalized divider geometry", () => {
     }
   });
 });
+
+test("keeps rounded locked frames within their normalized layout rect", () => {
+  const normalized = normalizeWorkbenchSnapshot({
+    schemaVersion: workbenchSnapshotSchemaVersion,
+    nodes: [
+      {
+        id: "a",
+        kind: "agent",
+        title: "A",
+        frame: { x: 0, y: 0, width: 400, height: 500 }
+      },
+      {
+        id: "b",
+        kind: "agent",
+        title: "B",
+        frame: { x: 410, y: 0, width: 400, height: 500 }
+      }
+    ],
+    lockedLayout: {
+      preset: { kind: "row" },
+      nodeIDs: ["a", "b"],
+      normalizedFrames: {
+        a: { x: 0.0625, y: 0, width: 0.9375, height: 1 },
+        b: { x: 0, y: 0, width: 1, height: 1 }
+      }
+    }
+  });
+
+  assert.deepEqual(normalized.lockedLayout?.normalizedFrames?.a, {
+    x: 0.063,
+    y: 0,
+    width: 0.937,
+    height: 1
+  });
+});

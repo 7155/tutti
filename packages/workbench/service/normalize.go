@@ -310,11 +310,14 @@ func canonicalizeWorkbenchLockedLayout(
 func canonicalizeWorkbenchNormalizedFrame(
 	frame WorkbenchSnapshotNormalizedFrame,
 ) WorkbenchSnapshotNormalizedFrame {
+	x := canonicalizeWorkbenchNumber(frame.X)
+	y := canonicalizeWorkbenchNumber(frame.Y)
+
 	return WorkbenchSnapshotNormalizedFrame{
-		X:      canonicalizeWorkbenchNumber(frame.X),
-		Y:      canonicalizeWorkbenchNumber(frame.Y),
-		Width:  canonicalizeWorkbenchNumber(frame.Width),
-		Height: canonicalizeWorkbenchNumber(frame.Height),
+		X:      x,
+		Y:      y,
+		Width:  math.Min(canonicalizeWorkbenchNumber(frame.Width), canonicalizeWorkbenchNumber(1-x)),
+		Height: math.Min(canonicalizeWorkbenchNumber(frame.Height), canonicalizeWorkbenchNumber(1-y)),
 	}
 }
 
@@ -524,11 +527,14 @@ func validateWorkbenchNormalizedFrame(frame WorkbenchSnapshotNormalizedFrame) er
 		!isUnitInterval(frame.Width, true) || !isUnitInterval(frame.Height, true) {
 		return errors.New("values must stay within the unit layout rect")
 	}
-	if frame.X+frame.Width > 1 || frame.Y+frame.Height > 1 {
+	if frame.X+frame.Width > 1+workbenchNormalizedFrameUnitRectTransportTolerance ||
+		frame.Y+frame.Height > 1+workbenchNormalizedFrameUnitRectTransportTolerance {
 		return errors.New("must stay within the unit layout rect")
 	}
 	return nil
 }
+
+const workbenchNormalizedFrameUnitRectTransportTolerance = 0.000001
 
 func isUnitInterval(value float64, exclusiveMinimum bool) bool {
 	if !isFinite(value) || value > 1 {

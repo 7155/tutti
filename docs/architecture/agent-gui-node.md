@@ -668,7 +668,7 @@ disable submission, but must not change editor editability.
   into `AgentSessionEffectPort` calls. Desktop and Mobile effect ports retain
   transport and DTO mapping but must not duplicate a command-type switch for
   these shared effects. Host activity facades call
-  `engine.submitPrompt`, `engine.stopSession`,
+  `engine.activateSession`, `engine.submitPrompt`, `engine.stopSession`,
   `engine.updateSessionSettings`, `engine.renameSession`,
   `engine.setSessionPinned`, and `engine.deleteSessions`; these deep methods own
   the applicable workspace projection, protocol or mutation identity, timeout,
@@ -682,6 +682,14 @@ disable submission, but must not change editor editability.
   identity, 30-second cancellation timeout, duplicate fence, and 30-second
   first-Turn waiting window. Desktop AgentGUI and Native Mobile call
   `engine.stopSession` and never construct raw `session/stopRequested` fields.
+  Session activation enters through `engine.activateSession`. Desktop AgentGUI
+  and Native Mobile keep product-specific target selection, placement, initial
+  content/settings, and stable request identities, while the Engine owns
+  workspace scope, timestamps, construction of `activation/requested`, the
+  accepted result, and one 120-second confirmation window. The confirmation
+  deadline is later than the 90-second new-Session command timeout so a valid
+  slow runtime startup cannot expire while the command may still succeed.
+  Surfaces clear a new-Session draft only after activation admission succeeds.
   Existing-Session Prompt submission enters through `engine.submitPrompt`.
   The surface keeps the stable `clientSubmitId` used by its draft-recovery and
   idempotent-retry bookkeeping; the Engine owns workspace scope, timestamps,
@@ -915,6 +923,12 @@ provider-specific settings schema.
 Existing-Session Prompt sends similarly enter through `engine.submitPrompt`;
 Desktop and Mobile provide content plus a stable client submit identity, while
 the Engine owns common routing, confirmation expiry, and admission projection.
+New- and existing-Session activation enters through `engine.activateSession`.
+The surfaces retain target selection, placement, initial draft projection, and
+stable request identity; the Engine derives workspace and timing fields,
+projects the typed intent, and reports whether it was admitted. Actual Session
+creation, resume, and initial Turn lifecycle remain owned by Agent Host behind
+the host effect port.
 
 An activation intent's shared Session settings are not an HTTP create-field
 allowlist. Each host must construct a typed

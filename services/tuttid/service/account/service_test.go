@@ -143,7 +143,13 @@ func TestLoginStatusCompletedTriggersCallbackOnce(t *testing.T) {
 	if got := analytics.events[1].Params["result"]; got != "success" {
 		t.Fatalf("completed result = %v, want success", got)
 	}
-	if got := service.AnalyticsUserUniqueID(); got != "user-1" {
+	if got := analytics.events[1].Params["auth_method"]; got != "desktop_bridge" {
+		t.Fatalf("completed auth_method = %v, want desktop_bridge", got)
+	}
+	if got := analytics.events[1].Params["auth_flow"]; got != "desktop_bridge" {
+		t.Fatalf("completed auth_flow = %v, want desktop_bridge", got)
+	}
+	if got := service.AnalyticsContext().UserUniqueID; got != "user-1" {
 		t.Fatalf("analytics user ID = %q, want user-1", got)
 	}
 }
@@ -159,17 +165,48 @@ func TestAnalyticsCommonParamsTrackMembershipAndClearIdentity(t *testing.T) {
 		MembershipAccess: commerce.MembershipAccessActive,
 	})
 
-	params := service.AnalyticsCommonParams()
+	context := service.AnalyticsContext()
+	params := context.CommonParams
 	if params["uid"] != "user-2" || params["membership_tier"] != "pro" || params["membership_status"] != "active" {
 		t.Fatalf("analytics common params = %#v", params)
 	}
+	if context.UserUniqueID != "user-2" {
+		t.Fatalf("analytics user ID = %q, want user-2", context.UserUniqueID)
+	}
 	service.clearAnalyticsIdentity()
-	params = service.AnalyticsCommonParams()
+	context = service.AnalyticsContext()
+	params = context.CommonParams
 	if _, exists := params["uid"]; exists {
 		t.Fatalf("anonymous common params contain uid: %#v", params)
 	}
 	if params["login_state"] != "anonymous" {
 		t.Fatalf("login_state = %v, want anonymous", params["login_state"])
+	}
+	if context.UserUniqueID != "" {
+		t.Fatalf("anonymous analytics user ID = %q, want empty", context.UserUniqueID)
+	}
+}
+
+func TestSetAnalyticsReporterRestoresPersistedIdentity(t *testing.T) {
+	authPath := filepath.Join(t.TempDir(), "auth.json")
+	if err := os.WriteFile(
+		authPath,
+		[]byte(`{"session_id":"session-1","cookie":"session_id=session-1","user_id":"persisted-user"}`),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(authPath)
+
+	service.SetAnalyticsReporter(&recordingAccountAnalyticsReporter{})
+
+	context := service.AnalyticsContext()
+	if context.UserUniqueID != "persisted-user" {
+		t.Fatalf("analytics user ID = %q, want persisted-user", context.UserUniqueID)
+	}
+	if context.CommonParams["uid"] != "persisted-user" ||
+		context.CommonParams["login_state"] != "authenticated" {
+		t.Fatalf("analytics context = %#v", context)
 	}
 }
 

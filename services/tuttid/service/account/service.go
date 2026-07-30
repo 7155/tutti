@@ -162,9 +162,18 @@ func (s *Service) SetAnalyticsReporter(reporter reporterservice.Reporter) {
 	s.analyticsMu.Lock()
 	s.analyticsReporter = reporter
 	s.analyticsMu.Unlock()
+	s.restoreAnalyticsIdentity()
 }
 
-func (s *Service) AnalyticsCommonParams() map[string]any {
+func (s *Service) restoreAnalyticsIdentity() {
+	session, err := s.ReadSession()
+	if err != nil || session == nil || strings.TrimSpace(session.UserID) == "" {
+		return
+	}
+	s.updateAnalyticsUser(&authbridge.UserInfo{UserID: session.UserID})
+}
+
+func (s *Service) AnalyticsContext() reporterservice.DynamicContext {
 	s.analyticsMu.RLock()
 	defer s.analyticsMu.RUnlock()
 	params := map[string]any{
@@ -184,13 +193,10 @@ func (s *Service) AnalyticsCommonParams() map[string]any {
 	if s.analyticsTier != "" {
 		params["membership_tier"] = s.analyticsTier
 	}
-	return params
-}
-
-func (s *Service) AnalyticsUserUniqueID() string {
-	s.analyticsMu.RLock()
-	defer s.analyticsMu.RUnlock()
-	return s.analyticsUserID
+	return reporterservice.DynamicContext{
+		CommonParams: params,
+		UserUniqueID: s.analyticsUserID,
+	}
 }
 
 func (s *Service) reportLogin(
@@ -212,7 +218,8 @@ func (s *Service) reportLogin(
 		"schema_version": 1,
 		"client":         "desktop",
 		"source":         "desktop_daemon",
-		"method":         "desktop_bridge",
+		"auth_method":    "desktop_bridge",
+		"auth_flow":      "desktop_bridge",
 		"stage":          stage,
 		"action":         action,
 		"result":         result,

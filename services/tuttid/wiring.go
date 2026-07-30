@@ -201,11 +201,9 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 
 	analyticsConfig := tuttitypes.ResolveAnalyticsConfig()
 	debugPublisher := resolveAnalyticsDebugPublisher(analyticsConfig, api.EventStreamService)
-	var commonParamsProvider func() map[string]any
-	var userUniqueIDProvider func() string
+	var dynamicContextProvider func() reporterservice.DynamicContext
 	if account, ok := api.AccountService.(*accountservice.Service); ok {
-		commonParamsProvider = account.AnalyticsCommonParams
-		userUniqueIDProvider = account.AnalyticsUserUniqueID
+		dynamicContextProvider = account.AnalyticsContext
 	}
 	analyticsReporter, err := reporterservice.New(reporterservice.Config{
 		Analytics:      analyticsConfig,
@@ -218,8 +216,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 			"environment":     tuttitypes.ResolveDefaultsFromEnv().Runtime.Env,
 			"schema_version":  1,
 		},
-		CommonParamsProvider: commonParamsProvider,
-		UserUniqueIDProvider: userUniqueIDProvider,
+		DynamicContextProvider: dynamicContextProvider,
 	})
 	if err != nil {
 		return fmt.Errorf("create analytics reporter: %w", err)

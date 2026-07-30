@@ -206,6 +206,7 @@ func TestTeaReporterPersistsIdentityAndSendsSanitizedEvents(t *testing.T) {
 func TestTeaReporterUsesDynamicIdentityForCommonParamsAndSDKUserID(t *testing.T) {
 	sdk := &fakeTeaSDK{}
 	userID := ""
+	providerCalls := 0
 	reporter, err := newTeaReporterWithSDK(Config{
 		Analytics: AnalyticsConfig{
 			AppID:         20004092,
@@ -214,14 +215,17 @@ func TestTeaReporterUsesDynamicIdentityForCommonParamsAndSDKUserID(t *testing.T)
 		},
 		DeviceID:  "host-device",
 		SDKLogDir: t.TempDir(),
-		CommonParamsProvider: func() map[string]any {
+		DynamicContextProvider: func() DynamicContext {
+			providerCalls++
 			if userID == "" {
-				return map[string]any{"login_state": "anonymous"}
+				return DynamicContext{
+					CommonParams: map[string]any{"login_state": "anonymous"},
+				}
 			}
-			return map[string]any{"login_state": "authenticated", "uid": userID}
-		},
-		UserUniqueIDProvider: func() string {
-			return userID
+			return DynamicContext{
+				CommonParams: map[string]any{"login_state": "authenticated", "uid": userID},
+				UserUniqueID: userID,
+			}
 		},
 	}, sdk)
 	if err != nil {
@@ -234,6 +238,9 @@ func TestTeaReporterUsesDynamicIdentityForCommonParamsAndSDKUserID(t *testing.T)
 
 	if len(sdk.sends) != 2 {
 		t.Fatalf("send calls = %d, want 2", len(sdk.sends))
+	}
+	if providerCalls != 2 {
+		t.Fatalf("dynamic context provider calls = %d, want one per Track", providerCalls)
 	}
 	if sdk.sends[0].uuid != "host-device" || sdk.sends[0].common["login_state"] != "anonymous" {
 		t.Fatalf("anonymous send = %#v", sdk.sends[0])

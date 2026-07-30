@@ -404,7 +404,8 @@ describe("useAgentGUIComposerOptionsSync", () => {
         })
       );
       expect(authorityReconcilerRef.current.reloaded).toHaveBeenCalledWith(
-        permissionReceipt
+        permissionReceipt,
+        {}
       );
     } finally {
       rendered.unmount();
@@ -483,7 +484,8 @@ describe("useAgentGUIComposerOptionsSync", () => {
     expect(authorityReconcilerRef.current.reloaded).toHaveBeenCalledWith(
       expect.objectContaining({
         draftKey: "__agent_gui_node_defaults__:target:local:opencode"
-      })
+      }),
+      {}
     );
   });
 

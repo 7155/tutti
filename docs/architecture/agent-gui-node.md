@@ -663,6 +663,10 @@ disable submission, but must not change editor editability.
   supersession, exact settlement, caller abort, and disposal. Desktop and
   Mobile retain only transport and DTO mapping in their
   `EngineExtensionCommand` adapters
+- an acknowledged home Composer default remains an optimistic draft until a
+  later authoritative Composer-options response reports the same effective
+  field value. A successful read alone must not retire the draft because a
+  slow or overlapping provider discovery may still return an older default
 - the Engine alone translates shared activation, prompt send, settings update,
   turn cancel, Interaction response, rename, pin, and batch-delete commands
   into `AgentSessionEffectPort` calls. Desktop and Mobile effect ports retain

@@ -62,7 +62,10 @@ export interface AgentGUIComposerDefaultsAuthorityReconciler {
     target: AgentGUIComposerTargetData,
     options: AgentActivityComposerOptions
   ): void;
-  reloaded(receipt: AgentGUIComposerDefaultsAuthorityReadReceipt | null): void;
+  reloaded(
+    receipt: AgentGUIComposerDefaultsAuthorityReadReceipt | null,
+    options: AgentActivityComposerOptions
+  ): void;
 }
 
 export function createAgentGUIComposerDefaultsLedger(): AgentGUIComposerDefaultsLedger {
@@ -156,7 +159,8 @@ export function prepareAcknowledgedComposerDefaultsAuthorityRead(
 export function retireAcknowledgedComposerDefaultsForRead(
   ledger: AgentGUIComposerDefaultsLedger,
   receipt: AgentGUIComposerDefaultsAuthorityReadReceipt,
-  settings: AgentSessionComposerSettings
+  settings: AgentSessionComposerSettings,
+  authoritativeSettings: AgentSessionComposerSettings
 ): AgentGUIRetiredComposerDefault[] {
   const latest = ledger.latestByDraftKey[receipt.draftKey];
   const acknowledged = ledger.acknowledgedByDraftKey[receipt.draftKey];
@@ -169,7 +173,8 @@ export function retireAcknowledgedComposerDefaultsForRead(
       !readEntry ||
       !currentEntry ||
       currentEntry.generation !== readEntry.generation ||
-      latest[field] !== readEntry.generation
+      latest[field] !== readEntry.generation ||
+      normalizeOptionalText(authoritativeSettings[field]) !== readEntry.value
     ) {
       continue;
     }

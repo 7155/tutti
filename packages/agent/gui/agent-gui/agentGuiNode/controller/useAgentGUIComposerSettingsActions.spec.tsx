@@ -425,7 +425,10 @@ describe("useAgentGUIComposerSettingsActions", () => {
             reloadInput.settings
           );
         onComposerDefaultsAuthorityReloadedRef.current.reloaded(
-          authorityRead.receipt
+          authorityRead.receipt,
+          {
+            effectiveSettings: reloadInput.settings
+          } as AgentActivityComposerOptions
         );
       }
     );
@@ -606,7 +609,10 @@ describe("useAgentGUIComposerSettingsActions", () => {
     act(() => {
       // The daemon changed event may be observed before the publish ack.
       onComposerDefaultsAuthorityReloadedRef.current.reloaded(
-        preAckRead.receipt
+        preAckRead.receipt,
+        {
+          effectiveSettings: { permissionModeId: "full-access" }
+        } as AgentActivityComposerOptions
       );
     });
     expect(
@@ -648,7 +654,10 @@ describe("useAgentGUIComposerSettingsActions", () => {
     });
     act(() => {
       onComposerDefaultsAuthorityReloadedRef.current.reloaded(
-        authorityRead.receipt
+        authorityRead.receipt,
+        {
+          effectiveSettings: { permissionModeId: "full-access" }
+        } as AgentActivityComposerOptions
       );
     });
     expect(draftSettingsBySessionIdRef.current).toEqual({});

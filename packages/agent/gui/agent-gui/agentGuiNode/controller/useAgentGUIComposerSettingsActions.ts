@@ -1,5 +1,6 @@
 import {
   selectEngineSession,
+  type AgentActivityComposerOptions,
   type AgentActivityTurn,
   type AgentSessionEngine
 } from "@tutti-os/agent-activity-core";
@@ -29,6 +30,7 @@ import {
 } from "./agentGuiController.composerHelpers";
 import {
   enforceComposerModelBindingForHomeDefaults,
+  effectiveComposerSettingsFromOptions,
   nodeDataMatchesComposerTarget,
   sanitizeComposerSettingsForTarget,
   type AgentGUIComposerTargetData
@@ -131,15 +133,21 @@ export function useAgentGUIComposerSettingsActions(
     createAgentGUIComposerDefaultsLedger()
   );
   const retireAcknowledgedDefaultsForRead = useCallback(
-    (receipt: AgentGUIComposerDefaultsAuthorityReadReceipt | null) => {
+    (
+      receipt: AgentGUIComposerDefaultsAuthorityReadReceipt | null,
+      options: AgentActivityComposerOptions
+    ) => {
       if (!isMountedRef.current || !receipt) return;
       const currentDraft =
         draftSettingsBySessionIdRef.current[receipt.draftKey];
       if (!currentDraft) return;
+      const authoritativeSettings =
+        effectiveComposerSettingsFromOptions(options) ?? {};
       const retired = retireAcknowledgedComposerDefaultsForRead(
         composerDefaultsLedgerRef.current,
         receipt,
-        currentDraft
+        currentDraft,
+        authoritativeSettings
       );
       if (retired.length === 0) return;
       draftSettingsBySessionIdRef.current = reconcileRetiredDraftMap(

@@ -45,9 +45,16 @@ describe("agentGuiComposerDefaultsReconciliation", () => {
     });
 
     expect(
-      retireAcknowledgedComposerDefaultsForRead(ledger, firstRead.receipt!, {
-        permissionModeId: "ask"
-      })
+      retireAcknowledgedComposerDefaultsForRead(
+        ledger,
+        firstRead.receipt!,
+        {
+          permissionModeId: "ask"
+        },
+        {
+          permissionModeId: "ask"
+        }
+      )
     ).toEqual([]);
     const latestRead = prepareAcknowledgedComposerDefaultsAuthorityRead(
       ledger,
@@ -56,9 +63,16 @@ describe("agentGuiComposerDefaultsReconciliation", () => {
     );
     expect(latestRead.receipt).not.toBeNull();
     expect(
-      retireAcknowledgedComposerDefaultsForRead(ledger, latestRead.receipt!, {
-        permissionModeId: "ask"
-      })
+      retireAcknowledgedComposerDefaultsForRead(
+        ledger,
+        latestRead.receipt!,
+        {
+          permissionModeId: "ask"
+        },
+        {
+          permissionModeId: "ask"
+        }
+      )
     ).toEqual([{ field: "permissionModeId", value: "ask" }]);
   });
 
@@ -128,13 +142,52 @@ describe("agentGuiComposerDefaultsReconciliation", () => {
     );
 
     expect(
-      retireAcknowledgedComposerDefaultsForRead(ledger, opencodeRead.receipt!, {
-        speed: "fast"
-      })
+      retireAcknowledgedComposerDefaultsForRead(
+        ledger,
+        opencodeRead.receipt!,
+        {
+          speed: "fast"
+        },
+        {
+          speed: "fast"
+        }
+      )
     ).toEqual([{ field: "speed", value: "fast" }]);
     expect(
       prepareAcknowledgedComposerDefaultsAuthorityRead(ledger, otherDraftKey, {
         speed: "normal"
+      }).receipt
+    ).not.toBeNull();
+  });
+
+  it("keeps optimistic defaults when an authority read returns an older value", () => {
+    const ledger = createAgentGUIComposerDefaultsLedger();
+    const mutation = registerAgentGUIComposerDefaultsMutation(
+      ledger,
+      draftKey,
+      { permissionModeId: "accept_edits" }
+    );
+    acknowledgeAgentGUIComposerDefaultsMutation(ledger, mutation, {
+      acknowledgedFields: ["permissionModeId"],
+      supersededFields: []
+    });
+    const read = prepareAcknowledgedComposerDefaultsAuthorityRead(
+      ledger,
+      draftKey,
+      { permissionModeId: "accept_edits" }
+    );
+
+    expect(
+      retireAcknowledgedComposerDefaultsForRead(
+        ledger,
+        read.receipt!,
+        { permissionModeId: "accept_edits" },
+        { permissionModeId: "default" }
+      )
+    ).toEqual([]);
+    expect(
+      prepareAcknowledgedComposerDefaultsAuthorityRead(ledger, draftKey, {
+        permissionModeId: "accept_edits"
       }).receipt
     ).not.toBeNull();
   });

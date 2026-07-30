@@ -139,6 +139,7 @@ func (r DefaultResolver) resolvedRuntimeForComponents(root string, components []
 	python := filepath.Join(pythonBinDir, pythonBinaryName())
 	node := filepath.Join(nodeBinDir, nodeBinaryName())
 	npm := filepath.Join(nodeBinDir, npmBinaryName())
+	corepack := filepath.Join(nodeBinDir, corepackBinaryName())
 
 	var (
 		binDirs      []string
@@ -162,6 +163,9 @@ func (r DefaultResolver) resolvedRuntimeForComponents(root string, components []
 				if !isExecutableFile(path) {
 					return ResolvedRuntime{}, fmt.Errorf("managed app runtime %s executable is unavailable at %s", name, path)
 				}
+			}
+			if !isStandaloneCorepackWrapper(corepack) {
+				return ResolvedRuntime{}, fmt.Errorf("managed app runtime corepack wrapper is unavailable or incompatible at %s", corepack)
 			}
 			resolved.Node = node
 			resolved.NPM = npm
@@ -277,7 +281,8 @@ func appRuntimeComponentReady(root string, name string) bool {
 	case "node":
 		nodeBinDir := filepath.Join(root, "node", "bin")
 		return isExecutableFile(filepath.Join(nodeBinDir, nodeBinaryName())) &&
-			isExecutableFile(filepath.Join(nodeBinDir, npmBinaryName()))
+			isExecutableFile(filepath.Join(nodeBinDir, npmBinaryName())) &&
+			isStandaloneCorepackWrapper(filepath.Join(nodeBinDir, corepackBinaryName()))
 	default:
 		info, err := os.Stat(filepath.Join(root, name))
 		return err == nil && info.IsDir()
@@ -652,6 +657,28 @@ func npmBinaryName() string {
 		return "npm.cmd"
 	}
 	return "npm"
+}
+
+func corepackBinaryName() string {
+	if runtime.GOOS == "windows" {
+		return "corepack.cmd"
+	}
+	return "corepack"
+}
+
+func isStandaloneCorepackWrapper(path string) bool {
+	if !isExecutableFile(path) {
+		return false
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	normalized := strings.ReplaceAll(string(content), `\`, "/")
+	return strings.Contains(
+		normalized,
+		"lib/node_modules/corepack/dist/corepack.js",
+	)
 }
 
 func isExecutableFile(path string) bool {

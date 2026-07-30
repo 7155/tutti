@@ -3192,6 +3192,11 @@ func fakeManagedRuntimeRoot(t *testing.T) string {
 	writeExecutable(t, filepath.Join(root, "python", "bin", pythonBinaryNameForTest()), "#!/bin/sh\nexit 0\n")
 	writeExecutable(t, filepath.Join(root, "node", "bin", nodeBinaryNameForTest()), "#!/bin/sh\nexit 0\n")
 	writeExecutable(t, filepath.Join(root, "node", "bin", npmBinaryNameForTest()), "#!/bin/sh\nexit 0\n")
+	writeExecutable(
+		t,
+		filepath.Join(root, "node", "bin", corepackBinaryNameForTest()),
+		"#!/bin/sh\nexec \"$(dirname \"$0\")/node\" \"$(dirname \"$0\")/../lib/node_modules/corepack/dist/corepack.js\" \"$@\"\n",
+	)
 	return root
 }
 
@@ -3229,6 +3234,13 @@ func npmBinaryNameForTest() string {
 		return "npm.cmd"
 	}
 	return "npm"
+}
+
+func corepackBinaryNameForTest() string {
+	if runtime.GOOS == "windows" {
+		return "corepack.cmd"
+	}
+	return "corepack"
 }
 
 func quoteJSONString(value string) string {

@@ -120,7 +120,7 @@ export function useAgentGUIComposerOptionsSync(input: {
         if (options?.reconcileAcknowledgedDefaults) {
           input.onComposerDefaultsAuthorityReloadedRef.current.reloaded(
             authorityRead.receipt,
-            loadedOptions
+            returnedOptions
           );
         }
       });

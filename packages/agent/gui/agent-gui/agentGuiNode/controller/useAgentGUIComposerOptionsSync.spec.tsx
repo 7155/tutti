@@ -414,7 +414,13 @@ describe("useAgentGUIComposerOptionsSync", () => {
   });
 
   it("forces a later home authority read to reconcile acknowledged defaults", async () => {
-    const getComposerOptions = vi.fn(async () => ({}));
+    const returnedOptions = {
+      effectiveSettings: { permissionModeId: "default" }
+    };
+    const cachedOptions = {
+      effectiveSettings: { permissionModeId: "full-access" }
+    };
+    const getComposerOptions = vi.fn(async () => returnedOptions);
     const data = targetData("opencode");
     const target = composerTarget("opencode");
     const authorityReconcilerRef =
@@ -440,7 +446,11 @@ describe("useAgentGUIComposerOptionsSync", () => {
         activeConversationIdRef: { current: null },
         agentActivityRuntime: {
           getComposerOptions,
-          getSnapshot: () => ({})
+          getSnapshot: () => ({
+            composerOptionsByTargetKey: {
+              "local:opencode": cachedOptions
+            }
+          })
         } as unknown as AgentActivityRuntime,
         composerTargetData: target,
         conversationFilter: null,
@@ -485,7 +495,13 @@ describe("useAgentGUIComposerOptionsSync", () => {
       expect.objectContaining({
         draftKey: "__agent_gui_node_defaults__:target:local:opencode"
       }),
-      {}
+      returnedOptions
+    );
+    expect(
+      authorityReconcilerRef.current.reconcileHomeDefaults
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ agentTargetId: "local:opencode" }),
+      cachedOptions
     );
   });
 

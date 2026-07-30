@@ -60,12 +60,20 @@ type AnalyticsConfig struct {
 // hosts preserve an existing log location; when omitted it defaults beneath
 // StateDir.
 type Config struct {
-	Analytics      AnalyticsConfig
-	DebugPublisher DebugPublisher
-	StateDir       string
-	SDKLogDir      string
-	DeviceID       string
-	CommonParams   map[string]any
+	Analytics              AnalyticsConfig
+	DebugPublisher         DebugPublisher
+	StateDir               string
+	SDKLogDir              string
+	DeviceID               string
+	CommonParams           map[string]any
+	DynamicContextProvider func() DynamicContext
+}
+
+// DynamicContext is one atomic snapshot of host-owned dynamic common
+// parameters and the matching DataFinder user identity.
+type DynamicContext struct {
+	CommonParams map[string]any
+	UserUniqueID string
 }
 
 // New selects a disabled, debug-only, or DataFinder-backed reporter.
@@ -172,11 +180,12 @@ func readDeviceID(path string) (value string, exists bool, err error) {
 }
 
 type reporterCommon struct {
-	deviceID   string
-	sessionID  string
-	appVersion string
-	osName     string
-	additional map[string]any
+	deviceID               string
+	sessionID              string
+	appVersion             string
+	osName                 string
+	additional             map[string]any
+	dynamicContextProvider func() DynamicContext
 }
 
 func newReporterCommon(config Config) (reporterCommon, error) {
@@ -185,24 +194,47 @@ func newReporterCommon(config Config) (reporterCommon, error) {
 		return reporterCommon{}, err
 	}
 	return reporterCommon{
-		deviceID:   deviceID,
-		sessionID:  uuid.NewString(),
-		appVersion: config.Analytics.AppVersion,
-		osName:     runtime.GOOS,
-		additional: copyParams(config.CommonParams),
+		deviceID:               deviceID,
+		sessionID:              uuid.NewString(),
+		appVersion:             config.Analytics.AppVersion,
+		osName:                 runtime.GOOS,
+		additional:             copyParams(config.CommonParams),
+		dynamicContextProvider: config.DynamicContextProvider,
 	}, nil
 }
 
-func (c reporterCommon) params() map[string]any {
+func (c reporterCommon) snapshot() (map[string]any, string) {
 	params := copyParams(c.additional)
 	if params == nil {
 		params = map[string]any{}
+	}
+	dynamic := c.dynamicContext()
+	for key, value := range dynamic.CommonParams {
+		params[key] = value
 	}
 	params["device_id"] = c.deviceID
 	params["session_id"] = c.sessionID
 	params["app_version"] = c.appVersion
 	params["os"] = c.osName
-	return params
+	userUniqueID := strings.TrimSpace(dynamic.UserUniqueID)
+	if userUniqueID == "" {
+		userUniqueID = c.deviceID
+	}
+	return params, userUniqueID
+}
+
+func (c reporterCommon) dynamicContext() (dynamic DynamicContext) {
+	if c.dynamicContextProvider == nil {
+		return DynamicContext{}
+	}
+	defer func() {
+		if recover() != nil {
+			dynamic = DynamicContext{}
+		}
+	}()
+	dynamic = c.dynamicContextProvider()
+	dynamic.CommonParams = copyParams(dynamic.CommonParams)
+	return dynamic
 }
 
 func normalizeEvents(events []Event, common map[string]any) []teaSDKEvent {
@@ -216,8 +248,14 @@ func normalizeEvents(events []Event, common map[string]any) []teaSDKEvent {
 			clientTS = time.Now().UnixMilli()
 		}
 		params := copyParams(event.Params)
+		if params == nil {
+			params = map[string]any{}
+		}
 		for key := range common {
 			delete(params, key)
+		}
+		if _, exists := params["event_id"]; !exists {
+			params["event_id"] = uuid.NewString()
 		}
 		normalized = append(normalized, teaSDKEvent{
 			Name:     event.Name,

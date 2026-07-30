@@ -53,14 +53,14 @@ func (r *TeaReporter) Track(ctx context.Context, events ...Event) {
 		return
 	}
 
-	common := r.common.params()
+	common, userUniqueID := r.common.snapshot()
 	sendEvents := normalizeEvents(events, common)
 	if len(sendEvents) == 0 {
 		return
 	}
 
 	r.publishDebugEvents(ctx, sendEvents, common)
-	_ = r.sdk.Send(r.appID, r.common.deviceID, sendEvents, common)
+	_ = r.sdk.Send(r.appID, userUniqueID, sendEvents, common)
 }
 
 func (r *TeaReporter) Close() error {

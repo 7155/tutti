@@ -297,9 +297,19 @@ describe("WorkspaceActivityService", () => {
 
     await service.start();
     await flushAsyncWork();
+    const engine = (
+      service as unknown as {
+        engine: AgentSessionEngine;
+      }
+    ).engine;
+    const updateSessionSettings = jest.spyOn(engine, "updateSessionSettings");
     service.updateComposerSettings({ planMode: true });
     await flushAsyncWork();
 
+    expect(updateSessionSettings).toHaveBeenCalledWith({
+      agentSessionId: "session-1",
+      settings: { planMode: true }
+    });
     expect(settingsRequests).toEqual([{ planMode: true }]);
     expect(service.getSnapshot().selectedSession?.settings.planMode).toBe(true);
 

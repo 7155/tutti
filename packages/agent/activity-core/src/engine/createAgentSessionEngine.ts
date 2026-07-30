@@ -11,7 +11,8 @@ import {
   selectEngineInteractionsForSession,
   selectEngineLatestTurn,
   selectEnginePendingInteractions,
-  selectEngineSession
+  selectEngineSession,
+  selectEngineSessionSettingsUpdate
 } from "./sessionLifecycle.selectors.ts";
 import {
   dispatchSessionMutationWithCancellation,
@@ -28,6 +29,7 @@ import {
   type AgentSessionEngineIntentObserver,
   type AgentSessionEngineListener,
   type AgentSessionLoadComposerOptionsInput,
+  type AgentSessionUpdateSettingsInput,
   type EngineClock,
   type EngineCommandPort,
   type EngineDispatchOptions,
@@ -56,6 +58,7 @@ import type {
  */
 export const ENGINE_INTENT_BATCH_DELAY_MS = 33;
 const SESSION_MUTATION_TIMEOUT_MS = 30_000;
+const SESSION_SETTINGS_UPDATE_TIMEOUT_MS = 30_000;
 
 export interface CreateAgentSessionEngineInput {
   batchDelayMs?: number;
@@ -98,6 +101,7 @@ export function createAgentSessionEngine({
   let disposed = false;
   let composerOptionsCommandSequence = 1;
   let sessionMutationSequence = 1;
+  let sessionSettingsUpdateSequence = 1;
   const pendingComposerOptionsDisposals = new Set<() => void>();
 
   const expiryClock = createEngineExpiryClock({
@@ -373,6 +377,32 @@ export function createAgentSessionEngine({
     return `${kind}:${clock.nowUnixMs()}:${sequence}`;
   }
 
+  function nextSessionSettingsUpdateCommandId(): string {
+    const sequence = sessionSettingsUpdateSequence++;
+    return `settings:${clock.nowUnixMs()}:${sequence}`;
+  }
+
+  function updateSessionSettings(input: AgentSessionUpdateSettingsInput): void {
+    const agentSessionId = input.agentSessionId.trim();
+    const settings = { ...input.settings };
+    if (!agentSessionId || Object.keys(settings).length === 0) {
+      return;
+    }
+    const current = selectEngineSessionSettingsUpdate(
+      publicSnapshot,
+      agentSessionId
+    );
+    dispatch({
+      agentSessionId,
+      commandId: nextSessionSettingsUpdateCommandId(),
+      retry: current?.status === "unknown",
+      settings,
+      timeoutMs: SESSION_SETTINGS_UPDATE_TIMEOUT_MS,
+      type: "session/settingsUpdateRequested",
+      workspaceId: engineIdentity.workspaceId
+    });
+  }
+
   function mutationSessionResult(agentSessionId: string) {
     const session = selectEngineSession(publicSnapshot, agentSessionId);
     if (!session) return null;
@@ -497,7 +527,8 @@ export function createAgentSessionEngine({
       return () => {
         listeners.delete(listener);
       };
-    }
+    },
+    updateSessionSettings
   };
   return engine;
 }

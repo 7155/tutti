@@ -196,14 +196,19 @@ It owns:
   validation for rename and pin, validated delete-result tombstone projection,
   shared mutation settlement, and a serialized settings-precondition state
   machine
-- semantic `AgentSessionEngine` methods for composer-option loading,
-  existing-Session Prompt submission, Session stop, Interaction response
-  submission, existing-Session settings updates, rename, pin, and batch
-  delete. Prompt, stop, Interaction, and settings updates are intent admission:
-  the Engine owns workspace and protocol construction. Prompt submission owns
-  routing, the 120-second confirmation window, and the accepted/queued
-  admission result while the caller retains the stable client submit identity
-  used by draft recovery and idempotent retry. Stop, Interaction, and settings
+- semantic `AgentSessionEngine` methods for composer-option loading, Session
+  activation, existing-Session Prompt submission, Session stop, Interaction
+  response submission, existing-Session settings updates, rename, pin, and
+  batch delete. Activation, Prompt, stop, Interaction, and settings updates are
+  intent admission: the Engine owns workspace and protocol construction.
+  Activation owns requested/expiry timestamps, the 120-second confirmation
+  window, and the accepted result. This window contains the 90-second
+  new-Session activation command instead of allowing presentation expiry to
+  race a valid slow startup. The caller retains the stable activation request
+  and client submit identities used by optimistic state, dismissal, draft
+  recovery, and idempotent retry. Prompt submission owns routing, the same
+  confirmation window, and the accepted/queued result while its caller retains
+  the stable client submit identity. Stop, Interaction, and settings
   additionally own command identity plus the 30-second delivery timeout.
   Session stop owns the 30-second first-Turn waiting window and duplicate
   admission across Desktop and Mobile. Interaction submission owns canonical
@@ -225,6 +230,13 @@ Product hosts call `updateSessionSettings` for an existing Session instead of
 constructing `session/settingsUpdateRequested` protocol fields. Settings held
 before Session activation remain part of the activation flow and do not pass
 through this existing-Session method.
+Desktop AgentGUI and Mobile call `activateSession` instead of constructing
+`activation/requested` protocol fields. Product surfaces still choose target,
+placement, initial settings/content, and durable request identities; the Engine
+admits that domain request under one workspace scope and confirmation policy.
+Only an admitted activation may clear the new-Session draft. Actual Session
+creation, resume, and initial Turn lifecycle remain Agent Host semantics behind
+the host effect port.
 Desktop AgentGUI and Mobile call `stopSession` instead of constructing
 `session/stopRequested` protocol fields. The same method stops an active Turn
 or records a bounded request that cancels the first Turn produced by an

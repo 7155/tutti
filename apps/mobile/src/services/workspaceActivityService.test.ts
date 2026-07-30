@@ -266,15 +266,89 @@ describe("WorkspaceActivityService", () => {
 
     await service.start();
     await flushAsyncWork();
+    const engine = (
+      service as unknown as {
+        engine: AgentSessionEngine;
+      }
+    ).engine;
+    const activateSession = jest.spyOn(engine, "activateSession");
     service.startCreating();
     service.setDraft("start");
     await service.send();
     await flushAsyncWork();
 
+    expect(activateSession).toHaveBeenCalledTimes(1);
+    expect(activateSession).toHaveBeenCalledWith({
+      agentSessionId: expect.any(String),
+      agentTargetId: "target-1",
+      clientSubmitId: expect.any(String),
+      initialContent: [{ text: "start", type: "text" }],
+      initialTurnExpected: true,
+      mode: "new",
+      requestId: expect.any(String),
+      runtimeContent: [{ text: "start", type: "text" }],
+      settings: {
+        model: null,
+        permissionModeId: null,
+        planMode: null,
+        reasoningEffort: null,
+        speed: null
+      },
+      submitDiagnostics: {
+        blockCount: 1,
+        promptLength: 5,
+        source: "mobile",
+        submittedAtUnixMs: expect.any(Number)
+      },
+      visible: true
+    });
+    const activationInput = activateSession.mock.calls[0]?.[0];
+    expect(activationInput?.mode).toBe("new");
+    if (activationInput?.mode === "new") {
+      expect(activationInput.requestId).toBe(activationInput.clientSubmitId);
+    }
     expect(createCalls).toBe(1);
     expect(service.getSnapshot().selectedAgentSessionId).not.toBeNull();
     expect(service.getSnapshot().sending).toBe(false);
 
+    service.dispose();
+  });
+
+  test("preserves the new-Session draft when activation admission is rejected", async () => {
+    const service = createService(
+      createClient({
+        composerOptions: async () => ({
+          behavior: {
+            collapseModelOptionsToLatest: false,
+            modelOptionsAuthoritative: true,
+            planModeExclusiveWithPermissionMode: false,
+            prewarmDraftSession: false,
+            refreshModelOptionsAfterSettings: false
+          },
+          effectiveSettings: {},
+          provider: "codex"
+        }),
+        listMessages: emptyMessagePage,
+        session: () => null,
+        targets: [createTarget()]
+      })
+    );
+
+    await service.start();
+    await flushAsyncWork();
+    const engine = (
+      service as unknown as {
+        engine: AgentSessionEngine;
+      }
+    ).engine;
+    jest.spyOn(engine, "activateSession").mockReturnValue(false);
+    service.startCreating();
+    service.setDraft("start");
+
+    await service.send();
+
+    expect(service.getSnapshot().draft).toBe("start");
+    expect(service.getSnapshot().sending).toBe(false);
     service.dispose();
   });
 

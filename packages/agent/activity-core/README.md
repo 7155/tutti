@@ -54,13 +54,17 @@ Engine rules:
   explicitly. There is no module-level singleton; hosts running multiple
   runtimes against one workspace create one engine per origin.
 - Normalized observations and advanced lifecycle intents enter through
-  `dispatch(intent)`. Session rename, pin, and batch delete enter through the
-  semantic `engine.renameSession`, `engine.setSessionPinned`, and
-  `engine.deleteSessions` methods. Composer-option reads enter through
-  `engine.loadComposerOptions`. These methods derive workspace identity or
-  target scope, allocate command identity, await exact settlement, and return
-  canonical results without exposing reducer protocol to hosts. Session
-  mutations additionally own the default timeout and caller cancellation.
+  `dispatch(intent)`. Frontend activation enters through
+  `engine.activateSession`; Session rename, pin, and batch delete enter through
+  `engine.renameSession`, `engine.setSessionPinned`, and
+  `engine.deleteSessions`. Composer-option reads enter through
+  `engine.loadComposerOptions`. These semantic methods derive workspace
+  identity or target scope and hide reducer protocol from hosts. Activation
+  owns its timestamps, the 120-second confirmation window, intent projection,
+  and admission result while the caller retains the exact request and client
+  submit identities used by optimistic state and idempotent retry. Session
+  mutations additionally allocate command identity, await exact settlement,
+  return canonical results, and own the default timeout and caller cancellation.
   Cancellation aborts a mutation host effect; once delivery may have started,
   the mutation remains delivery-unknown rather than becoming a confirmed
   failure.

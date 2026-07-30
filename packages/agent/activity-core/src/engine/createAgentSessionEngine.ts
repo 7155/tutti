@@ -21,6 +21,7 @@ import {
   dispatchSessionMutationWithCancellation,
   type SessionMutationCancellation
 } from "./sessionMutationDispatch.ts";
+import { requestSessionActivation } from "./sessionActivation.operation.ts";
 import {
   createInitialAgentSessionEngineState,
   rootEngineReducer
@@ -31,6 +32,7 @@ import {
   type AgentSessionEngineIdentity,
   type AgentSessionEngineIntentObserver,
   type AgentSessionEngineListener,
+  type AgentSessionActivationInput,
   type AgentSessionLoadComposerOptionsInput,
   type AgentSessionStopInput,
   type AgentSessionSubmitInteractionResponseInput,
@@ -50,10 +52,7 @@ import type {
   RootEngineIntent
 } from "./rootReducer.types.ts";
 
-// Session engine factory (docs/architecture/agent-gui-refactor-plan.md,
-// sections 3.3 and 4.1, engine skeleton slice).
-//
-// All state lives inside this closure: one instance per workspace + origin
+// All engine state lives inside this closure: one instance per workspace + origin
 // pair, injected explicitly by the host. The dispatch loop is serial — an
 // intent dispatched while a drain is running is queued and reduced within the
 // same drain — and subscribers are notified at most once per drain cycle.
@@ -459,6 +458,18 @@ export function createAgentSessionEngine({
     );
   }
 
+  function activateSession(input: AgentSessionActivationInput): boolean {
+    return requestSessionActivation(
+      {
+        clock,
+        dispatch,
+        getSnapshot: () => publicSnapshot,
+        workspaceId: engineIdentity.workspaceId
+      },
+      input
+    );
+  }
+
   function submitPrompt(
     input: AgentSessionSubmitPromptInput
   ): AgentSessionSubmitPromptResult {
@@ -560,6 +571,7 @@ export function createAgentSessionEngine({
   }
 
   const engine: AgentSessionEngine = {
+    activateSession,
     identity: engineIdentity,
     async deleteSessions(input) {
       const mutation = await dispatchSessionMutationWithCancellation(

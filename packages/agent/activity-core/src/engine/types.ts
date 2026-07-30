@@ -454,6 +454,43 @@ export interface AgentSessionSubmitInteractionResponseInput {
   turnId: string;
 }
 
+interface AgentSessionActivationInputBase {
+  agentSessionId: string;
+  capabilityRefs?: readonly AgentActivityCapabilityReference[];
+  cwd?: string;
+  initialContent?: readonly AgentPromptContentBlock[];
+  initialDisplayPrompt?: string;
+  initialTurnExpected?: boolean;
+  railPlacement?: AgentActivityRailPlacement;
+  railSectionKey?: string;
+  requestId: string;
+  runtimeContent?: readonly AgentPromptContentBlock[];
+  settings?: AgentActivitySessionSettings;
+  submitDiagnostics?: Readonly<AgentActivitySubmitDiagnostics>;
+  title?: string;
+  visible?: boolean;
+}
+
+export type AgentSessionActivationInput =
+  | (AgentSessionActivationInputBase & {
+      agentTargetId: string;
+      clientSubmitId: string;
+      initialGoalControl?: Readonly<AgentActivityInitialGoalControl>;
+      initialTuttiModeActivation?: AgentActivityInitialTuttiModeActivation;
+      mode: "new";
+      optimisticTitle?: string;
+      tuttiModeDraftKey?: string;
+    })
+  | (AgentSessionActivationInputBase & {
+      agentTargetId?: string | null;
+      clientSubmitId?: never;
+      initialGoalControl?: never;
+      initialTuttiModeActivation?: never;
+      mode: "existing";
+      optimisticTitle?: never;
+      tuttiModeDraftKey?: never;
+    });
+
 export interface AgentSessionSubmitPromptInput {
   agentSessionId: string;
   capabilityRefs?: readonly AgentActivityCapabilityReference[];
@@ -477,6 +514,7 @@ export interface AgentSessionStopInput {
 
 export interface AgentSessionEngine {
   readonly identity: AgentSessionEngineIdentity;
+  activateSession(input: AgentSessionActivationInput): boolean;
   deleteSessions(
     input: Omit<AgentActivityDeleteSessionsInput, "signal" | "workspaceId"> & {
       signal?: AbortSignal;

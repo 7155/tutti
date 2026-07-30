@@ -142,12 +142,54 @@ async function acquireLock({
       }
 
       if (isStaleLock(lockPath, hostName)) {
-        rmSync(lockPath, { force: true });
+        await reclaimStaleLock({
+          hostName,
+          lockPath,
+          pollIntervalMilliseconds,
+          processId
+        });
         continue;
       }
 
       await sleep(pollIntervalMilliseconds);
     }
+  }
+}
+
+async function reclaimStaleLock({
+  hostName,
+  lockPath,
+  pollIntervalMilliseconds,
+  processId
+}) {
+  const reclaimPath = `${lockPath}.reclaim`;
+  let descriptor;
+
+  try {
+    descriptor = openSync(reclaimPath, "wx");
+    writeFileSync(
+      descriptor,
+      `${JSON.stringify({ hostName, processId, startedAt: new Date().toISOString() })}\n`
+    );
+  } catch (error) {
+    if (error?.code !== "EEXIST") {
+      throw error;
+    }
+
+    if (isStaleLock(reclaimPath, hostName)) {
+      rmSync(reclaimPath, { force: true });
+    }
+    await sleep(pollIntervalMilliseconds);
+    return;
+  }
+
+  try {
+    if (isStaleLock(lockPath, hostName)) {
+      rmSync(lockPath, { force: true });
+    }
+  } finally {
+    closeSync(descriptor);
+    rmSync(reclaimPath, { force: true });
   }
 }
 

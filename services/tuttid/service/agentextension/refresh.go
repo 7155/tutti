@@ -46,6 +46,14 @@ func (m *Manager) reconcileConfiguredSource(
 
 	installation, reconcileErr := m.reconcileSource(ctx, source)
 	if reconcileErr != nil {
+		if sourceUsesLocalPackage(source) {
+			if m.Store != nil {
+				if err := m.Store.DeleteAgentTarget(ctx, targetID(source.Key)); err != nil {
+					reconcileErr = errors.Join(reconcileErr, fmt.Errorf("remove stale local target: %w", err))
+				}
+			}
+			return []error{fmt.Errorf("reconcile local agent extension %s: %w", source.Key, reconcileErr)}
+		}
 		var fallbackErr error
 		installation, fallbackErr = m.loadActive(source.Key)
 		if fallbackErr == nil && !installationMatchesConfiguredSource(source, installation) {

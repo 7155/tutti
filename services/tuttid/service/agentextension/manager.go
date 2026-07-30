@@ -116,6 +116,16 @@ func (m *Manager) RestoreActive(ctx context.Context) (bool, []error) {
 			}
 			continue
 		}
+		if sourceUsesLocalPackage(source) {
+			// Development overrides are mutable inputs. Always snapshot the
+			// configured directory before serving requests so a missing,
+			// changed, or newly selected package cannot be hidden by an older
+			// local installation. Keep the persisted target until reconcile so
+			// registerTarget can preserve the user's enabled preference; a
+			// failed local reconcile removes the stale target.
+			requiresSynchronousReconcile = true
+			continue
+		}
 
 		installation, err := m.loadActive(source.Key)
 		if err != nil {
@@ -181,10 +191,12 @@ func sourceEnabled(source tuttitypes.AgentExtensionSource, featureFlags map[stri
 	return source.Enabled
 }
 
+func sourceUsesLocalPackage(source tuttitypes.AgentExtensionSource) bool {
+	return strings.TrimSpace(source.LocalPackageDir) != ""
+}
+
 func installationMatchesConfiguredSource(source tuttitypes.AgentExtensionSource, installation Installation) bool {
-	expectsLocal := strings.TrimSpace(source.LocalPackageDir) != ""
-	isLocal := installation.HasLocalPackageProvenance()
-	return expectsLocal == isLocal
+	return sourceUsesLocalPackage(source) == installation.HasLocalPackageProvenance()
 }
 
 func (m *Manager) ResolveRuntime(ctx context.Context, installationID string) (RuntimeBinding, error) {
@@ -368,18 +380,11 @@ func (m *Manager) reconcileSource(ctx context.Context, source tuttitypes.AgentEx
 	if !safeKey.MatchString(source.Key) {
 		return Installation{}, errors.New("invalid extension key")
 	}
-	if strings.TrimSpace(source.LocalPackageDir) != "" {
+	if sourceUsesLocalPackage(source) {
 		return m.installLocalPackage(source.Key, source.LocalPackageDir)
 	}
-	var versions Versions
-	if err := m.getJSON(ctx, source.ReleaseIndexURL, maxIndexBytes, &versions); err != nil {
-		return Installation{}, err
-	}
-	record, err := selectVersion(versions, source.Key, tuttitypes.ResolveAppVersion())
+	record, err := m.resolveReleaseRecord(ctx, source)
 	if err != nil {
-		return Installation{}, err
-	}
-	if err := verifyRelease(record.Release, source); err != nil {
 		return Installation{}, err
 	}
 	if installed, err := m.loadActive(source.Key); err == nil && installed.Version == record.Version &&

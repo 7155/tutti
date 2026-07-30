@@ -99,6 +99,55 @@ func TestAgentTargetSetupInstallsGenericExtensionRuntime(t *testing.T) {
 	}
 }
 
+func TestAgentTargetSetupSurfacesAccountFailureReason(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	transport := &probeTransport{}
+	service, targetID := setupFixture(
+		t, "generic", "Generic Agent", "@example/generic-agent", "1.2.3", "generic-agent", ">=1.2.3 <2.0.0",
+		&fixtureInstallRunner{binary: "generic-agent", packageName: "@example/generic-agent", version: "1.2.3"},
+		transport,
+	)
+	initial, err := service.GetSetup(context.Background(), InstallPlanInput{
+		WorkspaceID: "workspace-1", AgentTargetID: targetID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Install(context.Background(), InstallInput{
+		WorkspaceID: "workspace-1", AgentTargetID: targetID,
+		PlanDigest: initial.Plan.PlanDigest, ClientActionID: "account-failure-probe",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	waitForSetupStatus(t, service, targetID, SetupReady)
+
+	tests := map[string]string{
+		`Kimi Code models endpoint rejected OAuth credentials: status code: 402, message: We're unable to verify your membership benefits. Please ensure your membership is active.`: agentruntime.FailureCodeSubscriptionRequired,
+		`Kimi Code request rejected OAuth credentials: status code: 403, message: You've reached your usage limit for this billing cycle.`:                                           agentruntime.FailureCodeQuotaOrRateLimit,
+		`Kimi Code request rejected OAuth credentials: 402 Payment Required`:                                                                                                         agentruntime.FailureCodeInsufficientCredits,
+	}
+	for detail, wantReason := range tests {
+		probeErr := fmt.Errorf("%w: %s", ErrRuntimeProbeFailed, detail)
+		if got := installErrorCode(probeErr); got != wantReason {
+			t.Fatalf("installErrorCode(%q) = %q, want %q", detail, got, wantReason)
+		}
+		transport.setSessionError(detail)
+		snapshot, err := service.GetSetup(context.Background(), InstallPlanInput{
+			WorkspaceID: "workspace-1", AgentTargetID: targetID,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if snapshot.Status != SetupFailed || snapshot.Reason != wantReason {
+			t.Fatalf("account failure setup = %#v, want reason %q", snapshot, wantReason)
+		}
+	}
+	installErr := fmt.Errorf("%w: npm registry returned 429 Too Many Requests", ErrRuntimeInstallFailed)
+	if got := installErrorCode(installErr); got != "install_failed" {
+		t.Fatalf("installErrorCode(%q) = %q, want install_failed", installErr, got)
+	}
+}
+
 func TestManagedBinaryVersionFixture(_ *testing.T) {
 	if os.Getenv("TUTTI_TEST_MANAGED_BINARY_VERSION") != "1" {
 		return
@@ -957,6 +1006,7 @@ type probeTransport struct {
 	terminalAuthMeta   bool
 	authenticated      bool
 	authenticateError  string
+	sessionError       string
 }
 
 type fixtureRuntimeAuthInvalidation struct {
@@ -984,6 +1034,18 @@ func (t *probeTransport) isAuthenticated() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.authenticated
+}
+
+func (t *probeTransport) setSessionError(message string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.sessionError = message
+}
+
+func (t *probeTransport) getSessionError() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.sessionError
 }
 
 type probeConnection struct {
@@ -1044,6 +1106,14 @@ func (c *probeConnection) Send(value []byte) error {
 			response, _ := json.Marshal(map[string]any{
 				"jsonrpc": "2.0", "id": request.ID,
 				"error": map[string]any{"code": -32000, "message": "authentication required"},
+			})
+			c.frames <- agentruntime.ProcessFrame{Stdout: append(response, '\n')}
+			return nil
+		}
+		if message := c.owner.getSessionError(); message != "" {
+			response, _ := json.Marshal(map[string]any{
+				"jsonrpc": "2.0", "id": request.ID,
+				"error": map[string]any{"code": -32000, "message": message},
 			})
 			c.frames <- agentruntime.ProcessFrame{Stdout: append(response, '\n')}
 			return nil

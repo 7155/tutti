@@ -2075,3 +2075,48 @@ invalid_grant`. Search `tuttid.log` for
   [agent-extensions.md](../../architecture/agent-extensions.md)
   [manager.go](../../../services/tuttid/service/agentextension/manager.go)
   [wiring_daemon_api.go](../../../services/tuttid/wiring_daemon_api.go)
+
+### Kimi Code remains in setup or reports login after authentication
+
+- Symptom:
+  Kimi Code remains blocked after terminal login, has no selectable model, or
+  reports an authentication problem when the account actually lacks an eligible
+  plan, has insufficient balance, or reached its billing-cycle limit.
+- Quick checks:
+  Build the extension package first, then pass its unpacked package directory:
+
+  ```sh
+  cd /path/to/agent-extension-kimi-code
+  pnpm package:tutti-agent
+  cd /path/to/tutti
+  DEV_GUI_KIMI_CODE_PACKAGE_DIR=/path/to/agent-extension-kimi-code/build/tutti-agent/package \
+    make dev-gui
+  ```
+
+  An explicit directory must exist and contain `tutti.agent.json`; `dev-gui.sh`
+  now rejects stale source-tree paths before Electron starts. Inspect the setup
+  snapshot `reason` and the structured conversation error `code`, not only raw
+  text that may mention API keys or OAuth credentials.
+
+- Root cause:
+  Kimi's model endpoint may wrap membership, model-plan, balance, and quota
+  responses in an authentication-shaped error. Classifying the credential words
+  first sends the user back through login and hides the actionable account
+  state. Separately, restoring a cached local extension snapshot can hide an
+  invalid or outdated development package path.
+- Fix:
+  Classify subscription, model access, HTTP 402 balance, and quota markers before
+  generic authentication. Project the stable reason through setup and localized
+  AgentGUI copy without rendering raw provider payloads. For local overrides,
+  synchronously snapshot the configured directory on every daemon start and
+  remove the stale Target if validation fails.
+- Validation:
+  Cover official membership/plan/quota message shapes that also mention
+  credentials, setup reason projection, localized account-state presentation,
+  invalid local paths, changed local package bytes, and preservation of the
+  Target enabled preference after a successful resnapshot.
+- References:
+  [agent-extensions.md](../../architecture/agent-extensions.md)
+  [runtime-overrides.md](../runtime-overrides.md)
+  [visible_error.go](../../../packages/agent/daemon/runtime/visible_error.go)
+  [setup.go](../../../services/tuttid/service/agentextension/setup.go)

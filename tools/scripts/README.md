@@ -16,7 +16,9 @@ Current examples include:
   configured signed remote releases by default. The command clears inherited
   Kimi Code package overrides so stale shell or launchd state cannot shadow the
   release used by the shipped product; set `DEV_GUI_KIMI_CODE_PACKAGE_DIR` to
-  an explicit package path only when testing a local package
+  an explicit unpacked package path only when testing a local package. The
+  script canonicalizes the path and fails before launch when the directory or
+  `tutti.agent.json` is missing
 - `renderer-dev-warmup.mjs` for moving cold Vite and React Compiler transforms
   ahead of the Electron launch during desktop development
 - `setup-dev.mjs` for checking local developer prerequisites such as pinned lint tooling

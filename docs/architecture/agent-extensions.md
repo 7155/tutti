@@ -16,6 +16,15 @@ and Ed25519 public key. `tuttid` accepts only active compatible releases whose
 canonical release JSON signature, artifact SHA-256, byte size, manifest
 identity, and package contents all validate.
 
+During a versioned metadata-path rollout, a source may declare ordered fallback
+index URLs. Fallback is permitted only when a higher-priority index cannot be
+fetched, such as before the new CloudFront path has been published. Once an
+index is fetched, its JSON shape, agent identity, compatibility, active or
+withdrawn state, and selected release signature are authoritative and fail
+closed; a legacy index must never revive a release rejected by that authority.
+Remove rollout fallbacks after the new metadata path is published and the
+supporting Tutti version has propagated.
+
 `minTuttiVersion` is evaluated only after the complete versions document has
 been decoded. It therefore cannot protect an older strict decoder from a new
 field inside an embedded manifest. A release that extends the manifest wire
@@ -48,10 +57,14 @@ configured source. The daemon applies the same data-only file, size, manifest,
 profile, asset, and runtime-contract validation, copies the package into its
 owned state, stamps a content-addressed `+local.<digest>` snapshot version, and
 registers the normal fixed Agent Target. It never runs from the mutable source
-directory. A cached `+local` snapshot is restored or used as an offline fallback
-only while the matching explicit override remains configured; removing the
-override requires the signed remote source again. Production ignores this
-override and continues to require the signed HTTPS release path.
+directory. Every daemon start with an explicit local override synchronously
+snapshots and validates the currently configured directory before serving the
+Agent Target. A cached `+local` snapshot is never an offline fallback for a
+missing or invalid development directory; reconciliation removes the stale
+Target while preserving its enabled preference when a valid new snapshot is
+registered. Removing the override requires the signed remote source again.
+Production ignores this override and continues to require the signed HTTPS
+release path.
 
 ## Installation And Runtime Ownership
 

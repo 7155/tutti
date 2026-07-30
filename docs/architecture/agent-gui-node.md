@@ -1160,14 +1160,6 @@ requests only `skills/list` and retains the ordinary Skill projection through
 the shared app-server transport, capability contract, cache, and structured
 prompt-item submission path.
 
-App-server-backed capability discovery also follows the descriptor boundary.
-Codex requests its complete native catalog and applies the authoritative plugin
-projection; Tutti Agent requests only `skills/list` and retains the ordinary
-Skill projection. Both providers share the app-server transport, capability
-contract, cache, and structured prompt-item submission path. AgentGUI continues
-to expose Skills only through `$`; `/` remains commands and product
-capabilities.
-
 ### 5.3 Agent Directory and setup
 
 The host provides a complete, ordered Agent Directory with this load lifecycle:

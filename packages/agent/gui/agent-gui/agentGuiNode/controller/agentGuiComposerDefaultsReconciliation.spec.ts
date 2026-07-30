@@ -191,4 +191,147 @@ describe("agentGuiComposerDefaultsReconciliation", () => {
       }).receipt
     ).not.toBeNull();
   });
+
+  it("stops forcing reads but keeps optimistic intent when authority omits the field", () => {
+    const ledger = createAgentGUIComposerDefaultsLedger();
+    const mutation = registerAgentGUIComposerDefaultsMutation(
+      ledger,
+      draftKey,
+      { permissionModeId: "accept_edits" }
+    );
+    acknowledgeAgentGUIComposerDefaultsMutation(ledger, mutation, {
+      acknowledgedFields: ["permissionModeId"],
+      supersededFields: []
+    });
+    const settings = { permissionModeId: "accept_edits" };
+    const read = prepareAcknowledgedComposerDefaultsAuthorityRead(
+      ledger,
+      draftKey,
+      settings
+    );
+
+    expect(
+      retireAcknowledgedComposerDefaultsForRead(
+        ledger,
+        read.receipt!,
+        settings,
+        {}
+      )
+    ).toEqual([]);
+    expect(
+      prepareAcknowledgedComposerDefaultsAuthorityRead(
+        ledger,
+        draftKey,
+        settings
+      )
+    ).toEqual({
+      force: false,
+      receipt: null,
+      settings
+    });
+  });
+
+  it("reconciles exact, absent, and conflicting fields independently", () => {
+    const ledger = createAgentGUIComposerDefaultsLedger();
+    const mutation = registerAgentGUIComposerDefaultsMutation(
+      ledger,
+      draftKey,
+      {
+        model: "opencode/model-a",
+        permissionModeId: "accept_edits",
+        speed: "fast"
+      }
+    );
+    acknowledgeAgentGUIComposerDefaultsMutation(ledger, mutation, {
+      acknowledgedFields: ["model", "permissionModeId", "speed"],
+      supersededFields: []
+    });
+    const settings = {
+      model: "opencode/model-a",
+      permissionModeId: "accept_edits",
+      speed: "fast"
+    };
+    const read = prepareAcknowledgedComposerDefaultsAuthorityRead(
+      ledger,
+      draftKey,
+      settings
+    );
+
+    expect(
+      retireAcknowledgedComposerDefaultsForRead(
+        ledger,
+        read.receipt!,
+        settings,
+        {
+          model: "opencode/model-a",
+          speed: "normal"
+        }
+      )
+    ).toEqual([{ field: "model", value: "opencode/model-a" }]);
+
+    expect(
+      prepareAcknowledgedComposerDefaultsAuthorityRead(ledger, draftKey, {
+        permissionModeId: "accept_edits",
+        speed: "fast"
+      })
+    ).toMatchObject({
+      force: true,
+      receipt: {
+        fields: {
+          speed: { value: "fast" }
+        }
+      },
+      settings: {
+        permissionModeId: "accept_edits"
+      }
+    });
+  });
+
+  it("does not let an omitted older read release a newer generation", () => {
+    const ledger = createAgentGUIComposerDefaultsLedger();
+    const firstMutation = registerAgentGUIComposerDefaultsMutation(
+      ledger,
+      draftKey,
+      { permissionModeId: "accept_edits" }
+    );
+    acknowledgeAgentGUIComposerDefaultsMutation(ledger, firstMutation, {
+      acknowledgedFields: ["permissionModeId"],
+      supersededFields: []
+    });
+    const firstRead = prepareAcknowledgedComposerDefaultsAuthorityRead(
+      ledger,
+      draftKey,
+      { permissionModeId: "accept_edits" }
+    );
+    const secondMutation = registerAgentGUIComposerDefaultsMutation(
+      ledger,
+      draftKey,
+      { permissionModeId: "dont_ask" }
+    );
+    acknowledgeAgentGUIComposerDefaultsMutation(ledger, secondMutation, {
+      acknowledgedFields: ["permissionModeId"],
+      supersededFields: []
+    });
+
+    expect(
+      retireAcknowledgedComposerDefaultsForRead(
+        ledger,
+        firstRead.receipt!,
+        { permissionModeId: "dont_ask" },
+        {}
+      )
+    ).toEqual([]);
+    expect(
+      prepareAcknowledgedComposerDefaultsAuthorityRead(ledger, draftKey, {
+        permissionModeId: "dont_ask"
+      })
+    ).toMatchObject({
+      force: true,
+      receipt: {
+        fields: {
+          permissionModeId: { value: "dont_ask" }
+        }
+      }
+    });
+  });
 });

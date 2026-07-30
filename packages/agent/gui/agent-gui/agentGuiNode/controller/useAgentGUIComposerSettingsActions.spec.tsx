@@ -533,7 +533,7 @@ describe("useAgentGUIComposerSettingsActions", () => {
     expect(setDraftSettingsBySessionId).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps acknowledged intent after a failed reload and retires it on the next authority read", async () => {
+  it("keeps acknowledged intent after a failed reload and releases confirmation when authority omits the field", async () => {
     const sessionEngine = createAgentSessionEngine({
       clock: { nowUnixMs: () => 1 },
       commandPort: { execute: vi.fn() },
@@ -655,12 +655,26 @@ describe("useAgentGUIComposerSettingsActions", () => {
     act(() => {
       onComposerDefaultsAuthorityReloadedRef.current.reloaded(
         authorityRead.receipt,
-        {
-          effectiveSettings: { permissionModeId: "full-access" }
-        } as AgentActivityComposerOptions
+        {} as AgentActivityComposerOptions
       );
     });
-    expect(draftSettingsBySessionIdRef.current).toEqual({});
+    expect(
+      draftSettingsBySessionIdRef.current[
+        "__agent_gui_node_defaults__:target:local:opencode"
+      ]
+    ).toEqual({ permissionModeId: "full-access" });
+    expect(
+      onComposerDefaultsAuthorityReloadedRef.current.prepareRead(
+        target,
+        draftSettingsBySessionIdRef.current[
+          "__agent_gui_node_defaults__:target:local:opencode"
+        ] ?? {}
+      )
+    ).toEqual({
+      force: false,
+      receipt: null,
+      settings: { permissionModeId: "full-access" }
+    });
   });
 });
 

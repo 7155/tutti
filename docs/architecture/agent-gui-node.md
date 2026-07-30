@@ -666,7 +666,10 @@ disable submission, but must not change editor editability.
 - an acknowledged home Composer default remains an optimistic draft until a
   later authoritative Composer-options response reports the same effective
   field value. A successful read alone must not retire the draft because a
-  slow or overlapping provider discovery may still return an older default
+  slow or overlapping provider discovery may still return an older default.
+  When a settled response omits that field, AgentGUI keeps the optimistic
+  intent but releases its confirmation marker so providers that cannot project
+  the field do not remain on permanent forced, uncached discovery
 - the Engine alone translates shared activation, prompt send, settings update,
   turn cancel, Interaction response, rename, pin, and batch-delete commands
   into `AgentSessionEffectPort` calls. Desktop and Mobile effect ports retain

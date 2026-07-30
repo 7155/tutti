@@ -173,9 +173,22 @@ export function retireAcknowledgedComposerDefaultsForRead(
       !readEntry ||
       !currentEntry ||
       currentEntry.generation !== readEntry.generation ||
-      latest[field] !== readEntry.generation ||
-      normalizeOptionalText(authoritativeSettings[field]) !== readEntry.value
+      latest[field] !== readEntry.generation
     ) {
+      continue;
+    }
+    const authoritativeValue = normalizeOptionalText(
+      authoritativeSettings[field]
+    );
+    if (authoritativeValue === null) {
+      // This provider does not project authority for the field. Stop forcing
+      // uncached reads, but keep the optimistic draft as the user's intent.
+      delete acknowledged[field];
+      continue;
+    }
+    if (authoritativeValue !== readEntry.value) {
+      // A concrete different value can be a stale overlapping discovery.
+      // Keep both the optimistic draft and its confirmation marker.
       continue;
     }
     if (normalizeOptionalText(settings[field]) === readEntry.value) {

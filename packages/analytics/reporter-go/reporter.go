@@ -60,12 +60,14 @@ type AnalyticsConfig struct {
 // hosts preserve an existing log location; when omitted it defaults beneath
 // StateDir.
 type Config struct {
-	Analytics      AnalyticsConfig
-	DebugPublisher DebugPublisher
-	StateDir       string
-	SDKLogDir      string
-	DeviceID       string
-	CommonParams   map[string]any
+	Analytics            AnalyticsConfig
+	DebugPublisher       DebugPublisher
+	StateDir             string
+	SDKLogDir            string
+	DeviceID             string
+	CommonParams         map[string]any
+	CommonParamsProvider func() map[string]any
+	UserUniqueIDProvider func() string
 }
 
 // New selects a disabled, debug-only, or DataFinder-backed reporter.
@@ -172,11 +174,13 @@ func readDeviceID(path string) (value string, exists bool, err error) {
 }
 
 type reporterCommon struct {
-	deviceID   string
-	sessionID  string
-	appVersion string
-	osName     string
-	additional map[string]any
+	deviceID             string
+	sessionID            string
+	appVersion           string
+	osName               string
+	additional           map[string]any
+	additionalProvider   func() map[string]any
+	userUniqueIDProvider func() string
 }
 
 func newReporterCommon(config Config) (reporterCommon, error) {
@@ -185,11 +189,13 @@ func newReporterCommon(config Config) (reporterCommon, error) {
 		return reporterCommon{}, err
 	}
 	return reporterCommon{
-		deviceID:   deviceID,
-		sessionID:  uuid.NewString(),
-		appVersion: config.Analytics.AppVersion,
-		osName:     runtime.GOOS,
-		additional: copyParams(config.CommonParams),
+		deviceID:             deviceID,
+		sessionID:            uuid.NewString(),
+		appVersion:           config.Analytics.AppVersion,
+		osName:               runtime.GOOS,
+		additional:           copyParams(config.CommonParams),
+		additionalProvider:   config.CommonParamsProvider,
+		userUniqueIDProvider: config.UserUniqueIDProvider,
 	}, nil
 }
 
@@ -198,11 +204,41 @@ func (c reporterCommon) params() map[string]any {
 	if params == nil {
 		params = map[string]any{}
 	}
+	for key, value := range c.providedParams() {
+		params[key] = value
+	}
 	params["device_id"] = c.deviceID
 	params["session_id"] = c.sessionID
 	params["app_version"] = c.appVersion
 	params["os"] = c.osName
 	return params
+}
+
+func (c reporterCommon) providedParams() (params map[string]any) {
+	if c.additionalProvider == nil {
+		return nil
+	}
+	defer func() {
+		if recover() != nil {
+			params = nil
+		}
+	}()
+	return copyParams(c.additionalProvider())
+}
+
+func (c reporterCommon) userUniqueID() (userID string) {
+	if c.userUniqueIDProvider == nil {
+		return c.deviceID
+	}
+	defer func() {
+		if recover() != nil {
+			userID = c.deviceID
+		}
+	}()
+	if value := strings.TrimSpace(c.userUniqueIDProvider()); value != "" {
+		return value
+	}
+	return c.deviceID
 }
 
 func normalizeEvents(events []Event, common map[string]any) []teaSDKEvent {
@@ -216,8 +252,14 @@ func normalizeEvents(events []Event, common map[string]any) []teaSDKEvent {
 			clientTS = time.Now().UnixMilli()
 		}
 		params := copyParams(event.Params)
+		if params == nil {
+			params = map[string]any{}
+		}
 		for key := range common {
 			delete(params, key)
+		}
+		if _, exists := params["event_id"]; !exists {
+			params["event_id"] = uuid.NewString()
 		}
 		normalized = append(normalized, teaSDKEvent{
 			Name:     event.Name,

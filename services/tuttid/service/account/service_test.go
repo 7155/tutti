@@ -16,7 +16,20 @@ import (
 
 	authbridge "github.com/tutti-os/tutti/packages/auth/bridge-go"
 	"github.com/tutti-os/tutti/packages/commerce"
+	reporterservice "github.com/tutti-os/tutti/services/tuttid/service/reporter"
 )
+
+type recordingAccountAnalyticsReporter struct {
+	events []reporterservice.Event
+}
+
+func (r *recordingAccountAnalyticsReporter) Track(_ context.Context, events ...reporterservice.Event) {
+	r.events = append(r.events, events...)
+}
+
+func (*recordingAccountAnalyticsReporter) Close() error {
+	return nil
+}
 
 func TestNewServiceReadsLocalAuthOverrides(t *testing.T) {
 	t.Setenv("TUTTI_ACCOUNT_BASE_URL", "http://127.0.0.1:1/api/account")
@@ -78,6 +91,8 @@ func TestLoginStatusCompletedTriggersCallbackOnce(t *testing.T) {
 	service := NewService(filepath.Join(t.TempDir(), "auth.json"))
 	service.AccountBaseURL = account.URL
 	service.AuthLoginURL = account.URL + "/auth/login"
+	analytics := &recordingAccountAnalyticsReporter{}
+	service.SetAnalyticsReporter(analytics)
 	var callbackCount atomic.Int32
 	done := make(chan struct{}, 1)
 	service.OnLoginCompleted = func(context.Context) {
@@ -118,6 +133,82 @@ func TestLoginStatusCompletedTriggersCallbackOnce(t *testing.T) {
 	}
 	if got := callbackCount.Load(); got != 1 {
 		t.Fatalf("callback count = %d, want 1", got)
+	}
+	if len(analytics.events) != 2 {
+		t.Fatalf("analytics events = %d, want start and completed", len(analytics.events))
+	}
+	if got := analytics.events[0].Params["stage"]; got != "login" {
+		t.Fatalf("start stage = %v, want login", got)
+	}
+	if got := analytics.events[1].Params["result"]; got != "success" {
+		t.Fatalf("completed result = %v, want success", got)
+	}
+	if got := service.AnalyticsUserUniqueID(); got != "user-1" {
+		t.Fatalf("analytics user ID = %q, want user-1", got)
+	}
+}
+
+func TestAnalyticsCommonParamsTrackMembershipAndClearIdentity(t *testing.T) {
+	service := NewService(filepath.Join(t.TempDir(), "auth.json"))
+	service.updateAnalyticsProductSummary(ProductSummary{
+		User: &authbridge.UserInfo{UserID: "user-2"},
+		Membership: &MembershipSummary{
+			Status:  "active",
+			TierKey: "pro",
+		},
+		MembershipAccess: commerce.MembershipAccessActive,
+	})
+
+	params := service.AnalyticsCommonParams()
+	if params["uid"] != "user-2" || params["membership_tier"] != "pro" || params["membership_status"] != "active" {
+		t.Fatalf("analytics common params = %#v", params)
+	}
+	service.clearAnalyticsIdentity()
+	params = service.AnalyticsCommonParams()
+	if _, exists := params["uid"]; exists {
+		t.Fatalf("anonymous common params contain uid: %#v", params)
+	}
+	if params["login_state"] != "anonymous" {
+		t.Fatalf("login_state = %v, want anonymous", params["login_state"])
+	}
+}
+
+func TestConcurrentTerminalLoginStatusReportsOnce(t *testing.T) {
+	service := NewService(filepath.Join(t.TempDir(), "auth.json"))
+	analytics := &recordingAccountAnalyticsReporter{}
+	service.SetAnalyticsReporter(analytics)
+	started, err := service.StartLogin(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.mu.Lock()
+	service.attempts[started.AttemptID].ExpiresAt = time.Now().Add(-time.Second)
+	service.mu.Unlock()
+
+	results := make(chan error, 2)
+	for range 2 {
+		go func() {
+			_, statusErr := service.LoginStatus(started.AttemptID)
+			results <- statusErr
+		}()
+	}
+	firstErr := <-results
+	secondErr := <-results
+	successes := 0
+	notFound := 0
+	for _, statusErr := range []error{firstErr, secondErr} {
+		switch statusErr {
+		case nil:
+			successes++
+		case ErrAttemptNotFound:
+			notFound++
+		}
+	}
+	if successes != 1 || notFound != 1 {
+		t.Fatalf("concurrent errors = %v/%v, want one success and one not found", firstErr, secondErr)
+	}
+	if len(analytics.events) != 2 {
+		t.Fatalf("analytics events = %d, want start and one terminal", len(analytics.events))
 	}
 }
 

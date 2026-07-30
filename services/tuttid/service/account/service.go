@@ -11,6 +11,7 @@ import (
 
 	authbridge "github.com/tutti-os/tutti/packages/auth/bridge-go"
 	"github.com/tutti-os/tutti/packages/commerce"
+	reporterservice "github.com/tutti-os/tutti/services/tuttid/service/reporter"
 	tuttitypes "github.com/tutti-os/tutti/services/tuttid/types"
 )
 
@@ -40,6 +41,12 @@ type Service struct {
 
 	commerceMu sync.Mutex
 	commerce   *commerce.Service
+
+	analyticsMu         sync.RWMutex
+	analyticsReporter   reporterservice.Reporter
+	analyticsUserID     string
+	analyticsMembership string
+	analyticsTier       string
 }
 
 type LoginStart struct {
@@ -63,15 +70,18 @@ func NewService(authJSONPath string) *Service {
 func (s *Service) StartLogin(ctx context.Context) (LoginStart, error) {
 	client, err := s.authClient()
 	if err != nil {
+		s.reportLogin(ctx, "", "login", "start", "failed", "auth_client_unavailable", nil)
 		return LoginStart{}, err
 	}
 	attempt, err := client.StartLogin(context.WithoutCancel(ctx))
 	if err != nil {
+		s.reportLogin(ctx, "", "login", "start", "failed", "start_failed", nil)
 		return LoginStart{}, err
 	}
 	s.mu.Lock()
 	s.attempts[attempt.ID] = attempt
 	s.mu.Unlock()
+	s.reportLogin(ctx, attempt.ID, "login", "start", "started", "", nil)
 	return LoginStart{
 		AttemptID: attempt.ID,
 		ExpiresAt: attempt.ExpiresAt.UnixMilli(),
@@ -82,18 +92,22 @@ func (s *Service) StartLogin(ctx context.Context) (LoginStart, error) {
 func (s *Service) LoginStatus(attemptID string) (authbridge.LoginStatus, error) {
 	s.mu.Lock()
 	attempt := s.attempts[strings.TrimSpace(attemptID)]
-	s.mu.Unlock()
 	if attempt == nil {
+		s.mu.Unlock()
 		return authbridge.LoginStatus{}, ErrAttemptNotFound
 	}
 	status := attempt.Status()
 	if status.Status != "pending" {
-		s.mu.Lock()
 		delete(s.attempts, attempt.ID)
-		s.mu.Unlock()
 	}
+	s.mu.Unlock()
 	if status.Status == "completed" {
+		s.updateAnalyticsUser(status.User)
+		s.reportLogin(context.Background(), attempt.ID, "login", "complete", "success", "", status.User)
 		s.notifyLoginCompleted()
+	} else if status.Status != "pending" {
+		result, errorCode := loginAnalyticsResult(status.Status)
+		s.reportLogin(context.Background(), attempt.ID, "login", "complete", result, errorCode, nil)
 	}
 	return status, nil
 }
@@ -110,7 +124,11 @@ func (s *Service) GetUserInfo(ctx context.Context) (*authbridge.UserInfo, error)
 	if err != nil {
 		return nil, err
 	}
-	return client.GetUserInfo(ctx)
+	user, err := client.GetUserInfo(ctx)
+	if err == nil {
+		s.updateAnalyticsUser(user)
+	}
+	return user, err
 }
 
 // ReadSession exposes the daemon-owned account session to trusted service
@@ -135,8 +153,129 @@ func (s *Service) Logout(ctx context.Context) error {
 	if err := client.Logout(ctx); err != nil {
 		return err
 	}
+	s.clearAnalyticsIdentity()
 	s.notifyLogoutCompleted()
 	return nil
+}
+
+func (s *Service) SetAnalyticsReporter(reporter reporterservice.Reporter) {
+	s.analyticsMu.Lock()
+	s.analyticsReporter = reporter
+	s.analyticsMu.Unlock()
+}
+
+func (s *Service) AnalyticsCommonParams() map[string]any {
+	s.analyticsMu.RLock()
+	defer s.analyticsMu.RUnlock()
+	params := map[string]any{
+		"identity_status": "anonymous",
+		"login_state":     "anonymous",
+	}
+	if s.analyticsUserID != "" {
+		params["identity_status"] = "ready"
+		params["login_state"] = "authenticated"
+		params["membership_status"] = "unknown"
+		params["membership_tier"] = "unknown"
+		params["uid"] = s.analyticsUserID
+	}
+	if s.analyticsMembership != "" {
+		params["membership_status"] = s.analyticsMembership
+	}
+	if s.analyticsTier != "" {
+		params["membership_tier"] = s.analyticsTier
+	}
+	return params
+}
+
+func (s *Service) AnalyticsUserUniqueID() string {
+	s.analyticsMu.RLock()
+	defer s.analyticsMu.RUnlock()
+	return s.analyticsUserID
+}
+
+func (s *Service) reportLogin(
+	ctx context.Context,
+	flowID string,
+	stage string,
+	action string,
+	result string,
+	errorCode string,
+	user *authbridge.UserInfo,
+) {
+	s.analyticsMu.RLock()
+	reporter := s.analyticsReporter
+	s.analyticsMu.RUnlock()
+	if reporter == nil {
+		return
+	}
+	params := map[string]any{
+		"schema_version": 1,
+		"client":         "desktop",
+		"source":         "desktop_daemon",
+		"method":         "desktop_bridge",
+		"stage":          stage,
+		"action":         action,
+		"result":         result,
+	}
+	if flowID != "" {
+		params["flow_id"] = flowID
+	}
+	if errorCode != "" {
+		params["error_code"] = errorCode
+	}
+	if user != nil && strings.TrimSpace(user.UserID) != "" {
+		params["uid"] = strings.TrimSpace(user.UserID)
+	}
+	reporter.Track(ctx, reporterservice.Event{
+		Name:   "account.login",
+		Params: params,
+	})
+}
+
+func (s *Service) updateAnalyticsUser(user *authbridge.UserInfo) {
+	if user == nil || strings.TrimSpace(user.UserID) == "" {
+		return
+	}
+	s.analyticsMu.Lock()
+	s.analyticsUserID = strings.TrimSpace(user.UserID)
+	s.analyticsMu.Unlock()
+}
+
+func (s *Service) updateAnalyticsProductSummary(summary ProductSummary) {
+	s.updateAnalyticsUser(summary.User)
+	s.analyticsMu.Lock()
+	s.analyticsMembership = string(summary.MembershipAccess)
+	s.analyticsTier = ""
+	if summary.Membership != nil {
+		if strings.TrimSpace(summary.Membership.Status) != "" {
+			s.analyticsMembership = strings.TrimSpace(summary.Membership.Status)
+		}
+		s.analyticsTier = strings.TrimSpace(summary.Membership.TierKey)
+	} else if summary.MembershipAccess == commerce.MembershipAccessFree {
+		s.analyticsTier = "free"
+	}
+	s.analyticsMu.Unlock()
+}
+
+func (s *Service) clearAnalyticsIdentity() {
+	s.analyticsMu.Lock()
+	s.analyticsUserID = ""
+	s.analyticsMembership = ""
+	s.analyticsTier = ""
+	s.analyticsMu.Unlock()
+}
+
+func loginAnalyticsResult(status string) (result string, errorCode string) {
+	switch strings.TrimSpace(status) {
+	case "expired":
+		return "expired", "attempt_expired"
+	case "cancelled":
+		return "cancelled", "user_cancelled"
+	case "failed":
+		return "failed", "authentication_failed"
+	default:
+		return "failed", "unknown_terminal_status"
+	}
 }
 
 func (s *Service) notifyLogoutCompleted() {

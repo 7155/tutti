@@ -14,9 +14,12 @@ type DebugReporter = analyticsreporter.DebugReporter
 type TeaReporter = analyticsreporter.TeaReporter
 
 type Config struct {
-	Analytics      tuttitypes.AnalyticsConfig
-	DebugPublisher DebugPublisher
-	StateDir       string
+	Analytics            tuttitypes.AnalyticsConfig
+	DebugPublisher       DebugPublisher
+	StateDir             string
+	CommonParams         map[string]any
+	CommonParamsProvider func() map[string]any
+	UserUniqueIDProvider func() string
 }
 
 func New(config Config) (Reporter, error) {
@@ -30,7 +33,10 @@ func New(config Config) (Reporter, error) {
 			ChannelDomain: config.Analytics.ChannelDomain,
 			AppVersion:    config.Analytics.AppVersion,
 		},
-		DebugPublisher: config.DebugPublisher,
-		StateDir:       config.StateDir,
+		DebugPublisher:       config.DebugPublisher,
+		StateDir:             config.StateDir,
+		CommonParams:         config.CommonParams,
+		CommonParamsProvider: config.CommonParamsProvider,
+		UserUniqueIDProvider: config.UserUniqueIDProvider,
 	})
 }

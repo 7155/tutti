@@ -60,7 +60,7 @@ func (r *TeaReporter) Track(ctx context.Context, events ...Event) {
 	}
 
 	r.publishDebugEvents(ctx, sendEvents, common)
-	_ = r.sdk.Send(r.appID, r.common.deviceID, sendEvents, common)
+	_ = r.sdk.Send(r.appID, r.common.userUniqueID(), sendEvents, common)
 }
 
 func (r *TeaReporter) Close() error {

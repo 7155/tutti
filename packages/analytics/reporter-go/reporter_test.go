@@ -203,6 +203,49 @@ func TestTeaReporterPersistsIdentityAndSendsSanitizedEvents(t *testing.T) {
 	}
 }
 
+func TestTeaReporterUsesDynamicIdentityForCommonParamsAndSDKUserID(t *testing.T) {
+	sdk := &fakeTeaSDK{}
+	userID := ""
+	reporter, err := newTeaReporterWithSDK(Config{
+		Analytics: AnalyticsConfig{
+			AppID:         20004092,
+			AppKey:        "app-key",
+			ChannelDomain: "https://example.test",
+		},
+		DeviceID:  "host-device",
+		SDKLogDir: t.TempDir(),
+		CommonParamsProvider: func() map[string]any {
+			if userID == "" {
+				return map[string]any{"login_state": "anonymous"}
+			}
+			return map[string]any{"login_state": "authenticated", "uid": userID}
+		},
+		UserUniqueIDProvider: func() string {
+			return userID
+		},
+	}, sdk)
+	if err != nil {
+		t.Fatalf("newTeaReporterWithSDK() error = %v", err)
+	}
+
+	reporter.Track(context.Background(), Event{Name: "account.login"})
+	userID = "user-1"
+	reporter.Track(context.Background(), Event{Name: "account.login"})
+
+	if len(sdk.sends) != 2 {
+		t.Fatalf("send calls = %d, want 2", len(sdk.sends))
+	}
+	if sdk.sends[0].uuid != "host-device" || sdk.sends[0].common["login_state"] != "anonymous" {
+		t.Fatalf("anonymous send = %#v", sdk.sends[0])
+	}
+	if sdk.sends[1].uuid != "user-1" || sdk.sends[1].common["uid"] != "user-1" {
+		t.Fatalf("authenticated send = %#v", sdk.sends[1])
+	}
+	if sdk.sends[1].events[0].Params["event_id"] == "" {
+		t.Fatal("event_id was not generated")
+	}
+}
+
 func TestReporterRequiresIdentitySourceWhenEnabled(t *testing.T) {
 	_, err := New(Config{
 		Analytics: AnalyticsConfig{

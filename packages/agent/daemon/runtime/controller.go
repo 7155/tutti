@@ -43,6 +43,7 @@ type Controller struct {
 	hub                         *EventHub
 	reporter                    DurableActivityReporter
 	reportQueue                 *reportRequestQueue
+	providerGoalAdoptionSink    ProviderGoalAdoptionSink
 	terminalInteractions        terminalInteractiveDispositionStore
 	streamObserver              RuntimeStreamEventObserver
 }
@@ -186,6 +187,9 @@ func (c *Controller) configureAdapter(adapter Adapter) {
 		// explicit error and Codex fails closed instead of silently falling back
 		// to a restart-unsafe process-local cache.
 		sinkAdapter.SetGoalProvenanceDurableSink(c)
+	}
+	if sinkAdapter, ok := adapter.(ProviderGoalAdoptionSinkAdapter); ok {
+		sinkAdapter.SetProviderGoalAdoptionSink(c.adoptProviderGoal)
 	}
 	if sinkAdapter, ok := adapter.(ConfigOptionsUpdateSinkAdapter); ok {
 		sinkAdapter.SetConfigOptionsUpdateSink(c.applyConfigOptionsUpdateByAgentSessionID)

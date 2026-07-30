@@ -152,6 +152,7 @@ type CodexAppServerAdapter struct {
 	eventSink                  SessionEventSink
 	goalReconcileSink          GoalReconcileDurableSink
 	goalProvenanceSink         GoalProvenanceDurableSink
+	providerGoalAdoptionSink   ProviderGoalAdoptionSink
 	promptImageMaterializer    providerPromptImageMaterializer
 	goalReconcileAckTimeout    time.Duration
 	configSink                 ConfigOptionsUpdateSink
@@ -546,6 +547,15 @@ func (a *CodexAppServerAdapter) SetGoalProvenanceDurableSink(sink GoalProvenance
 	}
 	a.mu.Lock()
 	a.goalProvenanceSink = sink
+	a.mu.Unlock()
+}
+
+func (a *CodexAppServerAdapter) SetProviderGoalAdoptionSink(sink ProviderGoalAdoptionSink) {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	a.providerGoalAdoptionSink = sink
 	a.mu.Unlock()
 }
 

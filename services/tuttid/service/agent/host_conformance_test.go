@@ -857,6 +857,32 @@ func (d *legacyHostConformanceDriver) GoalControl(ctx context.Context, input age
 	return observation, nil
 }
 
+func (d *legacyHostConformanceDriver) AdoptProviderGoal(ctx context.Context, input agenthost.ProviderGoalAdoptionInput) (hostconformance.GoalObservation, error) {
+	var (
+		result agenthost.ProviderGoalAdoptionResult
+		err    error
+	)
+	if d.directHost {
+		result, err = d.service.ApplicationHost().AdoptProviderGoal(ctx, input)
+	} else {
+		result, err = d.service.AdoptProviderGoal(ctx, input)
+	}
+	if err != nil {
+		return hostconformance.GoalObservation{}, err
+	}
+	state, stateErr := d.service.ApplicationHost().GetGoalState(ctx, agenthost.SessionRef{
+		WorkspaceID: input.WorkspaceID, AgentSessionID: input.AgentSessionID,
+	})
+	if stateErr != nil {
+		return hostconformance.GoalObservation{}, stateErr
+	}
+	return hostconformance.GoalObservation{
+		Goal: clonePayload(result.Goal), OperationID: result.OperationID,
+		Revision: state.State.Revision, PendingOperationID: state.State.PendingOperationID,
+		SyncStatus: state.State.SyncStatus,
+	}, nil
+}
+
 func (d *legacyHostConformanceDriver) FenceGoalGeneration(ctx context.Context, input agenthost.FenceGoalGenerationInput) (agenthost.FenceGoalGenerationResult, error) {
 	return d.service.ApplicationHost().FenceGoalGeneration(ctx, input)
 }

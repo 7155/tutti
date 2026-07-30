@@ -857,6 +857,26 @@ type GoalControlResult struct {
 	GoalState   *storesqlite.SessionGoalState
 }
 
+// ProviderGoalAdoptionInput identifies one Goal generation that the provider
+// created while executing an accepted Turn. Fingerprint is derived from the
+// provider's immutable generation fields and makes notification replay
+// idempotent.
+type ProviderGoalAdoptionInput struct {
+	WorkspaceID       string
+	AgentSessionID    string
+	ProviderSessionID string
+	Fingerprint       string
+	Goal              map[string]any
+}
+
+type ProviderGoalAdoptionResult struct {
+	Canonical   storesqlite.Session
+	Goal        map[string]any
+	OperationID string
+	Revision    int64
+	RepairEpoch int64
+}
+
 type GoalStateResult struct {
 	Canonical storesqlite.Session
 	State     storesqlite.SessionGoalState

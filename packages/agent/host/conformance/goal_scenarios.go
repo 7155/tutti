@@ -99,6 +99,40 @@ func runDuplicateGoalClientSubmitID(ctx context.Context, driver Driver) error {
 	return nil
 }
 
+func runProviderAuthoredGoalAdoption(ctx context.Context, driver Driver) error {
+	if err := driver.Reset(ctx, liveSessionFixture("session-goal-provider-adoption", "")); err != nil {
+		return err
+	}
+	input := agenthost.ProviderGoalAdoptionInput{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-goal-provider-adoption",
+		ProviderSessionID: "provider-session-goal-provider-adoption",
+		Fingerprint:       "sha256:provider-goal-generation",
+		Goal: map[string]any{
+			"threadId":  "provider-session-goal-provider-adoption",
+			"objective": "continue autonomously", "status": "active",
+			"createdAt": int64(1_000), "updatedAt": int64(1_000),
+		},
+	}
+	first, err := driver.AdoptProviderGoal(ctx, input)
+	if err != nil {
+		return fmt.Errorf("adopt provider goal: %w", err)
+	}
+	second, err := driver.AdoptProviderGoal(ctx, input)
+	if err != nil {
+		return fmt.Errorf("replay provider goal adoption: %w", err)
+	}
+	if first.OperationID == "" || first.OperationID != second.OperationID ||
+		first.Revision != 1 || second.Revision != first.Revision ||
+		first.PendingOperationID != "" || first.SyncStatus != storesqlite.GoalSyncStatusSynced ||
+		metadataString(first.Goal, "objective") != "continue autonomously" {
+		return fmt.Errorf("provider goal adoption was not durably idempotent: first=%#v second=%#v", first, second)
+	}
+	if driver.Metrics().GoalControlCalls != 0 {
+		return fmt.Errorf("provider goal adoption redispatched mutation: metrics=%#v", driver.Metrics())
+	}
+	return nil
+}
+
 func runGoalReconcileObservation(ctx context.Context, driver Driver) error {
 	if err := driver.Reset(ctx, liveSessionFixture("session-goal-reconcile", "")); err != nil {
 		return err

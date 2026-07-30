@@ -432,6 +432,7 @@ func buildDaemonAPI(
 	if agentHost == nil {
 		return tuttiapi.DaemonAPI{}, nil, nil, nil, fmt.Errorf("compose agent host")
 	}
+	configureAgentProviderGoalAdoption(agentRuntime.Controller(), agentHost)
 	agentSessionConfig.Host = agentservice.ServiceHostConfig{
 		ApplicationHost: agentHost,
 		Components:      agentServiceComponents,

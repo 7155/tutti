@@ -46,7 +46,6 @@ import { WorkspaceMediaService } from "./workspaceMediaService";
 export type { WorkspaceActivitySnapshot } from "./workspaceActivityTypes";
 
 const MESSAGE_POLL_MS = 1_000;
-const ACTIVATION_EXPIRY_MS = 60_000;
 
 export class WorkspaceActivityService extends ObservableService<WorkspaceActivitySnapshot> {
   readonly _serviceBrand: undefined;
@@ -431,24 +430,22 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
       submittedAtUnixMs: now
     };
     if (snapshot.creating) {
-      this.engine.dispatch({
+      const accepted = this.engine.activateSession({
         agentSessionId: submission.agentSessionId,
         agentTargetId: submission.agentTargetId!,
         clientSubmitId: submission.clientSubmitId,
-        content,
-        expiresAtUnixMs: now + ACTIVATION_EXPIRY_MS,
+        initialContent: content,
         initialTurnExpected: true,
         mode: "new",
         requestId: submission.clientSubmitId,
-        requestedAtUnixMs: now,
         runtimeContent: content,
         settings: snapshot.composerSettings,
         submitDiagnostics,
-        type: "activation/requested",
-        visible: true,
-        workspaceId: this.workspace.id
+        visible: true
       });
-      this.drafts.clear("new");
+      if (accepted) {
+        this.drafts.clear("new");
+      }
       return;
     }
     if (!snapshot.selectedAgentSessionId) return;

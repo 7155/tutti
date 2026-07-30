@@ -7,7 +7,7 @@ import type {
 } from "@tutti-os/workspace-file-reference/contracts";
 import type { ReferenceSourceAggregator } from "@tutti-os/workspace-file-reference/core";
 import type { ReferenceSourcePickerProps } from "@tutti-os/workspace-file-reference/ui";
-import type { AgentGuiWorkbenchSessionActionRequest } from "../../workbench/sessionActions";
+import type { AgentGuiWorkbenchCommandBridge } from "../../workbench/commands";
 import type { AgentSettings } from "../../contexts/settings/domain/agentSettings";
 import type { WorkspaceLinkAction } from "../../actions/workspaceLinkActions";
 import type {
@@ -102,14 +102,10 @@ export interface AgentGUINodeFrameLayout {
   conversationRailAutoCollapseMode?: "preserve-middle-content";
 }
 
-export type AgentGUISessionActionRequest =
-  AgentGuiWorkbenchSessionActionRequest;
-
 export interface AgentGUINodeRuntimeRequests {
   composerAppend?: AgentGUIComposerAppendRequest | null;
   composerFocusSequence?: number | null;
-  newConversationSequence?: number | null;
-  sessionAction?: AgentGUISessionActionRequest | null;
+  workbench?: AgentGuiWorkbenchCommandBridge | null;
   openSession?: AgentGUIOpenSessionRequest | null;
   prefillPrompt?: AgentGUIPrefillPromptRequest | null;
   /** On-demand status capability. Transport and owner resolution stay host-owned. */
@@ -146,6 +142,8 @@ export interface AgentGUINodeHostCapabilities {
   /** Launch-only targets for active-conversation handoff. */
   handoffAgentTargets?: readonly AgentGUIAgentTarget[];
   handoffAgentTargetsLoading?: boolean;
+  /** Hidden by default; hosts may opt into ownership copy for collaborative products. */
+  showHandoffTargetOwnershipLabels?: boolean;
   providerRailAllPresentation?: AgentGUIProviderRailAllPresentation | null;
   providerRailMode?: AgentGUIProviderRailMode;
   comingSoonProviders?: readonly AgentGUIProvider[];
@@ -408,8 +406,9 @@ export function areAgentGUINodePropsEqual(
       nf.conversationRailAutoCollapseMode &&
     pr.composerFocusSequence === nr.composerFocusSequence &&
     pr.composerAppend === nr.composerAppend &&
-    pr.newConversationSequence === nr.newConversationSequence &&
-    pr.sessionAction === nr.sessionAction &&
+    pr.workbench?.instanceId === nr.workbench?.instanceId &&
+    pr.workbench?.onConversationRailToggle ===
+      nr.workbench?.onConversationRailToggle &&
     pr.openSession === nr.openSession &&
     pr.prefillPrompt === nr.prefillPrompt &&
     pr.agentStatusController === nr.agentStatusController &&
@@ -419,6 +418,8 @@ export function areAgentGUINodePropsEqual(
     pc.agentTargetsLoading === nc.agentTargetsLoading &&
     pc.handoffAgentTargets === nc.handoffAgentTargets &&
     pc.handoffAgentTargetsLoading === nc.handoffAgentTargetsLoading &&
+    pc.showHandoffTargetOwnershipLabels ===
+      nc.showHandoffTargetOwnershipLabels &&
     pc.providerRailAllPresentation?.iconUrl ===
       nc.providerRailAllPresentation?.iconUrl &&
     pc.providerRailMode === nc.providerRailMode &&

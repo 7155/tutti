@@ -352,27 +352,6 @@ func (e AgentProviderCapabilityOptionKind) Valid() bool {
 	}
 }
 
-// Defines values for AgentProviderCapabilityOptionSemantic.
-const (
-	BrowserUse  AgentProviderCapabilityOptionSemantic = "browserUse"
-	ComputerUse AgentProviderCapabilityOptionSemantic = "computerUse"
-	Sites       AgentProviderCapabilityOptionSemantic = "sites"
-)
-
-// Valid indicates whether the value is a known member of the AgentProviderCapabilityOptionSemantic enum.
-func (e AgentProviderCapabilityOptionSemantic) Valid() bool {
-	switch e {
-	case BrowserUse:
-		return true
-	case ComputerUse:
-		return true
-	case Sites:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for AgentProviderCapabilityOptionStatus.
 const (
 	AgentProviderCapabilityOptionStatusAuthRequired  AgentProviderCapabilityOptionStatus = "authRequired"
@@ -2761,6 +2740,36 @@ func (e WorkspaceAgentSessionDetailProjection) Valid() bool {
 	}
 }
 
+// Defines values for WorkspaceAgentSessionForkOperationPhase.
+const (
+	WorkspaceAgentSessionForkOperationPhaseCommitted       WorkspaceAgentSessionForkOperationPhase = "committed"
+	WorkspaceAgentSessionForkOperationPhaseDeliveryUnknown WorkspaceAgentSessionForkOperationPhase = "deliveryUnknown"
+	WorkspaceAgentSessionForkOperationPhaseDispatching     WorkspaceAgentSessionForkOperationPhase = "dispatching"
+	WorkspaceAgentSessionForkOperationPhaseFailed          WorkspaceAgentSessionForkOperationPhase = "failed"
+	WorkspaceAgentSessionForkOperationPhaseFrozen          WorkspaceAgentSessionForkOperationPhase = "frozen"
+	WorkspaceAgentSessionForkOperationPhaseMaterializing   WorkspaceAgentSessionForkOperationPhase = "materializing"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceAgentSessionForkOperationPhase enum.
+func (e WorkspaceAgentSessionForkOperationPhase) Valid() bool {
+	switch e {
+	case WorkspaceAgentSessionForkOperationPhaseCommitted:
+		return true
+	case WorkspaceAgentSessionForkOperationPhaseDeliveryUnknown:
+		return true
+	case WorkspaceAgentSessionForkOperationPhaseDispatching:
+		return true
+	case WorkspaceAgentSessionForkOperationPhaseFailed:
+		return true
+	case WorkspaceAgentSessionForkOperationPhaseFrozen:
+		return true
+	case WorkspaceAgentSessionForkOperationPhaseMaterializing:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WorkspaceAgentSessionForkOperationStatus.
 const (
 	WorkspaceAgentSessionForkOperationStatusAccepted  WorkspaceAgentSessionForkOperationStatus = "accepted"
@@ -3759,13 +3768,13 @@ func (e ListWorkspaceAgentSessionMessagesParamsOrder) Valid() bool {
 
 // Defines values for ListWorkspaceWorkflowsParamsCheckpointStatus.
 const (
-	Pending ListWorkspaceWorkflowsParamsCheckpointStatus = "pending"
+	ListWorkspaceWorkflowsParamsCheckpointStatusPending ListWorkspaceWorkflowsParamsCheckpointStatus = "pending"
 )
 
 // Valid indicates whether the value is a known member of the ListWorkspaceWorkflowsParamsCheckpointStatus enum.
 func (e ListWorkspaceWorkflowsParamsCheckpointStatus) Valid() bool {
 	switch e {
-	case Pending:
+	case ListWorkspaceWorkflowsParamsCheckpointStatusPending:
 		return true
 	default:
 		return false
@@ -4025,14 +4034,11 @@ type AgentProviderCapabilityOption struct {
 	Name        string                                  `json:"name"`
 	Path        *string                                 `json:"path,omitempty"`
 	PluginName  *string                                 `json:"pluginName,omitempty"`
-
-	// Semantic Stable provider-native presentation and interaction key. It does not identify an executable, filesystem path, or provider wire implementation.
-	Semantic   *AgentProviderCapabilityOptionSemantic `json:"semantic,omitempty"`
-	ServerName *string                                `json:"serverName,omitempty"`
-	Source     *string                                `json:"source,omitempty"`
-	Status     AgentProviderCapabilityOptionStatus    `json:"status"`
-	ToolName   *string                                `json:"toolName,omitempty"`
-	Trigger    *string                                `json:"trigger,omitempty"`
+	ServerName  *string                                 `json:"serverName,omitempty"`
+	Source      *string                                 `json:"source,omitempty"`
+	Status      AgentProviderCapabilityOptionStatus     `json:"status"`
+	ToolName    *string                                 `json:"toolName,omitempty"`
+	Trigger     *string                                 `json:"trigger,omitempty"`
 }
 
 // AgentProviderCapabilityOptionInvocation defines model for AgentProviderCapabilityOption.Invocation.
@@ -4040,9 +4046,6 @@ type AgentProviderCapabilityOptionInvocation string
 
 // AgentProviderCapabilityOptionKind defines model for AgentProviderCapabilityOption.Kind.
 type AgentProviderCapabilityOptionKind string
-
-// AgentProviderCapabilityOptionSemantic Stable provider-native presentation and interaction key. It does not identify an executable, filesystem path, or provider wire implementation.
-type AgentProviderCapabilityOptionSemantic string
 
 // AgentProviderCapabilityOptionStatus defines model for AgentProviderCapabilityOption.Status.
 type AgentProviderCapabilityOptionStatus string
@@ -4059,12 +4062,11 @@ type AgentProviderCliStatus struct {
 
 // AgentProviderComposerBehavior defines model for AgentProviderComposerBehavior.
 type AgentProviderComposerBehavior struct {
-	CollapseModelOptionsToLatest        bool  `json:"collapseModelOptionsToLatest"`
-	ModelOptionsAuthoritative           bool  `json:"modelOptionsAuthoritative"`
-	NativePluginCatalogAuthoritative    *bool `json:"nativePluginCatalogAuthoritative,omitempty"`
-	PlanModeExclusiveWithPermissionMode bool  `json:"planModeExclusiveWithPermissionMode"`
-	PrewarmDraftSession                 bool  `json:"prewarmDraftSession"`
-	RefreshModelOptionsAfterSettings    bool  `json:"refreshModelOptionsAfterSettings"`
+	CollapseModelOptionsToLatest        bool `json:"collapseModelOptionsToLatest"`
+	ModelOptionsAuthoritative           bool `json:"modelOptionsAuthoritative"`
+	PlanModeExclusiveWithPermissionMode bool `json:"planModeExclusiveWithPermissionMode"`
+	PrewarmDraftSession                 bool `json:"prewarmDraftSession"`
+	RefreshModelOptionsAfterSettings    bool `json:"refreshModelOptionsAfterSettings"`
 }
 
 // AgentProviderComposerCommandOption defines model for AgentProviderComposerCommandOption.
@@ -7374,8 +7376,11 @@ type WorkspaceAgentSessionForkOperation struct {
 	// Lineage Durable lineage when status is committed.
 	Lineage     *WorkspaceAgentSessionForkLineage `json:"lineage"`
 	OperationId string                            `json:"operationId"`
-	Point       WorkspaceAgentSessionForkPoint    `json:"point"`
-	RequestId   string                            `json:"requestId"`
+
+	// Phase Durable execution phase for progress and recovery diagnostics.
+	Phase     WorkspaceAgentSessionForkOperationPhase `json:"phase"`
+	Point     WorkspaceAgentSessionForkPoint          `json:"point"`
+	RequestId string                                  `json:"requestId"`
 
 	// Session Complete target Session projection when status is committed.
 	Session              *WorkspaceAgentSession `json:"session"`
@@ -7385,6 +7390,9 @@ type WorkspaceAgentSessionForkOperation struct {
 	Status               WorkspaceAgentSessionForkOperationStatus `json:"status"`
 	TargetAgentSessionId string                                   `json:"targetAgentSessionId"`
 }
+
+// WorkspaceAgentSessionForkOperationPhase Durable execution phase for progress and recovery diagnostics.
+type WorkspaceAgentSessionForkOperationPhase string
 
 // WorkspaceAgentSessionForkOperationResponse defines model for WorkspaceAgentSessionForkOperationResponse.
 type WorkspaceAgentSessionForkOperationResponse struct {
@@ -7478,14 +7486,8 @@ type WorkspaceAgentSessionLifecycleCapabilities struct {
 	// Fork Whether this exact session can fork its latest settled state.
 	Fork bool `json:"fork"`
 
-	// ForkThroughTurn Whether this exact session can fork through a settled canonical Turn.
+	// ForkThroughTurn Whether this exact session can fork through a provider-bound canonical Turn.
 	ForkThroughTurn bool `json:"forkThroughTurn"`
-
-	// ForkThroughTurnIds Canonical Turn ids currently verified against provider-native history.
-	ForkThroughTurnIds *[]string `json:"forkThroughTurnIds,omitempty"`
-
-	// ForkThroughTurnIdsKnown Whether forkThroughTurnIds is an authoritative provider-history projection.
-	ForkThroughTurnIdsKnown *bool `json:"forkThroughTurnIdsKnown,omitempty"`
 }
 
 // WorkspaceAgentSessionListResponse defines model for WorkspaceAgentSessionListResponse.
@@ -7614,14 +7616,17 @@ type WorkspaceAgentTurn struct {
 	Outcome *WorkspaceAgentTurnOutcome `json:"outcome"`
 
 	// Phase Protocol v2 closed turn phase vocabulary. submitted -> running -> waiting (interactions) -> settling -> settled.
-	Phase                 WorkspaceAgentTurnPhase `json:"phase"`
-	SettledAtUnixMs       *int64                  `json:"settledAtUnixMs"`
-	SourceGoalOperationId *string                 `json:"sourceGoalOperationId,omitempty"`
-	SourceGoalRepairEpoch *int64                  `json:"sourceGoalRepairEpoch,omitempty"`
-	SourceGoalRevision    *int64                  `json:"sourceGoalRevision,omitempty"`
-	StartedAtUnixMs       int64                   `json:"startedAtUnixMs"`
-	TurnId                string                  `json:"turnId"`
-	UpdatedAtUnixMs       int64                   `json:"updatedAtUnixMs"`
+	Phase WorkspaceAgentTurnPhase `json:"phase"`
+
+	// ProviderForkBindingAvailable Whether this canonical Turn currently has the provider Turn binding required to attempt an exact native Fork. Historical prefix state does not participate in this projection.
+	ProviderForkBindingAvailable bool    `json:"providerForkBindingAvailable"`
+	SettledAtUnixMs              *int64  `json:"settledAtUnixMs"`
+	SourceGoalOperationId        *string `json:"sourceGoalOperationId,omitempty"`
+	SourceGoalRepairEpoch        *int64  `json:"sourceGoalRepairEpoch,omitempty"`
+	SourceGoalRevision           *int64  `json:"sourceGoalRevision,omitempty"`
+	StartedAtUnixMs              int64   `json:"startedAtUnixMs"`
+	TurnId                       string  `json:"turnId"`
+	UpdatedAtUnixMs              int64   `json:"updatedAtUnixMs"`
 }
 
 // WorkspaceAgentTurnOrigin Durable business provenance; steer is input on an existing turn and is never an origin.

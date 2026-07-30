@@ -12,8 +12,10 @@ import { createTestAgentSessionEngine } from "../../../shared/testing/createTest
 
 describe("useAgentGUIComposerCapabilities", () => {
   function engineSession(input: {
+    agentTargetId?: string;
     agentSessionId?: string;
     capabilities?: AgentActivitySessionCapabilities;
+    provider?: string;
     usage: CanonicalAgentSession["usage"];
   }): CanonicalAgentSession {
     const normalized = normalizeAgentActivitySession({
@@ -24,7 +26,8 @@ describe("useAgentGUIComposerCapabilities", () => {
       },
       workspaceId: "workspace-1",
       agentSessionId: input.agentSessionId ?? "session-1",
-      provider: "opencode",
+      agentTargetId: input.agentTargetId ?? "local:opencode",
+      provider: input.provider ?? "opencode",
       providerSessionId: "provider-session-1",
       cwd: "/workspace/project",
       title: "OpenCode",
@@ -215,7 +218,9 @@ describe("useAgentGUIComposerCapabilities", () => {
 
   it("keeps target-declared browser support when active session metadata lacks it", () => {
     const activeEngineSession = engineSession({
+      agentTargetId: "extension:hermes",
       capabilities: capabilitiesFixture(["interrupt"]),
+      provider: "acp:hermes",
       usage: null
     });
     const data = {

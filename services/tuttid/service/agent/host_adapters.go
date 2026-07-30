@@ -153,14 +153,7 @@ func withServicePreparedRuntime(ctx context.Context, service *Service, prepared 
 
 func (a serviceHostPreparation) Prepare(ctx context.Context, input agenthost.RuntimePreparationInput) (agenthost.PreparedRuntime, error) {
 	if override, ok := ctx.Value(servicePreparedRuntimeContextKey{}).(servicePreparedRuntimeContext); ok && override.service == a.service {
-		return agenthost.PreparedRuntime{
-			Cwd: override.prepared.Cwd,
-			Env: append([]string(nil), override.prepared.Env...),
-			RuntimeContext: mergeRuntimeContext(
-				nil,
-				nativeCapabilityPlanRuntimeContext(override.prepared.NativeCapabilityPlan),
-			),
-		}, nil
+		return agenthost.PreparedRuntime{Cwd: override.prepared.Cwd, Env: append([]string(nil), override.prepared.Env...)}, nil
 	}
 	settings := input.Settings
 	persisted := PersistedSession{
@@ -190,10 +183,7 @@ func (a serviceHostPreparation) Prepare(ctx context.Context, input agenthost.Run
 	return agenthost.PreparedRuntime{
 		Cwd: prepared.Cwd, Env: append([]string(nil), prepared.Env...),
 		ProviderTargetRef: clonePayload(targetRef), Settings: &settings,
-		RuntimeContext: mergeRuntimeContext(
-			persistedSessionRuntimeContext(persisted),
-			nativeCapabilityPlanRuntimeContext(prepared.NativeCapabilityPlan),
-		),
+		RuntimeContext: persistedSessionRuntimeContext(persisted),
 	}, nil
 }
 
@@ -384,13 +374,16 @@ func composeApplicationHost(
 		CanonicalStore: canonical, SessionManagement: sessionManagement,
 		SessionBatchManagement: sessionBatchManagement, SessionPurge: s.SessionPurgeStore,
 		SessionForks: sessionForks, SessionForkRecovery: sessionForkRecovery,
-		SessionForkRuntime:   sessionForkRuntime,
-		SessionForkContext:   serviceHostSessionForkContextPolicy{service: s},
-		SessionForkState:     serviceHostSessionForkProviderStateBinder{service: s},
-		SessionDeletionGuard: s.SessionDeletionGuard,
-		TurnSubmissions:      turnSubmissions, EffectiveHistory: effectiveHistory,
-		Runtime: runtime, HistoryRuntime: historyRuntime,
-		RuntimePreparation: serviceHostPreparation{service: s}, Attachments: s.PromptAttachmentStore,
+		SessionForkRuntime:     sessionForkRuntime,
+		SessionForkContext:     serviceHostSessionForkContextPolicy{service: s},
+		SessionForkState:       serviceHostSessionForkProviderStateBinder{service: s},
+		SessionForkAttachments: s.PromptAttachmentStore,
+		SessionDeletionGuard:   s.SessionDeletionGuard,
+		TurnSubmissions:        turnSubmissions,
+		EffectiveHistory:       effectiveHistory,
+		Runtime:                runtime,
+		HistoryRuntime:         historyRuntime,
+		RuntimePreparation:     serviceHostPreparation{service: s}, Attachments: s.PromptAttachmentStore,
 		SettingsPolicy: serviceHostSettingsPolicy{service: s},
 		Clock:          serviceHostClock{service: s}, SessionLocker: serviceHostLocker{service: s},
 		RuntimeStartGate:  serviceHostStartupGate{service: s},

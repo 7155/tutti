@@ -31,18 +31,12 @@ func TestCodexComposerProfileComesFromProviderDescriptor(t *testing.T) {
 	if profile.CapabilityCatalogKind != providerregistry.CapabilityCatalogKindCodexAppServer {
 		t.Fatalf("capability catalog profile = %#v", profile)
 	}
-	if !profile.Behavior.NativePluginCatalogAuthoritative {
-		t.Fatalf("composer behavior = %#v", profile.Behavior)
-	}
 }
 
 func TestTuttiAgentComposerProfileUsesSkillsOnlyAppServerCatalog(t *testing.T) {
 	profile := composerProfileFor(agentprovider.TuttiAgent)
 	if profile.CapabilityCatalogKind != providerregistry.CapabilityCatalogKindAppServerSkills {
 		t.Fatalf("capability catalog profile = %#v", profile)
-	}
-	if profile.Behavior.NativePluginCatalogAuthoritative {
-		t.Fatalf("Tutti Agent must retain ordinary skill projection: %#v", profile.Behavior)
 	}
 }
 

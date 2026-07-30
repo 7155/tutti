@@ -701,9 +701,10 @@ function projectGeneratedImageRow(
   const image = extractImageGenerationPreview({
     toolName: call.toolName,
     displayName: call.name,
-    content: call.content,
-    outputContent: call.output?.content,
-    outputSavedPath: call.output?.savedPath ?? call.output?.saved_path,
+    outputSavedPath: call.output?.savedPath,
+    outputSavedPaths: call.output?.savedPaths,
+    outputMimeType: call.output?.imageMimeType,
+    outputText: call.output?.text,
     inputPrompt: call.input?.prompt,
     payloadInputPrompt:
       call.payload?.input &&

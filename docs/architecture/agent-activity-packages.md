@@ -191,16 +191,38 @@ It owns:
   command-description effect executor, expiry-intent clock, and intent frame
   batching, with scheduler/clock/command ports injected by the host
 - the typed frontend effect seam for activation, prompt send, settings update,
-  turn cancellation, Interaction response, pin, and batch delete, including
-  lossless command projection and a serialized settings-precondition state
-  machine; hosts retain transport, DTO mapping, AbortSignal propagation, and
-  product-specific command extensions (see
+  turn cancellation, Interaction response, rename, pin, and batch delete,
+  including lossless command projection, authoritative Session result
+  validation for rename and pin, validated delete-result tombstone projection,
+  shared mutation settlement, and a serialized settings-precondition state
+  machine
+- semantic `AgentSessionEngine` methods for composer-option loading,
+  existing-Session settings updates, rename, pin, and batch delete. Settings
+  updates are intent admission: the Engine owns workspace and command identity,
+  the 30-second delivery timeout, serialized patch merging, and recognition of
+  a fresh user update as retry after unknown delivery, while consumers observe
+  the existing settings-operation projection. The other methods additionally
+  hide cache or mutation coordination, settlement waiting, and canonical
+  result projection from product hosts. Mutation methods own timeout and
+  cancellation policy; hosts retain transport, DTO mapping, AbortSignal
+  propagation, and product-specific command extensions (see
   [Agent GUI Node](./agent-gui-node.md#4-workspace-frontend-engine))
 
-The public seam is `AgentSessionEffectPort`. Prompt precondition ordering and
-its helper port are Engine implementation details and are not exported from the
-package root. Reducer-only prompt continuation intents are absent from public
-`EngineIntent`; their bookkeeping is also absent from
+The public host-effect seam is `AgentSessionEffectPort`; the public
+application-write seam is the semantic `AgentSessionEngine` methods.
+Product hosts call `updateSessionSettings` for an existing Session instead of
+constructing `session/settingsUpdateRequested` protocol fields. Settings held
+before Session activation remain part of the activation flow and do not pass
+through this existing-Session method.
+Rename and pin effects return an authoritative Session envelope, and batch
+delete returns the complete typed deletion result. Reducers still validate
+those results before applying canonical state, while the public port prevents
+hosts from inventing a different result shape.
+`dispatchSessionMutation` remains compatibility-only while published consumers
+migrate and must not be used by new product-host code. Prompt precondition
+ordering and its helper port are Engine implementation details and are not
+exported from the package root. Reducer-only prompt continuation intents are
+absent from public `EngineIntent`; their bookkeeping is also absent from
 `AgentSessionEngineState`, `getSnapshot()`, and subscription callbacks.
 
 Edit retry follows the same frontend command rule as pin, delete, cancel, and
@@ -279,6 +301,14 @@ It owns:
 - React-facing hooks or providers that are specific to Agent GUI
 - Message Center snapshot model and UI while it shares AgentGUI activity and
   interaction ownership
+
+The published `@tutti-os/agent-gui/activity-list-projection` entrypoint is the
+single high-level projection for compact Agent Activity cards. Hosts first map
+transport DTOs to canonical Sessions, Presences, Messages, and Turn
+file-change snapshots, then call this projection. Product hosts may enrich the
+result with viewer-relative identity, avatars, board lanes, and navigation
+actions; they must not rebuild status, title, summary, ordering, provider, or
+artifact semantics.
 
 Room-scoped attention consumers that need every actionable target use the
 Agent GUI package's `selectWorkspaceAgentAttentionItems` projection. Unlike the
@@ -428,13 +458,27 @@ seconds across controller remounts and repeated target switches. In-flight
 request coalescing remains controller-local; the factory shares only resolved
 entries across controllers. The cache never owns session entities, titles,
 lifecycle, or interaction state.
-Pin and delete are engine mutations, not direct runtime calls from AgentGUI.
+Rename, pin, delete, and through-Turn Fork are Engine mutations, not direct
+runtime calls from AgentGUI. Rename, pin, and delete enter through semantic
+Engine operations rather than reducer-protocol assembly in a product host.
 The engine records the pending mutation, emits one semantic command, and feeds
-the command result back through its reducer loop. Successful pin results and
-delete tombstones enter canonical state as follow-up intents in the same engine
-drain. The desktop activity facade may await that engine record, but its command
-port is the only transport executor. Settled mutation records use a bounded
-window; they are workflow evidence, not an unbounded history store.
+the command result back through its reducer loop. Successful rename and pin
+Session results plus validated delete tombstones enter canonical state as
+follow-up intents in the same engine drain. The product activity facade awaits
+the semantic rename, pin, and delete methods and never allocates mutation
+identity, chooses timeout policy, or reads mutation records. The command port is
+the only transport executor. Settled mutation records use a bounded window;
+they are workflow evidence, not an unbounded history store.
+Fork is long-lived: an HTTP `202 accepted` keeps the mutation in flight until
+the canonical target Session with matching durable lineage is upserted. The
+Engine disables only another Fork for that exact source Turn. Source activity,
+pending Interactions, and an observation ACK for an already committed child do
+not become Fork availability gates.
+The Desktop activity adapter reconciles an accepted operation through the
+durable operation GET endpoint with capped backoff. It never redispatches the
+provider mutation. A committed result enters the Engine as the canonical child;
+failed or delivery-unknown results terminate the mutation so the action can
+report failure and be retried with the correct identity.
 When one of those canonical commits changes page membership, the rail query
 controller reloads only the affected first pages. Its public snapshot contains
 daemon membership and query publication state, not derived Engine
@@ -554,7 +598,13 @@ The activity snapshot also exposes the composer-options request lifecycle per
 opaque target key. Consumers use `loading` only for the initial request when no
 cached options exist; background refreshes keep rendering the last successful
 catalog, and failures transition to `error` instead of leaving indefinite
-loading UI.
+loading UI. Desktop and Mobile request options through the semantic
+`AgentSessionEngine.loadComposerOptions` method. It owns request identity,
+signature-aware cache reuse, identical in-flight joining, supersession, exact
+settlement, caller abort, and engine disposal. The host extension adapter owns
+only the transport call and DTO mapping; hosts must not reconstruct this
+protocol with raw `composerOptions/loadRequested` dispatch plus snapshot
+subscriptions.
 Provider context-window and quota updates enter the daemon at the runtime
 adapter boundary, are split into typed durable session metadata, and reach
 Agent GUI through the protocol-v2 `usage` field. GUI projections must not read
@@ -951,10 +1001,32 @@ reconciliation instead of guessed concatenation. When an explicit provider
 output notification races immediately ahead of its `item/started`, the
 provider normalizer may retain that prefix in a bounded pre-anchor buffer, but
 it must emit nothing until the real anchor arrives; it then publishes the
-anchor first and the retained prefix as `set`. An unmatched or oversized
-prefix is dropped with diagnostics rather than inventing a tool row.
-Completed, failed, canceled, and rewritten tool results remain full canonical
-`message_update` snapshots.
+anchor first and the retained prefix as `set`. Output beyond the canonical
+1 MiB field budget becomes a valid UTF-8 prefix plus `[Output truncated]`; the
+live projection expresses that bounded snapshot as one `set` followed by
+contiguous `append_text` operations that fit the transport envelope. An
+unmatched prefix, or one rejected by the aggregate pre-anchor call or byte
+budget, is dropped with diagnostics rather than inventing a tool row.
+Completed, failed, canceled, and rewritten tool results remain authoritative,
+bounded canonical `message_update` snapshots.
+
+Durable tool snapshots contain the business projection, not a provider-result
+archive. Before `workspace_agent_messages.payload_json` is written, the
+canonical projection promotes readable text to `output.text` or `error.text`,
+tool references to `output.matches`, generated-image paths to
+`output.savedPath`/`output.savedPaths`, and file mutations to `fileChanges`.
+Provider envelopes and duplicate representations such as top-level `content`,
+`output.content`, `rawInput`/`rawOutput`, Claude `toolResponse`, adapter
+metadata, image base64, and unknown provider-only result keys are not retained.
+Provider adapters may continue accepting those wire shapes, but shared
+business code consumes only the explicit canonical fields. Each canonical
+`output` or `error` `text`, `stdout`, and `stderr` field, including nested tool
+steps, is bounded to 1 MiB total by retaining a valid UTF-8 prefix and the fixed
+`[Output truncated]` marker. Agent
+reference/session output uses the same canonical projection rather than
+depending on a retained raw tool result. This is a forward-write rule: existing
+rows are not rewritten, their removed fields are ignored, and normal retention
+eventually ages them out.
 
 The Go live-protocol adapter owns the complete fast-lane envelope on both sides
 of a device link: schema validation, recipient identity projection,
@@ -984,15 +1056,18 @@ projection remains explicitly not caught up until the matching barrier is
 replayed. A host must not publish `AttachmentCaughtUp` for a replacement
 attachment until it has rerun the complete canonical baseline.
 
-Frames are bounded but not fragmented. The publisher may coalesce only adjacent
-pure `append_text` operations for the same message and Turn; tool-output
-operations additionally require contiguous byte offsets. Status, payload,
-semantic, or lifecycle mutations remain separate deliveries. A single delivery
-over the configured safe limit (1 MiB by default, with a 2 MiB encoded-frame
-ceiling and an 8 MiB replay-byte budget) is replaced with a `delivery_too_large`
-discontinuity carrying reconcile keys, and the caller falls back to canonical
-data. This avoids maintaining a second chunk assembly protocol while ensuring
-that the final oversized event is not silently lost.
+Frames are bounded but not fragmented. Before publication, a canonical
+tool-output operation that would consume the delivery budget is represented as
+one `set` followed by contiguous `append_text` operations; this reuses the
+existing semantic operation contract rather than introducing transport-frame
+fragment assembly. The publisher may coalesce only adjacent pure `append_text`
+operations for the same message and Turn; tool-output operations additionally
+require contiguous byte offsets. Status, payload, semantic, or lifecycle
+mutations remain separate deliveries. A single delivery over the configured
+safe limit (1 MiB by default, with a 2 MiB encoded-frame ceiling and an 8 MiB
+replay-byte budget) is replaced with a `delivery_too_large` discontinuity
+carrying reconcile keys, and the caller falls back to canonical data. This
+ensures that the final oversized event is not silently lost.
 
 The publisher also keeps a bounded FIFO of the most recent settled Turn ids.
 Those fences convert late text or tool deltas into scoped discontinuities

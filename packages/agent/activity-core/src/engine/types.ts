@@ -199,7 +199,7 @@ export type EngineExternalCommandExceptPlanDecision = Exclude<
 type AgentSessionEffectCommand =
   | Extract<
       SessionMutationCommand,
-      { type: "session/setPinned" | "sessions/delete" }
+      { type: "session/rename" | "session/setPinned" | "sessions/delete" }
     >
   | InteractionRespondCommand
   | PromptQueueSendCommand
@@ -349,11 +349,15 @@ export interface AgentSessionEffectPort {
   deleteSessions(
     input: Omit<AgentActivityDeleteSessionsInput, "signal">,
     options?: EngineEffectOptions
-  ): Promise<unknown>;
+  ): Promise<AgentActivityDeleteSessionsResult>;
   respondToInteraction(
     input: AgentActivitySubmitInteractiveInput,
     options?: EngineEffectOptions
   ): Promise<unknown>;
+  renameSession(
+    input: Omit<AgentActivityRenameSessionInput, "signal">,
+    options?: EngineEffectOptions
+  ): Promise<{ session: AgentActivitySession }>;
   sendInput(
     input: AgentActivitySendInput,
     options?: EngineEffectOptions
@@ -361,7 +365,7 @@ export interface AgentSessionEffectPort {
   setSessionPinned(
     input: Omit<AgentActivitySetSessionPinnedInput, "signal">,
     options?: EngineEffectOptions
-  ): Promise<unknown>;
+  ): Promise<{ session: AgentActivitySession }>;
   updateSessionSettings(
     input: {
       agentSessionId: string;
@@ -427,12 +431,48 @@ export type AgentSessionEngineListener = (
 
 export type AgentSessionEngineIntentObserver = (intent: EngineIntent) => void;
 
+export interface AgentSessionLoadComposerOptionsInput {
+  cwd?: string | null;
+  force?: boolean;
+  provider: string;
+  settings?: AgentActivityComposerSettings | null;
+  signal?: AbortSignal;
+  targetKey: string;
+}
+
+export interface AgentSessionUpdateSettingsInput {
+  agentSessionId: string;
+  settings: AgentActivitySessionSettings;
+}
+
 export interface AgentSessionEngine {
   readonly identity: AgentSessionEngineIdentity;
+  deleteSessions(
+    input: Omit<AgentActivityDeleteSessionsInput, "signal" | "workspaceId"> & {
+      signal?: AbortSignal;
+    }
+  ): Promise<AgentActivityDeleteSessionsResult>;
   dispatch(intent: EngineIntent, options?: EngineDispatchOptions): void;
   dispose(): void;
   getSnapshot(): AgentSessionEngineState;
+  loadComposerOptions(
+    input: AgentSessionLoadComposerOptionsInput
+  ): Promise<AgentActivityComposerOptions>;
+  renameSession(
+    input: Omit<AgentActivityRenameSessionInput, "signal" | "workspaceId"> & {
+      signal?: AbortSignal;
+    }
+  ): Promise<AgentActivitySession>;
+  setSessionPinned(
+    input: Omit<
+      AgentActivitySetSessionPinnedInput,
+      "signal" | "workspaceId"
+    > & {
+      signal?: AbortSignal;
+    }
+  ): Promise<AgentActivitySession>;
   subscribe(listener: AgentSessionEngineListener): () => void;
+  updateSessionSettings(input: AgentSessionUpdateSettingsInput): void;
 }
 import type {
   PromptQueueIntent,
@@ -490,10 +530,15 @@ import type {
 } from "./tuttiModeActivation.types.ts";
 import type {
   AgentActivityCancelTurnInput,
+  AgentActivityComposerOptions,
+  AgentActivityComposerSettings,
   AgentActivityDeleteSessionsInput,
+  AgentActivityDeleteSessionsResult,
   AgentActivityInitialGoalControl,
+  AgentActivityRenameSessionInput,
   AgentActivitySendInput,
   AgentActivitySetSessionPinnedInput,
+  AgentActivitySession,
   AgentActivitySessionSettings,
   AgentActivitySubmitDiagnostics,
   AgentActivitySubmitInteractiveInput,

@@ -2,6 +2,7 @@ import type {
   AgentSessionActivateEffectInput,
   AgentSessionEffectPort,
   AgentActivityCancelTurnInput,
+  AgentActivityDeleteSessionsResult,
   AgentActivitySendInput,
   AgentActivitySession,
   AgentActivitySessionDetailSnapshot,
@@ -48,6 +49,8 @@ export function createWorkspaceActivityEffectPort(
       cancelTurn(getContext(), input, options?.signal),
     deleteSessions: (input, options) =>
       deleteSessions(getContext(), input, options?.signal),
+    renameSession: (input, options) =>
+      renameSession(getContext(), input, options?.signal),
     respondToInteraction: (input, options) =>
       respondToInteraction(getContext(), input, options?.signal),
     sendInput: (input, options) =>
@@ -222,7 +225,7 @@ function deleteSessions(
     workspaceId: string;
   },
   signal?: AbortSignal
-): Promise<unknown> {
+): Promise<AgentActivityDeleteSessionsResult> {
   return context.client
     .deleteWorkspaceAgentSessionsBatch(
       input.workspaceId,
@@ -258,6 +261,25 @@ function respondToInteraction(
     .then((session) => ({ session: context.mapSession(session) }));
 }
 
+function renameSession(
+  context: WorkspaceActivityEngineCommandContext,
+  input: {
+    agentSessionId: string;
+    title: string;
+    workspaceId: string;
+  },
+  signal?: AbortSignal
+): Promise<{ session: AgentActivitySession }> {
+  return context.client
+    .updateWorkspaceAgentSessionTitle(
+      input.workspaceId,
+      input.agentSessionId,
+      { title: input.title },
+      ...requestOptionsArgs(signal)
+    )
+    .then((session) => ({ session: context.mapSession(session) }));
+}
+
 function setSessionPinned(
   context: WorkspaceActivityEngineCommandContext,
   input: {
@@ -266,7 +288,7 @@ function setSessionPinned(
     workspaceId: string;
   },
   signal?: AbortSignal
-): Promise<unknown> {
+): Promise<{ session: AgentActivitySession }> {
   return context.client
     .updateWorkspaceAgentSessionPin(
       input.workspaceId,

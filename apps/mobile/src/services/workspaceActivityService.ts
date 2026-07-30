@@ -2,8 +2,6 @@ import {
   AGENT_SESSION_ENGINE_LOCAL_ORIGIN,
   createAgentActivitySnapshotProjector,
   createAgentSessionEngine,
-  dispatchSessionMutation,
-  selectEngineSessionSettingsUpdate,
   selectEngineSessionRuntimeAvailability,
   type AgentActivitySessionSettings,
   type AgentActivityInteraction,
@@ -336,18 +334,9 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
       return;
     }
     if (!target.agentSessionId) return;
-    const settingsUpdate = selectEngineSessionSettingsUpdate(
-      this.engine.getSnapshot(),
-      target.agentSessionId
-    );
-    this.engine.dispatch({
+    this.engine.updateSessionSettings({
       agentSessionId: target.agentSessionId,
-      commandId: createMobileActivityCommandId(),
-      retry: settingsUpdate?.status === "unknown",
-      settings,
-      timeoutMs: COMMAND_TIMEOUT_MS,
-      type: "session/settingsUpdateRequested",
-      workspaceId: this.workspace.id
+      settings
     });
   }
 
@@ -370,13 +359,9 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
     );
     if (!session) return;
     try {
-      await dispatchSessionMutation(this.engine, {
+      await this.engine.setSessionPinned({
         agentSessionId,
-        mutationId: createMobileActivityCommandId(),
-        pinned: session.pinnedAtUnixMs == null,
-        timeoutMs: COMMAND_TIMEOUT_MS,
-        type: "session/pinRequested",
-        workspaceId: this.workspace.id
+        pinned: session.pinnedAtUnixMs == null
       });
       await this.rail.reconcile();
       this.errorCode = null;
@@ -390,16 +375,10 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
     const normalizedTitle = title.trim();
     if (!normalizedTitle) return;
     try {
-      const session = await this.client.updateWorkspaceAgentSessionTitle(
-        this.workspace.id,
+      await this.engine.renameSession({
         agentSessionId,
-        { title: normalizedTitle }
-      );
-      this.engine.dispatch({
-        session: this.mapping.mapSession(session),
-        type: "session/upserted"
+        title: normalizedTitle
       });
-      await this.rail.reconcile();
       this.errorCode = null;
     } catch {
       if (!this.disposed) this.errorCode = "request_failed";
@@ -409,12 +388,8 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
 
   async deleteSession(agentSessionId: string): Promise<void> {
     try {
-      await dispatchSessionMutation(this.engine, {
-        agentSessionIds: [agentSessionId],
-        mutationId: createMobileActivityCommandId(),
-        timeoutMs: COMMAND_TIMEOUT_MS,
-        type: "sessions/deleteRequested",
-        workspaceId: this.workspace.id
+      await this.engine.deleteSessions({
+        agentSessionIds: [agentSessionId]
       });
       await this.rail.reconcile();
       this.errorCode = null;
@@ -673,16 +648,15 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
     if (this.disposed || this.paused) return;
     const target = this.currentComposerTarget();
     if (!target) return;
-    this.engine.dispatch({
-      commandId: createMobileActivityCommandId(),
-      ...(target.cwd ? { cwd: target.cwd } : {}),
-      ...(options?.force ? { force: true } : {}),
-      provider: target.provider,
-      settings: target.settings,
-      targetKey: target.agentTargetId,
-      type: "composerOptions/loadRequested",
-      workspaceId: this.workspace.id
-    });
+    void this.engine
+      .loadComposerOptions({
+        ...(target.cwd ? { cwd: target.cwd } : {}),
+        ...(options?.force ? { force: true } : {}),
+        provider: target.provider,
+        settings: target.settings,
+        targetKey: target.agentTargetId
+      })
+      .catch(() => undefined);
   }
 
   private currentComposerTarget() {

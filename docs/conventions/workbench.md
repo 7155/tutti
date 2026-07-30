@@ -120,6 +120,10 @@ Rules:
   remain valid and use conservative bounds normalization; do not invent a
   historical surface size because that would turn unknown geometry into a
   misleading proportional migration
+- persist `lockedLayout` with the same snapshot as its node frames. On restore,
+  retain it only when at least two locked nodes are restored, so Mission Control
+  keeps its proportional grid and any user-adjusted divider geometry after a
+  Workspace reopen
 - adapter-specific durable state should remain behind generic contract fields
   unless the adapter detail is part of the shared snapshot contract
 - desktop-owned workspace Dock retention is product metadata in the workspace

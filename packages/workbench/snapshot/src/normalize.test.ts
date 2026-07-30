@@ -115,3 +115,40 @@ test("preserves spaces and restore frames from canonical contract fixtures", () 
     }
   });
 });
+
+test("preserves a locked layout and normalized divider geometry", () => {
+  const normalized = normalizeWorkbenchSnapshot({
+    schemaVersion: workbenchSnapshotSchemaVersion,
+    nodes: [
+      {
+        id: "a",
+        kind: "agent",
+        title: "A",
+        frame: { x: 0, y: 0, width: 400, height: 500 }
+      },
+      {
+        id: "b",
+        kind: "agent",
+        title: "B",
+        frame: { x: 410, y: 0, width: 400, height: 500 }
+      }
+    ],
+    lockedLayout: {
+      preset: { kind: "row" },
+      nodeIDs: ["b", "a"],
+      normalizedFrames: {
+        a: { x: 0, y: 0, width: 0.4, height: 1 },
+        b: { x: 0.42, y: 0, width: 0.58, height: 1 }
+      }
+    }
+  });
+
+  assert.deepEqual(normalized.lockedLayout, {
+    preset: { kind: "row" },
+    nodeIDs: ["b", "a"],
+    normalizedFrames: {
+      a: { x: 0, y: 0, width: 0.4, height: 1 },
+      b: { x: 0.42, y: 0, width: 0.58, height: 1 }
+    }
+  });
+});

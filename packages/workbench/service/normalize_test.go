@@ -63,6 +63,44 @@ func TestNormalizeWorkbenchSnapshotRejectsInvalidLayoutBasis(t *testing.T) {
 	}
 }
 
+func TestNormalizeWorkbenchSnapshotPreservesLockedLayout(t *testing.T) {
+	t.Parallel()
+
+	snapshot := WorkbenchSnapshot{
+		SchemaVersion: workbenchSnapshotContractSchemaVersion,
+		Nodes: []WorkbenchSnapshotNode{
+			{ID: "a", Kind: "agent", Title: "A", Frame: validWorkbenchSnapshotFrame()},
+			{ID: "b", Kind: "agent", Title: "B", Frame: validWorkbenchSnapshotFrame()},
+		},
+		LockedLayout: &WorkbenchSnapshotLockedLayout{
+			Preset: WorkbenchSnapshotLayoutPreset{
+				Kind: WorkbenchSnapshotLayoutPresetKindRow,
+			},
+			NodeIDs: []string{"a", "b"},
+			NormalizedFrames: map[string]WorkbenchSnapshotNormalizedFrame{
+				"a": {X: 0, Y: 0, Width: 0.4, Height: 1},
+				"b": {X: 0.42, Y: 0, Width: 0.58, Height: 1},
+			},
+		},
+	}
+
+	normalizedJSON, _, err := normalizeWorkbenchSnapshot(snapshot)
+	if err != nil {
+		t.Fatalf("normalizeWorkbenchSnapshot() error = %v", err)
+	}
+
+	var decoded WorkbenchSnapshot
+	if err := json.Unmarshal(normalizedJSON, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if decoded.LockedLayout == nil || decoded.LockedLayout.Preset.Kind != WorkbenchSnapshotLayoutPresetKindRow {
+		t.Fatalf("LockedLayout = %#v, want row layout", decoded.LockedLayout)
+	}
+	if decoded.LockedLayout.NormalizedFrames["b"].Width != 0.58 {
+		t.Fatalf("LockedLayout frames = %#v, want b width 0.58", decoded.LockedLayout.NormalizedFrames)
+	}
+}
+
 func TestNormalizeWorkbenchSnapshotRejectsOversizedPayload(t *testing.T) {
 	t.Parallel()
 

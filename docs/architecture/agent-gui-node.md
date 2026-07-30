@@ -77,6 +77,9 @@ Realtime events reduce latency but are not automatically complete truth:
 - normalized provider text/reasoning streams and explicitly appendable textual
   tool output arrive as optimistic `message_delta` payloads on the
   `/v1/events/ws` business-event WebSocket
+- canonical tool `output`/`error` bodies bound each `text`, `stdout`, and
+  `stderr` field to 1 MiB total, including nested tool steps, by retaining a
+  valid UTF-8 prefix and the fixed `[Output truncated]` marker
 - continuous, version-complete `message_update` events may merge inline
 - terminal `message_update` is the durable confirmation; message version gaps,
   invalid/unanchored deltas, nonterminal deltas after known terminal message
@@ -1152,25 +1155,10 @@ host adapters consume that projection and must not rebuild `$` versus `/`,
 plugin namespaces, or prompt-item versus text-trigger behavior from provider
 names.
 
-Native Composer plugins are a separate projection from Skills and MCP
-discovery. The daemon issues a small descriptor with a stable `semantic`,
-status, trigger, and `plugin://` path; AgentGUI uses that descriptor for
-presentation, setup actions, and structured mentions without branching on a
-provider id or reading local plugin icon paths. For Codex, `$` is the native
-plugin surface while `/` remains commands and product capabilities. A
-session-scoped runtime-preparation plan remains authoritative for whether a
-selected native plugin can actually run. The provider descriptor carries
-`behavior.nativePluginCatalogAuthoritative` to say that this native catalog is
-the complete Composer plugin surface, including when it is empty; other
-providers retain the ordinary Skills and connector projection.
-
-App-server-backed capability discovery also follows the descriptor boundary.
-Codex requests its complete native catalog and applies the authoritative plugin
-projection; Tutti Agent requests only `skills/list` and retains the ordinary
-Skill projection. Both providers share the app-server transport, capability
-contract, cache, and structured prompt-item submission path. AgentGUI continues
-to expose Skills only through `$`; `/` remains commands and product
-capabilities.
+App-server-backed skill discovery follows the descriptor boundary. Tutti Agent
+requests only `skills/list` and retains the ordinary Skill projection through
+the shared app-server transport, capability contract, cache, and structured
+prompt-item submission path.
 
 ### 5.3 Agent Directory and setup
 

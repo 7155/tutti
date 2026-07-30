@@ -1001,10 +1001,14 @@ reconciliation instead of guessed concatenation. When an explicit provider
 output notification races immediately ahead of its `item/started`, the
 provider normalizer may retain that prefix in a bounded pre-anchor buffer, but
 it must emit nothing until the real anchor arrives; it then publishes the
-anchor first and the retained prefix as `set`. An unmatched or oversized
-prefix is dropped with diagnostics rather than inventing a tool row.
-Completed, failed, canceled, and rewritten tool results remain full canonical
-`message_update` snapshots.
+anchor first and the retained prefix as `set`. Output beyond the canonical
+1 MiB field budget becomes a valid UTF-8 prefix plus `[Output truncated]`; the
+live projection expresses that bounded snapshot as one `set` followed by
+contiguous `append_text` operations that fit the transport envelope. An
+unmatched prefix, or one rejected by the aggregate pre-anchor call or byte
+budget, is dropped with diagnostics rather than inventing a tool row.
+Completed, failed, canceled, and rewritten tool results remain authoritative,
+bounded canonical `message_update` snapshots.
 
 Durable tool snapshots contain the business projection, not a provider-result
 archive. Before `workspace_agent_messages.payload_json` is written, the
@@ -1015,7 +1019,10 @@ Provider envelopes and duplicate representations such as top-level `content`,
 `output.content`, `rawInput`/`rawOutput`, Claude `toolResponse`, adapter
 metadata, image base64, and unknown provider-only result keys are not retained.
 Provider adapters may continue accepting those wire shapes, but shared
-business code consumes only the explicit canonical fields. Agent
+business code consumes only the explicit canonical fields. Each canonical
+`output` or `error` `text`, `stdout`, and `stderr` field, including nested tool
+steps, is bounded to 1 MiB total by retaining a valid UTF-8 prefix and the fixed
+`[Output truncated]` marker. Agent
 reference/session output uses the same canonical projection rather than
 depending on a retained raw tool result. This is a forward-write rule: existing
 rows are not rewritten, their removed fields are ignored, and normal retention
@@ -1049,15 +1056,18 @@ projection remains explicitly not caught up until the matching barrier is
 replayed. A host must not publish `AttachmentCaughtUp` for a replacement
 attachment until it has rerun the complete canonical baseline.
 
-Frames are bounded but not fragmented. The publisher may coalesce only adjacent
-pure `append_text` operations for the same message and Turn; tool-output
-operations additionally require contiguous byte offsets. Status, payload,
-semantic, or lifecycle mutations remain separate deliveries. A single delivery
-over the configured safe limit (1 MiB by default, with a 2 MiB encoded-frame
-ceiling and an 8 MiB replay-byte budget) is replaced with a `delivery_too_large`
-discontinuity carrying reconcile keys, and the caller falls back to canonical
-data. This avoids maintaining a second chunk assembly protocol while ensuring
-that the final oversized event is not silently lost.
+Frames are bounded but not fragmented. Before publication, a canonical
+tool-output operation that would consume the delivery budget is represented as
+one `set` followed by contiguous `append_text` operations; this reuses the
+existing semantic operation contract rather than introducing transport-frame
+fragment assembly. The publisher may coalesce only adjacent pure `append_text`
+operations for the same message and Turn; tool-output operations additionally
+require contiguous byte offsets. Status, payload, semantic, or lifecycle
+mutations remain separate deliveries. A single delivery over the configured
+safe limit (1 MiB by default, with a 2 MiB encoded-frame ceiling and an 8 MiB
+replay-byte budget) is replaced with a `delivery_too_large` discontinuity
+carrying reconcile keys, and the caller falls back to canonical data. This
+ensures that the final oversized event is not silently lost.
 
 The publisher also keeps a bounded FIFO of the most recent settled Turn ids.
 Those fences convert late text or tool deltas into scoped discontinuities

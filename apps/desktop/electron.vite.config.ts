@@ -62,6 +62,7 @@ const externalizeRuntimeDeps = externalizeDepsPlugin({
     "@tutti-os/event-stream-core",
     "@tutti-os/agent-activity-core",
     "@tutti-os/agent-gui",
+    "@tutti-os/desktop-update-admission",
     "@tutti-os/ui-i18n-runtime",
     "@tutti-os/ui-system",
     "@tutti-os/workbench-electron",

@@ -428,15 +428,6 @@ function createWebUpdateApi(): DesktopUpdateApi {
     },
     onState() {
       return () => {};
-    },
-    minimumVersion: {
-      getState: () => Promise.resolve(null),
-      start: () => Promise.resolve(null),
-      retry: () => Promise.resolve(null),
-      later: () => Promise.resolve(),
-      openManualDownload: () => Promise.resolve(),
-      exit: () => Promise.resolve(),
-      onState: () => () => {}
     }
   };
 }

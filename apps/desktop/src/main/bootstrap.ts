@@ -1,6 +1,17 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, powerMonitor, protocol } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  powerMonitor,
+  protocol,
+  shell
+} from "electron";
+import {
+  createDesktopUpdateAdmissionController,
+  type DesktopUpdateAdmissionController
+} from "@tutti-os/desktop-update-admission/electron-main";
 import {
   initializeDesktopEnvironment,
   resolveDesktopDevelopmentAppName,
@@ -42,11 +53,8 @@ import { desktopCustomProtocolSchemes } from "./host/desktopCustomProtocolScheme
 import { createWorkspaceFileIconCacheStore } from "./host/workspaceFileIconCacheStore.ts";
 import { registerWorkspaceFileIconProtocol } from "./host/workspaceFileIconProtocol.ts";
 import { applyDesktopElectronPlatformCompatibility } from "./electronPlatformCompatibility.ts";
-import {
-  createMinimumVersionUpgradeController,
-  type MinimumVersionUpgradeController
-} from "./update/minimumVersionUpgradeController.ts";
 import { createAppUpdateService } from "./update/appUpdateService.ts";
+import { checkTuttiMinimumVersion } from "./update/minimumVersionPolicyClient.ts";
 
 function envFlagEnabled(value: string | undefined): boolean {
   return /^(1|true|yes|on)$/iu.test(value?.trim() ?? "");
@@ -177,19 +185,15 @@ export async function bootstrapDesktopApp(): Promise<void> {
     ReturnType<typeof createDesktopAppServices>
   > | null = null;
   let releaseStartupGate: (() => void) | null = null;
-  let minimumVersionController: MinimumVersionUpgradeController | null =
-    createMinimumVersionUpgradeController({
+  let minimumVersionController: DesktopUpdateAdmissionController | null =
+    createDesktopUpdateAdmissionController({
+      checkMinimumVersion: checkTuttiMinimumVersion,
+      electron: { app, BrowserWindow, ipcMain, shell },
+      listBusinessWindows: () => BrowserWindow.getAllWindows(),
       logger,
-      normalUpdatePreferences: () => {
-        if (!desktopAppServices) {
-          throw new Error(
-            "desktop services are unavailable before minimum-version admission"
-          );
-        }
-        return {
-          channel: desktopAppServices.preferences.getUpdateChannel(),
-          policy: desktopAppServices.preferences.getUpdatePolicy()
-        };
+      manualDownloadUrl: (response) => {
+        const channel = response.channel === "rc" ? "preview" : "stable";
+        return `https://tutti.sh/desktop/download?channel=${channel}&platform=macos&arch=universal&format=dmg`;
       },
       onPolicyReleased: () => {
         if (releaseStartupGate) {
@@ -199,9 +203,18 @@ export async function bootstrapDesktopApp(): Promise<void> {
         }
       },
       preloadPath: minimumVersionPreloadPath,
+      product: "tutti-desktop",
       rendererFilePath: join(currentDir, "../renderer/minimum-version.html"),
-      rendererUrl,
-      updateService
+      rendererUrl: rendererUrl
+        ? `${rendererUrl}/minimum-version.html`
+        : undefined,
+      updateService: {
+        acquireMandatorySession: (input) =>
+          updateService.acquireMandatorySession(input),
+        getState: () => updateService.getState(),
+        subscribe: (listener) =>
+          updateService.onStateChanged((state) => listener(state))
+      }
     });
   const startupBlocked = await minimumVersionController.runStartupCheck();
   if (startupBlocked) {
@@ -370,6 +383,9 @@ export async function bootstrapDesktopApp(): Promise<void> {
     workspaceLaunch: desktopAppServices.workspaceLaunch
   });
 
-  minimumVersionController.configureNormalUpdates();
+  await updateService.configure({
+    channel: desktopAppServices.preferences.getUpdateChannel(),
+    policy: desktopAppServices.preferences.getUpdatePolicy()
+  });
   await openBusinessWindow();
 }

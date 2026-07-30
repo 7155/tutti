@@ -1,41 +1,44 @@
 import { useEffect, useState } from "react";
 import { Button, LoadingIcon } from "@tutti-os/ui-system";
-import type { MinimumVersionUpgradeState } from "@shared/contracts/ipc.ts";
-import type { DesktopMinimumVersionApi } from "@preload/types";
-import { useTranslation } from "../i18n";
-
-type MinimumVersionUpgradePort = DesktopMinimumVersionApi;
+import type {
+  DesktopMinimumVersionApi,
+  MinimumVersionUpgradeError,
+  MinimumVersionUpgradeState
+} from "../contracts/index.ts";
+import type { MinimumVersionAdmissionI18nRuntime } from "../i18n/index.ts";
 
 function percent(value: number | null): string {
   return `${Math.max(0, Math.min(100, Math.round(value ?? 0)))}%`;
 }
 
-export function MinimumVersionUpgradeApp({
-  port
-}: {
-  port: MinimumVersionUpgradePort;
+export function MinimumVersionUpgradeApp(props: {
+  i18n: MinimumVersionAdmissionI18nRuntime;
+  mode: "startup" | "foreground";
+  port: DesktopMinimumVersionApi;
+  productName: string;
 }) {
-  const { t } = useTranslation();
-  const foreground =
-    new URLSearchParams(window.location.search).get("mode") === "foreground";
+  const { i18n, mode, port, productName } = props;
   const [state, setState] = useState<MinimumVersionUpgradeState | null>(null);
   const [pending, setPending] = useState(false);
+  const t = (
+    key: Parameters<MinimumVersionAdmissionI18nRuntime["t"]>[0]
+  ): string => i18n.t(key, { productName });
 
   useEffect(() => {
     let disposed = false;
     void port.getState().then((value) => {
       if (!disposed) {
-        setState(value ?? null);
+        setState(value);
       }
     });
     const unsubscribe = port.onState(setState);
     return () => {
       disposed = true;
-      unsubscribe?.();
+      unsubscribe();
     };
   }, [port]);
 
-  const run = (operation: () => Promise<unknown>) => {
+  const run = (operation: () => Promise<unknown>): void => {
     setPending(true);
     void operation()
       .catch(() => undefined)
@@ -50,19 +53,21 @@ export function MinimumVersionUpgradeApp({
     );
   }
 
-  const prompt = foreground && state.phase === "blocked";
+  const prompt = mode === "foreground" && state.phase === "blocked";
   const checking = state.phase === "checking";
   const downloading = state.phase === "downloading";
   const failed = state.phase === "error";
   const title = prompt
-    ? t("minimumVersion.foregroundTitle")
+    ? t("foregroundTitle")
     : failed
-      ? t("minimumVersion.failedTitle")
+      ? t("failedTitle")
       : downloading
-        ? t("minimumVersion.downloadingTitle")
+        ? t("downloadingTitle")
         : checking
-          ? t("minimumVersion.checkingTitle")
-          : t("minimumVersion.startupTitle");
+          ? t("checkingTitle")
+          : t("startupTitle");
+  const errorKey =
+    `errors.${state.message ?? "updateFailed"}` as `errors.${MinimumVersionUpgradeError}`;
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[var(--background)] p-8 text-[var(--foreground)]">
@@ -70,16 +75,10 @@ export function MinimumVersionUpgradeApp({
         <h1 className="text-lg font-semibold">{title}</h1>
         <p className="mt-2 text-sm leading-5 text-[var(--muted-foreground)]">
           {prompt
-            ? t("minimumVersion.foregroundDetail")
+            ? t("foregroundDetail")
             : failed
-              ? t(
-                  `minimumVersion.errors.${state.message ?? "updateFailed"}` as
-                    | "minimumVersion.errors.releaseBelowMinimum"
-                    | "minimumVersion.errors.policyCheckFailed"
-                    | "minimumVersion.errors.installFailed"
-                    | "minimumVersion.errors.updateFailed"
-                )
-              : t("minimumVersion.startupDetail")}
+              ? t(errorKey)
+              : t("startupDetail")}
         </p>
         {failed && state.update.message ? (
           <p className="mt-2 break-words text-xs leading-5 text-[var(--destructive)]">
@@ -88,19 +87,25 @@ export function MinimumVersionUpgradeApp({
         ) : null}
         <dl className="mt-6 grid grid-cols-[auto_1fr] gap-2 rounded-lg bg-[var(--muted)] p-4 text-sm">
           <dt className="text-[var(--muted-foreground)]">
-            {t("minimumVersion.currentVersion")}
+            {t("currentVersion")}
           </dt>
-          <dd className="text-right">{state.check.currentVersion}</dd>
+          <dd className="text-right tabular-nums">
+            {state.check.currentVersion}
+          </dd>
           <dt className="text-[var(--muted-foreground)]">
-            {t("minimumVersion.minimumVersion")}
+            {t("minimumVersion")}
           </dt>
-          <dd className="text-right">{state.check.minimumVersion}</dd>
+          <dd className="text-right tabular-nums">
+            {state.check.minimumVersion}
+          </dd>
         </dl>
         {downloading ? (
           <div className="mt-5">
             <div className="mb-2 flex justify-between text-xs text-[var(--muted-foreground)]">
-              <span>{t("minimumVersion.downloadProgress")}</span>
-              <span>{percent(state.update.downloadPercent)}</span>
+              <span>{t("downloadProgress")}</span>
+              <span className="tabular-nums">
+                {percent(state.update.downloadPercent)}
+              </span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-[var(--muted)]">
               <div
@@ -109,7 +114,7 @@ export function MinimumVersionUpgradeApp({
               />
             </div>
             <p className="mt-3 text-xs text-[var(--muted-foreground)]">
-              {t("minimumVersion.autoRestartNotice")}
+              {t("autoRestartNotice")}
             </p>
           </div>
         ) : null}
@@ -120,7 +125,7 @@ export function MinimumVersionUpgradeApp({
               disabled={pending}
               onClick={() => run(() => port.later())}
             >
-              {t("minimumVersion.later")}
+              {t("later")}
             </Button>
           ) : null}
           {failed ? (
@@ -130,27 +135,25 @@ export function MinimumVersionUpgradeApp({
                 disabled={pending}
                 onClick={() => run(() => port.exit())}
               >
-                {t("minimumVersion.exit")}
+                {t("exit")}
               </Button>
               <Button
                 variant="secondary"
                 disabled={pending}
                 onClick={() => run(() => port.openManualDownload())}
               >
-                {t("minimumVersion.manualDownload")}
+                {t("manualDownload")}
               </Button>
               <Button
                 disabled={pending}
                 onClick={() => run(() => port.retry())}
               >
-                {t("minimumVersion.retry")}
+                {t("retry")}
               </Button>
             </>
           ) : state.phase === "blocked" ? (
             <Button disabled={pending} onClick={() => run(() => port.start())}>
-              {prompt
-                ? t("minimumVersion.upgradeNow")
-                : t("minimumVersion.upgrade")}
+              {prompt ? t("upgradeNow") : t("upgrade")}
             </Button>
           ) : null}
         </div>

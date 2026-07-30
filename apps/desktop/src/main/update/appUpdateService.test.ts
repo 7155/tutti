@@ -82,15 +82,14 @@ test("mandatory update sessions exclusively own and restore the updater", async 
     const session = await service.acquireMandatorySession({
       channel: "rc",
       minimumVersion: "2.0.0-rc.1",
-      policyRevision: "revision-1",
-      releaseMeetsMinimum: () => true
+      policyRevision: "revision-1"
     });
 
-    await session.configure();
+    await session.prepare();
     assert.equal(
       checkCalls,
-      checksAfterNormalConfigure,
-      "mandatory configure must not start a competing background check"
+      checksAfterNormalConfigure + 1,
+      "mandatory prepare owns exactly one update check"
     );
     await assert.rejects(
       service.checkForUpdates(),
@@ -100,20 +99,17 @@ test("mandatory update sessions exclusively own and restore the updater", async 
       service.acquireMandatorySession({
         channel: "stable",
         minimumVersion: "2.0.0",
-        policyRevision: "revision-2",
-        releaseMeetsMinimum: () => true
+        policyRevision: "revision-2"
       }),
       /already active/
     );
 
-    await session.checkForUpdates();
-    assert.equal(checkCalls, checksAfterNormalConfigure + 1);
     await session.release();
     await new Promise<void>((resolve) => setImmediate(resolve));
     assert.equal(service.getState().channel, "stable");
     assert.equal(service.getState().policy, "auto");
     assert.equal(checkCalls, checksAfterNormalConfigure + 2);
-    await assert.rejects(session.checkForUpdates(), /no longer active/);
+    await assert.rejects(session.prepare(), /no longer active/);
   } finally {
     service.dispose();
   }

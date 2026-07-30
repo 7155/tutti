@@ -2,6 +2,7 @@ import type {
   AgentProviderProbeListInput,
   AgentProviderProbeListResult
 } from "@tutti-os/agent-gui";
+import type { DesktopMinimumVersionApi } from "@tutti-os/desktop-update-admission/contracts";
 import type {
   DesktopBackendConfig,
   DesktopComputerUseActionResult,
@@ -20,7 +21,6 @@ import type {
   DesktopSelectUploadFilesInput,
   DesktopOpenWithApplication,
   AppUpdateState,
-  MinimumVersionUpgradeState,
   ClearDeveloperLogsResult,
   DesktopDeveloperLogKind,
   DesktopDeveloperLogsState,
@@ -300,15 +300,7 @@ export interface DesktopUpdateApi {
   onState(listener: (state: AppUpdateState) => void): () => void;
 }
 
-export interface DesktopMinimumVersionApi {
-  getState(): Promise<MinimumVersionUpgradeState | null>;
-  start(): Promise<MinimumVersionUpgradeState | null>;
-  retry(): Promise<MinimumVersionUpgradeState | null>;
-  later(): Promise<void>;
-  openManualDownload(): Promise<void>;
-  exit(): Promise<void>;
-  onState(listener: (state: MinimumVersionUpgradeState) => void): () => void;
-}
+export type { DesktopMinimumVersionApi };
 
 export interface DesktopWallpaperApi {
   clearCustom(): Promise<void>;

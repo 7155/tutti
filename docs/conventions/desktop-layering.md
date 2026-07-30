@@ -183,11 +183,14 @@ the boundaries exist.
 
 Minimum-version admission is a lifecycle boundary:
 
-- bootstrap may create the updater and the minimum-version controller before daemon, host-service, IPC, menu, or business-window composition
+- `@tutti-os/desktop-update-admission` owns the product-neutral controller, response validation, mandatory updater lease, preload API, shared React presentation, and default i18n resources
+- bootstrap supplies product transport, updater adapter, window assets, download URL, logging sink, and business-window enumeration to that package
+- bootstrap may create the updater and the shared minimum-version controller before daemon, host-service, IPC, menu, or business-window composition
 - a blocked startup must not construct business services or start the managed daemon
 - the admission window uses its own renderer HTML entry and preload entry
 - the admission preload exposes only minimum-version commands; the normal preload must not duplicate those commands
 - mandatory update execution owns the updater through an exclusive session and restores the prior normal update configuration only when the policy block is released
+- host apps must not copy the controller, validation, lease, preload, renderer, or default-copy implementation back into app-local modules
 
 Lifecycle-specific rule:
 

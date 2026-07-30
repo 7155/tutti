@@ -96,6 +96,9 @@ importers:
       "@tutti-os/config-tsconfig":
         specifier: workspace:*
         version: link:../../packages/configs/tsconfig
+      "@tutti-os/desktop-update-admission":
+        specifier: workspace:*
+        version: link:../../packages/desktop/update-admission
       "@tutti-os/infra":
         specifier: 0.1.0
         version: 0.1.0(lodash-es@4.18.1)(react@19.2.6)
@@ -779,6 +782,40 @@ importers:
   packages/configs/prettier: {}
 
   packages/configs/tsconfig: {}
+
+  packages/desktop/update-admission:
+    dependencies:
+      "@tutti-os/ui-i18n-runtime":
+        specifier: workspace:*
+        version: link:../../ui/i18n-runtime
+      "@tutti-os/ui-system":
+        specifier: workspace:*
+        version: link:../../ui/system
+    devDependencies:
+      "@tutti-os/config-tsconfig":
+        specifier: workspace:*
+        version: link:../../configs/tsconfig
+      "@types/node":
+        specifier: ^24.0.1
+        version: 24.12.4
+      "@types/react":
+        specifier: ^19.1.6
+        version: 19.2.15
+      "@types/react-dom":
+        specifier: ^19.1.5
+        version: 19.2.3(@types/react@19.2.15)
+      electron:
+        specifier: ^43.2.0
+        version: 43.2.0
+      react:
+        specifier: ^19.1.0
+        version: 19.2.6
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.2.6(react@19.2.6)
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
 
   packages/events/protocol:
     devDependencies:

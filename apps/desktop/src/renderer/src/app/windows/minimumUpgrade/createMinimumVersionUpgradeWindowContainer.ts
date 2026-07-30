@@ -1,4 +1,4 @@
-import type { DesktopMinimumVersionApi } from "@preload/types";
+import type { DesktopMinimumVersionApi } from "@tutti-os/desktop-update-admission/contracts";
 
 export interface MinimumVersionUpgradeWindowContainer {
   port: DesktopMinimumVersionApi;

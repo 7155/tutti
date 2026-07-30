@@ -1,11 +1,15 @@
 import electron from "electron";
-import { AsyncLocalStorage } from "node:async_hooks";
 import electronUpdater, {
   type AppUpdater,
   type ProgressInfo,
   type UpdateDownloadedEvent,
   type UpdateInfo
 } from "electron-updater";
+import {
+  createMandatoryUpdaterLeaseManager,
+  type MandatoryDesktopUpdateSession,
+  type MandatoryDesktopUpdateTarget
+} from "@tutti-os/desktop-update-admission/mandatory-updater";
 import { isSameAppUpdateState } from "../../shared/contracts/appUpdateState.ts";
 import {
   desktopIpcChannels,
@@ -69,28 +73,16 @@ export interface AppUpdateService {
   downloadUpdate(): Promise<AppUpdateState>;
   getState(): AppUpdateState;
   installUpdate(): Promise<void>;
-  acquireMandatorySession(input: {
-    channel: AppUpdateChannel;
-    minimumVersion: string;
-    policyRevision: string;
-    releaseMeetsMinimum(
-      version: string | null,
-      minimumVersion: string
-    ): boolean;
-  }): Promise<MandatoryAppUpdateSession>;
+  acquireMandatorySession(
+    input: MandatoryDesktopUpdateTarget
+  ): Promise<MandatoryAppUpdateSession>;
   isQuitAndInstallPending(): boolean;
   onStateChanged(
     listener: (state: AppUpdateState, previousState: AppUpdateState) => void
   ): () => void;
 }
 
-export interface MandatoryAppUpdateSession {
-  configure(): Promise<AppUpdateState>;
-  checkForUpdates(): Promise<AppUpdateState>;
-  downloadUpdate(): Promise<AppUpdateState>;
-  installUpdate(): Promise<void>;
-  release(options?: { restoreNormal?: boolean }): Promise<void>;
-}
+export type MandatoryAppUpdateSession = MandatoryDesktopUpdateSession;
 
 interface AppUpdateServiceOptions {
   releaseFeedResolver?: DesktopReleaseFeedResolver | null;
@@ -466,17 +458,7 @@ export function createAppUpdateService(
   const stateChangedListeners = new Set<
     (state: AppUpdateState, previousState: AppUpdateState) => void
   >();
-  const mandatoryContext = new AsyncLocalStorage<symbol>();
-  let mandatoryOwner: symbol | null = null;
   let normalConfiguration: ConfigureAppUpdatesInput | null = null;
-
-  const assertUpdaterAccess = (): void => {
-    if (mandatoryOwner && mandatoryContext.getStore() !== mandatoryOwner) {
-      throw new Error(
-        "application updater is owned by the mandatory update session"
-      );
-    }
-  };
 
   const emitState = (): void => {
     for (const window of BrowserWindow?.getAllWindows?.() ?? []) {
@@ -504,6 +486,29 @@ export function createAppUpdateService(
       intervalId = null;
     }
   };
+
+  let service: AppUpdateService;
+  const mandatoryUpdater =
+    createMandatoryUpdaterLeaseManager<ConfigureAppUpdatesInput>({
+      captureNormalConfiguration: () =>
+        normalConfiguration ? { ...normalConfiguration } : null,
+      async suspendNormalUpdates() {
+        clearSchedule();
+        await activeCheckPromise?.catch(() => undefined);
+        await activeDownloadPromise?.catch(() => undefined);
+      },
+      async prepareMandatoryUpdate(input) {
+        await service.configure(input);
+        return await service.checkForUpdates();
+      },
+      downloadUpdate: () => service.downloadUpdate(),
+      installUpdate: () => service.installUpdate(),
+      getState: () => service.getState(),
+      restoreNormalConfiguration: (configuration) =>
+        service.configure(configuration).then(() => undefined)
+    });
+
+  const assertUpdaterAccess = (): void => mandatoryUpdater.assertAccess();
 
   const applyUpdaterError = (error: Error): void => {
     getDesktopLogger().error("application updater failed", {
@@ -632,7 +637,7 @@ export function createAppUpdateService(
     })
   ];
 
-  const service: AppUpdateService = {
+  service = {
     async checkForUpdates() {
       assertUpdaterAccess();
       if (
@@ -656,7 +661,7 @@ export function createAppUpdateService(
     },
     configure(input) {
       assertUpdaterAccess();
-      if (!mandatoryOwner) {
+      if (!mandatoryUpdater.isMandatoryAccess()) {
         normalConfiguration = { ...input };
       }
       state = {
@@ -702,14 +707,13 @@ export function createAppUpdateService(
         forceDevUpdateConfig: devUpdatesEnabled && !isPackaged
       });
       resetConfiguredState("idle");
-      if (!mandatoryOwner) {
+      if (!mandatoryUpdater.isMandatoryAccess()) {
         scheduleChecks();
         runBackgroundCheck("configure");
       }
       return Promise.resolve(state);
     },
     dispose() {
-      mandatoryOwner = null;
       clearSchedule();
       for (const dispose of driverDisposers) {
         dispose();
@@ -783,90 +787,7 @@ export function createAppUpdateService(
       }
     },
     async acquireMandatorySession(input) {
-      if (mandatoryOwner) {
-        throw new Error("a mandatory update session is already active");
-      }
-      const owner = Symbol(
-        `mandatory-update:${input.policyRevision}:${input.minimumVersion}`
-      );
-      mandatoryOwner = owner;
-      const configurationToRestore = normalConfiguration;
-      clearSchedule();
-      await activeCheckPromise?.catch(() => undefined);
-      await activeDownloadPromise?.catch(() => undefined);
-      let released = false;
-      const run = <T>(operation: () => Promise<T>): Promise<T> => {
-        if (released || mandatoryOwner !== owner) {
-          return Promise.reject(
-            new Error("mandatory update session is no longer active")
-          );
-        }
-        return mandatoryContext.run(owner, operation);
-      };
-      const assertTargetVersion = (update: AppUpdateState): void => {
-        if (
-          !input.releaseMeetsMinimum(update.latestVersion, input.minimumVersion)
-        ) {
-          throw new Error(
-            `mandatory update target ${update.latestVersion ?? "unknown"} is below ${input.minimumVersion}`
-          );
-        }
-      };
-      return {
-        configure: () =>
-          run(async () => {
-            const update = await service.configure({
-              channel: input.channel,
-              policy: "prompt"
-            });
-            if (
-              update.status === "available" ||
-              update.status === "downloaded"
-            ) {
-              assertTargetVersion(update);
-            }
-            return update;
-          }),
-        checkForUpdates: () =>
-          run(async () => {
-            const update = await service.checkForUpdates();
-            if (
-              update.status === "available" ||
-              update.status === "downloaded"
-            ) {
-              assertTargetVersion(update);
-            }
-            return update;
-          }),
-        downloadUpdate: () =>
-          run(async () => {
-            const update = await service.downloadUpdate();
-            if (update.status === "downloaded") {
-              assertTargetVersion(update);
-            }
-            return update;
-          }),
-        installUpdate: () =>
-          run(async () => {
-            assertTargetVersion(state);
-            await service.installUpdate();
-          }),
-        release: async (releaseOptions) => {
-          if (released) {
-            return;
-          }
-          released = true;
-          if (mandatoryOwner === owner) {
-            mandatoryOwner = null;
-            if (
-              releaseOptions?.restoreNormal !== false &&
-              configurationToRestore
-            ) {
-              await service.configure(configurationToRestore);
-            }
-          }
-        }
-      };
+      return await mandatoryUpdater.acquire(input);
     },
     isQuitAndInstallPending() {
       return quitAndInstallPending;

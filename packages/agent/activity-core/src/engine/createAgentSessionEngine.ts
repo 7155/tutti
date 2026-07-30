@@ -179,7 +179,8 @@ export function createAgentSessionEngine({
           publicSnapshot = projectPublicAgentSessionEngineState(
             state,
             publicSnapshot,
-            previousRoot
+            previousRoot,
+            intent
           );
         }
         if (result.followUpIntents?.length) {

@@ -1905,8 +1905,14 @@ cannot settle the operation by value equality because it carries no operation
 identity. At most one operation record is retained per Session and Session
 removal clears it. The package root exposes presentation and settlement
 selectors, and the public Engine snapshot contains only their derived state,
-not the raw Goal operation ledger. A definitive failure releases the old
-identity; only an unknown result retains it for an explicit retry. The legacy
+not the raw Goal operation ledger. These maps are sparse and update only the
+Session IDs whose Goal, Goal operation, or Goal-bearing activation changed, so
+Turn streaming and unrelated Session changes preserve the Goal branch and
+unaffected presentation references. The response `goal` is Host's durable
+desired projection; provider observation remains in Goal state and may be
+empty without clearing the visible Goal. Only a durable tombstone produces
+`goal: null`. A definitive failure releases the old identity; only an unknown
+result retains it for an explicit retry. The legacy
 `AgentActivityRuntime.goalControl` adapter remains a compatibility surface,
 but shared AgentGUI does not call it.
 

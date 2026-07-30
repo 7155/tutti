@@ -406,6 +406,13 @@ func (h *Host) goalControlSerialized(
 			return GoalControlResult{}, persistErr
 		}
 	}
+	if persistedState != nil {
+		// GoalControlResult.Goal is the Host-owned durable projection used by
+		// every consumer. Provider output remains available independently as
+		// GoalState.Observed and may legitimately be empty while a pause or
+		// resume is applied. Only a durable tombstone projects an explicit nil.
+		responseGoal = durableGoalForResponse(*persistedState)
+	}
 	canonical, found, err := h.store.GetSession(ctx, workspaceID, agentSessionID)
 	if err != nil {
 		slog.Warn("workspace agent session goal control refresh failed",

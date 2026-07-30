@@ -290,9 +290,12 @@ Desktop and Mobile `controlGoal` effects only forward transport and map the
 authoritative Session, Goal, durable operation identity, and Goal state. Goal
 Control responses carry `goal` as a required nullable field so a successful
 clear is an explicit `null`, never an omitted value that can fall back to a
-stale runtime Session projection. The daemon overlays that Host-owned result
-onto `session.goal`, and the Engine applies the same invariant when a synced
-typed result reaches its canonical Session state.
+stale runtime Session projection. That field is Host's durable desired
+projection, while provider output remains separately observable through Goal
+state. An empty pause/resume observation therefore records divergence without
+erasing the visible Goal; only a durable tombstone returns `null`. The daemon
+overlays that Host-owned result onto `session.goal`, and the Engine applies the
+same invariant when a synced typed result reaches its canonical Session state.
 Engine-originated requests always send their caller-stable identity through to
 the existing Agent Host Goal saga.
 Every admitted mutation reaches Host; frontend Goal equality is not a no-op
@@ -304,6 +307,11 @@ unknown. A retry of the same unknown mutation reuses the original
 next explicit attempt is a new operation. Generic Session reconciliation and
 Goal value equality cannot settle that operation because neither proves its
 durable identity.
+The public Goal presentation and settlement maps are sparse. The Engine
+updates them only for Session identities whose canonical Goal, Goal operation,
+or Goal-bearing activation changed; it indexes pending Goal activations once
+per relevant drain. Turn streaming and unrelated Session metadata preserve
+the Goal branch and unrelated per-Session presentation references.
 Desktop and Mobile keep a submitted Goal draft until that settlement reaches
 `accepted` or `succeeded`, and clear it only if the user has not edited the
 draft in the meantime. A definitive failure retains the text but releases the

@@ -76,6 +76,42 @@ func runGoalActionLifecycle(ctx context.Context, driver Driver) error {
 	return nil
 }
 
+func runGoalControlPreservesDurableGoalWithoutProviderObservation(ctx context.Context, driver Driver) error {
+	fixture := liveSessionFixture("session-goal-empty-status-observation", "")
+	fixture.EmptyPauseResumeGoal = true
+	if err := driver.Reset(ctx, fixture); err != nil {
+		return err
+	}
+	ref := agenthost.GoalControlInput{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-goal-empty-status-observation",
+		Action: "set", Objective: "keep visible",
+	}
+	if _, err := driver.GoalControl(ctx, ref); err != nil {
+		return fmt.Errorf("set goal before empty provider observation: %w", err)
+	}
+	for _, command := range []struct {
+		action string
+		status string
+	}{
+		{action: "pause", status: "paused"},
+		{action: "resume", status: "active"},
+	} {
+		ref.Action, ref.Objective = command.action, ""
+		result, err := driver.GoalControl(ctx, ref)
+		if err != nil {
+			return fmt.Errorf("goal %s with empty provider observation: %w", command.action, err)
+		}
+		if metadataString(result.Goal, "objective") != "keep visible" ||
+			metadataString(result.Goal, "status") != command.status {
+			return fmt.Errorf("goal %s lost durable projection: %#v", command.action, result)
+		}
+		if result.PendingOperationID != "" || result.SyncStatus != storesqlite.GoalSyncStatusDiverged {
+			return fmt.Errorf("goal %s empty observation state=%#v", command.action, result)
+		}
+	}
+	return nil
+}
+
 func runDuplicateGoalClientSubmitID(ctx context.Context, driver Driver) error {
 	if err := driver.Reset(ctx, liveSessionFixture("session-goal-idempotent", "")); err != nil {
 		return err

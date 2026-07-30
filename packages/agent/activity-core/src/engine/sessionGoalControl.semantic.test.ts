@@ -220,6 +220,66 @@ test("typed Goal Control success updates canonical Session and operation evidenc
   );
 });
 
+test("a Session without Goal state does not rebuild another Session Goal projection", () => {
+  const harness = createHarness();
+  const initialGoalControl = harness.engine.getSnapshot().goalControl;
+
+  harness.engine.dispatch({
+    session: {
+      ...session(null, 2),
+      agentSessionId: "session-without-goal"
+    },
+    type: "session/upserted"
+  });
+
+  const afterUnrelatedInsert = harness.engine.getSnapshot().goalControl;
+  assert.equal(afterUnrelatedInsert, initialGoalControl);
+  assert.equal(
+    afterUnrelatedInsert.presentationsBySessionId["session-without-goal"],
+    undefined
+  );
+  assert.deepEqual(
+    selectSessionGoalControlPresentation(
+      harness.engine.getSnapshot(),
+      "session-without-goal"
+    ),
+    {
+      agentSessionId: "session-without-goal",
+      goal: null,
+      optimistic: false,
+      status: "idle"
+    }
+  );
+
+  harness.engine.dispatch({
+    turn: {
+      agentSessionId: "session-without-goal",
+      origin: "user_prompt",
+      phase: "running",
+      startedAtUnixMs: 2,
+      turnId: "turn-1",
+      updatedAtUnixMs: 2
+    },
+    type: "turn/upserted"
+  });
+
+  assert.equal(harness.engine.getSnapshot().goalControl, initialGoalControl);
+
+  harness.engine.dispatch({
+    agentSessionId: "session-without-goal",
+    patch: { title: "Updated unrelated Session", updatedAtUnixMs: 3 },
+    type: "session/metadataPatched"
+  });
+
+  assert.equal(harness.engine.getSnapshot().goalControl, initialGoalControl);
+  assert.equal(
+    harness.engine.getSnapshot().goalControl.presentationsBySessionId[
+      "session-1"
+    ],
+    initialGoalControl.presentationsBySessionId["session-1"]
+  );
+});
+
 test("explicit Goal clear overrides a stale runtime Session projection", async () => {
   const existingGoal = goal("existing goal", "active");
   const harness = createHarness(existingGoal);

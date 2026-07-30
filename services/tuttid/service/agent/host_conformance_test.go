@@ -349,6 +349,10 @@ func (d *legacyHostConformanceDriver) Reset(_ context.Context, fixture hostconfo
 		case "clear":
 			providerGoal = nil
 		}
+		resultGoal := providerGoal
+		if fixture.EmptyPauseResumeGoal && (input.Action == "pause" || input.Action == "resume") {
+			resultGoal = nil
+		}
 		providerPhase := "applied"
 		evidence := map[string]any{"confidence": "authoritative"}
 		if fixture.AcceptGoalControlsOnly {
@@ -356,7 +360,7 @@ func (d *legacyHostConformanceDriver) Reset(_ context.Context, fixture hostconfo
 			evidence = map[string]any{"confidence": "accepted_only", "phase": "accepted"}
 		}
 		return RuntimeGoalControlResult{
-			AgentSessionID: input.AgentSessionID, Goal: clonePayload(providerGoal),
+			AgentSessionID: input.AgentSessionID, Goal: clonePayload(resultGoal),
 			Evidence: evidence, ProviderPhase: providerPhase,
 		}, nil
 	}

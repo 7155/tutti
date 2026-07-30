@@ -61,7 +61,9 @@ export interface SessionGoalControlSettlement {
 
 /**
  * Host-observable Goal state. The reducer's operation ledger deliberately
- * stays behind the Engine module seam.
+ * stays behind the Engine module seam. Both maps are sparse: callers use the
+ * selectors for the default idle presentation when a Session has no Goal,
+ * Goal operation, or Goal-bearing activation.
  */
 export interface SessionGoalControlPublicState {
   presentationsBySessionId: Readonly<

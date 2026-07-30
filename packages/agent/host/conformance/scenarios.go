@@ -121,6 +121,7 @@ func GoalScenarios() []Scenario {
 	return []Scenario{
 		{Name: "direct and typed goal equivalence", run: runDirectAndTypedGoalEquivalence},
 		{Name: "goal action lifecycle", run: runGoalActionLifecycle},
+		{Name: "goal status control preserves durable goal without provider observation", run: runGoalControlPreservesDurableGoalWithoutProviderObservation},
 		{Name: "duplicate goal client submit id", run: runDuplicateGoalClientSubmitID},
 		{Name: "provider authored goal adoption", run: runProviderAuthoredGoalAdoption},
 		{Name: "provider authored goal active conflict", run: runProviderAuthoredGoalActiveConflict},

@@ -3438,6 +3438,35 @@ convergence deadline`.
   [daemon_agent_sessions_goal.go](../../../services/tuttid/api/daemon_agent_sessions_goal.go)
   [sessionGoalControl.validation.ts](../../../packages/agent/activity-core/src/engine/sessionGoalControl.validation.ts)
 
+### Goal disappears after pause or resume
+
+- Symptom:
+  Pause or resume succeeds, but the Goal banner disappears while the durable
+  Goal still exists.
+- Quick checks:
+  Compare the Goal Control response's top-level `goal` with `state.desired`,
+  `state.observed`, and `state.tombstoned`. If `observed` is empty but
+  `desired` remains populated and not tombstoned, the provider supplied no
+  current observation; it did not clear the Goal.
+- Root cause:
+  The response projected the provider's per-action observation as the visible
+  Goal. Some providers can apply pause or resume while returning no Goal
+  observation, so the required nullable response serialized that absence as an
+  explicit clear.
+- Fix:
+  Host returns the durable desired projection as `GoalControlResult.Goal` and
+  keeps provider output in `GoalState.Observed`. The daemon only maps that
+  Host-owned result. Empty observation may produce `diverged` state, but only a
+  durable tombstone produces `goal: null`.
+- Validation:
+  Set a Goal, make the provider return no Goal for pause and resume, and verify
+  both responses retain the objective with the expected paused/active status,
+  report divergence, and carry no pending operation.
+- References:
+  [goal_control.go](../../../packages/agent/host/goal_control.go)
+  [goal_scenarios.go](../../../packages/agent/host/conformance/goal_scenarios.go)
+  [daemon_agent_sessions_goal.go](../../../services/tuttid/api/daemon_agent_sessions_goal.go)
+
 ### Revoked shared Goal starts again after handoff or desktop restart
 
 - Symptom:

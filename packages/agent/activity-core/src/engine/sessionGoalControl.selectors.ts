@@ -1,5 +1,5 @@
 import { isPendingActivationViable } from "./pendingIntents.types.ts";
-import { selectLatestActivationForSession } from "./pendingIntents.selectors.ts";
+import type { PendingActivationIntentRecord } from "./pendingIntents.types.ts";
 import {
   projectSessionGoalControl,
   sessionGoalsEqual
@@ -10,7 +10,10 @@ import type {
   SessionGoalControlPublicState,
   SessionGoalControlSettlement
 } from "./sessionGoalControl.types.ts";
-import type { RootAgentSessionEngineState } from "./rootReducer.types.ts";
+import type {
+  RootAgentSessionEngineState,
+  RootEngineIntent
+} from "./rootReducer.types.ts";
 import type { AgentSessionEngineState } from "./types.ts";
 
 export function selectInternalSessionGoalControlOperation(
@@ -46,62 +49,101 @@ export function selectSessionGoalControlPresentation(
 
 export function projectPublicSessionGoalControlState(
   state: RootAgentSessionEngineState,
-  previous?: SessionGoalControlPublicState
+  previous?: SessionGoalControlPublicState,
+  previousRoot?: RootAgentSessionEngineState,
+  cause?: RootEngineIntent
 ): SessionGoalControlPublicState {
-  const agentSessionIds = new Set([
-    ...Object.keys(state.sessionLifecycle.sessionsById),
-    ...Object.keys(state.goalControl.operationsBySessionId),
-    ...Object.values(state.pendingIntents.activationsByRequestId)
-      .filter((activation) => activation.initialGoalControl)
-      .map((activation) => activation.agentSessionId)
-  ]);
-  const presentationsBySessionId: Record<
-    string,
-    SessionGoalControlPresentation
-  > = {};
-  const settlementsBySessionId: Record<string, SessionGoalControlSettlement> =
-    {};
-  for (const agentSessionId of agentSessionIds) {
+  if (!previous || !previousRoot || !cause) {
+    return projectAllPublicSessionGoalControlState(
+      state,
+      indexLatestGoalActivations(state)
+    );
+  }
+
+  const changedOperationSessionIds = changedOperationIds(state, previousRoot);
+  const presentationSessionIds = new Set(changedOperationSessionIds);
+  addCanonicalGoalCandidates(
+    presentationSessionIds,
+    cause,
+    state,
+    previousRoot
+  );
+  addChangedActivationSessionIds(presentationSessionIds, state, previousRoot);
+  if (presentationSessionIds.size === 0) return previous;
+  const latestGoalActivations = indexLatestGoalActivations(state);
+
+  let presentationsBySessionId: Record<string, SessionGoalControlPresentation> =
+    previous.presentationsBySessionId;
+  for (const agentSessionId of presentationSessionIds) {
+    const activation = latestGoalActivations[agentSessionId] ?? null;
+    const operation = state.goalControl.operationsBySessionId[agentSessionId];
+    const canonicalGoal =
+      state.sessionLifecycle.sessionsById[agentSessionId]?.goal ?? null;
+    const relevant = Boolean(canonicalGoal || operation || activation);
+    const previousPresentation = presentationsBySessionId[agentSessionId];
+    if (!relevant) {
+      if (previousPresentation) {
+        if (presentationsBySessionId === previous.presentationsBySessionId) {
+          presentationsBySessionId = { ...presentationsBySessionId };
+        }
+        delete presentationsBySessionId[agentSessionId];
+      }
+      continue;
+    }
     const presentation = projectSessionGoalControlPresentation(
       state,
-      agentSessionId
+      agentSessionId,
+      activation
     );
-    const previousPresentation =
-      previous?.presentationsBySessionId[agentSessionId];
-    presentationsBySessionId[agentSessionId] =
+    if (
       previousPresentation &&
       sessionGoalControlPresentationsEqual(previousPresentation, presentation)
-        ? previousPresentation
-        : presentation;
+    ) {
+      continue;
+    }
+    if (presentationsBySessionId === previous.presentationsBySessionId) {
+      presentationsBySessionId = { ...presentationsBySessionId };
+    }
+    presentationsBySessionId[agentSessionId] = presentation;
   }
-  for (const operation of Object.values(
-    state.goalControl.operationsBySessionId
-  )) {
+
+  let settlementsBySessionId: Record<string, SessionGoalControlSettlement> =
+    previous.settlementsBySessionId;
+  for (const agentSessionId of changedOperationSessionIds) {
+    const operation = state.goalControl.operationsBySessionId[agentSessionId];
+    const previousSettlement = settlementsBySessionId[agentSessionId];
+    if (!operation) {
+      if (previousSettlement) {
+        if (settlementsBySessionId === previous.settlementsBySessionId) {
+          settlementsBySessionId = { ...settlementsBySessionId };
+        }
+        delete settlementsBySessionId[agentSessionId];
+      }
+      continue;
+    }
     const settlement = projectSessionGoalControlSettlement(operation);
-    const previousSettlement =
-      previous?.settlementsBySessionId[operation.agentSessionId];
-    settlementsBySessionId[operation.agentSessionId] =
+    if (
       previousSettlement &&
       sessionGoalControlSettlementsEqual(previousSettlement, settlement)
-        ? previousSettlement
-        : settlement;
+    ) {
+      continue;
+    }
+    if (settlementsBySessionId === previous.settlementsBySessionId) {
+      settlementsBySessionId = { ...settlementsBySessionId };
+    }
+    settlementsBySessionId[agentSessionId] = settlement;
   }
-  if (
-    previous &&
-    recordValuesEqual(
-      previous.presentationsBySessionId,
-      presentationsBySessionId
-    ) &&
-    recordValuesEqual(previous.settlementsBySessionId, settlementsBySessionId)
-  ) {
-    return previous;
-  }
-  return { presentationsBySessionId, settlementsBySessionId };
+
+  return presentationsBySessionId === previous.presentationsBySessionId &&
+    settlementsBySessionId === previous.settlementsBySessionId
+    ? previous
+    : { presentationsBySessionId, settlementsBySessionId };
 }
 
 function projectSessionGoalControlPresentation(
   state: RootAgentSessionEngineState,
-  id: string
+  id: string,
+  activation: PendingActivationIntentRecord | null
 ): SessionGoalControlPresentation {
   const canonicalGoal = state.sessionLifecycle.sessionsById[id]?.goal ?? null;
   const operation = state.goalControl.operationsBySessionId[id] ?? null;
@@ -120,7 +162,6 @@ function projectSessionGoalControlPresentation(
       status: operation.status
     };
   }
-  const activation = selectLatestActivationForSession(state, id);
   if (
     activation?.mode === "new" &&
     activation.initialGoalControl &&
@@ -161,6 +202,162 @@ function projectSessionGoalControlPresentation(
   };
 }
 
+function projectAllPublicSessionGoalControlState(
+  state: RootAgentSessionEngineState,
+  latestGoalActivations: Readonly<Record<string, PendingActivationIntentRecord>>
+): SessionGoalControlPublicState {
+  const agentSessionIds = new Set([
+    ...Object.entries(state.sessionLifecycle.sessionsById)
+      .filter(([, session]) => session.goal)
+      .map(([agentSessionId]) => agentSessionId),
+    ...Object.keys(state.goalControl.operationsBySessionId),
+    ...Object.keys(latestGoalActivations)
+  ]);
+  const presentationsBySessionId: Record<
+    string,
+    SessionGoalControlPresentation
+  > = {};
+  const settlementsBySessionId: Record<string, SessionGoalControlSettlement> =
+    {};
+  for (const agentSessionId of agentSessionIds) {
+    presentationsBySessionId[agentSessionId] =
+      projectSessionGoalControlPresentation(
+        state,
+        agentSessionId,
+        latestGoalActivations[agentSessionId] ?? null
+      );
+  }
+  for (const operation of Object.values(
+    state.goalControl.operationsBySessionId
+  )) {
+    settlementsBySessionId[operation.agentSessionId] =
+      projectSessionGoalControlSettlement(operation);
+  }
+  return { presentationsBySessionId, settlementsBySessionId };
+}
+
+function indexLatestGoalActivations(
+  state: RootAgentSessionEngineState
+): Record<string, PendingActivationIntentRecord> {
+  const indexed: Record<string, PendingActivationIntentRecord> = {};
+  for (const activation of Object.values(
+    state.pendingIntents.activationsByRequestId
+  )) {
+    if (!activation.initialGoalControl) continue;
+    const current = indexed[activation.agentSessionId];
+    if (!current || activation.requestedAtUnixMs >= current.requestedAtUnixMs) {
+      indexed[activation.agentSessionId] = activation;
+    }
+  }
+  return indexed;
+}
+
+function changedOperationIds(
+  state: RootAgentSessionEngineState,
+  previousRoot: RootAgentSessionEngineState
+): Set<string> {
+  const current = state.goalControl.operationsBySessionId;
+  const previous = previousRoot.goalControl.operationsBySessionId;
+  if (current === previous) return new Set();
+  const changed = new Set([...Object.keys(current), ...Object.keys(previous)]);
+  for (const agentSessionId of changed) {
+    if (current[agentSessionId] === previous[agentSessionId]) {
+      changed.delete(agentSessionId);
+    }
+  }
+  return changed;
+}
+
+function addChangedActivationSessionIds(
+  target: Set<string>,
+  state: RootAgentSessionEngineState,
+  previousRoot: RootAgentSessionEngineState
+): void {
+  const current = state.pendingIntents.activationsByRequestId;
+  const previous = previousRoot.pendingIntents.activationsByRequestId;
+  if (current === previous) return;
+  for (const requestId of new Set([
+    ...Object.keys(current),
+    ...Object.keys(previous)
+  ])) {
+    const currentActivation = current[requestId];
+    const previousActivation = previous[requestId];
+    if (currentActivation === previousActivation) continue;
+    if (currentActivation?.initialGoalControl) {
+      target.add(currentActivation.agentSessionId);
+    }
+    if (previousActivation?.initialGoalControl) {
+      target.add(previousActivation.agentSessionId);
+    }
+  }
+}
+
+function addCanonicalGoalCandidates(
+  target: Set<string>,
+  intent: RootEngineIntent,
+  state: RootAgentSessionEngineState,
+  previousRoot: RootAgentSessionEngineState
+): void {
+  const candidates = new Set<string>();
+  switch (intent.type) {
+    case "session/snapshotReceived":
+      addSessionInputs(candidates, intent.sessions);
+      break;
+    case "session/upserted":
+      addSessionInputs(candidates, [intent.session]);
+      break;
+    case "session/detailSnapshotReceived":
+    case "session/historyAuthoritativeSnapshotReceived":
+      addSessionInputs(candidates, [intent.session, ...intent.childSessions]);
+      break;
+    case "session/removed":
+      addSessionID(candidates, intent.agentSessionId);
+      break;
+    case "engine/commandResult":
+      addChangedCanonicalSessionIDs(candidates, state, previousRoot);
+  }
+  for (const agentSessionId of candidates) {
+    const currentGoal =
+      state.sessionLifecycle.sessionsById[agentSessionId]?.goal ?? null;
+    const previousGoal =
+      previousRoot.sessionLifecycle.sessionsById[agentSessionId]?.goal ?? null;
+    if (!sessionGoalsEqual(currentGoal, previousGoal)) {
+      target.add(agentSessionId);
+    }
+  }
+}
+
+function addChangedCanonicalSessionIDs(
+  target: Set<string>,
+  state: RootAgentSessionEngineState,
+  previousRoot: RootAgentSessionEngineState
+): void {
+  const current = state.sessionLifecycle.sessionsById;
+  const previous = previousRoot.sessionLifecycle.sessionsById;
+  for (const agentSessionId of new Set([
+    ...Object.keys(current),
+    ...Object.keys(previous)
+  ])) {
+    if (current[agentSessionId] !== previous[agentSessionId]) {
+      target.add(agentSessionId);
+    }
+  }
+}
+
+function addSessionInputs(
+  target: Set<string>,
+  sessions: readonly { agentSessionId: string }[]
+): void {
+  for (const session of sessions) {
+    addSessionID(target, session.agentSessionId);
+  }
+}
+
+function addSessionID(target: Set<string>, rawAgentSessionId: string): void {
+  const agentSessionId = rawAgentSessionId.trim();
+  if (agentSessionId) target.add(agentSessionId);
+}
+
 function projectSessionGoalControlSettlement(
   operation: SessionGoalControlOperation
 ): SessionGoalControlSettlement {
@@ -199,17 +396,5 @@ function sessionGoalControlSettlementsEqual(
     left.errorMessage === right.errorMessage &&
     left.errorReason === right.errorReason &&
     left.status === right.status
-  );
-}
-
-function recordValuesEqual<T>(
-  left: Readonly<Record<string, T>>,
-  right: Readonly<Record<string, T>>
-): boolean {
-  const leftKeys = Object.keys(left);
-  const rightKeys = Object.keys(right);
-  return (
-    leftKeys.length === rightKeys.length &&
-    leftKeys.every((key) => left[key] === right[key])
   );
 }

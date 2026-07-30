@@ -336,12 +336,15 @@ identity actually used by the Engine. The Engine owns command identity,
 one-in-flight admission, the 30-second timeout, optimistic projection, typed
 Session/Goal result validation, and delivery-unknown identity reuse. Hosts only
 perform transport and result mapping. A successful typed result treats its
-top-level `goal` as authoritative and normalizes the returned Session to the
-same value; this preserves an explicit clear even when a runtime Session
-snapshot still carries the previous Goal. Pending/applying results keep their
-older canonical Session until Host reports synced state. Every admitted action reaches Host so it
-can create the durable revision and audit, even when the visible Goal value is
-already equal. Pending/applying Host state is accepted; definitive protocol
+top-level `goal` as the authoritative durable desired projection and normalizes
+the returned Session to the same value. Provider observation remains in
+`state.observed`, so an empty pause/resume observation cannot erase a Goal;
+only a durable tombstone produces `goal: null`. This also preserves an explicit
+clear even when a runtime Session snapshot still carries the previous Goal.
+Pending/applying results keep their older canonical Session until Host reports
+synced state. Every admitted action reaches Host so it can create the durable
+revision and audit, even when the visible Goal value is already equal.
+Pending/applying Host state is accepted; definitive protocol
 rejection is failed; transport loss, timeout, opaque/malformed success, and
 unknown/diverged Host state remain unknown. Retrying the same unknown action
 reuses its original `clientSubmitId`, and the admission result tells the
@@ -352,7 +355,10 @@ value equality cannot prove a particular operation. The latest operation is
 bounded to one record per Session, is removed with that Session, and is exposed
 from `getSnapshot()` and the package root only through derived
 presentation/settlement state and narrow selectors; the reducer ledger is not
-present in the public runtime object.
+present in the public runtime object. Those public maps are sparse and updated
+only for Session IDs whose canonical Goal, Goal operation, or Goal-bearing
+activation changed. Turn activity and unrelated Session metadata preserve the
+Goal branch and unaffected presentation references.
 Rename and pin effects return `{ session }` with the authoritative canonical
 Session, while batch delete returns `AgentActivityDeleteSessionsResult`.
 Runtime validation remains fail-closed, but the public port type prevents hosts

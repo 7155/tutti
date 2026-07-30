@@ -17,7 +17,10 @@ test("projects shared commands onto typed lifecycle effects without host switche
   const effects: AgentSessionEffectPort = {
     async activateSession(input, options) {
       calls.push({ input, kind: "activate", signal: options?.signal });
-      return { accepted: true };
+      return {
+        activation: { mode: "new", status: "attached" },
+        session
+      };
     },
     async cancelTurn(input, options) {
       calls.push({ input, kind: "cancel", signal: options?.signal });

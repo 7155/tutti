@@ -816,6 +816,127 @@ test("stop aborts activation immediately and cancels the first turn when it arri
   );
 });
 
+test("activation command result settles a new Session inside the Engine", async () => {
+  const { commandPort, engine } = createHarness({
+    workspaceId: "workspace-1"
+  });
+  assert.equal(
+    engine.activateSession({
+      agentSessionId: "session-created",
+      agentTargetId: "target-1",
+      clientSubmitId: "submit-created",
+      mode: "new",
+      requestId: "activation-created"
+    }),
+    true
+  );
+  const created = activitySession("session-created", {
+    createdAtUnixMs: 1,
+    updatedAtUnixMs: 1
+  });
+  commandPort.succeed("activate:activation-created", {
+    activation: { mode: "new", status: "attached" },
+    session: created
+  });
+  await flushMicrotasks();
+
+  assert.equal(
+    engine.getSnapshot().sessionLifecycle.sessionsById["session-created"]
+      ?.agentSessionId,
+    "session-created"
+  );
+  assert.equal(
+    engine.getSnapshot().pendingIntents.activationsByRequestId[
+      "activation-created"
+    ]?.status,
+    "confirmed"
+  );
+});
+
+test("activation command result hydrates existing Session detail inside the Engine", async () => {
+  const { commandPort, engine } = createHarness({
+    workspaceId: "workspace-1"
+  });
+  assert.equal(
+    engine.activateSession({
+      agentSessionId: "session-existing",
+      mode: "existing",
+      requestId: "activation-existing"
+    }),
+    true
+  );
+  const existing = activitySession("session-existing", {
+    updatedAtUnixMs: 2
+  });
+  const turn = activityTurn("session-existing", "turn-existing");
+  commandPort.succeed("activate:activation-existing", {
+    activation: { mode: "existing", status: "already_attached" },
+    detail: {
+      childSessions: [],
+      lifecycleCapabilitiesProjected: true,
+      projection: "authoritative",
+      session: existing,
+      turns: [turn]
+    },
+    session: existing
+  });
+  await flushMicrotasks();
+
+  const snapshot = engine.getSnapshot();
+  assert.equal(
+    snapshot.pendingIntents.activationsByRequestId["activation-existing"]
+      ?.status,
+    "confirmed"
+  );
+  assert.equal(
+    Object.values(snapshot.sessionLifecycle.turnsById)[0]?.turnId,
+    "turn-existing"
+  );
+});
+
+test("late activation projection cannot regress a newer realtime Session", async () => {
+  const { commandPort, engine } = createHarness({
+    workspaceId: "workspace-1"
+  });
+  assert.equal(
+    engine.activateSession({
+      agentSessionId: "session-existing",
+      mode: "existing",
+      requestId: "activation-existing"
+    }),
+    true
+  );
+  engine.dispatch({
+    session: activitySession("session-existing", {
+      title: "Realtime title",
+      updatedAtUnixMs: 20
+    }),
+    type: "session/upserted"
+  });
+  const stale = activitySession("session-existing", {
+    title: "Stale activation title",
+    updatedAtUnixMs: 10
+  });
+  commandPort.succeed("activate:activation-existing", {
+    activation: { mode: "existing", status: "already_attached" },
+    detail: {
+      childSessions: [],
+      lifecycleCapabilitiesProjected: true,
+      projection: "authoritative",
+      session: stale,
+      turns: []
+    },
+    session: stale
+  });
+  await flushMicrotasks();
+
+  assert.equal(
+    engine.getSnapshot().sessionLifecycle.sessionsById["session-existing"]
+      ?.title,
+    "Realtime title"
+  );
+});
+
 test("interleaving: expiry firing between probe start and probe result", async () => {
   const { commandPort, engine, timer } = createHarness();
   engine.dispatch({ probeId: "p-4", type: "engine/probeRequested" });

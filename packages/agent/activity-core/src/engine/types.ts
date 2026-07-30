@@ -337,11 +337,27 @@ export type AgentSessionActivateEffectInput =
       mode: "existing";
     });
 
+/**
+ * Authoritative activation payload returned by preferred typed hosts.
+ * Existing-session activation carries the complete detail aggregate so the
+ * Engine, rather than the host effect, applies Session/Turn state.
+ */
+export type AgentSessionActivateEffectResult =
+  | {
+      activation: { mode: "new"; status: "attached" };
+      session: AgentActivitySession;
+    }
+  | {
+      activation: { mode: "existing"; status: "already_attached" };
+      detail: AgentActivitySessionDetailSnapshot;
+      session: AgentActivitySession;
+    };
+
 export interface AgentSessionEffectPort {
   activateSession(
     input: AgentSessionActivateEffectInput,
     options?: EngineEffectOptions
-  ): Promise<unknown>;
+  ): Promise<AgentSessionActivateEffectResult>;
   cancelTurn(
     input: AgentActivityCancelTurnInput,
     options?: EngineEffectOptions
@@ -568,6 +584,7 @@ import type {
   TurnCancelCommand
 } from "./sessionLifecycle.types.ts";
 import type {
+  AgentActivitySessionDetailSnapshot,
   SessionReconcileCommand,
   SessionReconcileIntent,
   SessionReconcileState

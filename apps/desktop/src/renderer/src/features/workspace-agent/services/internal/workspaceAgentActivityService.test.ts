@@ -294,6 +294,41 @@ test("WorkspaceAgentActivityService.activateSession creates target-backed sessio
   });
 });
 
+test("Desktop Engine applies activation results without a host-side Session dispatch", async () => {
+  const observedIntentTypes: string[] = [];
+  const service = new WorkspaceAgentActivityService({
+    tuttidClient: {
+      createWorkspaceAgentSession: async () =>
+        workspaceAgentSession({ status: "created" })
+    } as unknown as TuttidClient,
+    runtimeApi: { logTerminalDiagnostic: async () => {} }
+  });
+  service.addSessionEngineActivityObserver("ws-1", {
+    observeCommand() {},
+    observeIntent(intent) {
+      observedIntentTypes.push(intent.type);
+    }
+  });
+  const engine = service.getSessionEngine("ws-1");
+
+  assert.equal(
+    engine.activateSession({
+      agentSessionId: "session-1",
+      agentTargetId: "local:codex",
+      clientSubmitId: "submit-1",
+      mode: "new",
+      requestId: "activation-1"
+    }),
+    true
+  );
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.ok(selectEngineSession(engine.getSnapshot(), "session-1"));
+  assert.ok(observedIntentTypes.includes("activation/requested"));
+  assert.ok(observedIntentTypes.includes("engine/commandResult"));
+  assert.equal(observedIntentTypes.includes("session/upserted"), false);
+});
+
 test("WorkspaceAgentActivityService force-refreshes only the failed conversation provider before reporting availability", async () => {
   const refreshCalls: string[][] = [];
   const reporterEvents: ReporterEventInput[] = [];
@@ -3299,6 +3334,7 @@ test("WorkspaceAgentActivityService preserves a pending new session when the Tut
     createdAtUnixMs: requestedAtUnixMs
   });
   await activationResolved;
+  await new Promise<void>((resolve) => setImmediate(resolve));
 
   assert.equal(
     selectEngineSession(engine.getSnapshot(), "session-1")?.provider,

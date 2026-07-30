@@ -72,6 +72,7 @@ export type {
 } from "./engine/diagnostics.ts";
 export type {
   AgentSessionActivateEffectInput,
+  AgentSessionActivateEffectResult,
   AgentSessionEffectPort,
   AgentSessionEngine,
   AgentSessionEngineIdentity,

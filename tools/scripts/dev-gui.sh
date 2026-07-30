@@ -474,6 +474,18 @@ configure_desktop_dev_version() {
   log "desktop version ${TUTTI_APP_VERSION}"
 }
 
+configure_agent_extension_sources() {
+  if [[ -n "${DEV_GUI_KIMI_CODE_PACKAGE_DIR:-}" ]]; then
+    export TUTTI_AGENT_EXTENSION_KIMI_CODE_PACKAGE_DIR="${DEV_GUI_KIMI_CODE_PACKAGE_DIR}"
+    log "using local kimi-code agent extension at ${DEV_GUI_KIMI_CODE_PACKAGE_DIR}"
+    return
+  fi
+
+  # A stale shell or launchd override must not silently shadow the signed
+  # remote release used by the shipped product.
+  unset TUTTI_AGENT_EXTENSION_KIMI_CODE_PACKAGE_DIR
+}
+
 resolve_tuttid_binary_name() {
   case "$(uname -s)" in
     CYGWIN*|MINGW*|MSYS*)
@@ -581,6 +593,7 @@ main() {
   local binary_name
 
   check_runtime_prerequisites
+  configure_agent_extension_sources
   configure_desktop_dev_version
   ensure_workspace_dependencies
 

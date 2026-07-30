@@ -469,6 +469,15 @@ Interaction. This publication gate applies equally to emitted events and
 request while the adapter waits for the later frame.
 
 A child Interaction may appear in the root conversation, but submission carries the exact `(agentSessionId, turnId, requestId)` tuple.
+Every AgentGUI, Message Center, Desktop notification, and Mobile action submits
+that tuple plus the user's current answer through
+`engine.submitInteractionResponse`. The Engine allocates command identity,
+applies the shared 30-second timeout, rejects non-pending or in-flight targets,
+and recognizes an explicit exact repeat after a confirmed failure. It does not
+silently reuse the previous answer when a caller omits fields, and it does not
+retry delivery-unknown responses. Plan-implementation actions remain their
+specialized plan-decision workflow rather than masquerading as ordinary
+Interaction responses.
 
 ### 3.4 Goal and operations
 
@@ -592,10 +601,13 @@ not disable Local Agent or another remote Session.
 
 Mobile projects pending Interactions from the root conversation plus its child
 Sessions and reads each exact Engine response record for submitting/failure
-state. Native cards dispatch semantic response intents only; they do not keep a
-parallel Promise lifecycle. Missing provider-authored Plan options fail closed,
-and runtime unavailability disables the exact response without discarding
-composer drafts or Interaction identity.
+state. Native cards call `engine.submitInteractionResponse`; they do not
+construct response intents, recover previous answer payloads, or keep a
+parallel Promise lifecycle. After a confirmed failure, Mobile keeps the
+canonical prompt and its explicit answer controls visible instead of replacing
+them with a payload-free retry button. Missing provider-authored Plan options
+fail closed, and runtime unavailability disables the exact response without
+discarding composer drafts or Interaction identity.
 
 Device connection presentation is target-scoped rather than Session-scoped.
 The host exposes a target connection source keyed by `agentTargetId` with the
@@ -683,7 +695,12 @@ disable submission, but must not change editor editability.
   automatically. A fresh explicit settings selection is the user's retry:
   `engine.updateSessionSettings` recognizes the exact Engine
   settings-operation state, so Desktop AgentGUI and Native Mobile do not derive
-  retry flags independently
+  retry flags independently. Ordinary approval and question answers similarly
+  enter through `engine.submitInteractionResponse`; the Engine owns exact
+  Interaction identity, command identity, timeout, deduplication, and
+  confirmed-failure retry admission. Surfaces submit the current explicit
+  answer and never dispatch `interaction/responseRequested` or reconstruct a
+  previous answer themselves
 - consumers do not read reducer maps directly
 - consumers do not create canonical session/message mirrors
 - optimistic records define confirmation, rejection, timeout, and uncertain-delivery paths

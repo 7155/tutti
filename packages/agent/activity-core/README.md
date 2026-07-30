@@ -62,9 +62,12 @@ Engine rules:
   identity or target scope and hide reducer protocol from hosts. Activation
   owns its timestamps, the 120-second confirmation window, intent projection,
   and admission result while the caller retains the exact request and client
-  submit identities used by optimistic state and idempotent retry. Session
-  mutations additionally allocate command identity, await exact settlement,
-  return canonical results, and own the default timeout and caller cancellation.
+  submit identities used by optimistic state and idempotent retry. A live
+  activation request identity is single-use: `activateSession` returns `true`
+  only when the current dispatch creates a new activation record, never because
+  an older record happens to match its Session and mode. Session mutations
+  additionally allocate command identity, await exact settlement, return
+  canonical results, and own the default timeout and caller cancellation.
   Cancellation aborts a mutation host effect; once delivery may have started,
   the mutation remains delivery-unknown rather than becoming a confirmed
   failure.

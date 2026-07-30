@@ -206,10 +206,14 @@ It owns:
   new-Session activation command instead of allowing presentation expiry to
   race a valid slow startup. The caller retains the stable activation request
   and client submit identities used by optimistic state, dismissal, draft
-  recovery, and idempotent retry. Prompt submission owns routing, the same
-  confirmation window, and the accepted/queued result while its caller retains
-  the stable client submit identity. Stop, Interaction, and settings
-  additionally own command identity plus the 30-second delivery timeout.
+  recovery, and idempotent retry. While an activation record exists, its
+  request identity is single-use: the semantic method reports acceptance only
+  when the current dispatch creates a new record, not when a rejected duplicate
+  finds an older record for the same Session and mode. Prompt submission owns
+  routing, the same confirmation window, and the accepted/queued result while
+  its caller retains the stable client submit identity. Stop, Interaction, and
+  settings additionally own command identity plus the 30-second delivery
+  timeout.
   Session stop owns the 30-second first-Turn waiting window and duplicate
   admission across Desktop and Mobile. Interaction submission owns canonical
   pending-target admission,

@@ -185,6 +185,58 @@ test("semantic existing-Session activation uses the shared confirmation window",
   );
 });
 
+test("semantic activation does not admit changed input under a reused request identity", () => {
+  const harness = createHarness();
+
+  const firstAccepted = harness.engine.activateSession({
+    agentSessionId: "session-new",
+    agentTargetId: "target-1",
+    clientSubmitId: "submit-1",
+    initialContent: [{ text: "first prompt", type: "text" }],
+    mode: "new",
+    requestId: "activation-1"
+  });
+  const reusedAccepted = harness.engine.activateSession({
+    agentSessionId: "session-new",
+    agentTargetId: "target-2",
+    clientSubmitId: "submit-2",
+    initialContent: [{ text: "changed prompt", type: "text" }],
+    mode: "new",
+    requestId: "activation-1"
+  });
+
+  assert.equal(firstAccepted, true);
+  assert.equal(reusedAccepted, false);
+  assert.equal(harness.commands.length, 1);
+  assert.deepEqual(
+    harness.engine.getSnapshot().pendingIntents.activationsByRequestId[
+      "activation-1"
+    ],
+    {
+      agentSessionId: "session-new",
+      agentTargetId: "target-1",
+      clientSubmitId: "submit-1",
+      content: [{ text: "first prompt", type: "text" }],
+      cwd: "",
+      errorCode: null,
+      errorMessage: null,
+      expiresAtUnixMs: 120_100,
+      initialPromptRetracted: false,
+      initialTurnExpected: true,
+      mode: "new",
+      requestedAtUnixMs: 100,
+      requestId: "activation-1",
+      status: "requested",
+      title: null,
+      workspaceId: "workspace-1"
+    }
+  );
+  assert.deepEqual(
+    harness.scheduled.map((task) => task.delayMs),
+    [120_000, 90_000]
+  );
+});
+
 test("semantic activation rejects invalid identity without side effects", () => {
   const harness = createHarness();
 

@@ -75,6 +75,10 @@ export function requestSessionActivation(
     ...(input.visible !== undefined ? { visible: input.visible } : {}),
     workspaceId: context.workspaceId
   };
+  const activationBeforeDispatch = selectPendingActivationByRequestId(
+    context.getSnapshot(),
+    requestId
+  );
   context.dispatch(
     input.mode === "new"
       ? {
@@ -110,6 +114,7 @@ export function requestSessionActivation(
     requestId
   );
   return (
+    activation !== activationBeforeDispatch &&
     activation?.agentSessionId === agentSessionId &&
     activation.mode === input.mode
   );

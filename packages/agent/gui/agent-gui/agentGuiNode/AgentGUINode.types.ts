@@ -146,6 +146,8 @@ export interface AgentGUINodeHostCapabilities {
   /** Launch-only targets for active-conversation handoff. */
   handoffAgentTargets?: readonly AgentGUIAgentTarget[];
   handoffAgentTargetsLoading?: boolean;
+  /** Hidden by default; hosts may opt into ownership copy for collaborative products. */
+  showHandoffTargetOwnershipLabels?: boolean;
   providerRailAllPresentation?: AgentGUIProviderRailAllPresentation | null;
   providerRailMode?: AgentGUIProviderRailMode;
   comingSoonProviders?: readonly AgentGUIProvider[];
@@ -419,6 +421,8 @@ export function areAgentGUINodePropsEqual(
     pc.agentTargetsLoading === nc.agentTargetsLoading &&
     pc.handoffAgentTargets === nc.handoffAgentTargets &&
     pc.handoffAgentTargetsLoading === nc.handoffAgentTargetsLoading &&
+    pc.showHandoffTargetOwnershipLabels ===
+      nc.showHandoffTargetOwnershipLabels &&
     pc.providerRailAllPresentation?.iconUrl ===
       nc.providerRailAllPresentation?.iconUrl &&
     pc.providerRailMode === nc.providerRailMode &&

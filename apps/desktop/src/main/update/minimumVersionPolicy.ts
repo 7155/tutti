@@ -52,6 +52,7 @@ export function shouldCheckMinimumVersionAfterForeground(input: {
   disposed: boolean;
   packaged: boolean;
   foregroundPrompted: boolean;
+  startupBlocked: boolean;
   lastCheckAt: number;
   now: number;
 }): boolean {
@@ -59,6 +60,7 @@ export function shouldCheckMinimumVersionAfterForeground(input: {
     input.disposed ||
     !input.packaged ||
     input.foregroundPrompted ||
+    input.startupBlocked ||
     input.now - input.lastCheckAt < foregroundIntervalMs
   );
 }

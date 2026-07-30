@@ -29,6 +29,7 @@ test("foreground checks are limited to 30 minutes and stop after the first promp
       disposed: false,
       packaged: true,
       foregroundPrompted: false,
+      startupBlocked: false,
       lastCheckAt: 1_000,
       now: 1_000 + 30 * 60 * 1_000 - 1
     }),
@@ -39,6 +40,7 @@ test("foreground checks are limited to 30 minutes and stop after the first promp
       disposed: false,
       packaged: true,
       foregroundPrompted: false,
+      startupBlocked: false,
       lastCheckAt: 1_000,
       now: 1_000 + 30 * 60 * 1_000
     }),
@@ -49,6 +51,18 @@ test("foreground checks are limited to 30 minutes and stop after the first promp
       disposed: false,
       packaged: true,
       foregroundPrompted: true,
+      startupBlocked: false,
+      lastCheckAt: 0,
+      now: Number.MAX_SAFE_INTEGER
+    }),
+    false
+  );
+  assert.equal(
+    shouldCheckMinimumVersionAfterForeground({
+      disposed: false,
+      packaged: true,
+      foregroundPrompted: false,
+      startupBlocked: true,
       lastCheckAt: 0,
       now: Number.MAX_SAFE_INTEGER
     }),

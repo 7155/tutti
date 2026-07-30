@@ -130,12 +130,12 @@ export function createMinimumVersionUpgradeController(
     window = null;
   };
   const openWindow = (nextMode: "startup" | "foreground") => {
-    mode = nextMode;
     if (window && !window.isDestroyed()) {
       window.show();
       window.focus();
       return;
     }
+    mode = nextMode;
     window = new BrowserWindow({
       width: 520,
       height: 420,
@@ -270,6 +270,19 @@ export function createMinimumVersionUpgradeController(
     });
   };
 
+  const installForcedUpdate = async (): Promise<void> => {
+    if (installRequested) {
+      return;
+    }
+    installRequested = true;
+    try {
+      await options.updateService.installUpdate();
+    } catch (error) {
+      installRequested = false;
+      throw error;
+    }
+  };
+
   const prepareUpdate = async () => {
     if (!state) {
       return;
@@ -291,14 +304,29 @@ export function createMinimumVersionUpgradeController(
       }
       if (update.status === "downloaded") {
         applyState("downloaded", update);
-        if (!installRequested) {
-          installRequested = true;
-          await options.updateService.installUpdate();
-        }
+        await installForcedUpdate();
         return;
       }
       applyState("ready", update);
-      await options.updateService.downloadUpdate();
+      const downloaded = await options.updateService.downloadUpdate();
+      if (
+        downloaded.status !== "downloaded" ||
+        !releaseMeetsMinimum(
+          downloaded.latestVersion,
+          state.check.minimumVersion
+        )
+      ) {
+        applyState(
+          "error",
+          downloaded,
+          downloaded.status === "downloaded"
+            ? "releaseBelowMinimum"
+            : "updateFailed"
+        );
+        return;
+      }
+      applyState("downloaded", downloaded);
+      await installForcedUpdate();
     } catch (error) {
       logCheck(options.logger, "error", {
         stage: "forced-update",
@@ -317,23 +345,8 @@ export function createMinimumVersionUpgradeController(
       applyState("downloading", update);
     } else if (update.status === "downloaded") {
       applyState("downloaded", update);
-      if (!installRequested) {
-        installRequested = true;
-        void options.updateService.installUpdate().catch((error) => {
-          installRequested = false;
-          logCheck(options.logger, "error", {
-            stage: "install",
-            result: "failure",
-            error: error instanceof Error ? error.message : String(error)
-          });
-          applyState(
-            "error",
-            options.updateService.getState(),
-            "installFailed"
-          );
-        });
-      }
     } else if (update.status === "error") {
+      installRequested = false;
       applyState("error", update, "updateFailed");
     }
   });
@@ -405,6 +418,8 @@ export function createMinimumVersionUpgradeController(
           disposed,
           packaged: app.isPackaged,
           foregroundPrompted,
+          startupBlocked:
+            mode === "startup" && window !== null && !window.isDestroyed(),
           lastCheckAt,
           now: now()
         })

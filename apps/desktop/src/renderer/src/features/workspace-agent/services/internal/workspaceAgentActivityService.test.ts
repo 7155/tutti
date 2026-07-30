@@ -329,7 +329,7 @@ test("Desktop Engine applies activation results without a host-side Session disp
   assert.equal(observedIntentTypes.includes("session/upserted"), false);
 });
 
-test("WorkspaceAgentActivityService force-refreshes only the failed conversation provider before reporting availability", async () => {
+test("Desktop Engine activation reports a failed conversation provider from the shared create effect", async (t) => {
   const refreshCalls: string[][] = [];
   const reporterEvents: ReporterEventInput[] = [];
   const service = new WorkspaceAgentActivityService({
@@ -375,16 +375,19 @@ test("WorkspaceAgentActivityService force-refreshes only the failed conversation
     } as unknown as TuttidClient,
     runtimeApi: { logTerminalDiagnostic: async () => {} }
   });
+  t.after(() => service.dispose());
 
-  await assert.rejects(
-    service.createSession({
+  const engine = service.getSessionEngine("ws-1");
+  assert.equal(
+    engine.activateSession({
       agentSessionId: "session-failed",
       agentTargetId: "target-cursor",
       clientSubmitId: "submit-failed",
       initialContent: [{ type: "text", text: "hello" }],
-      workspaceId: "ws-1"
+      mode: "new",
+      requestId: "activation-failed"
     }),
-    /provider launch failed/
+    true
   );
   await new Promise((resolve) => setImmediate(resolve));
 
@@ -3583,6 +3586,7 @@ function workspaceAgentTurn(
     completedCommand: null,
     error: null,
     fileChanges: null,
+    origin: "user_prompt" as const,
     phase: "running" as const,
     startedAtUnixMs: 1,
     turnId: "turn-1",

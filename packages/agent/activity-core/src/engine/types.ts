@@ -66,6 +66,13 @@ export interface EngineExpiryCancelRequestedIntent {
 export type EngineCommandOutcome = "failed" | "succeeded" | "timedOut";
 
 /**
+ * Describes the runtime result contract used by one command execution.
+ * Older command ports and manually dispatched results omit this field and
+ * retain opaque acknowledgement semantics.
+ */
+export type EngineCommandResultContract = "activation-v1" | "opaque";
+
+/**
  * Every command execution settles back into the loop as this intent, so
  * failure and timeout handling are explicit reducer transitions instead of
  * executor-side improvisation.
@@ -76,6 +83,7 @@ export interface EngineCommandResultIntent {
   commandType: EngineExternalCommand["type"];
   correlationId?: string;
   outcome: EngineCommandOutcome;
+  resultContract?: EngineCommandResultContract;
   value?: unknown;
   errorCode?: string;
   errorReason?: string;

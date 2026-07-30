@@ -482,10 +482,16 @@ export class WorkspaceAgentActivityService
   async createSession(
     input: Parameters<AgentActivityAdapter["createSession"]>[0]
   ): Promise<AgentActivitySession> {
+    const session = await this.executeCreateSessionEffect(input);
+    this.upsertAuthoritativeSession(session, "create_session_result");
+    return session;
+  }
+
+  private async executeCreateSessionEffect(
+    input: Parameters<AgentActivityAdapter["createSession"]>[0]
+  ): Promise<AgentActivitySession> {
     try {
-      const session = await this.mutationOperations.createSession(input);
-      this.upsertAuthoritativeSession(session, "create_session_result");
-      return session;
+      return await this.mutationOperations.createSession(input);
     } catch (error) {
       this.analytics.trackSessionCreateFailure({
         agentTargetId: input.agentTargetId
@@ -585,7 +591,7 @@ export class WorkspaceAgentActivityService
             input.initialTuttiModeActivation != null
         }
       });
-      session = await this.mutationOperations.createSession({
+      session = await this.executeCreateSessionEffect({
         clientSubmitId: input.clientSubmitId,
         workspaceId,
         agentSessionId: requestedAgentSessionId,

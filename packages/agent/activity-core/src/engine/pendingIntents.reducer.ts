@@ -533,7 +533,11 @@ function settleActivationCommand(
     return unchanged(state);
   }
   if (intent.outcome === "succeeded") {
-    const settlement = validateActivationCommandResult(intent.value, record);
+    const settlement = validateActivationCommandResult(
+      intent.value,
+      record,
+      intent.resultContract
+    );
     if (record.status === "confirmed") {
       return settlement.kind === "acknowledged" &&
         settlement.projectionIntent !== null

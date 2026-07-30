@@ -3,6 +3,7 @@ import type { AgentActivitySendInput } from "../types.ts";
 import type {
   AgentSessionActivateEffectInput,
   EngineCommandPort,
+  EngineCommandResultContract,
   EngineCommandResultIntent,
   EngineExternalCommand,
   EngineScheduledTask,
@@ -79,6 +80,12 @@ export function createEngineEffectExecutor({
       let timeoutTask: EngineScheduledTask | null = null;
       const abortController = new AbortController();
       abortControllersByCommandId.set(command.commandId, abortController);
+      const resultContract = commandResultContract(commandPort, command);
+      const execution = executeCommand(
+        commandPort,
+        command,
+        abortController.signal
+      );
 
       const finishTimeoutTask = (): void => {
         if (
@@ -107,17 +114,13 @@ export function createEngineEffectExecutor({
             commandType: command.type,
             ...commandCorrelationFields(command),
             outcome: "timedOut",
+            resultContract,
             type: "engine/commandResult"
           });
         });
         timeoutTasks.add(timeoutTask);
       }
 
-      const execution = executeCommand(
-        commandPort,
-        command,
-        abortController.signal
-      );
       execution.then(
         (value) => {
           if (settled) {
@@ -134,6 +137,7 @@ export function createEngineEffectExecutor({
             commandType: command.type,
             ...commandCorrelationFields(command),
             outcome: "succeeded",
+            resultContract,
             type: "engine/commandResult",
             value
           });
@@ -154,6 +158,7 @@ export function createEngineEffectExecutor({
             ...commandCorrelationFields(command),
             ...engineCommandErrorFields(error),
             outcome: "failed",
+            resultContract,
             type: "engine/commandResult"
           });
         }
@@ -257,6 +262,15 @@ function executeCommand(
     default:
       return commandPort.execute(command, { signal });
   }
+}
+
+function commandResultContract(
+  commandPort: EngineCommandPort | EngineTypedCommandPort,
+  command: EngineExternalCommand
+): EngineCommandResultContract {
+  return commandPort.kind === "typed" && command.type === "session/activate"
+    ? "activation-v1"
+    : "opaque";
 }
 
 function promptInput(

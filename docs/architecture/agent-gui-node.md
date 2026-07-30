@@ -691,9 +691,12 @@ disable submission, but must not change editor editability.
   slow runtime startup cannot expire while the command may still succeed.
   The typed activation effect returns either the created authoritative Session
   or the resumed Session's authoritative detail aggregate. The Engine validates
-  the result scope and mode, then projects Session, child Session, Turn, and
-  Interaction state in its own drain. Desktop and Mobile effects perform only
-  transport and DTO mapping and must not pre-dispatch those projections.
+  the versioned `activation-v1` result contract, result scope, mode, and every
+  nested Session/Turn/Interaction entity, then projects the aggregate in its
+  own drain. Untagged or opaque legacy command-port results remain
+  acknowledgements and do not enter canonical state. Desktop and Mobile effects
+  retain transport, DTO mapping, and product-local integration/observability
+  concerns, but must not pre-dispatch those projections.
   Canonical monotonicity guards prevent a late activation response from
   regressing newer realtime state.
   Surfaces clear a new-Session draft only after activation admission succeeds.

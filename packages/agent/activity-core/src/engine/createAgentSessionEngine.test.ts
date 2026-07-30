@@ -817,7 +817,7 @@ test("stop aborts activation immediately and cancels the first turn when it arri
 });
 
 test("activation command result settles a new Session inside the Engine", async () => {
-  const { commandPort, engine } = createHarness({
+  const { engine } = createHarness({
     workspaceId: "workspace-1"
   });
   assert.equal(
@@ -834,9 +834,17 @@ test("activation command result settles a new Session inside the Engine", async 
     createdAtUnixMs: 1,
     updatedAtUnixMs: 1
   });
-  commandPort.succeed("activate:activation-created", {
-    activation: { mode: "new", status: "attached" },
-    session: created
+  engine.dispatch({
+    commandId: "activate:activation-created",
+    commandType: "session/activate",
+    correlationId: "activation-created",
+    outcome: "succeeded",
+    resultContract: "activation-v1",
+    type: "engine/commandResult",
+    value: {
+      activation: { mode: "new", status: "attached" },
+      session: created
+    }
   });
   await flushMicrotasks();
 
@@ -854,7 +862,7 @@ test("activation command result settles a new Session inside the Engine", async 
 });
 
 test("activation command result hydrates existing Session detail inside the Engine", async () => {
-  const { commandPort, engine } = createHarness({
+  const { engine } = createHarness({
     workspaceId: "workspace-1"
   });
   assert.equal(
@@ -869,16 +877,24 @@ test("activation command result hydrates existing Session detail inside the Engi
     updatedAtUnixMs: 2
   });
   const turn = activityTurn("session-existing", "turn-existing");
-  commandPort.succeed("activate:activation-existing", {
-    activation: { mode: "existing", status: "already_attached" },
-    detail: {
-      childSessions: [],
-      lifecycleCapabilitiesProjected: true,
-      projection: "authoritative",
-      session: existing,
-      turns: [turn]
-    },
-    session: existing
+  engine.dispatch({
+    commandId: "activate:activation-existing",
+    commandType: "session/activate",
+    correlationId: "activation-existing",
+    outcome: "succeeded",
+    resultContract: "activation-v1",
+    type: "engine/commandResult",
+    value: {
+      activation: { mode: "existing", status: "already_attached" },
+      detail: {
+        childSessions: [],
+        lifecycleCapabilitiesProjected: true,
+        projection: "authoritative",
+        session: existing,
+        turns: [turn]
+      },
+      session: existing
+    }
   });
   await flushMicrotasks();
 
@@ -895,7 +911,7 @@ test("activation command result hydrates existing Session detail inside the Engi
 });
 
 test("late activation projection cannot regress a newer realtime Session", async () => {
-  const { commandPort, engine } = createHarness({
+  const { engine } = createHarness({
     workspaceId: "workspace-1"
   });
   assert.equal(
@@ -917,16 +933,24 @@ test("late activation projection cannot regress a newer realtime Session", async
     title: "Stale activation title",
     updatedAtUnixMs: 10
   });
-  commandPort.succeed("activate:activation-existing", {
-    activation: { mode: "existing", status: "already_attached" },
-    detail: {
-      childSessions: [],
-      lifecycleCapabilitiesProjected: true,
-      projection: "authoritative",
-      session: stale,
-      turns: []
-    },
-    session: stale
+  engine.dispatch({
+    commandId: "activate:activation-existing",
+    commandType: "session/activate",
+    correlationId: "activation-existing",
+    outcome: "succeeded",
+    resultContract: "activation-v1",
+    type: "engine/commandResult",
+    value: {
+      activation: { mode: "existing", status: "already_attached" },
+      detail: {
+        childSessions: [],
+        lifecycleCapabilitiesProjected: true,
+        projection: "authoritative",
+        session: stale,
+        turns: []
+      },
+      session: stale
+    }
   });
   await flushMicrotasks();
 

@@ -449,6 +449,30 @@ test("invalid successful activation acknowledgement remains uncertain", () => {
   );
 });
 
+test("legacy activation results remain opaque acknowledgements", () => {
+  const state = reduce(
+    createInitialPendingIntentsState(),
+    existingActivation()
+  ).state;
+  const result = reduce(state, {
+    commandId: "activate:activation-existing",
+    commandType: "session/activate",
+    correlationId: "activation-existing",
+    outcome: "succeeded",
+    type: "engine/commandResult",
+    value: {
+      activation: { mode: "existing", status: "already_attached" },
+      session: session("session-new")
+    }
+  });
+
+  assert.equal(
+    result.state.activationsByRequestId["activation-existing"]?.status,
+    "requested"
+  );
+  assert.deepEqual(result.followUpIntents, undefined);
+});
+
 test("typed new-session activation returns its authoritative Session to the Engine", () => {
   const state = reduce(createInitialPendingIntentsState(), activation()).state;
   const authoritativeSession = {
@@ -460,6 +484,7 @@ test("typed new-session activation returns its authoritative Session to the Engi
     commandType: "session/activate",
     correlationId: "activation-1",
     outcome: "succeeded",
+    resultContract: "activation-v1",
     type: "engine/commandResult",
     value: {
       activation: { mode: "new", status: "attached" },
@@ -488,6 +513,7 @@ test("typed existing-session activation returns its detail aggregate to the Engi
     commandType: "session/activate",
     correlationId: "activation-existing",
     outcome: "succeeded",
+    resultContract: "activation-v1",
     type: "engine/commandResult",
     value: {
       activation: { mode: "existing", status: "already_attached" },
@@ -523,6 +549,7 @@ test("typed activation results cannot omit or escape their requested scope", () 
     commandType: "session/activate",
     correlationId: "activation-1",
     outcome: "succeeded",
+    resultContract: "activation-v1",
     type: "engine/commandResult",
     value: {
       activation: { mode: "new", status: "attached" }
@@ -543,6 +570,7 @@ test("typed activation results cannot omit or escape their requested scope", () 
     commandType: "session/activate",
     correlationId: "activation-existing",
     outcome: "succeeded",
+    resultContract: "activation-v1",
     type: "engine/commandResult",
     value: {
       activation: { mode: "existing", status: "already_attached" },
@@ -568,6 +596,35 @@ test("typed activation results cannot omit or escape their requested scope", () 
   assert.deepEqual(escapedChild.followUpIntents, undefined);
 });
 
+test("typed activation rejects malformed nested Session entities", () => {
+  const state = reduce(createInitialPendingIntentsState(), activation()).state;
+  const result = reduce(state, {
+    commandId: "activate:activation-1",
+    commandType: "session/activate",
+    correlationId: "activation-1",
+    outcome: "succeeded",
+    resultContract: "activation-v1",
+    type: "engine/commandResult",
+    value: {
+      activation: { mode: "new", status: "attached" },
+      session: {
+        ...session("session-new"),
+        pendingInteractions: [null]
+      }
+    }
+  });
+
+  assert.equal(
+    result.state.activationsByRequestId["activation-1"]?.errorCode,
+    "invalid_command_result"
+  );
+  assert.equal(
+    result.state.activationsByRequestId["activation-1"]?.status,
+    "uncertain"
+  );
+  assert.deepEqual(result.followUpIntents, undefined);
+});
+
 test("confirmed activation may hydrate detail but cannot be failed by a late result", () => {
   let state = reduce(
     createInitialPendingIntentsState(),
@@ -587,6 +644,7 @@ test("confirmed activation may hydrate detail but cannot be failed by a late res
     commandType: "session/activate",
     correlationId: "activation-existing",
     outcome: "succeeded",
+    resultContract: "activation-v1",
     type: "engine/commandResult",
     value: {
       activation: { mode: "existing", status: "failed" },
@@ -601,6 +659,7 @@ test("confirmed activation may hydrate detail but cannot be failed by a late res
     commandType: "session/activate",
     correlationId: "activation-existing",
     outcome: "succeeded",
+    resultContract: "activation-v1",
     type: "engine/commandResult",
     value: {
       activation: { mode: "existing", status: "already_attached" },

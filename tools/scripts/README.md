@@ -12,7 +12,10 @@ Current examples include:
 - `dev-gui.sh` for checking local prerequisites, preparing workspace
   dependencies, downloading and building the development `tuttid` binary, and
   launching the desktop GUI with `TUTTID_BIN`; the renderer dev server warms
-  its reachable module graph before Electron opens
+  its reachable module graph before Electron opens. Agent Extensions use their
+  configured signed remote releases by default; set an explicit
+  `TUTTI_AGENT_EXTENSION_<KEY>_PACKAGE_DIR` override only when testing a local
+  package
 - `renderer-dev-warmup.mjs` for moving cold Vite and React Compiler transforms
   ahead of the Electron launch during desktop development
 - `setup-dev.mjs` for checking local developer prerequisites such as pinned lint tooling

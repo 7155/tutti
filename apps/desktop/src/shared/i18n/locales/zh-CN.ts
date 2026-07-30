@@ -191,8 +191,6 @@ export const zhCN = {
       newConversation: "新建会话",
       openNewWindow: "打开新窗口",
       untitledConversation: "未命名对话",
-      openSessionUnavailableDescription: "这个 Agent 会话已不存在或无法打开。",
-      openSessionUnavailableTitle: "会话不可用",
       sessionMenu: {
         copyAsMarkdown: "复制为 Markdown",
         copyAsReference: "复制为引用",

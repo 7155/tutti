@@ -657,6 +657,14 @@ export class WorkspaceAgentActivityService
   async sendInput(
     input: Parameters<AgentActivityAdapter["sendInput"]>[0]
   ): ReturnType<IWorkspaceAgentActivityService["sendInput"]> {
+    const result = await this.executeSendInputEffect(input);
+    this.upsertAuthoritativeSession(result.session, "send_input_result");
+    return result;
+  }
+
+  private async executeSendInputEffect(
+    input: Parameters<AgentActivityAdapter["sendInput"]>[0]
+  ): ReturnType<IWorkspaceAgentActivityService["sendInput"]> {
     const workspaceId = normalizeWorkspaceId(input.workspaceId);
     const agentSessionId = input.agentSessionId.trim();
     reportAgentSubmitTraceDiagnostic(this.dependencies.runtimeApi, {
@@ -695,7 +703,6 @@ export class WorkspaceAgentActivityService
               turnPhase: result.turn.phase
             }
     });
-    this.upsertAuthoritativeSession(result.session, "send_input_result");
     return result;
   }
 
@@ -1026,7 +1033,7 @@ export class WorkspaceAgentActivityService
       restorePendingSessionRecording: (workspaceId, recordingId) =>
         this.restoreNextSessionRecording(workspaceId, recordingId),
       sendInput: async (input) => {
-        const result = await this.sendInput(input);
+        const result = await this.executeSendInputEffect(input);
         this.analytics.trackEngineSend(input, result);
         return result;
       },

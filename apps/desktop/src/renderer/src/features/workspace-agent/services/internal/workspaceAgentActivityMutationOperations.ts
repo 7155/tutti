@@ -81,51 +81,6 @@ export class WorkspaceAgentActivityMutationOperations {
     return session;
   }
 
-  async sendInput(
-    input: Parameters<AgentActivityAdapter["sendInput"]>[0]
-  ): ReturnType<IWorkspaceAgentActivityService["sendInput"]> {
-    const workspaceId = normalizeWorkspaceId(input.workspaceId);
-    const agentSessionId = input.agentSessionId.trim();
-    reportAgentSubmitTraceDiagnostic(this.dependencies.runtimeApi, {
-      agentSessionId,
-      clientSubmitId: input.clientSubmitId,
-      event: "activity_service.send.entered",
-      submitDiagnostics: input.submitDiagnostics,
-      workspaceId
-    });
-    const target = this.dependencies.sessionCommandTarget(workspaceId);
-    reportAgentSubmitTraceDiagnostic(this.dependencies.runtimeApi, {
-      agentSessionId,
-      clientSubmitId: input.clientSubmitId,
-      event: "activity_service.send.adapter_requested",
-      submitDiagnostics: input.submitDiagnostics,
-      workspaceId
-    });
-    const result = await target.adapter.sendInput({ ...input, workspaceId });
-    reportAgentSubmitTraceDiagnostic(this.dependencies.runtimeApi, {
-      agentSessionId,
-      clientSubmitId: input.clientSubmitId,
-      event: "activity_service.send.adapter_resolved",
-      provider: result.session.provider,
-      submitDiagnostics: input.submitDiagnostics,
-      workspaceId,
-      fields:
-        result.kind === "goalControl"
-          ? { resultKind: "goalControl" }
-          : {
-              resultKind: "turn",
-              turnOutcome: result.turn.outcome ?? null,
-              turnId: result.turnId,
-              turnPhase: result.turn.phase
-            }
-    });
-    this.dependencies.upsertAuthoritativeSession(
-      result.session,
-      "send_input_result"
-    );
-    return result;
-  }
-
   async cancelTurn(input: {
     agentSessionId: string;
     signal?: AbortSignal;

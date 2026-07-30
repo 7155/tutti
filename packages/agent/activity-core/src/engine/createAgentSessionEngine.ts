@@ -8,6 +8,7 @@ import { createEngineEffectExecutor } from "./effectExecutor.ts";
 import { createEngineExpiryClock } from "./expiryClock.ts";
 import {
   selectEngineActiveTurn,
+  selectEngineInteractionResponse,
   selectEngineInteractionsForSession,
   selectEngineLatestTurn,
   selectEnginePendingInteractions,
@@ -29,6 +30,7 @@ import {
   type AgentSessionEngineIntentObserver,
   type AgentSessionEngineListener,
   type AgentSessionLoadComposerOptionsInput,
+  type AgentSessionSubmitInteractionResponseInput,
   type AgentSessionUpdateSettingsInput,
   type EngineClock,
   type EngineCommandPort,
@@ -59,6 +61,7 @@ import type {
 export const ENGINE_INTENT_BATCH_DELAY_MS = 33;
 const SESSION_MUTATION_TIMEOUT_MS = 30_000;
 const SESSION_SETTINGS_UPDATE_TIMEOUT_MS = 30_000;
+const INTERACTION_RESPONSE_TIMEOUT_MS = 30_000;
 
 export interface CreateAgentSessionEngineInput {
   batchDelayMs?: number;
@@ -100,6 +103,7 @@ export function createAgentSessionEngine({
   let draining = false;
   let disposed = false;
   let composerOptionsCommandSequence = 1;
+  let interactionResponseCommandSequence = 1;
   let sessionMutationSequence = 1;
   let sessionSettingsUpdateSequence = 1;
   const pendingComposerOptionsDisposals = new Set<() => void>();
@@ -382,6 +386,54 @@ export function createAgentSessionEngine({
     return `settings:${clock.nowUnixMs()}:${sequence}`;
   }
 
+  function nextInteractionResponseCommandId(): string {
+    const sequence = interactionResponseCommandSequence++;
+    return `interaction:${clock.nowUnixMs()}:${sequence}`;
+  }
+
+  function submitInteractionResponse(
+    input: AgentSessionSubmitInteractionResponseInput
+  ): boolean {
+    const agentSessionId = input.agentSessionId.trim();
+    const requestId = input.requestId.trim();
+    const turnId = input.turnId.trim();
+    if (!agentSessionId || !requestId || !turnId) {
+      return false;
+    }
+    const action = input.action?.trim() || undefined;
+    const optionId = input.optionId?.trim() || undefined;
+    const payload = input.payload ? { ...input.payload } : undefined;
+    const current = selectEngineInteractionResponse(
+      publicSnapshot,
+      agentSessionId,
+      turnId,
+      requestId
+    );
+    const commandId = nextInteractionResponseCommandId();
+    dispatch({
+      ...(action ? { action } : {}),
+      agentSessionId,
+      commandId,
+      ...(optionId ? { optionId } : {}),
+      ...(payload ? { payload } : {}),
+      requestId,
+      retry: current?.status === "failed",
+      timeoutMs: INTERACTION_RESPONSE_TIMEOUT_MS,
+      turnId,
+      type: "interaction/responseRequested",
+      workspaceId: engineIdentity.workspaceId
+    });
+    const response = selectEngineInteractionResponse(
+      publicSnapshot,
+      agentSessionId,
+      turnId,
+      requestId
+    );
+    return (
+      response?.commandId === commandId && response.status === "responding"
+    );
+  }
+
   function updateSessionSettings(input: AgentSessionUpdateSettingsInput): void {
     const agentSessionId = input.agentSessionId.trim();
     const settings = { ...input.settings };
@@ -522,6 +574,7 @@ export function createAgentSessionEngine({
       }
       return session;
     },
+    submitInteractionResponse,
     subscribe(listener) {
       listeners.add(listener);
       return () => {

@@ -197,15 +197,19 @@ It owns:
   shared mutation settlement, and a serialized settings-precondition state
   machine
 - semantic `AgentSessionEngine` methods for composer-option loading,
-  existing-Session settings updates, rename, pin, and batch delete. Settings
-  updates are intent admission: the Engine owns workspace and command identity,
-  the 30-second delivery timeout, serialized patch merging, and recognition of
-  a fresh user update as retry after unknown delivery, while consumers observe
-  the existing settings-operation projection. The other methods additionally
-  hide cache or mutation coordination, settlement waiting, and canonical
-  result projection from product hosts. Mutation methods own timeout and
-  cancellation policy; hosts retain transport, DTO mapping, AbortSignal
-  propagation, and product-specific command extensions (see
+  Interaction response submission, existing-Session settings updates, rename,
+  pin, and batch delete. Interaction and settings updates are intent admission:
+  the Engine owns workspace and command identity plus the 30-second delivery
+  timeout. Interaction submission additionally owns canonical pending-target
+  admission, in-flight deduplication, and exact failed-response retry; it never
+  recovers omitted answer fields from a prior attempt. Settings updates own
+  serialized patch merging and recognition of a fresh user update as retry
+  after unknown delivery. Consumers observe the existing operation
+  projections. The other methods additionally hide cache or mutation
+  coordination, settlement waiting, and canonical result projection from
+  product hosts. Mutation methods own timeout and cancellation policy; hosts
+  retain transport, DTO mapping, AbortSignal propagation, and product-specific
+  command extensions (see
   [Agent GUI Node](./agent-gui-node.md#4-workspace-frontend-engine))
 
 The public host-effect seam is `AgentSessionEffectPort`; the public
@@ -214,6 +218,11 @@ Product hosts call `updateSessionSettings` for an existing Session instead of
 constructing `session/settingsUpdateRequested` protocol fields. Settings held
 before Session activation remain part of the activation flow and do not pass
 through this existing-Session method.
+AgentGUI, Message Center, Desktop notifications, and Mobile call
+`submitInteractionResponse` for a canonical pending Interaction instead of
+constructing `interaction/responseRequested` protocol fields. A failed
+submission becomes retryable only when the surface explicitly submits the same
+answer again; a missing or changed answer fails closed.
 Rename and pin effects return an authoritative Session envelope, and batch
 delete returns the complete typed deletion result. Reducers still validate
 those results before applying canonical state, while the public port prevents

@@ -38,7 +38,6 @@ import {
 } from "./workspaceActivityProjection";
 import { WorkspaceConversationRailService } from "./workspaceConversationRailService";
 import { createMobileActivityCommandId } from "./workspaceActivityCommandSupport";
-import { requestWorkspaceActivityInteractionResponse } from "./workspaceActivityInteractionCommand";
 import type { WorkspaceActivitySnapshot } from "./workspaceActivityTypes";
 import { WorkspaceAgentLiveLane } from "./workspaceAgentLiveLane";
 import { selectWorkspaceConversationRailSessionIds } from "./workspaceConversationRailProjection";
@@ -488,20 +487,19 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
 
   respondToInteraction(
     interaction: AgentActivityInteraction,
-    input?: {
+    input: {
       action?: string;
       optionId?: string;
       payload?: Readonly<Record<string, unknown>>;
     }
   ): void {
-    requestWorkspaceActivityInteractionResponse({
-      commandId: createMobileActivityCommandId(),
-      engine: this.engine,
-      interaction,
-      ...(input ? { response: input } : {}),
-      states: this.getSnapshot().interactionStates,
-      timeoutMs: COMMAND_TIMEOUT_MS,
-      workspaceId: this.workspace.id
+    this.engine.submitInteractionResponse({
+      agentSessionId: interaction.agentSessionId,
+      requestId: interaction.requestId,
+      turnId: interaction.turnId,
+      ...(input.action ? { action: input.action } : {}),
+      ...(input.optionId ? { optionId: input.optionId } : {}),
+      ...(input.payload ? { payload: input.payload } : {})
     });
   }
 

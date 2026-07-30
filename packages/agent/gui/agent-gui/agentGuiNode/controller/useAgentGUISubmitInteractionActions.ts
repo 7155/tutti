@@ -1,5 +1,4 @@
 import {
-  selectEngineCancelState,
   selectEngineHasVisibleQueuedSubmit,
   selectPendingSubmitsForSession,
   type AgentActivityGoalControlAction,
@@ -47,7 +46,6 @@ import {
   getAgentGUIErrorMessage,
   isNonRetryableResumeErrorCode
 } from "./agentGuiController.errors";
-import { createAgentGUIConversationId } from "./agentGuiController.promptHelpers";
 import {
   agentSubmitTraceDiagnostics,
   createAgentSubmitTraceState,
@@ -683,25 +681,16 @@ export function useAgentGUISubmitInteractionActions(
         return;
       }
       setDetailError(null);
-      sessionEngine.dispatch({
+      sessionEngine.submitInteractionResponse({
         ...(input.action?.trim() ? { action: input.action.trim() } : {}),
         agentSessionId,
-        commandId: `interaction:${createAgentGUIConversationId()}`,
         ...(normalizedOptionId ? { optionId: normalizedOptionId } : {}),
         ...(input.payload ? { payload: { ...input.payload } } : {}),
         requestId: normalizedRequestId,
-        turnId,
-        timeoutMs: 30_000,
-        type: "interaction/responseRequested",
-        workspaceId
+        turnId
       });
     },
-    [
-      activeEnginePendingInteractions,
-      isRespondingToInteraction,
-      sessionEngine,
-      workspaceId
-    ]
+    [activeEnginePendingInteractions, isRespondingToInteraction, sessionEngine]
   );
 
   const submitApprovalOption = useCallback(
@@ -714,29 +703,12 @@ export function useAgentGUISubmitInteractionActions(
   const interruptCurrentTurn = useCallback(
     (noRunningResponseMessage: string) => {
       const agentSessionId = activeConversationIdRef.current;
-      const cancelStatus = agentSessionId
-        ? selectEngineCancelState(sessionEngine.getSnapshot(), agentSessionId)
-            ?.status
-        : null;
-      if (
-        !agentSessionId ||
-        cancelStatus === "requested" ||
-        cancelStatus === "awaitingTurn"
-      ) {
-        return;
-      }
+      if (!agentSessionId) return;
       void noRunningResponseMessage;
       setDetailError(null);
-      sessionEngine.dispatch({
-        agentSessionId,
-        awaitingTurnExpiresAtUnixMs: Date.now() + 30_000,
-        commandId: createAgentGUIConversationId(),
-        timeoutMs: 30_000,
-        type: "session/stopRequested",
-        workspaceId
-      });
+      sessionEngine.stopSession({ agentSessionId });
     },
-    [sessionEngine, workspaceId]
+    [sessionEngine]
   );
 
   const updateDraftContent = useCallback(

@@ -160,26 +160,62 @@ describe("new-conversation home draft lifecycle", () => {
 });
 
 describe("conversation stop", () => {
-  it("dispatches one unified stop intent for activation and active-turn states", () => {
+  it("routes activation and active-turn stop through the Engine semantic operation", () => {
     const goalControl = vi.fn(async () => undefined);
     const { input, sessionEngine } = createGoalControlInput(
       goalControl as never
     );
-    const dispatch = vi.spyOn(sessionEngine, "dispatch");
+    const stopSession = vi.spyOn(sessionEngine, "stopSession");
     const { result } = renderHook(() =>
       useAgentGUISubmitInteractionActions(input)
     );
 
     act(() => result.current.interruptCurrentTurn("not running"));
 
-    expect(dispatch).toHaveBeenCalledTimes(1);
-    expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        agentSessionId: "session-1",
-        type: "session/stopRequested",
-        workspaceId: "workspace-1"
+    expect(stopSession).toHaveBeenCalledTimes(1);
+    expect(stopSession).toHaveBeenCalledWith({
+      agentSessionId: "session-1"
+    });
+  });
+});
+
+describe("interaction submissions", () => {
+  it("routes the explicit answer through the Engine semantic operation", () => {
+    const goalControl = vi.fn(async () => undefined);
+    const { input, sessionEngine, setDetailError } = createGoalControlInput(
+      goalControl as never
+    );
+    const submitInteractionResponse = vi
+      .spyOn(sessionEngine, "submitInteractionResponse")
+      .mockReturnValue(true);
+    const { result } = renderHook(() =>
+      useAgentGUISubmitInteractionActions({
+        ...input,
+        activeEnginePendingInteractions: [
+          {
+            agentSessionId: "session-1",
+            createdAtUnixMs: 1,
+            kind: "question",
+            requestId: "request-1",
+            status: "pending",
+            turnId: "turn-1",
+            updatedAtUnixMs: 1
+          }
+        ]
       })
     );
+
+    act(() =>
+      result.current.submitApprovalOption(" request-1 ", " allow-once ")
+    );
+
+    expect(submitInteractionResponse).toHaveBeenCalledWith({
+      agentSessionId: "session-1",
+      optionId: "allow-once",
+      requestId: "request-1",
+      turnId: "turn-1"
+    });
+    expect(setDetailError).toHaveBeenCalledWith(null);
   });
 });
 

@@ -415,3 +415,61 @@ Tests must not inspect or print real local credential snapshots unless the test
 explicitly exercises credential storage through isolated fixtures. Node test
 runs skip Claude authentication refresh diagnostics so normal unit tests do not
 read or expose host credential metadata.
+
+## Unit Test Quality
+
+A unit test should protect behavior a reviewer could regress, not re-state the
+implementation or pin presentation details. Apply these guidelines when writing
+or reviewing a unit test:
+
+**Test behavior, not presentation wiring.**
+
+Prefer a test that performs an action and verifies its effect — a user event
+followed by a callback or state change — over a test that only asserts what a
+fixed set of props renders. A test whose body contains no interaction, no
+callback verification, and no state transition, and whose only assertions are
+DOM text/class/attribute presence, is a static snapshot: it breaks on any CSS or
+JSX reformat and never catches a behavioral regression. It belongs in a visual
+regression or component browser test, not a unit suite.
+
+**Do not assert on styling details.**
+
+`className`, `toHaveClass`, svg `width`/`height`/`viewBox`/`path d`, and
+`toHaveStyle` assertions pin implementation details of styling and icon
+libraries. They add maintenance cost and no behavioral signal. If a visual
+variant matters, assert the variant-selection behavior (which state maps to
+which variant), not the CSS class.
+
+**Do not test the type system.**
+
+Trivial branches, boolean toggles, constants, and pure data-mapping tables are
+already constrained by TypeScript and by the call sites that consume them. A
+test that only re-states `input.isDev === true` or a lookup table duplicates the
+implementation. Prefer a type-level constraint, or no test, for these.
+
+**Exercise feature-state transitions.**
+
+When a component has states (loading, ready, disabled, pending), test that the
+state _changes_ the output or enables/ disables an action — not that a single
+static state happens to render some text. Prefer a `rerender` plus an
+interaction that verifies the transition over a lone presence check.
+
+**Keep data-transformation logic tested.**
+
+Functions that parse, format, project, or extract from nested structures carry
+real logic. Rendering tests that verify transformed output for non-trivial input
+(e.g. markdown parsing, nested `toolCall` payload extraction, projection) are
+valuable; keep them even when they assert text, because the text depends on
+computation.
+
+**One test file per module.**
+
+If the same module is covered by both a `*.test.*` and a `*.spec.*` file, or by
+multiple name-suffixed files, consolidate them. Name the file for the module it
+actually tests. Small helper tests belong in the module's main spec as a nested
+`describe`, not in a separate file.
+
+**Keep tiny tests meaningful.**
+
+A test file that only holds one or two trivial assertions provides no regression
+protection. Delete it or fold its coverage into a behavioral test.

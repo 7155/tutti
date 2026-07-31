@@ -698,8 +698,10 @@ disable submission, but must not change editor editability.
   the field do not remain on permanent forced, uncached discovery. Concrete
   conflicting authority is retried only for a bounded number of confirmation
   reads; if a provider keeps normalizing, rejecting, or overriding the default,
-  AgentGUI likewise preserves the optimistic intent while releasing the marker
-  so later reads return to the Engine's signature-aware cache
+  AgentGUI protects the optimistic intent from generic option sanitization only
+  while that confirmation marker remains active. Releasing the marker lets later
+  settled options apply normal sanitization and return to the Engine's
+  signature-aware cache
 - the Engine alone translates shared activation, prompt send, settings update,
   Goal Control, turn cancel, Interaction response, rename, pin, and
   batch-delete commands into `AgentSessionEffectPort` calls. Desktop and Mobile

@@ -204,8 +204,9 @@ export function retireAcknowledgedComposerDefaultsForRead(
     if (authoritativeValue !== readEntry.value) {
       // A concrete different value can be a stale overlapping discovery.
       // Bound retries because some providers normalize or reject defaults and
-      // never echo the requested value. Keep the optimistic user intent after
-      // releasing the marker so later reads can reuse the Engine cache.
+      // never echo the requested value. Protect the optimistic intent during
+      // confirmation, then release the marker so later settled options can
+      // apply normal sanitization and reuse the Engine cache.
       currentEntry.confirmationReadsRemaining -= 1;
       if (currentEntry.confirmationReadsRemaining <= 0) {
         delete acknowledged[field];
@@ -232,6 +233,35 @@ export function removeRetiredComposerDefaults(
     if (normalizeOptionalText(result[entry.field]) === entry.value) {
       delete result[entry.field];
     }
+  }
+  return result;
+}
+
+export function preserveAcknowledgedComposerDefaultsForReconciliation(
+  ledger: AgentGUIComposerDefaultsLedger,
+  draftKey: string,
+  currentSettings: AgentSessionComposerSettings,
+  reconciledSettings: AgentSessionComposerSettings
+): AgentSessionComposerSettings {
+  const latest = ledger.latestByDraftKey[draftKey];
+  const acknowledged = ledger.acknowledgedByDraftKey[draftKey];
+  if (!latest || !acknowledged) return reconciledSettings;
+
+  let result = reconciledSettings;
+  for (const field of rememberComposerDefaultsFields) {
+    const entry = acknowledged[field];
+    if (
+      !entry ||
+      latest[field] !== entry.generation ||
+      normalizeOptionalText(currentSettings[field]) !== entry.value ||
+      normalizeOptionalText(result[field]) === entry.value
+    ) {
+      continue;
+    }
+    if (result === reconciledSettings) {
+      result = { ...reconciledSettings };
+    }
+    Object.assign(result, { [field]: currentSettings[field] });
   }
   return result;
 }

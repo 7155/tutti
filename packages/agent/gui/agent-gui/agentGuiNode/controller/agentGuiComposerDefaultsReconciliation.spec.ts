@@ -3,6 +3,7 @@ import {
   acknowledgeAgentGUIComposerDefaultsMutation,
   createAgentGUIComposerDefaultsLedger,
   prepareAcknowledgedComposerDefaultsAuthorityRead,
+  preserveAcknowledgedComposerDefaultsForReconciliation,
   registerAgentGUIComposerDefaultsMutation,
   retireAcknowledgedComposerDefaultsForRead
 } from "./agentGuiComposerDefaultsReconciliation";
@@ -231,6 +232,73 @@ describe("agentGuiComposerDefaultsReconciliation", () => {
       receipt: null,
       settings
     });
+  });
+
+  it("protects acknowledged fields from sanitize only while confirmation remains bounded", () => {
+    const ledger = createAgentGUIComposerDefaultsLedger();
+    const settings = {
+      model: "opencode/model-b",
+      permissionModeId: "accept_edits",
+      reasoningEffort: "high",
+      speed: "fast"
+    };
+    const mutation = registerAgentGUIComposerDefaultsMutation(
+      ledger,
+      draftKey,
+      settings
+    );
+    acknowledgeAgentGUIComposerDefaultsMutation(ledger, mutation, {
+      acknowledgedFields: [
+        "model",
+        "permissionModeId",
+        "reasoningEffort",
+        "speed"
+      ],
+      supersededFields: []
+    });
+    const sanitized = {
+      model: null,
+      permissionModeId: null,
+      reasoningEffort: null,
+      speed: null
+    };
+
+    expect(
+      preserveAcknowledgedComposerDefaultsForReconciliation(
+        ledger,
+        draftKey,
+        settings,
+        sanitized
+      )
+    ).toEqual(settings);
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const read = prepareAcknowledgedComposerDefaultsAuthorityRead(
+        ledger,
+        draftKey,
+        settings
+      );
+      retireAcknowledgedComposerDefaultsForRead(
+        ledger,
+        read.receipt!,
+        settings,
+        {
+          model: "opencode/model-a",
+          permissionModeId: "default",
+          reasoningEffort: "low",
+          speed: "normal"
+        }
+      );
+    }
+
+    expect(
+      preserveAcknowledgedComposerDefaultsForReconciliation(
+        ledger,
+        draftKey,
+        settings,
+        sanitized
+      )
+    ).toBe(sanitized);
   });
 
   it("stops forcing reads but keeps optimistic intent when authority omits the field", () => {

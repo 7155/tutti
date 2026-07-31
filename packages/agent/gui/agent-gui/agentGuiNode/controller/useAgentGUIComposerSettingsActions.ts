@@ -39,6 +39,7 @@ import {
   acknowledgeAgentGUIComposerDefaultsMutation,
   createAgentGUIComposerDefaultsLedger,
   prepareAcknowledgedComposerDefaultsAuthorityRead,
+  preserveAcknowledgedComposerDefaultsForReconciliation,
   registerAgentGUIComposerDefaultsMutation,
   removeRetiredComposerDefaults,
   retireAcknowledgedComposerDefaultsForRead,
@@ -194,14 +195,20 @@ export function useAgentGUIComposerSettingsActions(
       if (!currentDraft) {
         return;
       }
-      const reconciledDraft = enforceComposerModelBindingForHomeDefaults(
-        sanitizeComposerSettingsForTarget({
-          settings: currentDraft,
-          target,
-          options
-        }),
-        options
-      );
+      const reconciledDraft =
+        preserveAcknowledgedComposerDefaultsForReconciliation(
+          composerDefaultsLedgerRef.current,
+          draftKey,
+          currentDraft,
+          enforceComposerModelBindingForHomeDefaults(
+            sanitizeComposerSettingsForTarget({
+              settings: currentDraft,
+              target,
+              options
+            }),
+            options
+          )
+        );
       if (sameComposerSettings(currentDraft, reconciledDraft)) {
         return;
       }

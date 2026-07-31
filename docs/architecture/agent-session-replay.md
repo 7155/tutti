@@ -107,6 +107,12 @@ Tutti owns:
 - daemon HTTP APIs and runtime composition
 - Electron launch, supervision, controls, status, and product UI
 
+The Tutti repository owns only the generic developer runner. QA case metadata,
+external scenario modules, scenario fixtures, qualified Cassettes, and evidence
+live together in the `tutti-agent-session-replay-cases` repository. Record mode
+loads the selected case module through `--scenario-file`; adding a case must not
+change a Tutti-owned scenario registry.
+
 Agent Host continues to own Session, Turn, Goal, and runtime-operation
 lifecycle. Replay changes the runtime composition; it does not add alternate
 lifecycle semantics to the Desktop or replay service.
@@ -449,6 +455,12 @@ debugging port. It also enables replay transport with
 `TUTTI_AGENT_CASSETTE_MODE=replay` and passes the fixed Cassette/root Session
 bindings through
 `TUTTI_AGENT_SESSION_REPLAY_REGISTRATIONS`.
+Before a Replay Workspace starts, the runner migrates its empty database
+without creating the transient Workspace, reconstructs each portable Project
+placement from the Cassette's expected Session state, and seeds the deduplicated
+`user_projects` rows. The semantic runtime remains the exclusive Workspace
+creator; the project rows only make the canonical project Rail sections
+queryable when their Sessions are restored or created.
 For a managed multi-Surface launch, Main passes one temporary Surface-status
 handoff to the isolated Desktop. Single-Surface developer replay uses the same
 Cassette identity without creating durable execution metadata.

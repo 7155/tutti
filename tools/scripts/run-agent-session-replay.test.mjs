@@ -5,12 +5,11 @@ import { EventEmitter } from "node:events";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { createAgentSessionReplayControlWriter } from "../../apps/desktop/src/main/agentSessionReplayStatus.ts";
-import { recordScenarioDefinitions } from "./agent-session-replay-record-scenarios/definitions.mjs";
 import {
   cassettePolicy,
   materializeReplayWorkspaceBlobs,
@@ -44,6 +43,7 @@ import {
   replayCheckpointScreenshotPath,
   replayControlRouter,
   replayPendingInteraction,
+  resolveReplayProjectFromExpectedState,
   replayStimuli,
   replayStimulusPrecondition,
   replayStimulusRetryableStatus,
@@ -53,6 +53,7 @@ import {
   readReplayTotalDurationMs,
   replayWorkspaceInitialTargetCheckpoint,
   managedReplayFailure,
+  loadRecordScenario,
   submitRequestedRequiresSessionIdle,
   validateAction,
   validateReplayWorkspaceManifest,
@@ -1857,6 +1858,8 @@ test("record arguments default to headed mode", () => {
     ".tmp/cassettes/example",
     "--scenario",
     "c01",
+    "--scenario-file",
+    "/tmp/cases/c01/scenario.mjs",
     "--timeout-ms",
     "1234"
   ]);
@@ -1943,6 +1946,8 @@ test("screenshot checkpoints are opt-in for replay only", () => {
         ".tmp/cassettes/example",
         "--scenario",
         "c01",
+        "--scenario-file",
+        "/tmp/cases/c01/scenario.mjs",
         "--screenshot-checkpoints"
       ]),
     /--screenshot-checkpoints is only supported with replay/
@@ -1970,66 +1975,28 @@ test("checkpoint screenshot paths stay Cassette-scoped in a Replay Workspace", (
   );
 });
 
-test("record arguments accept every supported CDP scenario", () => {
-  for (const scenario of [
+test("record arguments accept an external scenario file", () => {
+  const options = parseArgs([
+    "--record",
+    ".tmp/cassettes/example",
+    "--scenario",
     "c01",
-    "c02",
-    "c03",
-    "c04",
-    "c05",
-    "c06",
-    "i01",
-    "i02",
-    "i03",
-    "i04",
-    "i05",
-    "i06",
-    "i07",
-    "i08",
-    "i09",
-    "i10",
-    "r01",
-    "r02",
-    "r03",
-    "r04",
-    "r05",
-    "r06",
-    "r07",
-    "l01",
-    "l02",
-    "l03",
-    "l04",
-    "l05",
-    "l06",
-    "p01",
-    "p02",
-    "p03",
-    "p04"
-  ]) {
-    const options = parseArgs([
-      "--record",
-      ".tmp/cassettes/example",
-      "--scenario",
-      scenario
-    ]);
-    assert.equal(options.scenario, scenario);
-  }
+    "--scenario-file",
+    "/tmp/cases/c01/scenario.mjs"
+  ]);
+  assert.equal(options.scenario, "c01");
+  assert.equal(options.scenarioFile, "/tmp/cases/c01/scenario.mjs");
 });
 
-test("record scenarios require a known scenario and reject raw prompt overrides", () => {
+test("record scenarios require an id and file and reject raw prompt overrides", () => {
   assert.throws(
     () => parseArgs(["--record", ".tmp/cassettes/example"]),
     /--scenario is required/u
   );
   assert.throws(
     () =>
-      parseArgs([
-        "--record",
-        ".tmp/cassettes/example",
-        "--scenario",
-        "unknown"
-      ]),
-    /unsupported record scenario/u
+      parseArgs(["--record", ".tmp/cassettes/example", "--scenario", "c01"]),
+    /--scenario-file is required/u
   );
   assert.throws(
     () =>
@@ -2038,10 +2005,35 @@ test("record scenarios require a known scenario and reject raw prompt overrides"
         ".tmp/cassettes/example",
         "--scenario",
         "i01",
+        "--scenario-file",
+        "/tmp/cases/i01/scenario.mjs",
         "--prompt",
         "override"
       ]),
     /unknown option: --prompt/u
+  );
+});
+
+test("record runner loads and validates the external scenario module", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "external-scenario-"));
+  const scenarioFile = join(directory, "scenario.mjs");
+  await writeFile(
+    scenarioFile,
+    `export default {
+      id: "c01",
+      prepare() {},
+      drive() {},
+      assert() {}
+    };\n`
+  );
+  const scenario = await loadRecordScenario({
+    scenario: "c01",
+    scenarioFile
+  });
+  assert.equal(scenario.id, "c01");
+  await assert.rejects(
+    loadRecordScenario({ scenario: "c02", scenarioFile }),
+    /does not export scenario c02/u
   );
 });
 
@@ -2261,12 +2253,137 @@ test("Replay Workspace leaves Workspace creation to the semantic runtime", async
     `load:${replayCassetteAID}`,
     `load:${replayCassetteBID}`,
     "create:replay-workspace",
+    "database",
     "blobs"
   ]);
   assert.equal(bootstrap.runtime.directory, "/runtime");
   assert.deepEqual(
     bootstrap.registrations,
     replayWorkspaceTransportRegistrations(bootstrap.cassettes)
+  );
+});
+
+test("Replay Workspace seeds each portable project once before blobs", async () => {
+  const calls = [];
+  const sharedProject = resolveRecordScenarioProject(
+    { label: "repo", relativePath: "." },
+    workspaceRoot
+  );
+  const nestedProject = resolveRecordScenarioProject(
+    { label: "agent", relativePath: "packages/agent" },
+    workspaceRoot
+  );
+  await bootstrapReplayWorkspace(
+    {
+      playbackMode: "automatic",
+      workspaceId: "workspace-a",
+      cassettes: [
+        {
+          cassetteId: replayCassetteAID,
+          cassetteDirectory: ".tmp/cassette-a",
+          rootAgentSessionId: "root-a"
+        },
+        {
+          cassetteId: replayCassetteBID,
+          cassetteDirectory: ".tmp/cassette-b",
+          rootAgentSessionId: "root-b"
+        },
+        {
+          cassetteId: "a4509255-05f8-4420-aa75-d07234cae38e",
+          cassetteDirectory: ".tmp/cassette-c",
+          rootAgentSessionId: "root-c"
+        }
+      ]
+    },
+    {
+      async loadCassette(cassette) {
+        return {
+          ...cassette,
+          action: {
+            replayProject:
+              cassette.rootAgentSessionId === "root-c"
+                ? nestedProject
+                : sharedProject,
+            workspaceId: "workspace-a"
+          },
+          mode: "create-session"
+        };
+      },
+      async createRuntime() {
+        return {
+          directory: "/runtime",
+          stateDirectory: "/runtime/state"
+        };
+      },
+      async initializeDatabase(_runtime, workspaceId) {
+        calls.push(`database:${workspaceId}`);
+      },
+      async seedUserProject(databasePath, project) {
+        calls.push(`project:${databasePath}:${project.portablePath}`);
+      },
+      async materializeBlobs() {
+        calls.push("blobs");
+      }
+    }
+  );
+  assert.deepEqual(calls, [
+    "database:workspace-a",
+    "project:/runtime/state/tuttid.db:${REPLAY_CWD}",
+    "project:/runtime/state/tuttid.db:${REPLAY_CWD}/packages/agent",
+    "blobs"
+  ]);
+});
+
+test("resolves a project placement from portable expected Session state", () => {
+  const project = resolveReplayProjectFromExpectedState(
+    {
+      agent: {
+        sessions: [
+          {
+            id: "root-a",
+            railSectionKey: "project:${REPLAY_CWD}/packages/agent"
+          }
+        ]
+      }
+    },
+    "root-a",
+    workspaceRoot
+  );
+  assert.deepEqual(project, {
+    id: `replay-project-${createHash("sha256")
+      .update(join(workspaceRoot, "packages/agent"))
+      .digest("hex")
+      .slice(0, 16)}`,
+    label: "agent",
+    path: join(workspaceRoot, "packages/agent"),
+    portablePath: "${REPLAY_CWD}/packages/agent"
+  });
+  assert.equal(
+    resolveReplayProjectFromExpectedState(
+      {
+        agent: {
+          sessions: [{ id: "root-a", railSectionKey: "conversations" }]
+        }
+      },
+      "root-a",
+      workspaceRoot
+    ),
+    null
+  );
+  assert.throws(
+    () =>
+      resolveReplayProjectFromExpectedState(
+        {
+          agent: {
+            sessions: [
+              { id: "root-a", railSectionKey: "project:/recording/root" }
+            ]
+          }
+        },
+        "root-a",
+        workspaceRoot
+      ),
+    /not portable/u
   );
 });
 
@@ -3011,11 +3128,11 @@ test("does not apply create-session Composer defaults while continuing a Session
 test("P01 selects an in-cwd project and requires portable binding artifacts", async () => {
   const root = await mkdtemp(join(tmpdir(), "agent-replay-project-binding-"));
   const project = resolveRecordScenarioProject(
-    recordScenarioDefinitions.p01.project,
+    { label: basename(root), relativePath: "." },
     root
   );
   assert.equal(project.path, root);
-  assert.equal(project.label, "Replay Project");
+  assert.equal(project.label, basename(root));
   assert.equal(project.portablePath, "${REPLAY_CWD}");
   assert.throws(
     () =>
@@ -3044,7 +3161,7 @@ test("P01 selects an in-cwd project and requires portable binding artifacts", as
     databasePath,
     "SELECT path || '|' || label FROM user_projects;"
   ]);
-  assert.equal(seeded.stdout.trim(), `${root}|Replay Project`);
+  assert.equal(seeded.stdout.trim(), `${root}|${basename(root)}`);
 
   await writeFile(
     join(root, cassettePolicy.files.activityEvents.path),
@@ -3111,6 +3228,77 @@ test("P01 selects an in-cwd project and requires portable binding artifacts", as
   );
 
   await verifyRecordedProjectBindingArtifacts(root, "${REPLAY_CWD}");
+});
+
+test("P03 accepts a portable project binding restored from initial state", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "agent-replay-continued-project-binding-")
+  );
+  await writeFile(
+    join(root, cassettePolicy.files.activityEvents.path),
+    `${JSON.stringify({
+      agentSessionId: "session-1",
+      correlationId: "request-1",
+      eventId: "intent-1",
+      kind: "intent",
+      occurredAtUnixMs: 1,
+      payload: { content: [{ text: "follow up", type: "text" }] },
+      schemaVersion: cassettePolicy.schemaVersion,
+      sequence: 1,
+      type: "submit/requested"
+    })}\n`
+  );
+  await writeFile(
+    join(root, cassettePolicy.files.initialState.path),
+    JSON.stringify({
+      agent: {
+        sessions: [
+          {
+            cwd: "${REPLAY_CWD}",
+            id: "session-1",
+            railProjectPath: "${REPLAY_CWD}",
+            railSectionKey: "project:${REPLAY_CWD}"
+          }
+        ]
+      }
+    })
+  );
+  await writeFile(
+    join(root, cassettePolicy.files.expectedState.path),
+    JSON.stringify({
+      agent: {
+        sessions: [
+          {
+            cwd: "${REPLAY_CWD}",
+            id: "session-1",
+            railProjectPath: "${REPLAY_CWD}",
+            railSectionKey: "project:${REPLAY_CWD}"
+          }
+        ]
+      }
+    })
+  );
+  await verifyRecordedProjectBindingArtifacts(root, "${REPLAY_CWD}");
+
+  await writeFile(
+    join(root, cassettePolicy.files.expectedState.path),
+    JSON.stringify({
+      agent: {
+        sessions: [
+          {
+            cwd: "${REPLAY_CWD}",
+            id: "session-1",
+            railProjectPath: null,
+            railSectionKey: "conversations"
+          }
+        ]
+      }
+    })
+  );
+  await assert.rejects(
+    verifyRecordedProjectBindingArtifacts(root, "${REPLAY_CWD}"),
+    /did not preserve portable project binding/u
+  );
 });
 
 function execFileAsync(command, args) {

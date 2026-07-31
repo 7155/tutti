@@ -262,13 +262,17 @@ The developer-only runner records and replays an Agent SessionGraph capture
 window:
 
 ```sh
-pnpm e2e:agent-gui -- --record .tmp/cassettes/c01_codex --scenario c01
+pnpm e2e:agent-gui -- \
+  --record .tmp/cassettes/c01_codex \
+  --scenario c01 \
+  --scenario-file ../tutti-agent-session-replay-cases/cases/c01/scenario.mjs
 pnpm e2e:agent-gui -- --replay .tmp/cassettes/c01_codex
 ```
 
-Record mode requires a named scenario. The scenario declares its preparation,
-browser actions, and assertions; the runner only creates the isolated runtime,
-starts and stops capture, validates the cassette, and invokes the scenario.
+Record mode requires a named external scenario module from the QA case
+repository. The scenario declares its preparation, browser actions, and
+assertions; the runner only creates the isolated runtime, starts and stops
+capture, validates the cassette, and invokes the scenario.
 The C01 scenario starts from a newly migrated empty database, creates one
 temporary Workspace, and submits three Turns. Cassette `create-session` and
 `continue-session` actions remain portable artifact semantics: the latter

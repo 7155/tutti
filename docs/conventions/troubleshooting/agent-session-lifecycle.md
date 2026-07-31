@@ -4139,7 +4139,7 @@ permanently ambiguous`. Provider status may already be `active` while the
   `pnpm e2e:agent-gui -- --record … --scenario l01` proceeds past goal
   activation (goal turn starts) instead of stalling on the palette wait.
 - References:
-  [cdp-helpers.mjs](../../../tools/scripts/agent-session-replay-record-scenarios/cdp-helpers.mjs)
+  `tutti-agent-session-replay-cases/scenario-runtime/cdp-helpers.mjs`
   [composerDraftUtils.ts](../../../packages/agent/gui/agent-gui/agentGuiNode/composer/composerDraftUtils.ts)
   [useComposerPaletteCatalog.ts](../../../packages/agent/gui/agent-gui/agentGuiNode/composer/useComposerPaletteCatalog.ts)
 
@@ -4181,7 +4181,7 @@ permanently ambiguous`. Provider status may already be `active` while the
   record→audit→replay of `l01_codex` (`l01`) passes.
 - References:
   [state.go](../../../services/tuttid/biz/agentsessionreplay/state.go)
-  [l01.mjs](../../../tools/scripts/agent-session-replay-record-scenarios/l01.mjs)
+  `tutti-agent-session-replay-cases/cases/l01/scenario.mjs`
 
 ### Project-session replay never shows the restored session in the rail
 

@@ -14,7 +14,7 @@ import {
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { CdpClient } from "./capture-electron-trace.mjs";
 import {
   clickSession,
@@ -32,13 +32,10 @@ import {
   waitForPageWebSocket
 } from "./run-agent-gui-performance.mjs";
 import {
-  recordScenarioDefinitions,
-  recordScenarioIds
-} from "./agent-session-replay-record-scenarios/definitions.mjs";
-import {
   cassettePolicy,
   materializeReplayWorkspaceBlobs,
   parseActivityEvents,
+  portableReplayCWDToken,
   replayActionFromManifest,
   verifyCassette
 } from "./agent-session-replay-runner/cassette.mjs";
@@ -128,14 +125,12 @@ async function recordCassette(options) {
   await ensureEmptyDirectory(options.cassetteDirectory);
   const runtime = await createRuntime(workspaceRoot, "record");
   const databasePath = join(runtime.stateDirectory, "tuttid.db");
+  const scenarioFixturePaths = [];
   let succeeded = false;
   try {
     const workspaceId = "11111111-1111-4111-8111-111111111111";
     const agentTargetId = options.agentTargetId ?? "local:codex";
-    const recordScenario = recordScenarioDefinitions[options.scenario];
-    if (!recordScenario) {
-      throw new Error(`unsupported record scenario: ${options.scenario}`);
-    }
+    const recordScenario = await loadRecordScenario(options);
     await initializeCleanDatabase(workspaceRoot, runtime, workspaceId);
     await enableAgentSessionRecordingFeature(databasePath, workspaceRoot);
     await enableAgentSessionRecordingTarget(
@@ -147,6 +142,24 @@ async function recordCassette(options) {
     let projectSelection = null;
     const scenarioState = await recordScenario.prepare({
       agentTargetId,
+      async createFixture(name, contents) {
+        if (!name || basename(name) !== name) {
+          throw new Error(
+            `record scenario ${recordScenario.id} fixture name is invalid`
+          );
+        }
+        const path = join(
+          workspaceRoot,
+          ".tmp",
+          "agent-session-replay-scenario-fixtures",
+          recordScenario.id,
+          name
+        );
+        await mkdir(dirname(path), { recursive: true });
+        await writeFile(path, contents);
+        scenarioFixturePaths.push(path);
+        return relative(workspaceRoot, path).split("\\").join("/");
+      },
       async removePath(path) {
         await rm(path, { force: true });
       },
@@ -249,6 +262,9 @@ async function recordCassette(options) {
     log(`recorded ${basename(options.cassetteDirectory)}`);
     log(`assistant: ${result.assistantText}`);
   } finally {
+    await Promise.all(
+      scenarioFixturePaths.map((path) => rm(path, { force: true }))
+    );
     if (!succeeded) {
       await logFailureDiagnostics(runtime);
     }
@@ -318,16 +334,11 @@ async function replayCassette(options) {
     // re-seed the same project the recording prepared; otherwise the
     // conversation rail never shows the restored session and surface focus
     // stalls forever.
-    const projectPlacement = action.activityEvents
-      .map((event) => event.payload?.railPlacement)
-      .find((placement) => placement?.kind === "project");
-    if (projectPlacement?.projectPath) {
-      const projectPath = resolve(projectPlacement.projectPath);
-      const relativeProjectPath = relative(workspaceRoot, projectPath) || ".";
-      const replayProject = resolveRecordScenarioProject(
-        { label: basename(projectPath), relativePath: relativeProjectPath },
-        workspaceRoot
-      );
+    const replayProject = await loadReplayProject(
+      options.cassetteDirectory,
+      manifest.rootAgentSessionId
+    );
+    if (replayProject) {
       await seedRecordingUserProject(databasePath, replayProject);
       action.replayProject = replayProject;
     }
@@ -934,9 +945,14 @@ export async function bootstrapReplayWorkspace(
   const manifest = validateReplayWorkspaceManifest(manifestValue);
   const dependencies = {
     createRuntime: () => createRuntime(workspaceRoot, "replay-workspace"),
+    initializeDatabase: (runtime, workspaceId) =>
+      initializeCleanDatabase(workspaceRoot, runtime, workspaceId, {
+        seedWorkspace: false
+      }),
     loadCassette: loadReplayWorkspaceCassette,
     materializeBlobs: materializeReplayWorkspaceBlobs,
     removeRuntime,
+    seedUserProject: seedRecordingUserProject,
     createWorkspaceId: randomUUID,
     ...dependencyOverrides
   };
@@ -951,6 +967,19 @@ export async function bootstrapReplayWorkspace(
   validateLoadedReplayWorkspaceIdentities(cassettes);
   const runtime = await dependencies.createRuntime("replay-workspace");
   try {
+    await dependencies.initializeDatabase(runtime, workspaceId);
+    const projectsByPath = new Map(
+      cassettes
+        .map((cassette) => cassette.action.replayProject)
+        .filter(Boolean)
+        .map((project) => [project.path, project])
+    );
+    for (const project of projectsByPath.values()) {
+      await dependencies.seedUserProject(
+        join(runtime.stateDirectory, "tuttid.db"),
+        project
+      );
+    }
     await dependencies.materializeBlobs(cassettes, runtime.stateDirectory);
   } catch (error) {
     await dependencies.removeRuntime(runtime.directory);
@@ -1021,6 +1050,10 @@ async function loadReplayWorkspaceCassette(cassette, workspaceId) {
     activityEvents,
     workspaceId
   );
+  action.replayProject = await loadReplayProject(
+    cassette.cassetteDirectory,
+    rootAgentSessionId
+  );
   action.turnIdentityPlan = await loadReplayTurnIdentityPlan(
     cassette.cassetteDirectory,
     cassetteManifest.mode
@@ -1038,6 +1071,47 @@ async function loadReplayWorkspaceCassette(cassette, workspaceId) {
     totalDurationMs,
     mode: cassetteManifest.mode
   };
+}
+
+async function loadReplayProject(cassetteDirectory, rootAgentSessionId) {
+  const expectedState = JSON.parse(
+    await readFile(join(cassetteDirectory, expectedStateName), "utf8")
+  );
+  return resolveReplayProjectFromExpectedState(
+    expectedState,
+    rootAgentSessionId,
+    workspaceRoot
+  );
+}
+
+export function resolveReplayProjectFromExpectedState(
+  expectedState,
+  rootAgentSessionId,
+  replayCWD
+) {
+  const session = expectedState?.agent?.sessions?.find(
+    (candidate) => candidate?.id === rootAgentSessionId
+  );
+  const sectionKey = session?.railSectionKey;
+  if (typeof sectionKey !== "string" || !sectionKey.startsWith("project:")) {
+    return null;
+  }
+  const portablePath = sectionKey.slice("project:".length);
+  let relativePath;
+  if (portablePath === portableReplayCWDToken) {
+    relativePath = ".";
+  } else if (portablePath.startsWith(`${portableReplayCWDToken}/`)) {
+    relativePath = portablePath.slice(portableReplayCWDToken.length + 1);
+  } else {
+    throw new Error(
+      `Replay project binding is not portable: ${portablePath || "<empty>"}`
+    );
+  }
+  const projectPath = resolve(replayCWD, relativePath);
+  return resolveRecordScenarioProject(
+    { label: basename(projectPath), relativePath },
+    replayCWD
+  );
 }
 
 export async function readReplayTotalDurationMs(
@@ -1278,7 +1352,10 @@ async function runDesktopAction(input) {
       // surface would create the session without the project binding (cwd
       // and rail placement), so enter the seeded project first, exactly like
       // the recording scenario did.
-      if (input.action.replayProject?.id) {
+      if (
+        input.action.type === "create-session" &&
+        input.action.replayProject?.id
+      ) {
         await startReplayProjectSession(
           pageClient,
           input.action.replayProject.id,
@@ -1386,6 +1463,15 @@ async function runDesktopAction(input) {
       settled = await input.action.scenario.assert({
         assertPathAbsent: (path) =>
           assertForbiddenPathAbsent(path, input.action.scenario.id),
+        async captureEvidence(name) {
+          if (!/^[a-z0-9][a-z0-9-]*$/u.test(name)) {
+            throw new Error(`invalid scenario evidence name: ${name}`);
+          }
+          await captureScreenshot(
+            pageClient,
+            join(input.artifactDirectory, `${name}.png`)
+          );
+        },
         client: pageClient,
         phase: "terminal",
         scenarioState: input.action.scenarioState,
@@ -3568,6 +3654,8 @@ export function parseArgs(argv) {
       );
     } else if (arg === "--scenario") {
       options.scenario = requiredValue(argv, (index += 1), arg);
+    } else if (arg === "--scenario-file") {
+      options.scenarioFile = resolve(requiredValue(argv, (index += 1), arg));
     } else if (arg === "--agent-target-id") {
       options.agentTargetId = requiredValue(argv, (index += 1), arg);
     } else if (arg === "--timeout-ms") {
@@ -3633,13 +3721,33 @@ export function parseArgs(argv) {
   if (options.scenario && options.mode !== "record") {
     throw new Error("--scenario is only supported with record");
   }
+  if (options.scenarioFile && options.mode !== "record") {
+    throw new Error("--scenario-file is only supported with record");
+  }
   if (options.mode === "record" && !options.scenario) {
     throw new Error("--scenario is required with --record");
   }
-  if (options.scenario && !recordScenarioIds.includes(options.scenario)) {
-    throw new Error(`unsupported record scenario: ${options.scenario}`);
+  if (options.mode === "record" && !options.scenarioFile) {
+    throw new Error("--scenario-file is required with --record");
   }
   return options;
+}
+
+export async function loadRecordScenario(options) {
+  const module = await import(pathToFileURL(options.scenarioFile).href);
+  const scenario = module.default;
+  if (
+    !scenario ||
+    scenario.id !== options.scenario ||
+    typeof scenario.prepare !== "function" ||
+    typeof scenario.drive !== "function" ||
+    typeof scenario.assert !== "function"
+  ) {
+    throw new Error(
+      `record scenario file does not export scenario ${options.scenario}: ${options.scenarioFile}`
+    );
+  }
+  return scenario;
 }
 
 function setMode(options, mode, directory) {
@@ -3710,14 +3818,15 @@ function printUsage() {
   process.stdout.write(
     `Record and replay an AgentGUI Codex SessionGraph scenario.\n\n` +
       `Usage:\n` +
-      `  pnpm e2e:agent-gui -- --record .tmp/cassettes/c01_codex --scenario c01\n` +
+      `  pnpm e2e:agent-gui -- --record .tmp/cassettes/c01_codex --scenario c01 --scenario-file ../tutti-agent-session-replay-cases/cases/c01/scenario.mjs\n` +
       `  pnpm e2e:agent-gui -- --replay .tmp/cassettes/c01_codex\n` +
       `  pnpm e2e:agent-gui -- --replay-workspace-manifest .tmp/replay-workspace.json\n\n` +
       `Options:\n` +
       `  --record <directory>   Record the required named scenario into a new empty cassette directory\n` +
       `  --replay <directory>   Replay an existing complete cassette\n` +
       `  --replay-workspace-manifest <path> Bootstrap one fixed multi-Cassette Replay Workspace\n` +
-      `  --scenario <id>        Required with --record. Supported: ${recordScenarioIds.join(", ")}\n` +
+      `  --scenario <id>        Required with --record. Must match the loaded scenario id\n` +
+      `  --scenario-file <path> Required with --record. ES module exporting the scenario as default\n` +
       `  --agent-target-id <id> Agent Target used for recording. Default: local:codex\n` +
       `  --timeout-ms <n>       Desktop/action timeout. Default: ${defaultTimeoutMs}\n` +
       `  --stall-timeout-ms <n> Fail a wait when its observed value stops changing for n ms; 0 disables. Default: ${defaultStallTimeoutMs}\n` +

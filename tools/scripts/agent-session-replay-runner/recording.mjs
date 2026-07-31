@@ -10,6 +10,8 @@ import {
 
 const activityEventsName = cassettePolicy.files.activityEvents.path;
 const checkpointPlanName = cassettePolicy.files.checkpointPlan.path;
+const expectedStateName = cassettePolicy.files.expectedState.path;
+const initialStateName = cassettePolicy.files.initialState.path;
 
 export function resolveRecordScenarioProject(project, replayCWD) {
   const root = resolve(replayCWD);
@@ -73,14 +75,41 @@ export async function verifyRecordedProjectBindingArtifacts(
       event.type === "session/activate" &&
       event.payload?.outcome === "succeeded"
   );
-  if (
-    activation?.payload?.railPlacement?.kind !== "project" ||
-    activation.payload.railPlacement.projectPath !== portableProjectPath ||
-    activation.payload.cwd !== portableProjectPath
-  ) {
-    throw new Error(
-      "recorded project activation is missing portable project binding"
+  if (activation) {
+    if (
+      activation.payload?.railPlacement?.kind !== "project" ||
+      activation.payload.railPlacement.projectPath !== portableProjectPath ||
+      activation.payload.cwd !== portableProjectPath
+    ) {
+      throw new Error(
+        "recorded project activation is missing portable project binding"
+      );
+    }
+  } else {
+    const [initialState, expectedState] = await Promise.all(
+      [initialStateName, expectedStateName].map(async (name) =>
+        JSON.parse(await readFile(join(recordingDirectory, name), "utf8"))
+      )
     );
+    const initialProjectSession = initialState?.agent?.sessions?.find(
+      (session) =>
+        session?.cwd === portableProjectPath &&
+        session?.railProjectPath === portableProjectPath &&
+        session?.railSectionKey === `project:${portableProjectPath}`
+    );
+    const expectedProjectSession = expectedState?.agent?.sessions?.find(
+      (session) =>
+        session?.id === initialProjectSession?.id &&
+        session?.cwd === portableProjectPath &&
+        session?.railProjectPath === portableProjectPath &&
+        session?.railSectionKey === `project:${portableProjectPath}`
+    );
+    if (!initialProjectSession || !expectedProjectSession) {
+      throw new Error(
+        "recorded continue-session state did not preserve portable project binding"
+      );
+    }
+    return;
   }
   const plan = JSON.parse(
     await readFile(join(recordingDirectory, checkpointPlanName), "utf8")

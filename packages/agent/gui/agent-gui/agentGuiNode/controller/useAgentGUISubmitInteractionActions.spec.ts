@@ -14,7 +14,10 @@ import {
   clearSubmittedAgentGUIHomeDraft,
   restoreFailedAgentGUIHomeDraft
 } from "./agentGuiController.homeDraftHelpers";
-import { useAgentGUISubmitInteractionActions } from "./useAgentGUISubmitInteractionActions";
+import {
+  typedGoalControlFromComposer,
+  useAgentGUISubmitInteractionActions
+} from "./useAgentGUISubmitInteractionActions";
 
 const draftKey = "node-default:codex:local:codex";
 
@@ -567,5 +570,22 @@ describe("goal controls", () => {
       expect(setDetailError).toHaveBeenCalledWith("clear failed")
     );
     expect(setGoalClearNoticeSequence).not.toHaveBeenCalled();
+  });
+});
+
+describe("typedGoalControlFromComposer", () => {
+  it("typed Goal semantics ignore presentation-only displayPrompt", () => {
+    expect(
+      typedGoalControlFromComposer(
+        [{ type: "text", text: "/goal clear" }],
+        "clear chip"
+      )
+    ).toEqual({ action: "clear" });
+    expect(
+      typedGoalControlFromComposer(
+        [{ type: "text", text: "ordinary prompt" }],
+        "/goal clear"
+      )
+    ).toBeNull();
   });
 });

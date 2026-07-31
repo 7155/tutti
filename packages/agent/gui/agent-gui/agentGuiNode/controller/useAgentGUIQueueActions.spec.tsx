@@ -5,7 +5,7 @@ import {
 } from "@tutti-os/agent-activity-core";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import type { AgentActivityRuntime } from "../../../agentActivityRuntime";
+import type { AgentGUIRuntime } from "../../../agentActivityRuntime";
 import type { AgentComposerDraft } from "../model/agentGuiNodeTypes";
 import { agentComposerDraftImages } from "../model/agentComposerDraft";
 import { useAgentGUIQueueActions } from "./useAgentGUIQueueActions";
@@ -55,7 +55,7 @@ describe("useAgentGUIQueueActions", () => {
           activeConversationIdRef: { current: "session-1" },
           agentActivityRuntime: {
             readPromptAsset
-          } as unknown as AgentActivityRuntime,
+          } as unknown as AgentGUIRuntime,
           sessionEngine,
           setDraftByScopeKey: setDrafts,
           workspaceId: "workspace-1"

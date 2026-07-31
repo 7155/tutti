@@ -1,5 +1,5 @@
 import type {
-  AgentActivityRuntime,
+  AgentGUIRuntime,
   AgentGUIProps,
   AgentHostInputApi,
   TuttiModePlanReviewRuntime
@@ -60,7 +60,7 @@ import type { AgentSessionReplayDesktopComposition } from "../../agent-session-r
 import type { AgentSessionReplayService } from "../../agent-session-replay/services/agentSessionReplayService.ts";
 
 export interface DesktopAgentGUIWorkbenchHostInput {
-  agentActivityRuntime: AgentActivityRuntime;
+  agentActivityRuntime: AgentGUIRuntime;
   agentHostApi: AgentHostInputApi;
   agentSessionReplayService: AgentSessionReplayService | null;
   tuttiModePlanReviewRuntime: TuttiModePlanReviewRuntime;
@@ -161,8 +161,7 @@ export function createDesktopAgentGUIWorkbenchHostInput({
     reporterService,
     runtimeApi,
     workspaceAgentActivityService,
-    workspaceId,
-    workspaceUserProjectService
+    workspaceId
   });
   const workspaceFileReferenceTracker =
     createAgentWorkspaceFileReferenceTracker({

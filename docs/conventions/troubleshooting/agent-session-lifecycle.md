@@ -1215,8 +1215,9 @@ inline data URL instead`. Claude or standard ACP may instead receive no
   removes loading.
 - Fix:
   In AgentGUI, drive active projection, active live state, submit blocking, and
-  queue decisions from a live `AgentActivityRuntime` lifecycle before falling
-  back to `activeSessionState`. Ordinary composer sends while busy should
+  queue decisions from the live `AgentSessionEngine` returned by
+  `AgentGUIRuntime.getSessionEngine(...)` before falling back to
+  `activeSessionState`. Ordinary composer sends while busy should
   queue; explicit send-now intents must use capability-selected native guidance
   or exact-turn cancel-then-send. In the daemon,
   keep the steer exception, but require the terminal provider id to be non-empty
@@ -1669,7 +1670,7 @@ inline data URL instead`. Claude or standard ACP may instead receive no
 - Root cause:
   Batch deletion is a two-stage runtime capability: AgentGUI first resolves the
   authoritative session ids for the rail section and only then submits the
-  selected ids. A host that manually assembled `AgentActivityRuntime` could
+  selected ids. A host that manually assembled `AgentGUIRuntime` could
   expose the mutation but omit the candidate query. The old optional-method
   checks then returned an empty candidate list, making a valid click look like
   a no-op.
@@ -2713,7 +2714,7 @@ inline data URL instead`. Claude or standard ACP may instead receive no
   adapter is calling `listWorkspaceAgentSessions` without a `limit`.
 - Root cause:
   Unbounded session-list loads push every historical agent session into
-  `AgentActivityRuntime`, and each live event can make AgentGuiNode rebuild
+  `AgentGUIRuntime`, and each live event can make AgentGuiNode rebuild
   conversation projections for history the visible rail does not need.
 - Fix:
   Keep broad runtime session-list requests bounded at the desktop adapter or

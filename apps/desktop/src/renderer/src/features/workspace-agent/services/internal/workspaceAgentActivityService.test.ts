@@ -464,6 +464,23 @@ test("Desktop Engine activation reports a failed conversation provider from the 
     trigger: "conversation_start_failed",
     unavailable_reason: "not_authenticated"
   });
+  const activationNodeResult = reporterEvents.find(
+    (event) =>
+      event.name === "agent.node_result" &&
+      event.params?.node === "activate_session"
+  );
+  assert.deepEqual(
+    {
+      errorCode: activationNodeResult?.params?.error_code,
+      flow: activationNodeResult?.params?.flow,
+      status: activationNodeResult?.params?.status
+    },
+    {
+      errorCode: "agent_session_create_failed",
+      flow: "session_create",
+      status: "failure"
+    }
+  );
 });
 
 test("WorkspaceAgentActivityService does not report a cached availability snapshot when the forced refresh fails", async () => {
@@ -710,6 +727,42 @@ test("WorkspaceAgentActivityService reports session and message events from the 
       }
     ]
   );
+  assert.deepEqual(
+    reporterEvents
+      .filter((event) => event.name === "agent.node_result")
+      .map((event) => ({
+        flow: event.params?.flow,
+        node: event.params?.node,
+        status: event.params?.status
+      })),
+    [
+      {
+        flow: "session_create",
+        node: "activate_session",
+        status: "success"
+      },
+      {
+        flow: "session_create",
+        node: "session_started_reported",
+        status: "success"
+      },
+      {
+        flow: "session_create",
+        node: "message_sent_reported",
+        status: "success"
+      },
+      {
+        flow: "message_send",
+        node: "send_input_request",
+        status: "success"
+      },
+      {
+        flow: "message_send",
+        node: "message_sent_reported",
+        status: "success"
+      }
+    ]
+  );
 });
 
 test("WorkspaceAgentActivityService does not wait for pending activation analytics", async (t) => {
@@ -758,7 +811,7 @@ test("WorkspaceAgentActivityService does not wait for pending activation analyti
       ?.status,
     "active"
   );
-  assert.equal(analyticsCalls, 2);
+  assert.equal(analyticsCalls, 5);
 });
 
 test("WorkspaceAgentActivityService isolates rejected send analytics from the prompt command", async (t) => {
@@ -813,6 +866,63 @@ test("WorkspaceAgentActivityService isolates rejected send analytics from the pr
   assert.equal(
     selectEnginePromptQueue(engine.getSnapshot(), "session-1")?.inFlight,
     null
+  );
+});
+
+test("Desktop Engine preserves failed send node-result analytics", async (t) => {
+  const reporterEvents: ReporterEventInput[] = [];
+  const readySession = workspaceAgentSession({ status: "ready" });
+  const service = new WorkspaceAgentActivityService({
+    tuttidClient: {
+      listWorkspaceAgentSessions: async () => ({
+        hasMore: false,
+        sessions: [readySession],
+        workspaceId: "ws-1"
+      }),
+      sendWorkspaceAgentSessionInput: async () => {
+        throw new Error("send failed");
+      }
+    } as unknown as TuttidClient,
+    reporterService: {
+      async trackEvents(events) {
+        reporterEvents.push(...events);
+      }
+    },
+    runtimeApi: { logTerminalDiagnostic: async () => {} }
+  });
+  t.after(() => service.dispose());
+  const engine = service.getSessionEngine("ws-1");
+  await new Promise((resolve) => setImmediate(resolve));
+  const requestedAtUnixMs = Date.now();
+
+  engine.dispatch({
+    type: "submit/requested",
+    agentSessionId: "session-1",
+    clientSubmitId: "submit-failed",
+    content: [{ type: "text", text: "Continue" }],
+    expiresAtUnixMs: requestedAtUnixMs + 45_000,
+    requestedAtUnixMs,
+    workspaceId: "ws-1"
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const sendNodeResult = reporterEvents.find(
+    (event) =>
+      event.name === "agent.node_result" &&
+      event.params?.node === "send_input_request"
+  );
+  assert.deepEqual(
+    {
+      errorCode: sendNodeResult?.params?.error_code,
+      flow: sendNodeResult?.params?.flow,
+      status: sendNodeResult?.params?.status
+    },
+    {
+      errorCode: "agent_runtime_exec_failed",
+      flow: "message_send",
+      status: "failure"
+    }
   );
 });
 
@@ -988,6 +1098,84 @@ test("WorkspaceAgentActivityService returns the authoritative canonical session 
     model: "opus",
     planMode: true
   });
+});
+
+test("Desktop Engine preserves session settings analytics and diagnostics", async (t) => {
+  const reporterEvents: ReporterEventInput[] = [];
+  const terminalDiagnostics: unknown[] = [];
+  const previousSession = workspaceAgentSession({
+    settings: {
+      model: "gpt-5",
+      permissionModeId: "auto",
+      reasoningEffort: "medium"
+    },
+    status: "ready"
+  });
+  const updatedSession = workspaceAgentSession({
+    settings: {
+      model: "custom:local-model",
+      permissionModeId: "full-access",
+      reasoningEffort: "high"
+    },
+    status: "ready"
+  });
+  const service = new WorkspaceAgentActivityService({
+    tuttidClient: {
+      listWorkspaceAgentSessions: async () => ({
+        hasMore: false,
+        sessions: [previousSession],
+        workspaceId: "ws-1"
+      }),
+      updateWorkspaceAgentSessionSettings: async () => updatedSession
+    } as unknown as TuttidClient,
+    reporterNow: () => 1749124800000,
+    reporterService: {
+      async trackEvents(events) {
+        reporterEvents.push(...events);
+      }
+    },
+    runtimeApi: {
+      async logTerminalDiagnostic(input) {
+        terminalDiagnostics.push(input);
+      }
+    }
+  });
+  t.after(() => service.dispose());
+  await service.load("ws-1");
+
+  service.getSessionEngine("ws-1").updateSessionSettings({
+    agentSessionId: "session-1",
+    settings: {
+      model: "custom:local-model",
+      permissionModeId: "full-access",
+      reasoningEffort: "high"
+    }
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(
+    reporterEvents.map((event) => event.name),
+    [
+      "agent.settings.model_changed",
+      "agent.settings.permission_mode_changed",
+      "agent.settings.reasoning_effort_changed"
+    ]
+  );
+  assert.deepEqual(
+    terminalDiagnostics
+      .map((entry) => (entry as { event: string }).event)
+      .filter((event) => event.startsWith("agent.gui.composer_settings.")),
+    [
+      "agent.gui.composer_settings.update_requested",
+      "agent.gui.composer_settings.changed"
+    ]
+  );
+  assert.equal(
+    service.getSessionEngine("ws-1").getSnapshot().sessionLifecycle
+      .sessionsById["session-1"]?.settings?.model,
+    "custom:local-model"
+  );
 });
 
 test("WorkspaceAgentActivityService returns the authoritative canonical session after interactive submit", async () => {

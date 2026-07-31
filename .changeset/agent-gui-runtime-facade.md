@@ -1,8 +1,9 @@
 ---
-"@tutti-os/agent-gui": minor
+"@tutti-os/agent-gui": major
 ---
 
-Expose the narrower `AgentGUIRuntime` contract so hosts can provide AgentGUI
-reads, subscriptions, diagnostics, files, and workspace Engine lookup without
-duplicating lifecycle callbacks already owned by `AgentSessionEngine`.
-Existing `AgentActivityRuntime` consumers remain compatible.
+Make `AgentGUIRuntime` the sole AgentGUI host contract and remove the legacy
+`AgentActivityRuntime` interface, Provider, hooks, and test overrides. Desktop
+and TSH now use the narrow contract without duplicating lifecycle callbacks
+already owned by `AgentSessionEngine`; Mobile was audited and has no dependency
+on the removed contract.

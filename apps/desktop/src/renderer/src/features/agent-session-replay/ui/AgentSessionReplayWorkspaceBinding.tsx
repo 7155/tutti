@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { AgentActivityRuntime } from "@tutti-os/agent-gui";
+import type { AgentGUIRuntime } from "@tutti-os/agent-gui";
 import { installAgentSessionReplayWorkspaceBridge } from "../services/agentSessionReplayWorkspaceBridge.ts";
 import type {
   AgentSessionReplayNodeLaunchRequest,
@@ -39,7 +39,7 @@ export function AgentSessionReplayWorkspaceBinding({
 }
 
 export function useAgentSessionReplayNodeReadiness(input: {
-  agentActivityRuntime: Pick<AgentActivityRuntime, "getSession" | "subscribe">;
+  agentActivityRuntime: Pick<AgentGUIRuntime, "getSession" | "subscribe">;
   nodeId: string;
   selectedAgentSessionId: string | null;
   workspaceId: string;

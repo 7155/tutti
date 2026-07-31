@@ -166,8 +166,8 @@ export {
   type AgentContextMentionProvider
 } from "./agent-gui/agentGuiNode/agentContextMentionProvider";
 export { preloadAgentMentionBrowse } from "./agent-gui/agentGuiNode/AgentMentionSearchController";
-export { AgentActivityHostProvider } from "./agentActivityHost";
-export type { AgentActivityHostProviderProps } from "./agentActivityHost";
+export { AgentGUIActivityHostProvider } from "./agentActivityHost";
+export type { AgentGUIActivityHostProviderProps } from "./agentActivityHost";
 export { useEngineSelector } from "./shared/engine/useEngineSelector";
 export type { EngineStateStore } from "./shared/engine/useEngineSelector";
 export {
@@ -176,20 +176,20 @@ export {
 } from "./shared/agentConversation/agentPlanPromptDispatch";
 export type { AgentPlanPromptAction } from "./shared/agentConversation/agentPlanPromptDispatch";
 export {
-  AgentActivityRuntimeProvider,
-  resetAgentActivityRuntimeForTests,
-  setAgentActivityRuntimeForTests,
+  AgentGUIRuntimeProvider,
+  resetAgentGUIRuntimeForTests,
+  setAgentGUIRuntimeForTests,
   useAgentActivitySessionMessages,
   useAgentActivitySnapshot,
-  useAgentActivityRuntime,
-  useOptionalAgentActivityRuntime
+  useAgentGUIRuntime,
+  useOptionalAgentGUIRuntime
 } from "./agentActivityRuntime";
 export type {
-  AgentActivityRuntime,
   AgentGUIRuntime,
+  AgentGUIRuntimeProviderProps,
   AgentActivitySessionMessages,
+  AgentActivityRuntimeActivateSessionInput,
   AgentActivityRuntimeListSessionMessagesInput,
-  AgentActivityRuntimeProviderProps,
   AgentActivityRuntimePromptContentBlock,
   AgentActivityRuntimeDeleteSessionsBatchInput,
   AgentActivityRuntimeDeleteSessionsBatchResult,
@@ -198,6 +198,7 @@ export type {
   AgentActivityRuntimeSetSessionPinnedInput,
   AgentActivityRuntimeUploadPromptContentInput,
   AgentActivityRuntimeUploadPromptContentResult,
+  AgentActivityRuntimeUnactivateSessionInput,
   AgentActivityRuntimeUpdateSessionSettingsInput,
   AgentActivityRuntimeUpdateSessionSettingsResult
 } from "./agentActivityRuntime";

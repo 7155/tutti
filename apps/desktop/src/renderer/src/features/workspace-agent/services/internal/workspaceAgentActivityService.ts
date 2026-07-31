@@ -13,7 +13,6 @@ import {
   type EngineExternalCommand,
   type EngineIntent
 } from "@tutti-os/agent-activity-core";
-import type { AgentActivityRuntime } from "@tutti-os/agent-gui";
 import type {
   AgentProviderStatusListResponse,
   CollaborationRun,
@@ -46,7 +45,11 @@ import { WorkspaceAgentActivityAnalytics } from "./workspaceAgentActivityAnalyti
 import { WorkspaceAgentActivityQueryOperations } from "./workspaceAgentActivityQueryOperations.ts";
 import { WorkspaceAgentActivityImportOperations } from "./workspaceAgentActivityImportOperations.ts";
 import { WorkspaceAgentActivityMutationOperations } from "./workspaceAgentActivityMutationOperations.ts";
-import { reportAgentSubmitTraceDiagnostic } from "../desktopAgentRuntimeSubmitDiagnostics.ts";
+import {
+  logAgentComposerSettingsDiagnostic,
+  reportAgentSubmitTraceDiagnostic
+} from "../desktopAgentRuntimeSubmitDiagnostics.ts";
+import { reportAgentSessionSettingsChanges } from "./agentSessionSettingsAnalytics.ts";
 import { AgentSessionRecordingBinding } from "../../../agent-session-replay/services/agentSessionRecordingBinding.ts";
 import {
   AgentSessionActivityEventRecorder,
@@ -531,7 +534,7 @@ export class WorkspaceAgentActivityService
   }
 
   async activateSession(
-    input: Parameters<AgentActivityRuntime["activateSession"]>[0]
+    input: Parameters<IWorkspaceAgentActivityService["activateSession"]>[0]
   ): ReturnType<IWorkspaceAgentActivityService["activateSession"]> {
     const result = await this.executeSessionActivationEffect(input);
     if ("detail" in result) {
@@ -546,7 +549,7 @@ export class WorkspaceAgentActivityService
   }
 
   private async executeSessionActivationEffect(
-    input: Parameters<AgentActivityRuntime["activateSession"]>[0],
+    input: Parameters<IWorkspaceAgentActivityService["activateSession"]>[0],
     options?: EngineEffectOptions
   ): Promise<AgentSessionActivateEffectResult> {
     const workspaceId = normalizeWorkspaceId(input.workspaceId);
@@ -959,14 +962,91 @@ export class WorkspaceAgentActivityService
     return this.mutationOperations.updateSessionSettings(input);
   }
 
+  private async executeEngineSessionSettingsUpdate(
+    input: Parameters<
+      IWorkspaceAgentActivityService["updateSessionSettings"]
+    >[0],
+    options: EngineEffectOptions
+  ): ReturnType<IWorkspaceAgentActivityService["updateSessionSettings"]> {
+    const previousState =
+      this.getSnapshot(input.workspaceId).sessions.find(
+        (session) => session.agentSessionId === input.agentSessionId
+      ) ??
+      (await this.getSession(
+        input.workspaceId,
+        input.agentSessionId,
+        input.signal
+      ));
+    const previousSettings = normalizeComposerSettings(
+      previousState.settings ?? {}
+    );
+    logAgentComposerSettingsDiagnostic({
+      agentSessionId: input.agentSessionId,
+      event: "agent.gui.composer_settings.update_requested",
+      nextSettings: input.settings,
+      previousSettings,
+      provider: previousState.provider,
+      runtimeApi: this.dependencies.runtimeApi,
+      source: "session",
+      workspaceId: input.workspaceId
+    });
+    let result: Awaited<
+      ReturnType<IWorkspaceAgentActivityService["updateSessionSettings"]>
+    >;
+    try {
+      result = await this.mutationOperations.executeEngineUpdateSessionSettings(
+        input,
+        options
+      );
+    } catch (error) {
+      logAgentComposerSettingsDiagnostic({
+        agentSessionId: input.agentSessionId,
+        error,
+        event: "agent.gui.composer_settings.update_failed",
+        nextSettings: input.settings,
+        previousSettings,
+        provider: previousState.provider,
+        runtimeApi: this.dependencies.runtimeApi,
+        source: "session",
+        workspaceId: input.workspaceId
+      });
+      throw error;
+    }
+    const normalizedResult = {
+      ...result,
+      settings: normalizeComposerSettings(result.settings)
+    };
+    await reportAgentSessionSettingsChanges({
+      agentSessionId: normalizedResult.agentSessionId,
+      nextSettings: normalizedResult.settings,
+      previousSettings,
+      provider: previousState.provider,
+      reporterNow: this.dependencies.reporterNow,
+      reporterService: this.dependencies.reporterService
+    });
+    logAgentComposerSettingsDiagnostic({
+      agentSessionId: normalizedResult.agentSessionId,
+      event: "agent.gui.composer_settings.changed",
+      nextSettings: normalizedResult.settings,
+      previousSettings,
+      provider: previousState.provider,
+      runtimeApi: this.dependencies.runtimeApi,
+      source: "session",
+      workspaceId: input.workspaceId
+    });
+    return normalizedResult;
+  }
+
   updateTuttiModeActivation(
-    input: Parameters<AgentActivityRuntime["updateTuttiModeActivation"]>[0]
-  ): ReturnType<AgentActivityRuntime["updateTuttiModeActivation"]> {
+    input: Parameters<
+      IWorkspaceAgentActivityService["updateTuttiModeActivation"]
+    >[0]
+  ): ReturnType<IWorkspaceAgentActivityService["updateTuttiModeActivation"]> {
     return this.mutationOperations.updateTuttiModeActivation(input);
   }
 
   unactivateSession(
-    input: Parameters<AgentActivityRuntime["unactivateSession"]>[0]
+    input: Parameters<IWorkspaceAgentActivityService["unactivateSession"]>[0]
   ): ReturnType<IWorkspaceAgentActivityService["unactivateSession"]> {
     return this.mutationOperations.unactivateSession(input);
   }
@@ -1034,12 +1114,17 @@ export class WorkspaceAgentActivityService
           }
         : {}),
       executeEngineActivateSession: async (input, options) => {
-        const activation = await this.executeSessionActivationEffect(
-          input,
-          options
-        );
-        this.analytics.trackEngineActivation(input, activation);
-        return activation;
+        try {
+          const activation = await this.executeSessionActivationEffect(
+            input,
+            options
+          );
+          this.analytics.trackEngineActivation(input, activation);
+          return activation;
+        } catch (error) {
+          this.analytics.trackEngineActivationFailure(input, error);
+          throw error;
+        }
       },
       executeEngineCancelTurn: (input, options) =>
         this.mutationOperations.executeEngineCancelTurn(input, options),
@@ -1049,9 +1134,14 @@ export class WorkspaceAgentActivityService
         this.executeSessionReconcileCommand(command, signal),
       runtimeApi: this.dependencies.runtimeApi,
       executeEngineSendInput: async (input, options) => {
-        const result = await this.executeSendInputEffect(input, options);
-        this.analytics.trackEngineSend(input, result);
-        return result;
+        try {
+          const result = await this.executeSendInputEffect(input, options);
+          this.analytics.trackEngineSend(input, result);
+          return result;
+        } catch (error) {
+          this.analytics.trackEngineSendFailure(input, error);
+          throw error;
+        }
       },
       executeEngineSubmitInteractive: (input, options) =>
         this.mutationOperations.executeEngineSubmitInteractive(input, options),
@@ -1062,10 +1152,7 @@ export class WorkspaceAgentActivityService
       tuttidClient: this.dependencies.tuttidClient,
       unactivateSession: (input) => this.unactivateSession(input),
       executeEngineUpdateSessionSettings: (input, options) =>
-        this.mutationOperations.executeEngineUpdateSessionSettings(
-          input,
-          options
-        ),
+        this.executeEngineSessionSettingsUpdate(input, options),
       updateTuttiModeActivation: (input) =>
         this.updateTuttiModeActivation(input),
       workspaceId

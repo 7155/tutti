@@ -6,7 +6,7 @@ import {
 } from "@tutti-os/agent-activity-core";
 import { describe, expect, it, vi } from "vitest";
 import { createLocalAgentGUIAgentTarget } from "../../../agentTargets";
-import type { AgentActivityRuntime } from "../../../agentActivityRuntime";
+import type { AgentGUIRuntime } from "../../../agentActivityRuntime";
 import type { AgentHostUserProject } from "../../../host/agentHostApi";
 import type { AgentGUINodeData } from "../../../types";
 import type { AgentGUIConversationSummary } from "../model/agentGuiConversationModel";
@@ -217,7 +217,7 @@ function renderNewConversationScenario(input: {
     current: {} as Record<string, AgentComposerDraft>
   };
   const submittedDraftSnapshotsRef = { current: {} };
-  const agentActivityRuntime = {} as AgentActivityRuntime;
+  const agentActivityRuntime = {} as AgentGUIRuntime;
   const setDraftByScopeKey = vi.fn();
   const persistActiveConversation = vi.fn();
   const conversationsRef = {

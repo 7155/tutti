@@ -105,7 +105,7 @@ export function slashStatusUsageErrorMessage(
     case "quota_exhausted":
       return t("agentHost.agentGui.slashStatusUsageQuotaExhausted");
     case "parse_failed":
-      return t("agentHost.agentGui.slashStatusUsageConfigInvalid");
+      return t("agentHost.agentGui.slashStatusUsageParseFailed");
     default:
       return t("agentHost.agentGui.slashStatusUsageError");
   }

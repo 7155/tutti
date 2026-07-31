@@ -388,7 +388,7 @@ export interface AgentGUIViewLabels extends AgentGUIProviderReadinessLabels {
   slashStatusUsageSessionExpired: string;
   slashStatusUsageSubscriptionRequired: string;
   slashStatusUsageQuotaExhausted: string;
-  slashStatusUsageConfigInvalid: string;
+  slashStatusUsageParseFailed: string;
   slashStatusUsageError: string;
   usageChipLabel: (input: { percent: number }) => string;
   usageTooltipLabel: string;

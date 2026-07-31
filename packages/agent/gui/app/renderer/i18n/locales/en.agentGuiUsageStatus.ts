@@ -27,7 +27,7 @@ export const enAgentGuiUsageStatus = {
   slashStatusUsageSubscriptionRequired:
     "A Coding Plan or subscription is required",
   slashStatusUsageQuotaExhausted: "Account balance or usage quota is exhausted",
-  slashStatusUsageConfigInvalid: "Model or account configuration is incomplete",
+  slashStatusUsageParseFailed: "Unable to parse account status",
   slashStatusUsageError: "Unable to load account status",
   usageChipLabel: "Context {{percent}}%",
   usageTooltipLabel: "Context usage",

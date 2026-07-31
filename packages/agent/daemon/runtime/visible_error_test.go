@@ -72,7 +72,7 @@ func TestVisibleFailureCodeClassifiesProviderEmptyResponse(t *testing.T) {
 		t.Fatalf("visibleFailureCode() = %q, want provider_empty_response", got)
 	}
 	got := visibleFailureContent("acp:kimi-code", "turn", "provider_empty_response")
-	want := "Agent returned no response. Check its model and account configuration, including any API key, plan, or balance."
+	want := "Agent returned no response. Check the provider settings or try again."
 	if got != want {
 		t.Fatalf("visibleFailureContent() = %q, want %q", got, want)
 	}

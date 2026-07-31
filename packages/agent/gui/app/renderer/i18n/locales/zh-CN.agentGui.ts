@@ -323,7 +323,7 @@ export const zhCNAgentGui = {
   slashStatusUsageSessionExpired: "登录已过期，请重新登录",
   slashStatusUsageSubscriptionRequired: "需要开通 Coding Plan 或订阅",
   slashStatusUsageQuotaExhausted: "账户余额或使用额度已用尽",
-  slashStatusUsageConfigInvalid: "模型或账户配置不完整",
+  slashStatusUsageParseFailed: "无法解析账户状态",
   slashStatusUsageError: "无法加载账户状态",
   usageChipLabel: "上下文 {{percent}}%",
   usageTooltipLabel: "上下文用量",

@@ -541,7 +541,7 @@ func visibleFailureContent(provider string, phase string, code string) string {
 	case "provider_stream_disconnected":
 		return fmt.Sprintf("%s response was interrupted before it completed. Try again in a moment.", name)
 	case "provider_empty_response":
-		return fmt.Sprintf("%s returned no response. Check its model and account configuration, including any API key, plan, or balance.", name)
+		return fmt.Sprintf("%s returned no response. Check the provider settings or try again.", name)
 	case "session_interrupted":
 		return fmt.Sprintf("%s stopped unexpectedly before it finished responding. Try again.", name)
 	case "request_timed_out":

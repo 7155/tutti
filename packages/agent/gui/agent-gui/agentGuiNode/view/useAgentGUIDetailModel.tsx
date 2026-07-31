@@ -516,7 +516,7 @@ export function useAgentGUIDetailModel(input: Input) {
       slashStatusUsageSubscriptionRequired:
         labels.slashStatusUsageSubscriptionRequired,
       slashStatusUsageQuotaExhausted: labels.slashStatusUsageQuotaExhausted,
-      slashStatusUsageConfigInvalid: labels.slashStatusUsageConfigInvalid,
+      slashStatusUsageParseFailed: labels.slashStatusUsageParseFailed,
       slashStatusUsageError: labels.slashStatusUsageError,
       usageChipLabel: labels.usageChipLabel,
       usageTooltipLabel: labels.usageTooltipLabel,
@@ -696,7 +696,7 @@ export function useAgentGUIDetailModel(input: Input) {
       labels.slashStatusUsageSessionExpired,
       labels.slashStatusUsageSubscriptionRequired,
       labels.slashStatusUsageQuotaExhausted,
-      labels.slashStatusUsageConfigInvalid,
+      labels.slashStatusUsageParseFailed,
       labels.slashStatusUsageError,
       labels.slashStatusSession,
       labels.slashStatusTitle,

@@ -7,7 +7,7 @@ type AgentGUIUsageStatusLabels = Pick<
   | "slashStatusUsageSessionExpired"
   | "slashStatusUsageSubscriptionRequired"
   | "slashStatusUsageQuotaExhausted"
-  | "slashStatusUsageConfigInvalid"
+  | "slashStatusUsageParseFailed"
   | "slashStatusUsageError"
 >;
 
@@ -27,8 +27,8 @@ export function agentGUIUsageStatusLabels(
     slashStatusUsageQuotaExhausted: t(
       "agentHost.agentGui.slashStatusUsageQuotaExhausted"
     ),
-    slashStatusUsageConfigInvalid: t(
-      "agentHost.agentGui.slashStatusUsageConfigInvalid"
+    slashStatusUsageParseFailed: t(
+      "agentHost.agentGui.slashStatusUsageParseFailed"
     ),
     slashStatusUsageError: t("agentHost.agentGui.slashStatusUsageError")
   };

@@ -24,7 +24,7 @@ export const zhCNAgentGuiRuntimeNotices = {
   visibleErrorStreamDisconnected:
     "{{provider}} 的响应在完成前被中断。请稍后重试。",
   visibleErrorEmptyResponse:
-    "{{provider}} 没有返回响应，请检查模型和账户配置，包括 API Key、套餐或余额",
+    "{{provider}} 没有返回响应，请检查提供商设置或重试",
   visibleErrorConcurrencyLimit:
     "{{provider}} 当前处理的请求过多。请在其他任务完成后再试。",
   visibleErrorInsufficientCreditsUnknown:

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type {
   AgentActivityUpdatedEventV1,
+  CollaborationRun,
   TuttidClient
 } from "@tutti-os/client-tuttid-ts";
 import { TuttidProtocolError } from "@tutti-os/client-tuttid-ts";
@@ -3794,32 +3795,9 @@ test("WorkspaceAgentActivityService exposes durable AutomationRule session overr
   ]);
 });
 
-function createCollaborationService(
-  fetchStub: typeof fetch
-): WorkspaceAgentActivityService {
-  // The collaboration/model-plan requests call the generated SDK directly with
-  // a client built from getBackendConfig; the stubbed global fetch observes
-  // the raw HTTP request.
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = fetchStub;
-  test.after(() => {
-    globalThis.fetch = originalFetch;
-  });
-  return new WorkspaceAgentActivityService({
-    tuttidClient: {} as TuttidClient,
-    runtimeApi: {
-      getBackendConfig: async () => ({
-        accessToken: "token-1",
-        baseUrl: "http://127.0.0.1:7777"
-      }),
-      logTerminalDiagnostic: async () => {}
-    }
-  });
-}
-
 function collaborationRunResponseBody(
   overrides: Record<string, unknown> = {}
-): Record<string, unknown> {
+): CollaborationRun {
   return {
     id: "run-1",
     workspaceId: "ws-1",
@@ -3838,39 +3816,42 @@ function collaborationRunResponseBody(
     createdAt: "2026-07-12T00:00:00.000Z",
     updatedAt: "2026-07-12T00:00:05.200Z",
     ...overrides
-  };
+  } as CollaborationRun;
 }
 
-test("WorkspaceAgentActivityService.setCollaborationAdoption posts the adoption decision", async () => {
-  const observedRequests: Array<{ body: unknown; url: string }> = [];
-  const service = createCollaborationService((async (
-    input: RequestInfo | URL,
-    init?: RequestInit
-  ) => {
-    const request = new Request(input, init);
-    observedRequests.push({ body: await request.json(), url: request.url });
-    return new Response(
-      JSON.stringify(collaborationRunResponseBody({ adoption: "adopted" })),
-      {
-        headers: { "Content-Type": "application/json" },
-        status: 200
+test("WorkspaceAgentActivityService.setCollaborationAdoption delegates to the canonical tuttid client", async () => {
+  const calls: Parameters<TuttidClient["setCollaborationRunAdoption"]>[] = [];
+  const abortController = new AbortController();
+  const service = new WorkspaceAgentActivityService({
+    tuttidClient: {
+      async setCollaborationRunAdoption(
+        ...args: Parameters<TuttidClient["setCollaborationRunAdoption"]>
+      ) {
+        calls.push(args);
+        return collaborationRunResponseBody({ adoption: "adopted" });
       }
-    );
-  }) as typeof fetch);
+    } as unknown as TuttidClient,
+    runtimeApi: { logTerminalDiagnostic: async () => {} }
+  });
 
   const run = await service.setCollaborationAdoption({
     adoption: "adopted",
     agentSessionId: "session-1",
     runId: "run-1",
-    workspaceId: "ws-1"
+    signal: abortController.signal,
+    workspaceId: " ws-1 "
   });
 
-  assert.equal(
-    observedRequests[0]?.url,
-    "http://127.0.0.1:7777/v1/workspaces/ws-1/collaboration-runs/run-1/adoption"
-  );
-  assert.deepEqual(observedRequests[0]?.body, { adoption: "adopted" });
+  assert.deepEqual(calls, [
+    [
+      "ws-1",
+      "run-1",
+      { adoption: "adopted" },
+      { signal: abortController.signal }
+    ]
+  ]);
   assert.equal(run.adoption, "adopted");
+  assert.equal(run.workspaceId, "ws-1");
 });
 
 test("WorkspaceAgentActivityService engine owns edit retry and authoritative reconcile", async () => {

@@ -129,9 +129,10 @@ const (
 type AuthCommandRunnerKind string
 
 const (
-	AuthCommandRunnerKindGeneric    AuthCommandRunnerKind = "generic"
-	AuthCommandRunnerKindClaudeGate AuthCommandRunnerKind = "claude_gate"
-	AuthCommandRunnerKindCursor     AuthCommandRunnerKind = "cursor"
+	AuthCommandRunnerKindGeneric               AuthCommandRunnerKind = "generic"
+	AuthCommandRunnerKindClaudeGate            AuthCommandRunnerKind = "claude_gate"
+	AuthCommandRunnerKindCodexAppServerAccount AuthCommandRunnerKind = "codex_app_server_account"
+	AuthCommandRunnerKindCursor                AuthCommandRunnerKind = "cursor"
 )
 
 type StaticSpecResolverKind string

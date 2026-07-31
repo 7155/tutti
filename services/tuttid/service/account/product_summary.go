@@ -76,6 +76,7 @@ func (s *Service) productSummary(ctx context.Context) (ProductSummary, error) {
 		PartialError:              remote.PartialError,
 		Links:                     links,
 	}
+	s.updateAnalyticsProductSummary(summary)
 	slog.Info("account product summary completed",
 		"event", "account.product_summary.completed",
 		"user_hash", accountLogHash(user.UserID),

@@ -45,7 +45,7 @@ type AgentSessionService interface {
 	Clear(context.Context, string) (agentservice.ClearSessionsResult, error)
 	Delete(context.Context, string, string) (agentservice.DeleteSessionResult, error)
 	CancelTurn(context.Context, string, string, string) (agentservice.CancelTurnResult, error)
-	GoalControl(ctx context.Context, workspaceID string, agentSessionID string, action string, objective string) (agentservice.GoalControlSessionResult, error)
+	GoalControl(ctx context.Context, workspaceID string, agentSessionID string, action string, objective string, clientSubmitID string) (agentservice.GoalControlSessionResult, error)
 	GetGoalState(context.Context, string, string) (agentservice.GoalStateSessionResult, error)
 	ReconcileGoal(context.Context, string, string) (agentservice.GoalStateSessionResult, error)
 	SendInput(context.Context, string, string, agentservice.SendInput) (agentservice.SendInputResult, error)

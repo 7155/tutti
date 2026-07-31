@@ -201,6 +201,53 @@ test("WorkspaceAgentActivityService.sendInput preserves the authoritative ready 
   assert.equal(snapshotSession?.activeTurn, null);
 });
 
+test("Desktop Engine applies send results without a host-side Session dispatch", async () => {
+  const readySession = workspaceAgentSession({ status: "ready" });
+  const observedIntentTypes: string[] = [];
+  const service = new WorkspaceAgentActivityService({
+    tuttidClient: {
+      listWorkspaceAgentSessions: async () => ({
+        hasMore: false,
+        sessions: [readySession],
+        workspaceId: "ws-1"
+      }),
+      sendWorkspaceAgentSessionInput: async () => ({
+        kind: "turn",
+        session: readySession,
+        turnId: "turn-1",
+        turn: workspaceAgentTurn({ phase: "submitted" })
+      })
+    } as unknown as TuttidClient,
+    runtimeApi: { logTerminalDiagnostic: async () => {} }
+  });
+  await service.load("ws-1");
+  service.addSessionEngineActivityObserver("ws-1", {
+    observeCommand() {},
+    observeIntent(intent) {
+      observedIntentTypes.push(intent.type);
+    }
+  });
+  const engine = service.getSessionEngine("ws-1");
+
+  assert.deepEqual(
+    engine.submitPrompt({
+      agentSessionId: "session-1",
+      clientSubmitId: "submit-1",
+      content: [{ type: "text", text: "continue" }]
+    }),
+    { accepted: true, queued: false }
+  );
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.ok(observedIntentTypes.includes("submit/requested"));
+  assert.ok(observedIntentTypes.includes("engine/commandResult"));
+  assert.equal(observedIntentTypes.includes("session/upserted"), false);
+  assert.equal(
+    selectEngineTurnsForSession(engine.getSnapshot(), "session-1")[0]?.phase,
+    "submitted"
+  );
+});
+
 test("WorkspaceAgentActivityService.cancelTurn delegates the exact turn", async () => {
   const calls: unknown[][] = [];
   const controller = new AbortController();
@@ -260,6 +307,14 @@ test("WorkspaceAgentActivityService.activateSession creates target-backed sessio
       status: "active"
     },
     mode: "new",
+    settings: {
+      browserUse: false,
+      model: "gpt-5",
+      permissionModeId: "auto",
+      planMode: true,
+      reasoningEffort: "high",
+      speed: "fast"
+    },
     title: "Shared Codex",
     visible: true,
     workspaceId: "ws-1"
@@ -282,19 +337,55 @@ test("WorkspaceAgentActivityService.activateSession creates target-backed sessio
         source: "slash_command",
         status: "active"
       },
-      model: null,
+      browserUse: false,
+      model: "gpt-5",
       noProject: null,
-      permissionModeId: null,
-      planMode: null,
-      reasoningEffort: null,
-      speed: null,
+      permissionModeId: "auto",
+      planMode: true,
+      reasoningEffort: "high",
+      speed: "fast",
       title: "Shared Codex",
       visible: true
     }
   });
 });
 
-test("WorkspaceAgentActivityService force-refreshes only the failed conversation provider before reporting availability", async () => {
+test("Desktop Engine applies activation results without a host-side Session dispatch", async () => {
+  const observedIntentTypes: string[] = [];
+  const service = new WorkspaceAgentActivityService({
+    tuttidClient: {
+      createWorkspaceAgentSession: async () =>
+        workspaceAgentSession({ status: "created" })
+    } as unknown as TuttidClient,
+    runtimeApi: { logTerminalDiagnostic: async () => {} }
+  });
+  service.addSessionEngineActivityObserver("ws-1", {
+    observeCommand() {},
+    observeIntent(intent) {
+      observedIntentTypes.push(intent.type);
+    }
+  });
+  const engine = service.getSessionEngine("ws-1");
+
+  assert.equal(
+    engine.activateSession({
+      agentSessionId: "session-1",
+      agentTargetId: "local:codex",
+      clientSubmitId: "submit-1",
+      mode: "new",
+      requestId: "activation-1"
+    }),
+    true
+  );
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.ok(selectEngineSession(engine.getSnapshot(), "session-1"));
+  assert.ok(observedIntentTypes.includes("activation/requested"));
+  assert.ok(observedIntentTypes.includes("engine/commandResult"));
+  assert.equal(observedIntentTypes.includes("session/upserted"), false);
+});
+
+test("Desktop Engine activation reports a failed conversation provider from the shared create effect", async (t) => {
   const refreshCalls: string[][] = [];
   const reporterEvents: ReporterEventInput[] = [];
   const service = new WorkspaceAgentActivityService({
@@ -340,16 +431,19 @@ test("WorkspaceAgentActivityService force-refreshes only the failed conversation
     } as unknown as TuttidClient,
     runtimeApi: { logTerminalDiagnostic: async () => {} }
   });
+  t.after(() => service.dispose());
 
-  await assert.rejects(
-    service.createSession({
+  const engine = service.getSessionEngine("ws-1");
+  assert.equal(
+    engine.activateSession({
       agentSessionId: "session-failed",
       agentTargetId: "target-cursor",
       clientSubmitId: "submit-failed",
       initialContent: [{ type: "text", text: "hello" }],
-      workspaceId: "ws-1"
+      mode: "new",
+      requestId: "activation-failed"
     }),
-    /provider launch failed/
+    true
   );
   await new Promise((resolve) => setImmediate(resolve));
 
@@ -438,6 +532,7 @@ test("WorkspaceAgentActivityService confirms engine activation from the realtime
     capabilityRefs: [{ capability: "tutti", source: "slash_command" }],
     clientSubmitId: "submit-1",
     expiresAtUnixMs: requestedAtUnixMs + 45_000,
+    initialGoalControl: { action: "set", objective: "ship it" },
     mode: "new",
     initialTuttiModeActivation: {
       effect: 73,
@@ -459,6 +554,7 @@ test("WorkspaceAgentActivityService confirms engine activation from the realtime
     cwd: null,
     initialContent: [],
     initialDisplayPrompt: null,
+    initialGoalControl: { action: "set", objective: "ship it" },
     initialTuttiModeActivation: {
       effect: 73,
       speed: 61,
@@ -825,9 +921,15 @@ test("WorkspaceAgentActivityService does not reinterpret a failed Turn as activa
 test("WorkspaceAgentActivityService returns the authoritative canonical session after settings update", async () => {
   const controller = new AbortController();
   let requestSignal: AbortSignal | undefined;
+  let requestSettings: unknown = null;
   const updatedSession = workspaceAgentSession({
     provider: "claude-code",
-    settings: { model: "opus", planMode: true },
+    settings: {
+      browserUse: false,
+      computerUse: true,
+      model: "opus",
+      planMode: true
+    },
     status: "waiting"
   });
   const service = new WorkspaceAgentActivityService({
@@ -835,6 +937,7 @@ test("WorkspaceAgentActivityService returns the authoritative canonical session 
       updateWorkspaceAgentSessionSettings: async (
         ...args: Parameters<TuttidClient["updateWorkspaceAgentSessionSettings"]>
       ) => {
+        requestSettings = args[2];
         requestSignal = args[3]?.signal ?? undefined;
         return updatedSession;
       }
@@ -845,13 +948,28 @@ test("WorkspaceAgentActivityService returns the authoritative canonical session 
   const result = await service.updateSessionSettings({
     agentSessionId: "session-1",
     signal: controller.signal,
-    settings: { model: "opus", planMode: true },
+    settings: {
+      browserUse: false,
+      computerUse: true,
+      model: "opus",
+      planMode: true
+    },
     workspaceId: "ws-1"
   });
 
   assert.equal(result.agentSessionId, "session-1");
   assert.equal(requestSignal, controller.signal);
+  assert.deepEqual(requestSettings, {
+    browserUse: false,
+    model: "opus",
+    permissionModeId: null,
+    planMode: true,
+    reasoningEffort: null,
+    speed: null
+  });
   assert.deepEqual(result.settings, {
+    browserUse: false,
+    computerUse: true,
     model: "opus",
     permissionModeId: null,
     planMode: true,
@@ -862,6 +980,8 @@ test("WorkspaceAgentActivityService returns the authoritative canonical session 
   assert.equal(result.session.agentSessionId, "session-1");
   assert.equal(result.session.provider, "claude-code");
   assert.deepEqual(result.session.settings, {
+    browserUse: false,
+    computerUse: true,
     model: "opus",
     planMode: true
   });
@@ -3299,6 +3419,7 @@ test("WorkspaceAgentActivityService preserves a pending new session when the Tut
     createdAtUnixMs: requestedAtUnixMs
   });
   await activationResolved;
+  await new Promise<void>((resolve) => setImmediate(resolve));
 
   assert.equal(
     selectEngineSession(engine.getSnapshot(), "session-1")?.provider,
@@ -3547,6 +3668,7 @@ function workspaceAgentTurn(
     completedCommand: null,
     error: null,
     fileChanges: null,
+    origin: "user_prompt" as const,
     phase: "running" as const,
     startedAtUnixMs: 1,
     turnId: "turn-1",

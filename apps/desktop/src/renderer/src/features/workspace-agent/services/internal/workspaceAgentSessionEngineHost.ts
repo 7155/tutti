@@ -3,6 +3,7 @@ import {
   createAgentSessionEngine,
   type AgentActivityAdapter,
   type AgentActivitySendInput,
+  type AgentSessionActivateEffectResult,
   type AgentSessionEngine,
   type EngineExternalCommand,
   type EngineIntent,
@@ -35,7 +36,9 @@ export interface WorkspaceAgentSessionEngineActivityObserver {
 
 interface CreateWorkspaceAgentSessionEngineHostInput {
   activityEventObserver?: WorkspaceAgentSessionEngineActivityObserver;
-  activateSession: AgentActivityRuntime["activateSession"];
+  activateSession(
+    input: Parameters<AgentActivityRuntime["activateSession"]>[0]
+  ): Promise<AgentSessionActivateEffectResult>;
   cancelTurn(input: {
     agentSessionId: string;
     signal?: AbortSignal;
@@ -148,6 +151,11 @@ export function createWorkspaceAgentSessionEngineHost(
           }),
         cancelTurn: (effectInput, options) =>
           input.cancelTurn({ ...effectInput, signal: options?.signal }),
+        controlGoal: (effectInput, options) =>
+          adapter.goalControl({
+            ...effectInput,
+            signal: options?.signal
+          }),
         deleteSessions: (effectInput, options) =>
           adapter.deleteSessions({
             ...effectInput,

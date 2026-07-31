@@ -44,10 +44,7 @@ import {
   consumeDesktopAgentGUIPrefillPromptActivation,
   type DesktopAgentGUIPrefillPromptRequest
 } from "../services/desktopAgentGUIPrefillPromptActivation.ts";
-import {
-  logAgentComposerDefaultsDiagnostic,
-  stringifyDiagnosticError
-} from "./desktopAgentGUIWorkbenchDiagnostics.ts";
+import { logAgentComposerDefaultsDiagnostic } from "./desktopAgentGUIWorkbenchDiagnostics.ts";
 import {
   hasDesktopAgentGUIConversationRailCollapsedState,
   resolveDesktopAgentGUIProviderForAgentTarget
@@ -119,6 +116,7 @@ function DesktopAgentGUISurfaceImpl({
   runtimeApi,
   trackAgentProviderChatReady,
   onEngagementEvent,
+  onConversationRailLayoutChange,
   trackWorkspaceFileReferences,
   workspaceFileReferenceAdapter,
   resolveExternalPromptEntries,
@@ -344,25 +342,6 @@ function DesktopAgentGUISurfaceImpl({
     },
     agentStatusSource
   );
-  const handleOpenSessionActivationError = useCallback(
-    (input: { agentSessionId: string; error: unknown }) => {
-      Toast.Error(
-        i18n.t("workspace.agentGui.openSessionUnavailableTitle"),
-        i18n.t("workspace.agentGui.openSessionUnavailableDescription")
-      );
-      void runtimeApi?.logTerminalDiagnostic({
-        details: {
-          agentSessionId: input.agentSessionId,
-          error: stringifyDiagnosticError(input.error)
-        },
-        event: "agent.gui.open_session_activation_failed",
-        level: "warn",
-        workspaceId
-      });
-    },
-    [i18n, runtimeApi, workspaceId]
-  );
-
   useEffect(() => {
     if (!provider) {
       return;
@@ -376,7 +355,6 @@ function DesktopAgentGUISurfaceImpl({
         handledOpenSessionActivationSequenceRef.current = sequence;
       },
       nodeId: surface.nodeId,
-      onActivationError: handleOpenSessionActivationError,
       onOpenSessionRequest: setOpenSessionRequest,
       onOpenSessionComposerRequest: setOpenSessionComposerRequest,
       // Persistence is owned by handleUpdateNode (the single writer).
@@ -396,7 +374,6 @@ function DesktopAgentGUISurfaceImpl({
     surface.activation,
     surface.host,
     surface.nodeId,
-    handleOpenSessionActivationError,
     handleUpdateNode,
     provider,
     agents,
@@ -657,6 +634,7 @@ function DesktopAgentGUISurfaceImpl({
       onUpdateNode: handleUpdateNode,
       onRememberComposerDefaults: handleRememberComposerDefaults,
       onEngagementEvent: onEngagementEvent,
+      onConversationRailLayoutChange,
       onOpenConversationWindow: !onOpenAgentConversationWindow
         ? undefined
         : handleOpenConversationWindow

@@ -632,12 +632,15 @@ type CreateSessionInput struct {
 	// dedicated session cannot regain commands outside that set.
 	CommandCapabilityProjection *runtimeprep.CommandCapabilityProjection
 	InitialContent              []PromptContentBlock
-	InitialDisplayPrompt        string
-	Metadata                    map[string]any
-	ClientSubmitID              string
-	Title                       *string
-	Cwd                         *string
-	PermissionModeID            *string
+	// InitialGoalControl is delegated to Host as a typed lifecycle command and
+	// never becomes an initial Turn.
+	InitialGoalControl   *agenthost.TypedGoalControl
+	InitialDisplayPrompt string
+	Metadata             map[string]any
+	ClientSubmitID       string
+	Title                *string
+	Cwd                  *string
+	PermissionModeID     *string
 	// StrictPermissionMode rejects an explicit unsupported permission mode
 	// instead of applying the provider default. It is used by unattended
 	// automation so a typo cannot silently broaden authority.

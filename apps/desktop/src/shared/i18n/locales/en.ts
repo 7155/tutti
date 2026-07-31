@@ -195,9 +195,6 @@ export const en = {
       newConversation: "New session",
       openNewWindow: "Open new window",
       untitledConversation: "Untitled conversation",
-      openSessionUnavailableDescription:
-        "This agent session no longer exists or cannot be opened.",
-      openSessionUnavailableTitle: "Session unavailable",
       sessionMenu: {
         copyAsMarkdown: "Copy as Markdown",
         copyAsReference: "Copy as reference",

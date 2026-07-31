@@ -63,6 +63,7 @@ type AgentActivityStore interface {
 	CompletePlanDecisionRuntimeOperation(context.Context, agentactivitybiz.CompletePlanDecisionRuntimeOperationInput) (agentactivitybiz.RuntimeOperationCompletion, bool, error)
 	FindTurnByClientSubmitID(context.Context, string, string, string) (string, bool, error)
 	PrepareGoalControlOperation(context.Context, agentactivitybiz.GoalControlOperationPrepare) (agentactivitybiz.GoalControlOperation, agentactivitybiz.SessionGoalState, bool, error)
+	AdoptProviderGoalOperation(context.Context, agentactivitybiz.ProviderGoalAdoption) (agentactivitybiz.GoalControlOperation, agentactivitybiz.SessionGoalState, bool, error)
 	GetGoalControlAudit(context.Context, string, string, string) (agentactivitybiz.Message, bool, error)
 	MarkGoalControlOperationDispatched(context.Context, string, string, int64) (agentactivitybiz.GoalControlOperation, bool, error)
 	AcknowledgeGoalControlOperation(context.Context, agentactivitybiz.GoalControlOperationAcknowledge) (agentactivitybiz.GoalControlOperation, agentactivitybiz.SessionGoalState, bool, error)

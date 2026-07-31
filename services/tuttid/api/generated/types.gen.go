@@ -2386,6 +2386,27 @@ func (e UpdateAgentSessionReplayTransportPlaybackRequestTimingMode) Valid() bool
 	}
 }
 
+// Defines values for WorkbenchLayoutPresetKind.
+const (
+	Balanced WorkbenchLayoutPresetKind = "balanced"
+	Column   WorkbenchLayoutPresetKind = "column"
+	Row      WorkbenchLayoutPresetKind = "row"
+)
+
+// Valid indicates whether the value is a known member of the WorkbenchLayoutPresetKind enum.
+func (e WorkbenchLayoutPresetKind) Valid() bool {
+	switch e {
+	case Balanced:
+		return true
+	case Column:
+		return true
+	case Row:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WorkbenchSnapshotSchemaVersion.
 const (
 	WorkbenchSnapshotSchemaVersionN1 WorkbenchSnapshotSchemaVersion = 1
@@ -2599,6 +2620,30 @@ func (e WorkspaceAgentEditRetryResponseState) Valid() bool {
 	case WorkspaceAgentEditRetryResponseStateResendPending:
 		return true
 	case WorkspaceAgentEditRetryResponseStateRollingBack:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkspaceAgentInitialGoalControlAction.
+const (
+	WorkspaceAgentInitialGoalControlActionClear  WorkspaceAgentInitialGoalControlAction = "clear"
+	WorkspaceAgentInitialGoalControlActionPause  WorkspaceAgentInitialGoalControlAction = "pause"
+	WorkspaceAgentInitialGoalControlActionResume WorkspaceAgentInitialGoalControlAction = "resume"
+	WorkspaceAgentInitialGoalControlActionSet    WorkspaceAgentInitialGoalControlAction = "set"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceAgentInitialGoalControlAction enum.
+func (e WorkspaceAgentInitialGoalControlAction) Valid() bool {
+	switch e {
+	case WorkspaceAgentInitialGoalControlActionClear:
+		return true
+	case WorkspaceAgentInitialGoalControlActionPause:
+		return true
+	case WorkspaceAgentInitialGoalControlActionResume:
+		return true
+	case WorkspaceAgentInitialGoalControlActionSet:
 		return true
 	default:
 		return false
@@ -5194,6 +5239,9 @@ type CreateWorkspaceAgentSessionRequest struct {
 	// InitialDisplayPrompt Optional display-only text for the first turn (e.g. a folder bundle shown as one chip while initialContent carries the expanded files).
 	InitialDisplayPrompt *string `json:"initialDisplayPrompt,omitempty"`
 
+	// InitialGoalControl Optional typed Goal Control applied after the Session is created without opening an initial Turn. Must not be combined with non-empty initialContent.
+	InitialGoalControl *WorkspaceAgentInitialGoalControl `json:"initialGoalControl,omitempty"`
+
 	// InitialTuttiModeActivation Optional independent Tutti mode activation intent applied before the first turn starts.
 	InitialTuttiModeActivation *TuttiModeActivationIntent `json:"initialTuttiModeActivation,omitempty"`
 	Model                      *string                    `json:"model,omitempty"`
@@ -6505,7 +6553,7 @@ type RollbackWorkspaceAppRequest struct {
 
 // SendWorkspaceAgentSessionInputGoalControlResponse defines model for SendWorkspaceAgentSessionInputGoalControlResponse.
 type SendWorkspaceAgentSessionInputGoalControlResponse struct {
-	Goal      *WorkspaceAgentSessionGoal                            `json:"goal,omitempty"`
+	Goal      *WorkspaceAgentSessionGoal                            `json:"goal"`
 	GoalState *WorkspaceAgentSessionGoalState                       `json:"goalState,omitempty"`
 	Kind      SendWorkspaceAgentSessionInputGoalControlResponseKind `json:"kind"`
 
@@ -6985,6 +7033,29 @@ type WorkbenchLayoutConstraints struct {
 	SurfacePadding float32           `json:"surfacePadding"`
 }
 
+// WorkbenchLayoutPreset defines model for WorkbenchLayoutPreset.
+type WorkbenchLayoutPreset struct {
+	Kind WorkbenchLayoutPresetKind `json:"kind"`
+}
+
+// WorkbenchLayoutPresetKind defines model for WorkbenchLayoutPreset.Kind.
+type WorkbenchLayoutPresetKind string
+
+// WorkbenchLockedLayout defines model for WorkbenchLockedLayout.
+type WorkbenchLockedLayout struct {
+	NodeIDs          []string                             `json:"nodeIDs"`
+	NormalizedFrames *map[string]WorkbenchNormalizedFrame `json:"normalizedFrames,omitempty"`
+	Preset           WorkbenchLayoutPreset                `json:"preset"`
+}
+
+// WorkbenchNormalizedFrame defines model for WorkbenchNormalizedFrame.
+type WorkbenchNormalizedFrame struct {
+	Height float32 `json:"height"`
+	Width  float32 `json:"width"`
+	X      float32 `json:"x"`
+	Y      float32 `json:"y"`
+}
+
 // WorkbenchSafeArea defines model for WorkbenchSafeArea.
 type WorkbenchSafeArea struct {
 	Bottom float32 `json:"bottom"`
@@ -7004,6 +7075,7 @@ type WorkbenchSnapshot struct {
 	ActiveNodeId  *string                        `json:"activeNodeId,omitempty"`
 	ActiveSpaceId *string                        `json:"activeSpaceId,omitempty"`
 	LayoutBasis   *WorkbenchLayoutBasis          `json:"layoutBasis,omitempty"`
+	LockedLayout  *WorkbenchLockedLayout         `json:"lockedLayout,omitempty"`
 	Metadata      *map[string]interface{}        `json:"metadata,omitempty"`
 	NodeStack     *[]string                      `json:"nodeStack,omitempty"`
 	Nodes         []WorkbenchSnapshotNode        `json:"nodes"`
@@ -7186,6 +7258,15 @@ type WorkspaceAgentHarness struct {
 	Name      *string              `json:"name,omitempty"`
 	Provider  *AgentTargetProvider `json:"provider,omitempty"`
 }
+
+// WorkspaceAgentInitialGoalControl defines model for WorkspaceAgentInitialGoalControl.
+type WorkspaceAgentInitialGoalControl struct {
+	Action    WorkspaceAgentInitialGoalControlAction `json:"action"`
+	Objective *string                                `json:"objective,omitempty"`
+}
+
+// WorkspaceAgentInitialGoalControlAction defines model for WorkspaceAgentInitialGoalControl.Action.
+type WorkspaceAgentInitialGoalControlAction string
 
 // WorkspaceAgentInteraction Protocol v2 interaction entity. An agent-initiated approval, question, or plan confirmation raised during a turn. Pending means present in a collection with status pending; replaces the tri-state null pendingInteractive protocol.
 type WorkspaceAgentInteraction struct {
@@ -7462,8 +7543,11 @@ type WorkspaceAgentSessionGoalStatus string
 
 // WorkspaceAgentSessionGoalControlRequest defines model for WorkspaceAgentSessionGoalControlRequest.
 type WorkspaceAgentSessionGoalControlRequest struct {
-	Action    WorkspaceAgentSessionGoalControlRequestAction `json:"action"`
-	Objective *string                                       `json:"objective,omitempty"`
+	Action WorkspaceAgentSessionGoalControlRequestAction `json:"action"`
+
+	// ClientSubmitId Caller-stable idempotency identity for this Goal Control mutation.
+	ClientSubmitId *string `json:"clientSubmitId,omitempty"`
+	Objective      *string `json:"objective,omitempty"`
 }
 
 // WorkspaceAgentSessionGoalControlRequestAction defines model for WorkspaceAgentSessionGoalControlRequest.Action.
@@ -7471,7 +7555,7 @@ type WorkspaceAgentSessionGoalControlRequestAction string
 
 // WorkspaceAgentSessionGoalControlResponse defines model for WorkspaceAgentSessionGoalControlResponse.
 type WorkspaceAgentSessionGoalControlResponse struct {
-	Goal *WorkspaceAgentSessionGoal `json:"goal,omitempty"`
+	Goal *WorkspaceAgentSessionGoal `json:"goal"`
 
 	// OperationId Durable GoalControlOperation identity; null only for compatibility runtimes without a goal store.
 	OperationId *string                         `json:"operationId,omitempty"`

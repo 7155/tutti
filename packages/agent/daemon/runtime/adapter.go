@@ -262,6 +262,18 @@ type GoalProvenanceDurableSinkAdapter interface {
 	SetGoalProvenanceDurableSink(GoalProvenanceDurableSink)
 }
 
+type ProviderGoalAdoptionRequest struct {
+	Fingerprint      string
+	ExpectedRevision int64
+	Goal             map[string]any
+}
+
+type ProviderGoalAdoptionSink func(context.Context, Session, ProviderGoalAdoptionRequest) (GoalProvenanceBinding, error)
+
+type ProviderGoalAdoptionSinkAdapter interface {
+	SetProviderGoalAdoptionSink(ProviderGoalAdoptionSink)
+}
+
 type ConfigOptionsUpdateSinkAdapter interface {
 	SetConfigOptionsUpdateSink(ConfigOptionsUpdateSink)
 }

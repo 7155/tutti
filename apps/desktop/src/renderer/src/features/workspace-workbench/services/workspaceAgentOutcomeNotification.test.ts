@@ -12,6 +12,7 @@ import type { NotificationMessage } from "@tutti-os/ui-notifications";
 import {
   buildWorkspaceAgentOutcomeNotificationFromSettledTurn,
   createWorkspaceAgentOutcomeNotificationController,
+  type WorkspaceAgentOutcomeForegroundNotification,
   workspaceAgentOutcomeNotificationKey
 } from "./workspaceAgentOutcomeNotification.ts";
 
@@ -22,6 +23,7 @@ test("outcome builder projects canonical completed and failed settled turns", ()
       turn: canonicalTurn("settled", "completed")
     }),
     {
+      agentTargetId: "local:codex",
       agentSessionId: "session-1",
       conversationTitle: "Build feature",
       level: "success",
@@ -58,7 +60,7 @@ test("controller treats settled turns already in the engine as history", () => {
   harness.controller.dispose();
 });
 
-test("controller notifies a new turn that first appears settled in one engine batch", () => {
+test("controller notifies a new turn that first appears settled in one engine batch", async () => {
   const engine = createTestEngine();
   markWorkspaceReconcileReady(engine);
   const harness = createOutcomeNotificationHarness(engine);
@@ -66,12 +68,13 @@ test("controller notifies a new turn that first appears settled in one engine ba
   harness.events[0]?.(turnUpdateEvent("settled", "completed"));
   dispatchSession(engine);
   dispatchTurn(engine, "settled", "completed");
+  await settleOutcomeNotifications();
 
   assert.equal(harness.notifications.length, 1);
   harness.controller.dispose();
 });
 
-test("controller baselines settled turns received during initial hydration", () => {
+test("controller baselines settled turns received during initial hydration", async () => {
   const engine = createTestEngine();
   const harness = createOutcomeNotificationHarness(engine);
 
@@ -86,11 +89,12 @@ test("controller baselines settled turns received during initial hydration", () 
   dispatchTurn(engine, "running", undefined, "new-turn");
   dispatchTurn(engine, "settled", "completed", "new-turn");
   harness.events[0]?.(turnUpdateEvent("settled", "completed", "new-turn"));
+  await settleOutcomeNotifications();
   assert.equal(harness.notifications.length, 1);
   harness.controller.dispose();
 });
 
-test("controller notifies once for a canonical running to settled transition", () => {
+test("controller notifies once for a canonical running to settled transition", async () => {
   const engine = createTestEngine();
   dispatchSession(engine);
   markWorkspaceReconcileReady(engine);
@@ -100,9 +104,11 @@ test("controller notifies once for a canonical running to settled transition", (
   dispatchTurn(engine, "settled", "completed");
   harness.events[0]?.(turnUpdateEvent("settled", "completed"));
   dispatchTurn(engine, "settled", "completed");
+  await settleOutcomeNotifications();
 
   assert.deepEqual(harness.foregroundNotifications, [
     {
+      agentIconUrl: "agent-icon://codex",
       agentName: "Codex",
       agentSessionId: "session-1",
       body: "The agent finished this run.",
@@ -118,6 +124,72 @@ test("controller notifies once for a canonical running to settled transition", (
   assert.equal(harness.notifications.length, 1);
   assert.equal(harness.notifications[0]?.title, "Build feature completed");
 
+  harness.controller.dispose();
+});
+
+test("controller uses the exact Agent Target name and icon for extension outcomes", async () => {
+  const engine = createTestEngine();
+  dispatchSession(engine, {
+    agentTargetId: "extension:kimi-code",
+    provider: "acp:kimi-code"
+  });
+  markWorkspaceReconcileReady(engine);
+  const harness = createOutcomeNotificationHarness(engine);
+
+  dispatchTurn(engine, "running");
+  dispatchTurn(engine, "settled", "completed");
+  harness.events[0]?.(turnUpdateEvent("settled", "completed"));
+  await settleOutcomeNotifications();
+
+  assert.deepEqual(harness.foregroundNotifications, [
+    {
+      agentIconUrl: "agent-icon://kimi-code",
+      agentName: "Kimi Code",
+      agentSessionId: "session-1",
+      body: "The agent finished this run.",
+      closeLabel: "Close",
+      conversationTitle: "Build feature",
+      level: "success",
+      provider: "acp:kimi-code",
+      statusLabel: "Completed",
+      turnId: "turn-1",
+      workspaceId: "ws-1"
+    }
+  ]);
+  harness.controller.dispose();
+});
+
+test("controller waits for Agent Directory readiness before emitting outcomes", async () => {
+  const engine = createTestEngine();
+  dispatchSession(engine, {
+    agentTargetId: "workspace-agent:reviewer"
+  });
+  markWorkspaceReconcileReady(engine);
+  const directoryLoad = createDeferred<void>();
+  const harness = createOutcomeNotificationHarness(engine, {
+    directoryLoad: directoryLoad.promise
+  });
+
+  dispatchTurn(engine, "running");
+  dispatchTurn(engine, "settled", "completed");
+  harness.events[0]?.(turnUpdateEvent("settled", "completed"));
+
+  assert.equal(harness.agentDirectoryLoadCalls.length, 1);
+  assert.equal(harness.foregroundNotifications.length, 0);
+  assert.deepEqual(harness.notifications, []);
+
+  directoryLoad.resolve();
+  await settleOutcomeNotifications();
+
+  assert.equal(harness.notifications.length, 1);
+  assert.equal(
+    harness.foregroundNotifications[0]?.agentName,
+    "Workspace Reviewer"
+  );
+  assert.equal(
+    harness.foregroundNotifications[0]?.agentIconUrl,
+    "agent-icon://workspace-reviewer"
+  );
   harness.controller.dispose();
 });
 
@@ -142,7 +214,7 @@ test("session messages never synthesize outcomes", () => {
   harness.controller.dispose();
 });
 
-test("controller uses the canonical engine session title", () => {
+test("controller uses the canonical engine session title", async () => {
   const engine = createTestEngine();
   dispatchSession(engine);
   markWorkspaceReconcileReady(engine);
@@ -151,6 +223,7 @@ test("controller uses the canonical engine session title", () => {
   dispatchTurn(engine, "running");
   dispatchTurn(engine, "settled", "completed");
   harness.events[0]?.(turnUpdateEvent("settled", "completed"));
+  await settleOutcomeNotifications();
 
   assert.equal(harness.notifications[0]?.title, "Build feature completed");
   harness.controller.dispose();
@@ -189,8 +262,14 @@ function createTestEngine(): AgentSessionEngine {
   });
 }
 
-function dispatchSession(engine: AgentSessionEngine): void {
-  engine.dispatch({ session: activitySession(), type: "session/upserted" });
+function dispatchSession(
+  engine: AgentSessionEngine,
+  overrides: Partial<AgentActivitySession> = {}
+): void {
+  engine.dispatch({
+    session: { ...activitySession(), ...overrides },
+    type: "session/upserted"
+  });
 }
 
 function dispatchTurn(
@@ -261,6 +340,7 @@ function activitySession(): AgentActivitySession {
     },
     activeTurn: null,
     agentSessionId: "session-1",
+    agentTargetId: "local:codex",
     cwd: "/workspace",
     provider: "codex",
     title: "Build feature",
@@ -283,18 +363,53 @@ function turnUpdateEvent(
     eventType: "turn_update"
   };
 }
-function createOutcomeNotificationHarness(engine: AgentSessionEngine): {
+function createOutcomeNotificationHarness(
+  engine: AgentSessionEngine,
+  options: {
+    directoryLoad?: Promise<void>;
+  } = {}
+): {
+  agentDirectoryLoadCalls: string[];
   controller: ReturnType<
     typeof createWorkspaceAgentOutcomeNotificationController
   >;
   events: Array<(event: unknown) => void>;
-  foregroundNotifications: unknown[];
+  foregroundNotifications: WorkspaceAgentOutcomeForegroundNotification[];
   notifications: NotificationMessage[];
 } {
   const events: Array<(event: unknown) => void> = [];
-  const foregroundNotifications: unknown[] = [];
+  const foregroundNotifications: WorkspaceAgentOutcomeForegroundNotification[] =
+    [];
   const notifications: NotificationMessage[] = [];
+  const agentDirectoryLoadCalls: string[] = [];
   const controller = createWorkspaceAgentOutcomeNotificationController({
+    agentDirectory: {
+      getAgentPresentation({ agentTargetId }) {
+        switch (agentTargetId) {
+          case "local:codex":
+            return {
+              iconUrl: "agent-icon://codex",
+              name: "Codex"
+            };
+          case "extension:kimi-code":
+            return {
+              iconUrl: "agent-icon://kimi-code",
+              name: "Kimi Code"
+            };
+          case "workspace-agent:reviewer":
+            return {
+              iconUrl: "agent-icon://workspace-reviewer",
+              name: "Workspace Reviewer"
+            };
+          default:
+            return null;
+        }
+      },
+      load() {
+        agentDirectoryLoadCalls.push("load");
+        return options.directoryLoad ?? Promise.resolve();
+      }
+    },
     foreground: {
       show(notification) {
         foregroundNotifications.push(notification);
@@ -328,5 +443,30 @@ function createOutcomeNotificationHarness(engine: AgentSessionEngine): {
     },
     workspaceId: "ws-1"
   });
-  return { controller, events, foregroundNotifications, notifications };
+  return {
+    agentDirectoryLoadCalls,
+    controller,
+    events,
+    foregroundNotifications,
+    notifications
+  };
+}
+
+async function settleOutcomeNotifications(): Promise<void> {
+  await Promise.resolve();
+}
+
+function createDeferred<T>(): {
+  promise: Promise<T>;
+  resolve(value: T): void;
+} {
+  let resolvePromise!: (value: T) => void;
+  return {
+    promise: new Promise<T>((resolve) => {
+      resolvePromise = resolve;
+    }),
+    resolve(value) {
+      resolvePromise(value);
+    }
+  };
 }

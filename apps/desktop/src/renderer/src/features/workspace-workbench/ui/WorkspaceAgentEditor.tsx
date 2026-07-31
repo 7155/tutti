@@ -1,3 +1,4 @@
+import { useComposedInputValue } from "@tutti-os/ui-react-hooks";
 import {
   Button,
   CloseIcon,
@@ -82,6 +83,10 @@ export function WorkspaceAgentEditor({
     protocol,
     draft.modelPlanId
   );
+  const nameInput = useComposedInputValue({
+    onCommit: (name) => onUpdate({ name }),
+    value: draft.name
+  });
   const selectedPlan =
     compatiblePlans.find((plan) => plan.id === draft.modelPlanId) ?? null;
   const editing = draft.agentId !== null;
@@ -120,8 +125,11 @@ export function WorkspaceAgentEditor({
           <Input
             placeholder={t("workspace.settings.apps.agents.namePlaceholder")}
             type="text"
-            value={draft.name}
-            onChange={(event) => onUpdate({ name: event.currentTarget.value })}
+            value={nameInput.value}
+            onBlur={nameInput.onBlur}
+            onChange={nameInput.onChange}
+            onCompositionEnd={nameInput.onCompositionEnd}
+            onCompositionStart={nameInput.onCompositionStart}
           />
         </label>
 

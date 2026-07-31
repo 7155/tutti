@@ -1,6 +1,6 @@
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
-import type { AgentActivityRuntime } from "../../../agentActivityRuntime";
+import type { AgentGUIRuntime } from "../../../agentActivityRuntime";
 import { subscribe, subscribeCoalesced } from "../../../host/agentHostEventBus";
 import type {
   AgentSessionComposerSettings,
@@ -25,7 +25,7 @@ export function useAgentGUIComposerOptionsSync(input: {
   activeConversationId: string | null;
   activeConversationIdRef: RefObject<string | null>;
   activeSessionTarget: AgentGUIActiveSessionTarget | null;
-  agentActivityRuntime: AgentActivityRuntime;
+  agentActivityRuntime: AgentGUIRuntime;
   composerTargetData: AgentGUIComposerTargetData;
   conversationFilter: unknown;
   currentUserId: string | null | undefined;

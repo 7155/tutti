@@ -405,7 +405,7 @@ application adapter instead.
 It owns:
 
 - `AgentGUI`
-- `AgentActivityRuntime` provider and hooks
+- the `AgentGUIRuntime` provider and hooks used by AgentGUI
 - Agent GUI workbench node UI
 - session list and detail rendering
 - timeline, tool call, approval, and interactive prompt presentation
@@ -439,8 +439,11 @@ through the same exact target and shared prompt surface.
 
 It may depend on `@tutti-os/agent-activity-core`.
 
-Agent GUI must read and write agent session/activity data through
-`AgentActivityRuntime`. The effective `AgentHostApi` is limited to host
+Agent GUI reads activity data and resolves the workspace Engine through
+`AgentGUIRuntime`; lifecycle writes use semantic Engine methods or typed
+intents. The runtime has no duplicate activation, submit, Goal, Interaction,
+settings, Tutti Mode, or unactivation callbacks. The effective `AgentHostApi`
+is limited to host
 capabilities such as files, clipboard, runtime metadata, account/project
 lookup, diagnostics, setup, and OS/Workbench helpers. Its input type still
 accepts a legacy `agentSessions` shape, but `toAgentHostRuntimeApi` strips that
@@ -450,7 +453,7 @@ activity data. The desktop adapter combines the developer-gated preference,
 the generated `tuttid` client, and global invalidation events behind
 `AgentHostApi.quickPrompts`. AgentGUI may subscribe to that capability to render
 the composer picker and management dialogs, but quick-prompt entities must not
-be copied into `AgentActivityRuntime`, a workspace engine, a Session, or a Turn.
+be copied into `AgentGUIRuntime`, a workspace engine, a Session, or a Turn.
 The daemon remains authoritative for durable prompt records and optimistic
 version conflicts; event payloads are content-free refresh hints.
 Quick-prompt ordering follows the same boundary: `tuttid` stores a dense
@@ -464,7 +467,7 @@ applied, rollback means disabling the quick-prompt feature flag or reverting
 the renderer surface; do not run an older daemon writer against that database.
 Older writers do not maintain `sort_order`, so binary daemon downgrade followed
 by create/delete is not a supported recovery path.
-Conversation rail sections are also an `AgentActivityRuntime` contract:
+Conversation rail sections are also an `AgentGUIRuntime` contract:
 AgentGUI calls `listSessionSections` for the first page of every returned rail
 section and `listSessionSectionPage` for Show more by `sectionKey` and cursor.
 Hosts must pass those calls through to the daemon section endpoints so project
@@ -498,12 +501,12 @@ retained in a second host Rail entity store. Hosts retain only transport
 mapping, runtime-availability policy, surface lifecycle, presentation, and
 host-specific refresh cadence such as Mobile disconnected polling.
 The pure Rail contracts are the canonical source for both the controller and
-the compatibility-named `AgentActivityRuntime` Rail aliases. The public
+the `AgentGUIRuntime` Rail aliases. The public
 controller snapshot exposes memberships, ordered ids, pagination, search, and
 request state only; Desktop joins it with Engine state for localized
 conversation summaries outside the headless entrypoint. Resolved cache entries
 are shared by controllers created for the same workspace Engine; the factory,
-not `AgentActivityRuntime` or a host adapter, owns that registry. The cache
+not `AgentGUIRuntime` or a host adapter, owns that registry. The cache
 implementation has no published AgentGUI subpath. In-flight first-page entity
 payloads stay scoped to one attached controller generation so an obsolete mount
 cannot ingest or cache them.
@@ -739,8 +742,9 @@ paths must not call `workspaceAgents.list`,
 `workspaceAgents.listSessionMessages`, `agentSessions.retainEventStream`, or
 `agentSessions.subscribeEvents` directly. Production write paths must not call
 `agentSessions.exec`, `agentSessions.cancel`,
-`agentSessions.submitInteractive`, or `agentSessions.pinSession`; use
-`AgentActivityRuntime` instead. Legacy host DTOs are allowlisted only in the
+`agentSessions.submitInteractive`, or `agentSessions.pinSession`; lifecycle
+writes use the workspace `AgentSessionEngine`, while metadata actions still
+exposed to AgentGUI use `AgentGUIRuntime`. Legacy host DTOs are allowlisted only in the
 host API contract, explicit projection helpers, and message merge/page-loading
 helpers that accept runtime-shaped adapters.
 
@@ -926,8 +930,7 @@ It owns:
 - business-event WebSocket connection implementation
 - backend base URL and authentication details
 - preload/runtime/file adapters
-- `IWorkspaceAgentActivityService` and the desktop
-  `AgentActivityRuntime` wrapper
+- `IWorkspaceAgentActivityService` and the desktop `AgentGUIRuntime` wrapper
 - workspace chrome placement
 - workbench contribution wiring
 - desktop i18n overrides
@@ -1028,7 +1031,7 @@ addition to its session and turn id. Desktop adapters must reject a successful
 transport response that omits that turn; they must not reconstruct it from the
 deprecated session-level lifecycle or submit-availability fields.
 
-`AgentActivityRuntime.activateSession` requires `agentTargetId` for
+`AgentSessionActivateEffectInput` requires `agentTargetId` for
 `mode: "new"`. Shared UI passes it through unchanged; trusted host or daemon code
 resolves it against `agent_targets`, validates enabled state and launch ref
 shape, and derives the execution `provider` and runtime `providerTargetRef`
@@ -1444,7 +1447,8 @@ For Agent GUI behavior:
 - focused tests for working, waiting, completed, failed, and needs-attention
   states
 - tests that AgentGUI list/detail and write operations use
-  `AgentActivityRuntime` when provided
+  `AgentGUIRuntime` when provided, with lifecycle writes asserted through the
+  workspace Engine
 
 For runtime boundary enforcement:
 

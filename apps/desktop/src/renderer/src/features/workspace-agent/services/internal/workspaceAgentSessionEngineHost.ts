@@ -2,7 +2,11 @@ import {
   AGENT_SESSION_ENGINE_LOCAL_ORIGIN,
   createAgentSessionEngine,
   type AgentActivityAdapter,
+  type AgentActivityGoalControlInput,
+  type AgentActivityGoalControlResult,
   type AgentActivitySendInput,
+  type AgentActivitySubmitInteractiveInput,
+  type AgentActivitySubmitInteractiveResult,
   type AgentSessionActivateEffectResult,
   type AgentSessionEngine,
   type EngineEffectOptions,
@@ -13,7 +17,7 @@ import {
   type SessionReconcileCommand,
   type TuttiModeActivationUpdateCommand
 } from "@tutti-os/agent-activity-core";
-import type { AgentActivityRuntime } from "@tutti-os/agent-gui";
+import type { AgentActivityRuntimeActivateSessionInput } from "@tutti-os/agent-gui";
 import type { TuttidClient } from "@tutti-os/client-tuttid-ts";
 import type { DesktopRuntimeApi } from "@preload/types";
 import type { AgentHostAgentSessionComposerSettings } from "@shared/contracts/dto";
@@ -26,6 +30,7 @@ import {
   writeDesktopWorkspaceAgentReadState
 } from "../createDesktopAgentHostApi.ts";
 import { editRetryResultFromTuttid } from "./workspaceAgentEditRetry.ts";
+import type { IWorkspaceAgentActivityService } from "../workspaceAgentActivityService.interface.ts";
 
 export interface WorkspaceAgentSessionEngineHost {
   adapter: AgentActivityAdapter;
@@ -42,7 +47,7 @@ export interface WorkspaceAgentSessionEngineActivityObserver {
 interface CreateWorkspaceAgentSessionEngineHostInput {
   activityEventObserver?: WorkspaceAgentSessionEngineActivityObserver;
   executeEngineActivateSession(
-    input: Parameters<AgentActivityRuntime["activateSession"]>[0],
+    input: AgentActivityRuntimeActivateSessionInput,
     options: EngineEffectOptions
   ): Promise<AgentSessionActivateEffectResult>;
   executeEngineCancelTurn(
@@ -55,9 +60,9 @@ interface CreateWorkspaceAgentSessionEngineHostInput {
     options: EngineEffectOptions
   ): Promise<unknown>;
   executeEngineGoalControl(
-    input: Parameters<AgentActivityRuntime["goalControl"]>[0],
+    input: AgentActivityGoalControlInput,
     options?: EngineEffectOptions
-  ): ReturnType<AgentActivityRuntime["goalControl"]>;
+  ): Promise<AgentActivityGoalControlResult>;
   reconcileSession(
     command: SessionReconcileCommand,
     signal?: AbortSignal
@@ -73,9 +78,9 @@ interface CreateWorkspaceAgentSessionEngineHostInput {
     options: EngineEffectOptions
   ): Promise<unknown>;
   executeEngineSubmitInteractive(
-    input: Parameters<AgentActivityRuntime["submitInteractive"]>[0],
+    input: AgentActivitySubmitInteractiveInput,
     options: EngineEffectOptions
-  ): ReturnType<AgentActivityRuntime["submitInteractive"]>;
+  ): Promise<AgentActivitySubmitInteractiveResult>;
   executeEngineSubmitPlanDecision(
     input: {
       action: "implement";
@@ -92,12 +97,14 @@ interface CreateWorkspaceAgentSessionEngineHostInput {
     workspaceId: string,
     listener: (event: unknown) => void
   ): () => void;
-  unactivateSession: AgentActivityRuntime["unactivateSession"];
+  unactivateSession: IWorkspaceAgentActivityService["unactivateSession"];
   executeEngineUpdateSessionSettings(
-    input: Parameters<AgentActivityRuntime["updateSessionSettings"]>[0],
+    input: Parameters<
+      IWorkspaceAgentActivityService["updateSessionSettings"]
+    >[0],
     options: EngineEffectOptions
-  ): ReturnType<AgentActivityRuntime["updateSessionSettings"]>;
-  updateTuttiModeActivation: AgentActivityRuntime["updateTuttiModeActivation"];
+  ): ReturnType<IWorkspaceAgentActivityService["updateSessionSettings"]>;
+  updateTuttiModeActivation: IWorkspaceAgentActivityService["updateTuttiModeActivation"];
   tuttidClient: TuttidClient;
   workspaceId: string;
 }

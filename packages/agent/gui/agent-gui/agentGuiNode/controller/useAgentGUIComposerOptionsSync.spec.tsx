@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { AgentActivityRuntime } from "../../../agentActivityRuntime";
+import type { AgentGUIRuntime } from "../../../agentActivityRuntime";
 import type { AgentGUIProvider, AgentGUINodeData } from "../../../types";
 import { setAgentHostApiForTests } from "../../../agentActivityHost";
 import type { AgentHostRuntimeApi } from "../../../host/agentHostApi";
@@ -33,7 +33,7 @@ describe("useAgentGUIComposerOptionsSync", () => {
           agentActivityRuntime: {
             getComposerOptions,
             getSnapshot: () => ({ composerOptionsByTargetKey })
-          } as unknown as AgentActivityRuntime,
+          } as unknown as AgentGUIRuntime,
           composerTargetData: target,
           conversationFilter: null,
           currentUserId: "user-1",
@@ -129,7 +129,7 @@ describe("useAgentGUIComposerOptionsSync", () => {
           agentActivityRuntime: {
             getComposerOptions,
             getSnapshot: () => ({})
-          } as unknown as AgentActivityRuntime,
+          } as unknown as AgentGUIRuntime,
           composerTargetData: target,
           conversationFilter: null,
           currentUserId: "user-1",
@@ -191,7 +191,7 @@ describe("useAgentGUIComposerOptionsSync", () => {
           agentActivityRuntime: {
             getComposerOptions,
             getSnapshot: () => ({})
-          } as unknown as AgentActivityRuntime,
+          } as unknown as AgentGUIRuntime,
           composerTargetData: target,
           conversationFilter: null,
           currentUserId: "user-1",
@@ -256,7 +256,7 @@ describe("useAgentGUIComposerOptionsSync", () => {
         agentActivityRuntime: {
           getComposerOptions,
           getSnapshot: () => ({})
-        } as unknown as AgentActivityRuntime,
+        } as unknown as AgentGUIRuntime,
         composerTargetData: selectedTarget,
         conversationFilter: null,
         currentUserId: "user-1",
@@ -325,7 +325,7 @@ describe("useAgentGUIComposerOptionsSync", () => {
         agentActivityRuntime: {
           getComposerOptions,
           getSnapshot: () => ({})
-        } as unknown as AgentActivityRuntime,
+        } as unknown as AgentGUIRuntime,
         composerTargetData: target,
         conversationFilter: null,
         currentUserId: "user-1",
@@ -451,7 +451,7 @@ describe("useAgentGUIComposerOptionsSync", () => {
               "local:opencode": cachedOptions
             }
           })
-        } as unknown as AgentActivityRuntime,
+        } as unknown as AgentGUIRuntime,
         composerTargetData: target,
         conversationFilter: null,
         currentUserId: "user-1",
@@ -522,7 +522,7 @@ describe("useAgentGUIComposerOptionsSync", () => {
         agentActivityRuntime: {
           getComposerOptions,
           getSnapshot: () => ({})
-        } as unknown as AgentActivityRuntime,
+        } as unknown as AgentGUIRuntime,
         composerTargetData: target,
         conversationFilter: null,
         currentUserId: "user-1",

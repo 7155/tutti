@@ -11,7 +11,7 @@ import {
   type AgentSessionEngine
 } from "@tutti-os/agent-activity-core";
 import { useEffect, useMemo } from "react";
-import type { AgentActivityRuntime } from "../../../agentActivityRuntime";
+import type { AgentGUIRuntime } from "../../../agentActivityRuntime";
 import { translate } from "../../../i18n/index";
 import type { AgentConversationVM } from "../../../shared/agentConversation/contracts/agentConversationVM";
 import type { AgentApprovalItemVM } from "../../../shared/agentConversation/contracts/agentApprovalItemVM";
@@ -73,7 +73,7 @@ interface UseAgentGUISessionPresentationInput {
   activationErrorCode: AppErrorCode | null;
   activationState: "inactive" | "activating" | "active" | "failed" | null;
   activityDisplayStatus: AgentActivityDisplayStatus | null;
-  agentActivityRuntime: AgentActivityRuntime;
+  agentActivityRuntime: AgentGUIRuntime;
   composerSupport: ReturnType<typeof composerSettingsSupportFromOptions>;
   conversation: AgentConversationVM | null;
   currentUserId?: string | null;

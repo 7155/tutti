@@ -143,7 +143,7 @@ Identity, time, and state use canonical representations. Unknown enum values pro
 
 ```text
 AgentGUI / Message Center / host surface
-  -> typed intent or AgentActivityRuntime command
+  -> semantic AgentSessionEngine operation or typed intent
   -> workspace AgentSessionEngine
   -> shared typed lifecycle effect projection
   -> Desktop or Mobile AgentSessionEffectPort
@@ -608,7 +608,7 @@ Host owns recovery for runtime operations, Goal operations, and the reconcile in
 
 On daemon restart, Host recovery first restores durable operations, then settles unrecoverable active Turns as `settled/interrupted` and supersedes pending Interactions.
 
-Codex's restored Full access warning is presentation-only, device-local safety chrome. Show it only when an empty home composer restores an unacknowledged Full access target default; do not show it for another provider or permission mode, an active or historical Session, or while defaults are loading. Explicit Full access confirmation and “Don't show again” persist the same browser-local acknowledgement, while the close action affects only the current mount. This acknowledgement must not enter Session lifecycle, target defaults, Workbench node data, or `AgentActivityRuntime` state.
+Codex's restored Full access warning is presentation-only, device-local safety chrome. Show it only when an empty home composer restores an unacknowledged Full access target default; do not show it for another provider or permission mode, an active or historical Session, or while defaults are loading. Explicit Full access confirmation and “Don't show again” persist the same browser-local acknowledgement, while the close action affects only the current mount. This acknowledgement must not enter Session lifecycle, target defaults, Workbench node data, or `AgentGUIRuntime` state.
 
 ### 3.5 Edit retry and effective history
 
@@ -980,7 +980,7 @@ The busy-session prompt queue is ephemeral durable-intent coordination in the wo
 - a visible failed queue entry continues to own its submitted content for retry;
   draft settlement must not duplicate that content back into the composer
 - uncertain delivery reconciles by `clientSubmitId` and exact `turnId`; it never resends merely because the Session appears idle
-- editing a queued prompt restores its stable attachment references, then rehydrates missing image previews through `AgentActivityRuntime` with the exact workspace and Session identity; renderer-inaccessible paths never become image URLs, and late reads may update only the matching restored draft image
+- editing a queued prompt restores its stable attachment references, then rehydrates missing image previews through `AgentGUIRuntime` with the exact workspace and Session identity; renderer-inaccessible paths never become image URLs, and late reads may update only the matching restored draft image
 - the delivery barrier serializes new-Turn sends only; a guidance head steering the running barrier Turn is exempt and may steer it repeatedly, while in-flight, uncertain-delivery, suspension, and failed-head blockers still gate guidance sends
 - drain readiness is one pure decision over the queue record and canonical availability; a new blocker joins that single decision with an explicit priority against every existing blocker, never as another independent pre-check in the drain path
 
@@ -1020,7 +1020,7 @@ shared across mounted controllers: detach, pause, or a scope change must fence
 both Engine ingestion and cache writes from the obsolete request.
 The canonical factory owns one resolved-query cache per workspace Engine, so
 Desktop and Mobile receive the same remount semantics without exposing cache
-access through `AgentActivityRuntime` or a host adapter.
+access through `AgentGUIRuntime` or a host adapter.
 
 Hosts own the transport adapter, DTO mapping, runtime-availability policy, and
 surface lifecycle. For example, Mobile owns disconnected polling and
@@ -1781,9 +1781,20 @@ track (`--agent-gui-conversation-rail-width`) and the Rail content width
 updating only one leaves blank space when expanding or overflows detail content
 when shrinking.
 
-### 6.3 `AgentActivityRuntime` and `AgentHostApi`
+### 6.3 `AgentGUIRuntime` and `AgentHostApi`
 
-`AgentActivityRuntime` is the AgentGUI activity-data and command boundary. Session, messages, activation, send, cancel, Interaction, Goal, settings, composer options, rename, pin, and delete enter through it.
+`AgentGUIRuntime` is the runtime surface accepted by `AgentGUI`. It owns reads,
+Rail queries, file/upload capabilities, subscriptions, diagnostics, and the
+workspace `AgentSessionEngine` lookup. Shared lifecycle writes enter through
+semantic Engine methods or typed intents; AgentGUI does not require duplicate
+`activateSession`, `createSession`, `goalControl`, `sendInput`,
+`submitInteractive`, `unactivateSession`, `updateSessionSettings`, or
+`updateTuttiModeActivation` callbacks.
+
+`AgentGUIRuntime` is the sole AgentGUI host contract. Hosts must not recreate
+the removed lifecycle callbacks as no-op or forwarding adapters. Metadata
+actions that AgentGUI still reads directly remain on this surface until their
+Engine migration preserves all host observability and product integration.
 
 `AgentHostApi` supplies host capabilities only: files, clipboard, project/account lookup, Agent Target setup/probes, diagnostics, and OS/Workbench helpers. It must not become a Session, Turn, timeline, or write source again.
 
@@ -1793,7 +1804,7 @@ Desktop projects the device-global `tuttid` quick-prompt CRUD service through
 and inserts a selected prompt into the current TipTap selection without
 submitting it. The library snapshot, developer feature gate, and cross-window
 invalidation are not Session or Turn state and must not enter
-`AgentActivityRuntime` or the workspace engine. Hosts that omit the capability,
+`AgentGUIRuntime` or the workspace engine. Hosts that omit the capability,
 and hosts whose capability reports the developer gate disabled, render no
 quick-prompt composer entry. AgentGUI may also present a small, localized set
 of recommended templates; those only prefill the existing editor and remain
@@ -1890,7 +1901,7 @@ at a time. Window shells and persisted geometry remain synchronous; this
 staging is Desktop presentation work and does not enter engine or Session
 lifecycle state.
 WebGL scene readiness remains local presentation state; it must not enter
-`AgentActivityRuntime`, the workspace engine, or Workbench node state.
+`AgentGUIRuntime`, the workspace engine, or Workbench node state.
 
 The shared Workbench Header owns conversation-identity visibility. When no
 Conversation exists, it ignores conversation titles, Agent titles, primary
@@ -2057,9 +2068,8 @@ unaffected presentation references. The response `goal` is Host's durable
 desired projection; provider observation remains in Goal state and may be
 empty without clearing the visible Goal. Only a durable tombstone produces
 `goal: null`. A definitive failure releases the old identity; only an unknown
-result retains it for an explicit retry. The legacy
-`AgentActivityRuntime.goalControl` adapter remains a compatibility surface,
-but shared AgentGUI does not call it.
+result retains it for an explicit retry. Goal control enters only through the
+workspace Engine; AgentGUI has no parallel runtime callback.
 
 ### 7.3 Interaction response
 

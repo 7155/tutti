@@ -7,7 +7,7 @@ import {
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentEnvPanelActionProvider } from "../../agentEnv";
-import type { AgentActivityRuntime } from "../../../agentActivityRuntime";
+import type { AgentGUIRuntime } from "../../../agentActivityRuntime";
 import { AgentMessageBlock } from "./AgentMessageBlock";
 import { AgentTranscriptItemView } from "./AgentTranscriptItemView";
 import type { AgentGoalControlRowVM } from "../contracts/agentGoalControlRowVM";
@@ -549,11 +549,11 @@ describe("AgentTranscriptItemView render stability", () => {
       mimeType: "image/png" as const,
       name: "screen.png"
     }));
-    Object.defineProperty(window, "agentActivityRuntime", {
+    Object.defineProperty(window, "agentGUIRuntime", {
       configurable: true,
       value: {
         readSessionAttachment
-      } as Partial<AgentActivityRuntime>
+      } as Partial<AgentGUIRuntime>
     });
 
     render(
@@ -597,7 +597,7 @@ describe("AgentTranscriptItemView render stability", () => {
       ).toBeTruthy();
     });
 
-    delete (window as { agentActivityRuntime?: unknown }).agentActivityRuntime;
+    delete (window as { agentGUIRuntime?: unknown }).agentGUIRuntime;
   });
 
   it("keeps a loaded optimistic image mounted when its durable attachment arrives", async () => {
@@ -614,12 +614,12 @@ describe("AgentTranscriptItemView render stability", () => {
       mimeType: "image/png" as const,
       name: "screen.png"
     }));
-    Object.defineProperty(window, "agentActivityRuntime", {
+    Object.defineProperty(window, "agentGUIRuntime", {
       configurable: true,
       value: {
         readPromptAsset,
         readSessionAttachment
-      } as Partial<AgentActivityRuntime>
+      } as Partial<AgentGUIRuntime>
     });
     const stableImageId = "client-submit:user:submit-1:image:0";
     const optimisticMessage: AgentMessageContentVM = {
@@ -688,16 +688,16 @@ describe("AgentTranscriptItemView render stability", () => {
     expect(readPromptAsset).toHaveBeenCalledTimes(1);
     expect(readSessionAttachment).not.toHaveBeenCalled();
 
-    delete (window as { agentActivityRuntime?: unknown }).agentActivityRuntime;
+    delete (window as { agentGUIRuntime?: unknown }).agentGUIRuntime;
   });
 
   it("renders a user prompt image directly from its remote HTTPS URL", () => {
     const readPromptAsset = vi.fn();
-    Object.defineProperty(window, "agentActivityRuntime", {
+    Object.defineProperty(window, "agentGUIRuntime", {
       configurable: true,
       value: {
         readPromptAsset
-      } as Partial<AgentActivityRuntime>
+      } as Partial<AgentGUIRuntime>
     });
 
     render(
@@ -732,7 +732,7 @@ describe("AgentTranscriptItemView render stability", () => {
     );
     expect(readPromptAsset).not.toHaveBeenCalled();
 
-    delete (window as { agentActivityRuntime?: unknown }).agentActivityRuntime;
+    delete (window as { agentGUIRuntime?: unknown }).agentGUIRuntime;
   });
 
   it("shows a loading spinner while a user prompt image is being read", async () => {
@@ -759,11 +759,11 @@ describe("AgentTranscriptItemView render stability", () => {
           readController.resolve = resolvePromise;
         })
     );
-    Object.defineProperty(window, "agentActivityRuntime", {
+    Object.defineProperty(window, "agentGUIRuntime", {
       configurable: true,
       value: {
         readSessionAttachment
-      } as Partial<AgentActivityRuntime>
+      } as Partial<AgentGUIRuntime>
     });
 
     render(
@@ -814,7 +814,7 @@ describe("AgentTranscriptItemView render stability", () => {
       );
     });
 
-    delete (window as { agentActivityRuntime?: unknown }).agentActivityRuntime;
+    delete (window as { agentGUIRuntime?: unknown }).agentGUIRuntime;
   });
 
   it("shows local agent sign-in guidance for auth errors", () => {

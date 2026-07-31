@@ -6,7 +6,7 @@ import {
   type AgentActivityComposerOptions
 } from "@tutti-os/agent-activity-core";
 import { describe, expect, it, vi } from "vitest";
-import type { AgentActivityRuntime } from "../../../agentActivityRuntime";
+import type { AgentGUIRuntime } from "../../../agentActivityRuntime";
 import type { AgentSessionComposerSettings } from "../../../shared/agentSessionTypes";
 import type { AgentGUINodeData } from "../../../types";
 import type { AgentGUIRememberComposerDefaultsResult } from "./agentGuiController.providerHelpers";
@@ -60,7 +60,7 @@ describe("useAgentGUIComposerSettingsActions", () => {
         activeEngineActiveTurn: null,
         agentActivityRuntime: {
           getSnapshot: () => ({})
-        } as unknown as AgentActivityRuntime,
+        } as unknown as AgentGUIRuntime,
         composerSupportPermissionModeChangeDeferred: false,
         dataRef: { current: data },
         defaultReasoningEffort: null,
@@ -173,7 +173,7 @@ describe("useAgentGUIComposerSettingsActions", () => {
             }
           }),
           trackDraftComposerSettingsChange: vi.fn()
-        } as unknown as AgentActivityRuntime,
+        } as unknown as AgentGUIRuntime,
         composerSupportPermissionModeChangeDeferred: false,
         dataRef: { current: data },
         defaultReasoningEffort: null,
@@ -331,7 +331,7 @@ describe("useAgentGUIComposerSettingsActions", () => {
         activeEngineActiveTurn: null,
         agentActivityRuntime: {
           getSnapshot: () => ({})
-        } as unknown as AgentActivityRuntime,
+        } as unknown as AgentGUIRuntime,
         composerSupportPermissionModeChangeDeferred: false,
         dataRef: { current: data },
         defaultReasoningEffort: null,
@@ -442,7 +442,7 @@ describe("useAgentGUIComposerSettingsActions", () => {
         activeEngineActiveTurn: null,
         agentActivityRuntime: {
           getSnapshot: () => ({})
-        } as unknown as AgentActivityRuntime,
+        } as unknown as AgentGUIRuntime,
         composerSupportPermissionModeChangeDeferred: false,
         dataRef: { current: data },
         defaultReasoningEffort: null,
@@ -571,7 +571,7 @@ describe("useAgentGUIComposerSettingsActions", () => {
         activeEngineActiveTurn: null,
         agentActivityRuntime: {
           getSnapshot: () => ({})
-        } as unknown as AgentActivityRuntime,
+        } as unknown as AgentGUIRuntime,
         composerSupportPermissionModeChangeDeferred: false,
         dataRef: { current: data },
         defaultReasoningEffort: null,
@@ -754,7 +754,7 @@ describe("useAgentGUIComposerSettingsActions", () => {
         activeEngineActiveTurn: null,
         agentActivityRuntime: {
           getSnapshot: () => ({})
-        } as unknown as AgentActivityRuntime,
+        } as unknown as AgentGUIRuntime,
         composerSupportPermissionModeChangeDeferred: false,
         dataRef: { current: data },
         defaultReasoningEffort: null,

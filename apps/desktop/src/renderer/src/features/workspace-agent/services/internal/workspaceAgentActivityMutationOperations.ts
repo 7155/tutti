@@ -5,7 +5,6 @@ import type {
   EngineEffectOptions
 } from "@tutti-os/agent-activity-core";
 import { tuttiAgentSessionComposerSettingsFromActivity } from "@tutti-os/agent-activity-tuttid-adapter";
-import type { AgentActivityRuntime } from "@tutti-os/agent-gui";
 import type { TuttidClient } from "@tutti-os/client-tuttid-ts";
 import type { DesktopRuntimeApi } from "@preload/types";
 import {
@@ -295,15 +294,17 @@ export class WorkspaceAgentActivityMutationOperations {
   }
 
   updateTuttiModeActivation(
-    input: Parameters<AgentActivityRuntime["updateTuttiModeActivation"]>[0]
-  ): ReturnType<AgentActivityRuntime["updateTuttiModeActivation"]> {
+    input: Parameters<
+      IWorkspaceAgentActivityService["updateTuttiModeActivation"]
+    >[0]
+  ): ReturnType<IWorkspaceAgentActivityService["updateTuttiModeActivation"]> {
     return this.dependencies
       .sessionCommandTarget(input.workspaceId)
       .adapter.updateTuttiModeActivation(input);
   }
 
   unactivateSession(
-    input: Parameters<AgentActivityRuntime["unactivateSession"]>[0]
+    input: Parameters<IWorkspaceAgentActivityService["unactivateSession"]>[0]
   ): ReturnType<IWorkspaceAgentActivityService["unactivateSession"]> {
     return Promise.resolve({
       agentSessionId: input.agentSessionId,

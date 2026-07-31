@@ -8,7 +8,7 @@ import {
 } from "@tutti-os/agent-activity-core";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useCallback, useEffect, useRef } from "react";
-import type { AgentActivityRuntime } from "../../../agentActivityRuntime";
+import type { AgentGUIRuntime } from "../../../agentActivityRuntime";
 import { translate } from "../../../i18n/index";
 import type { AgentPromptContentBlock } from "../../../shared/contracts/dto";
 import type { AgentGUINodeData } from "../../../types";
@@ -71,7 +71,7 @@ interface UseAgentGUISubmitInteractionActionsInput {
   activeConversationIdRef: RefObject<string | null>;
   activeEngineActiveTurn: AgentActivityTurn | null;
   activeEnginePendingInteractions: readonly AgentActivityInteraction[];
-  agentActivityRuntime: AgentActivityRuntime;
+  agentActivityRuntime: AgentGUIRuntime;
   conversationListQuery: unknown | null;
   conversationsRef: RefObject<AgentGUIConversationSummary[]>;
   dataRef: RefObject<AgentGUINodeData>;

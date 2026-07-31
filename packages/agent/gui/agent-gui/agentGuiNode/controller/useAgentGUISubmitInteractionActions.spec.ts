@@ -2,11 +2,12 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import {
   createAgentSessionEngine,
   selectSessionGoalControlPresentation,
+  type AgentActivityGoalControlInput,
+  type AgentActivityGoalControlResult,
   type AgentSessionGoalControlEffectInput,
   type EngineEffectOptions
 } from "@tutti-os/agent-activity-core";
 import { describe, expect, it, vi } from "vitest";
-import type { AgentActivityRuntime } from "../../../agentActivityRuntime";
 import type { AgentComposerDraft } from "../model/agentGuiNodeTypes";
 import { agentComposerDraftPrompt } from "../model/agentComposerDraft";
 import {
@@ -22,7 +23,9 @@ function draft(prompt: string): AgentComposerDraft {
 }
 
 function createGoalControlInput(
-  goalControl: AgentActivityRuntime["goalControl"]
+  goalControl: (
+    input: AgentActivityGoalControlInput
+  ) => Promise<AgentActivityGoalControlResult>
 ) {
   const baseSession = {
     activeTurnId: null,
@@ -102,7 +105,7 @@ function createGoalControlInput(
     activeConversationIdRef: { current: "session-1" },
     activeEngineActiveTurn: null,
     activeEnginePendingInteractions: [],
-    agentActivityRuntime: { goalControl } as AgentActivityRuntime,
+    agentActivityRuntime: {},
     conversationListQuery: {},
     conversationsRef: { current: [] },
     dataRef: { current: {} },

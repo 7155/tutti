@@ -258,7 +258,7 @@ Desktop user-visible copy and locale resources are checked by `pnpm check:i18n`.
 
 `pnpm check:agent-activity-runtime-boundaries` scans Agent GUI and desktop
 renderer production code. Agent activity commands must go through
-`AgentActivityRuntime`; session-engine consumers must use exported selectors
+`AgentGUIRuntime`; session-engine consumers must use exported selectors
 instead of reading `sessionsById`, `turnsById`, `interactionsById`, pending
 intent maps, or prompt-queue records directly. Entity storage keys and reducer
 layout are engine implementation details, not consumer contracts. The check

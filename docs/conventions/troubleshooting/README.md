@@ -156,6 +156,7 @@ Android app login, native bridge, secure identity, and mobile transport diagnost
 - [Mobile quick prompts are missing from the plus menu](./mobile.md#mobile-quick-prompts-are-missing-from-the-plus-menu)
 - [Mobile composer model and permission controls are missing](./mobile.md#mobile-composer-model-and-permission-controls-are-missing)
 - [Mobile composer option chips do not open](./mobile.md#mobile-composer-option-chips-do-not-open)
+- [Browser login completes but leaves the browser in front](./mobile.md#browser-login-completes-but-leaves-the-browser-in-front)
 - [Browser login returns to the App but remains signed out](./mobile.md#browser-login-returns-to-the-app-but-remains-signed-out)
 - [Android DeviceLink opens a session and then repeatedly restarts](./mobile.md#android-devicelink-opens-a-session-and-then-repeatedly-restarts)
 - [Mobile stays connected after a long lock-screen interval but sends fail](./mobile.md#mobile-stays-connected-after-a-long-lock-screen-interval-but-sends-fail)

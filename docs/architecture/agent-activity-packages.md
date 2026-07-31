@@ -405,7 +405,8 @@ application adapter instead.
 It owns:
 
 - `AgentGUI`
-- `AgentActivityRuntime` provider and hooks
+- the narrow `AgentGUIRuntime` provider used by AgentGUI
+- compatibility `AgentActivityRuntime` provider and hooks for existing consumers
 - Agent GUI workbench node UI
 - session list and detail rendering
 - timeline, tool call, approval, and interactive prompt presentation
@@ -439,8 +440,12 @@ through the same exact target and shared prompt surface.
 
 It may depend on `@tutti-os/agent-activity-core`.
 
-Agent GUI must read and write agent session/activity data through
-`AgentActivityRuntime`. The effective `AgentHostApi` is limited to host
+Agent GUI reads activity data and resolves the workspace Engine through
+`AgentGUIRuntime`; lifecycle writes use semantic Engine methods or typed
+intents. The compatibility `AgentActivityRuntime` remains assignable to this
+narrow surface, but AgentGUI does not require its duplicate activation, submit,
+Goal, Interaction, settings, Tutti Mode, or unactivation callbacks. The
+effective `AgentHostApi` is limited to host
 capabilities such as files, clipboard, runtime metadata, account/project
 lookup, diagnostics, setup, and OS/Workbench helpers. Its input type still
 accepts a legacy `agentSessions` shape, but `toAgentHostRuntimeApi` strips that
@@ -1444,7 +1449,8 @@ For Agent GUI behavior:
 - focused tests for working, waiting, completed, failed, and needs-attention
   states
 - tests that AgentGUI list/detail and write operations use
-  `AgentActivityRuntime` when provided
+  `AgentGUIRuntime` when provided, with lifecycle writes asserted through the
+  workspace Engine
 
 For runtime boundary enforcement:
 

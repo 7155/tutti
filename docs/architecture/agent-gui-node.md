@@ -143,7 +143,7 @@ Identity, time, and state use canonical representations. Unknown enum values pro
 
 ```text
 AgentGUI / Message Center / host surface
-  -> typed intent or AgentActivityRuntime command
+  -> semantic AgentSessionEngine operation or typed intent
   -> workspace AgentSessionEngine
   -> shared typed lifecycle effect projection
   -> Desktop or Mobile AgentSessionEffectPort
@@ -1781,9 +1781,23 @@ track (`--agent-gui-conversation-rail-width`) and the Rail content width
 updating only one leaves blank space when expanding or overflows detail content
 when shrinking.
 
-### 6.3 `AgentActivityRuntime` and `AgentHostApi`
+### 6.3 `AgentGUIRuntime`, compatibility runtime, and `AgentHostApi`
 
-`AgentActivityRuntime` is the AgentGUI activity-data and command boundary. Session, messages, activation, send, cancel, Interaction, Goal, settings, composer options, rename, pin, and delete enter through it.
+`AgentGUIRuntime` is the runtime surface accepted by `AgentGUI`. It owns reads,
+Rail queries, file/upload capabilities, subscriptions, diagnostics, and the
+workspace `AgentSessionEngine` lookup. Shared lifecycle writes enter through
+semantic Engine methods or typed intents; AgentGUI does not require duplicate
+`activateSession`, `createSession`, `goalControl`, `sendInput`,
+`submitInteractive`, `unactivateSession`, `updateSessionSettings`, or
+`updateTuttiModeActivation` callbacks.
+
+The compatibility-named `AgentActivityRuntime` still contains those callbacks
+for published consumers that have not migrated. A full
+`AgentActivityRuntime` remains assignable to `AgentGUIRuntime`; new hosts should
+implement the narrower surface instead of adding no-op or forwarding lifecycle
+adapters. Metadata actions that AgentGUI still reads directly remain on the
+narrow surface until their Engine migration preserves all host observability
+and product integration.
 
 `AgentHostApi` supplies host capabilities only: files, clipboard, project/account lookup, Agent Target setup/probes, diagnostics, and OS/Workbench helpers. It must not become a Session, Turn, timeline, or write source again.
 

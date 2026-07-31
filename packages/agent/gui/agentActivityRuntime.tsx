@@ -422,9 +422,29 @@ export interface AgentActivityRuntime {
   ): () => void;
 }
 
+/**
+ * Runtime surface consumed by AgentGUI after lifecycle writes moved to the
+ * workspace {@link AgentSessionEngine}. The compatibility-named
+ * {@link AgentActivityRuntime} remains available to existing hosts while new
+ * hosts can omit lifecycle callbacks that AgentGUI no longer reads.
+ */
+export type AgentGUIRuntime = Omit<
+  AgentActivityRuntime,
+  | "activateSession"
+  | "createSession"
+  | "goalControl"
+  | "sendInput"
+  | "submitInteractive"
+  | "unactivateSession"
+  | "updateSessionSettings"
+  | "updateTuttiModeActivation"
+>;
+
 const AgentActivityRuntimeContext = createContext<AgentActivityRuntime | null>(
   null
 );
+
+const AgentGUIRuntimeContext = createContext<AgentGUIRuntime | null>(null);
 
 function createTestAgentActivityRuntimeHolder(): {
   get: () => AgentActivityRuntime | null;
@@ -451,8 +471,25 @@ export function AgentActivityRuntimeProvider({
 }: AgentActivityRuntimeProviderProps): JSX.Element {
   return (
     <AgentActivityRuntimeContext.Provider value={runtime ?? null}>
-      {children}
+      <AgentGUIRuntimeContext.Provider value={runtime ?? null}>
+        {children}
+      </AgentGUIRuntimeContext.Provider>
     </AgentActivityRuntimeContext.Provider>
+  );
+}
+
+export interface AgentGUIRuntimeProviderProps extends PropsWithChildren {
+  runtime?: AgentGUIRuntime | null;
+}
+
+export function AgentGUIRuntimeProvider({
+  children,
+  runtime
+}: AgentGUIRuntimeProviderProps): JSX.Element {
+  return (
+    <AgentGUIRuntimeContext.Provider value={runtime ?? null}>
+      {children}
+    </AgentGUIRuntimeContext.Provider>
   );
 }
 
@@ -471,6 +508,21 @@ export function useOptionalAgentActivityRuntime(): AgentActivityRuntime | null {
   return (
     useContext(AgentActivityRuntimeContext) ?? getTestAgentActivityRuntime()
   );
+}
+
+export function useAgentGUIRuntime(): AgentGUIRuntime {
+  const runtime =
+    useContext(AgentGUIRuntimeContext) ?? getTestAgentActivityRuntime();
+  if (!runtime) {
+    throw new Error(
+      "AgentGUIRuntimeProvider is missing an AgentGUIRuntime instance."
+    );
+  }
+  return runtime;
+}
+
+export function useOptionalAgentGUIRuntime(): AgentGUIRuntime | null {
+  return useContext(AgentGUIRuntimeContext) ?? getTestAgentActivityRuntime();
 }
 
 export function useAgentActivitySnapshot(

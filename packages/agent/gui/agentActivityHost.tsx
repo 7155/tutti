@@ -12,7 +12,9 @@ import {
 } from "./host/agentHostApi";
 import {
   AgentActivityRuntimeProvider,
-  type AgentActivityRuntime
+  AgentGUIRuntimeProvider,
+  type AgentActivityRuntime,
+  type AgentGUIRuntime
 } from "./agentActivityRuntime";
 
 const AgentActivityHostContext = createContext<AgentHostRuntimeApi | null>(
@@ -42,6 +44,30 @@ export function AgentActivityHostProvider({
         {children}
       </AgentActivityHostContext.Provider>
     </AgentActivityRuntimeProvider>
+  );
+}
+
+export interface AgentGUIActivityHostProviderProps extends PropsWithChildren {
+  agentActivityRuntime?: AgentGUIRuntime | null;
+  agentHostApi?: AgentHostInputApi | null;
+}
+
+export function AgentGUIActivityHostProvider({
+  agentActivityRuntime,
+  agentHostApi,
+  children
+}: AgentGUIActivityHostProviderProps): JSX.Element {
+  const resolvedAgentHostApi = useMemo(
+    () => (agentHostApi ? toAgentHostRuntimeApi(agentHostApi) : null),
+    [agentHostApi]
+  );
+  currentAgentHostApi = resolvedAgentHostApi;
+  return (
+    <AgentGUIRuntimeProvider runtime={agentActivityRuntime}>
+      <AgentActivityHostContext.Provider value={resolvedAgentHostApi}>
+        {children}
+      </AgentActivityHostContext.Provider>
+    </AgentGUIRuntimeProvider>
   );
 }
 

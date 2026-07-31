@@ -186,6 +186,7 @@ export {
 } from "./agentActivityRuntime";
 export type {
   AgentActivityRuntime,
+  AgentGUIRuntime,
   AgentActivitySessionMessages,
   AgentActivityRuntimeListSessionMessagesInput,
   AgentActivityRuntimeProviderProps,

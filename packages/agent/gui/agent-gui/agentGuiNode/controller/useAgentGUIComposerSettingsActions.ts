@@ -6,7 +6,7 @@ import {
 } from "@tutti-os/agent-activity-core";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useCallback, useRef } from "react";
-import type { AgentActivityRuntime } from "../../../agentActivityRuntime";
+import type { AgentGUIRuntime } from "../../../agentActivityRuntime";
 import { translate } from "../../../i18n/index";
 import type {
   AgentSessionComposerSettings,
@@ -64,7 +64,7 @@ interface UseAgentGUIComposerSettingsActionsInput {
   activeCanonicalComposerSettings: AgentSessionComposerSettings;
   activeConversationIdRef: RefObject<string | null>;
   activeEngineActiveTurn: AgentActivityTurn | null;
-  agentActivityRuntime: AgentActivityRuntime;
+  agentActivityRuntime: AgentGUIRuntime;
   composerSupportPermissionModeChangeDeferred: boolean;
   dataRef: RefObject<AgentGUINodeData>;
   defaultReasoningEffort: AgentSessionReasoningEffort | null;

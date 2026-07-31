@@ -24,7 +24,7 @@ import type {
   AgentComposerProps
 } from "./AgentComposer.types";
 import { SendFilledIcon } from "./AgentComposerDraftPreview";
-import { useOptionalAgentActivityRuntime } from "../../../agentActivityRuntime";
+import { useOptionalAgentGUIRuntime } from "../../../agentActivityRuntime";
 import { reportAgentComposerDiagnostic } from "./agentComposerDiagnostics";
 
 interface Input {
@@ -118,7 +118,7 @@ export function useComposerPresentation(input: Input) {
     canUploadAttachment,
     promptImagesSupported
   } = input;
-  const agentActivityRuntime = useOptionalAgentActivityRuntime();
+  const agentActivityRuntime = useOptionalAgentGUIRuntime();
   const draftImages = agentComposerDraftImages(draftContent);
   const draftFiles = agentComposerDraftFiles(draftContent);
   const draftLargeTexts = agentComposerDraftLargeTexts(draftContent);

@@ -5,7 +5,7 @@ import {
 } from "@tutti-os/agent-activity-core";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useAgentHostApi } from "../../../agentActivityHost";
-import { useAgentActivityRuntime } from "../../../agentActivityRuntime";
+import { useAgentGUIRuntime } from "../../../agentActivityRuntime";
 import { useAccountStore } from "../../../host/agentHostAccountStore";
 import type { AgentHostUserProject } from "../../../host/agentHostApi";
 import type { AgentSessionComposerSettings } from "../../../shared/agentSessionTypes";
@@ -131,7 +131,7 @@ export function useAgentGUINodeController({
   onRememberComposerDefaults,
   onShowMessage
 }: UseAgentGUINodeControllerInput) {
-  const agentActivityRuntime = useAgentActivityRuntime();
+  const agentActivityRuntime = useAgentGUIRuntime();
   const agentActivityRuntimeOrigin =
     agentActivityRuntime.origin?.trim() || AGENT_GUI_RUNTIME_SESSION_ORIGIN;
   const sessionEngine = useMemo(() => {

@@ -48,9 +48,9 @@ business events continue to report from the window where the action occurs.
 
 - tuttid always starts before the renderer, so there is no Tea SDK startup
   ordering problem in the renderer
-- Common params such as `device_id`, `session_id`, `os`, and `app_version` are
-  owned by tuttid and do not need to be replicated or synchronized to the
-  renderer
+- Common params such as `device_id`, `session_id`, `os`, `app_version`, and
+  account identity are owned by tuttid and do not need to be replicated or
+  synchronized to the renderer
 - Batch scheduling and retry behavior live in one place (the Go Tea SDK)
 - Renderer has no dependency on external scripts or CSP relaxations for Tea
 
@@ -60,19 +60,38 @@ Common params are split by ownership. tuttid injects its params on every event
 before forwarding to Tea. The renderer supplies only the params it uniquely
 knows.
 
-| Param              | Owner    | Notes                                               |
-| ------------------ | -------- | --------------------------------------------------- |
-| `device_id`        | tuttid   | Persisted UUID in state dir; stable across restarts |
-| `session_id`       | tuttid   | UUID generated once at daemon startup               |
-| `app_version`      | tuttid   | Resolved from generated defaults or env override    |
-| `os`               | tuttid   | Resolved at startup                                 |
-| `client_ts`        | renderer | Millisecond timestamp at the moment the event fired |
-| `dark_mode`        | renderer | `"1"` or `"0"`                                      |
-| `mode`             | renderer | Current workspace shell: `"os"` or `"agent"`        |
-| UI-specific params | renderer | Passed through `params` object                      |
+| Param               | Owner    | Notes                                               |
+| ------------------- | -------- | --------------------------------------------------- |
+| `device_id`         | tuttid   | Persisted UUID in state dir; stable across restarts |
+| `session_id`        | tuttid   | UUID generated once at daemon startup               |
+| `app_version`       | tuttid   | Resolved from generated defaults or env override    |
+| `os`                | tuttid   | Resolved at startup                                 |
+| `event_id`          | tuttid   | Generated UUID when the event does not supply one   |
+| `authority`         | tuttid   | `"client"` for Tutti Desktop events                 |
+| `business_app_id`   | tuttid   | Tutti account/commerce application ID               |
+| `client`            | tuttid   | `"desktop"`                                         |
+| `environment`       | tuttid   | Runtime environment                                 |
+| `schema_version`    | tuttid   | Current analytics contract version                  |
+| `uid`               | tuttid   | Authenticated account ID; absent when anonymous     |
+| `login_state`       | tuttid   | `"authenticated"` or `"anonymous"`                  |
+| `identity_status`   | tuttid   | Identity readiness for the current event            |
+| `membership_status` | tuttid   | Current membership state or `"unknown"`             |
+| `membership_tier`   | tuttid   | Current tier key, `"free"`, or `"unknown"`          |
+| `client_ts`         | renderer | Millisecond timestamp at the moment the event fired |
+| `dark_mode`         | renderer | `"1"` or `"0"`                                      |
+| `mode`              | renderer | Current workspace shell: `"os"` or `"agent"`        |
+| UI-specific params  | renderer | Passed through `params` object                      |
 
 tuttid never tries to infer UI-state params. Renderer never tries to supply
 identity or platform params.
+
+The account service supplies dynamic identity parameters and the matching
+DataFinder `user_unique_id` as one atomic snapshot. A login or logout cannot
+produce an event whose SDK identity disagrees with its own `uid` and
+`login_state`. Anonymous events use the stable `device_id` as the SDK identity.
+When tuttid starts with a persisted account session, it restores the UID before
+the reporter begins handling product events; membership fields remain
+`"unknown"` until the product summary is refreshed.
 
 The renderer derives `mode` from the native window route. `view=agent` reports
 `"agent"`; `view=workspace`, legacy routes, and unknown routes report `"os"`,
@@ -100,6 +119,21 @@ pattern.
 | `<domain>.<action>` | Product domain plus confirmed business event | `workspace.opened`            |
 | Nested domains      | Larger feature area plus action              | `agent.session_started`       |
 | Error domains       | Feature-specific error event                 | `error.workspace_unavailable` |
+
+### Account login
+
+Tutti Desktop reports the unified `account.login` event:
+
+| Stage   | Action     | Result                         | Meaning                             |
+| ------- | ---------- | ------------------------------ | ----------------------------------- |
+| `login` | `start`    | `started`                      | Desktop login attempt accepted      |
+| `login` | `complete` | `success`                      | Login completed with a resolved UID |
+| `login` | `complete` | `failed / cancelled / expired` | Terminal unsuccessful result        |
+
+Every attempt carries a stable `flow_id`. Login success rate is distinct
+successful terminal `flow_id` divided by distinct started `flow_id`. Daily
+logged-in users are distinct `uid` values on successful terminal events, with
+dashboard day boundaries evaluated in `Asia/Shanghai`.
 
 ## API Contract
 
@@ -289,11 +323,12 @@ type Reporter interface {
 
 `TeaReporter` wraps `github.com/volcengine/datarangers-sdk-go`. It injects
 common params on every `Track` call before handing events to the SDK. Hosts may
-supply an existing durable `DeviceID` and product-owned common parameters; the
-shared reporter always owns and protects `device_id`, `session_id`,
-`app_version`, and `os`. The SDK uses HTTP mode with SDK batch mode disabled, a
-bounded async queue wait, and controlled SDK log paths under the product state
-directory.
+supply an existing durable `DeviceID`, static common parameters, and one
+`DynamicContextProvider`. That provider returns dynamic common parameters and
+the matching DataFinder user identity in one snapshot. The shared reporter
+always owns and protects `device_id`, `session_id`, `app_version`, and `os`.
+The SDK uses HTTP mode with SDK batch mode disabled, a bounded async queue wait,
+and controlled SDK log paths under the product state directory.
 
 `NoopReporter` is used in unit tests and when Tea credentials are absent (e.g.
 local development without credentials configured).
@@ -381,8 +416,9 @@ The method calls the generated OpenAPI SDK and reuses generated request types.
   the moment the HTTP call is made
 - `daemon_` prefixed events are reported directly via `Reporter.Track()`; they
   do not go through the HTTP endpoint
-- Common params (`device_id`, `session_id`, `os`, `app_version`) must not be
-  sent by the renderer; tuttid always overwrites them
+- Daemon-owned common params (`device_id`, `session_id`, `os`, `app_version`,
+  identity fields, authority, app, client, environment, and schema version)
+  must not be sent by the renderer; tuttid always overwrites them
 - `TeaReporter.Close()` must be called during graceful shutdown; with the
   current DataFinder Go SDK HTTP mode this is a best-effort lifecycle hook, not
   a hard flush guarantee

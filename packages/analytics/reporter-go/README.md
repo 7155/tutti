@@ -8,6 +8,11 @@ Product repositories own event names, schemas, HTTP contracts, and typed event
 helpers. Renderer code must report through its daemon rather than importing this
 Go module directly.
 
+Hosts that attach dynamic account context must use
+`Config.DynamicContextProvider`. It returns the event common parameters and the
+matching DataFinder user identity together so one event cannot mix account
+states across a concurrent login or logout.
+
 Production DataFinder reporting requires either `Config.StateDir` or an explicit
 `Config.SDKLogDir` for bounded SDK log files. `SDKLogDir` is useful when a host
 must preserve an existing log path; otherwise logs default to

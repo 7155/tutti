@@ -8,6 +8,7 @@ import (
 	"time"
 
 	agentsessionstore "github.com/tutti-os/tutti/packages/agent/daemon/activity"
+	activityshared "github.com/tutti-os/tutti/packages/agent/daemon/activity/events"
 )
 
 func TestSubscribeWhenAvailableWaitsForResumeAndReplaysState(t *testing.T) {
@@ -143,5 +144,45 @@ func TestSubscribeWhenAvailableWakesConcurrentSubscribersOnce(t *testing.T) {
 	defer controller.mu.Unlock()
 	if len(controller.sessionAvailabilityWaiters) != 0 {
 		t.Fatalf("availability waiters after resume = %s", fmt.Sprint(controller.sessionAvailabilityWaiters))
+	}
+}
+
+func TestControllerReplaysCurrentSessionStateOnSubscribe(t *testing.T) {
+	t.Parallel()
+
+	controller := NewController([]Adapter{&statefulInteractiveAdapter{}}, nil)
+	started, err := controller.Start(context.Background(), StartInput{
+		RoomID:         "room-1",
+		AgentSessionID: "agent-session-1",
+		Provider:       ProviderCodex,
+		Title:          "Codex",
+		CWD:            "/workspace",
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	controller.mu.Lock()
+	session := controller.sessions[sessionKey("room-1", started.Session.AgentSessionID)]
+	session.Status = SessionStatusReady
+	session.UpdatedAtUnixMS = 123
+	controller.sessions[sessionKey("room-1", started.Session.AgentSessionID)] = session
+	controller.mu.Unlock()
+
+	events, unsubscribe, ok := controller.Subscribe("room-1", started.Session.AgentSessionID)
+	if !ok {
+		t.Fatal("Subscribe returned ok=false")
+	}
+	defer unsubscribe()
+	event := waitForStreamEventType(t, events, StreamEventStatePatch)
+	patch, ok := event.Data.(agentsessionstore.WorkspaceAgentStatePatch)
+	if !ok {
+		t.Fatalf("state replay data = %#v, want WorkspaceAgentStatePatch", event.Data)
+	}
+	if patch.AgentSessionID != started.Session.AgentSessionID ||
+		patch.Provider != ProviderCodex ||
+		patch.CurrentPhase != string(activityshared.TurnPhaseIdle) ||
+		patch.LifecycleStatus != string(activityshared.SessionLifecycleStatusActive) ||
+		patch.OccurredAtUnixMS != 123 {
+		t.Fatalf("state replay patch = %#v, want current ready session snapshot", patch)
 	}
 }

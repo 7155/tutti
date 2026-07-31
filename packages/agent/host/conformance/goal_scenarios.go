@@ -76,6 +76,42 @@ func runGoalActionLifecycle(ctx context.Context, driver Driver) error {
 	return nil
 }
 
+func runGoalControlPreservesDurableGoalWithoutProviderObservation(ctx context.Context, driver Driver) error {
+	fixture := liveSessionFixture("session-goal-empty-status-observation", "")
+	fixture.EmptyPauseResumeGoal = true
+	if err := driver.Reset(ctx, fixture); err != nil {
+		return err
+	}
+	ref := agenthost.GoalControlInput{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-goal-empty-status-observation",
+		Action: "set", Objective: "keep visible",
+	}
+	if _, err := driver.GoalControl(ctx, ref); err != nil {
+		return fmt.Errorf("set goal before empty provider observation: %w", err)
+	}
+	for _, command := range []struct {
+		action string
+		status string
+	}{
+		{action: "pause", status: "paused"},
+		{action: "resume", status: "active"},
+	} {
+		ref.Action, ref.Objective = command.action, ""
+		result, err := driver.GoalControl(ctx, ref)
+		if err != nil {
+			return fmt.Errorf("goal %s with empty provider observation: %w", command.action, err)
+		}
+		if metadataString(result.Goal, "objective") != "keep visible" ||
+			metadataString(result.Goal, "status") != command.status {
+			return fmt.Errorf("goal %s lost durable projection: %#v", command.action, result)
+		}
+		if result.PendingOperationID != "" || result.SyncStatus != storesqlite.GoalSyncStatusDiverged {
+			return fmt.Errorf("goal %s empty observation state=%#v", command.action, result)
+		}
+	}
+	return nil
+}
+
 func runDuplicateGoalClientSubmitID(ctx context.Context, driver Driver) error {
 	if err := driver.Reset(ctx, liveSessionFixture("session-goal-idempotent", "")); err != nil {
 		return err
@@ -95,6 +131,183 @@ func runDuplicateGoalClientSubmitID(ctx context.Context, driver Driver) error {
 	}
 	if first.Revision != 1 || second.Revision != first.Revision || driver.Metrics().GoalControlCalls != 1 {
 		return fmt.Errorf("duplicate goal control was not idempotent: first=%#v second=%#v metrics=%#v", first, second, driver.Metrics())
+	}
+	return nil
+}
+
+func runProviderAuthoredGoalAdoption(ctx context.Context, driver Driver) error {
+	if err := driver.Reset(ctx, liveSessionFixture("session-goal-provider-adoption", "")); err != nil {
+		return err
+	}
+	input := agenthost.ProviderGoalAdoptionInput{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-goal-provider-adoption",
+		ProviderSessionID: "provider-session-goal-provider-adoption",
+		Fingerprint:       "sha256:provider-goal-generation",
+		Goal: map[string]any{
+			"threadId":  "provider-session-goal-provider-adoption",
+			"objective": "continue autonomously", "status": "active",
+			"createdAt": int64(1_000), "updatedAt": int64(1_000),
+		},
+	}
+	first, err := driver.AdoptProviderGoal(ctx, input)
+	if err != nil {
+		return fmt.Errorf("adopt provider goal: %w", err)
+	}
+	second, err := driver.AdoptProviderGoal(ctx, input)
+	if err != nil {
+		return fmt.Errorf("replay provider goal adoption: %w", err)
+	}
+	if first.OperationID == "" || first.OperationID != second.OperationID ||
+		first.Revision != 1 || second.Revision != first.Revision ||
+		first.PendingOperationID != "" || first.SyncStatus != storesqlite.GoalSyncStatusSynced ||
+		metadataString(first.Goal, "objective") != "continue autonomously" {
+		return fmt.Errorf("provider goal adoption was not durably idempotent: first=%#v second=%#v", first, second)
+	}
+	if driver.Metrics().GoalControlCalls != 0 {
+		return fmt.Errorf("provider goal adoption redispatched mutation: metrics=%#v", driver.Metrics())
+	}
+	return nil
+}
+
+func runProviderAuthoredGoalActiveConflict(ctx context.Context, driver Driver) error {
+	if err := driver.Reset(ctx, liveSessionFixture("session-goal-provider-active-conflict", "")); err != nil {
+		return err
+	}
+	first := agenthost.ProviderGoalAdoptionInput{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-goal-provider-active-conflict",
+		ProviderSessionID: "provider-session-goal-provider-active-conflict",
+		Fingerprint:       "sha256:provider-goal-active-first",
+		Goal: map[string]any{
+			"threadId":  "provider-session-goal-provider-active-conflict",
+			"objective": "first", "status": "active",
+		},
+	}
+	if _, err := driver.AdoptProviderGoal(ctx, first); err != nil {
+		return fmt.Errorf("adopt first active provider goal: %w", err)
+	}
+	second := first
+	second.Fingerprint = "sha256:provider-goal-active-second"
+	second.ExpectedRevision = 1
+	second.Goal = map[string]any{
+		"threadId":  "provider-session-goal-provider-active-conflict",
+		"objective": "second", "status": "active",
+	}
+	if _, err := driver.AdoptProviderGoal(ctx, second); !errors.Is(err, storesqlite.ErrGoalOperationConflict) {
+		return fmt.Errorf("active provider goal replacement error=%v", err)
+	}
+	state, err := driver.GetGoalState(ctx, agenthost.SessionRef{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-goal-provider-active-conflict",
+	})
+	if err != nil {
+		return err
+	}
+	if state.Revision != 1 || metadataString(state.Goal, "objective") != "first" {
+		return fmt.Errorf("active provider goal changed after conflict: %#v", state)
+	}
+	return nil
+}
+
+func runProviderAuthoredGoalTerminalAdvancement(ctx context.Context, driver Driver) error {
+	fixture := liveSessionFixture("session-goal-provider-terminal-advance", "")
+	fixture.CompleteGoalOnSet = true
+	if err := driver.Reset(ctx, fixture); err != nil {
+		return err
+	}
+	if _, err := driver.GoalControl(ctx, agenthost.GoalControlInput{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-goal-provider-terminal-advance",
+		Action: "set", Objective: "terminal first",
+	}); err != nil {
+		return fmt.Errorf("create terminal provider goal: %w", err)
+	}
+	next, err := driver.AdoptProviderGoal(ctx, agenthost.ProviderGoalAdoptionInput{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-goal-provider-terminal-advance",
+		ProviderSessionID: "provider-session-goal-provider-terminal-advance",
+		Fingerprint:       "sha256:provider-goal-after-terminal",
+		ExpectedRevision:  1,
+		Goal: map[string]any{
+			"threadId":  "provider-session-goal-provider-terminal-advance",
+			"objective": "after terminal", "status": "active",
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("advance terminal provider goal: %w", err)
+	}
+	if next.Revision != 2 || metadataString(next.Goal, "objective") != "after terminal" {
+		return fmt.Errorf("terminal provider goal did not advance: %#v", next)
+	}
+	return nil
+}
+
+func runProviderAuthoredGoalClearedAdvancement(ctx context.Context, driver Driver) error {
+	if err := driver.Reset(ctx, liveSessionFixture("session-goal-provider-cleared-advance", "")); err != nil {
+		return err
+	}
+	ref := agenthost.GoalControlInput{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-goal-provider-cleared-advance",
+		Action: "set", Objective: "clear first",
+	}
+	if _, err := driver.GoalControl(ctx, ref); err != nil {
+		return fmt.Errorf("create provider goal before clear: %w", err)
+	}
+	ref.Action, ref.Objective = "clear", ""
+	if _, err := driver.GoalControl(ctx, ref); err != nil {
+		return fmt.Errorf("clear provider goal: %w", err)
+	}
+	next, err := driver.AdoptProviderGoal(ctx, agenthost.ProviderGoalAdoptionInput{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-goal-provider-cleared-advance",
+		ProviderSessionID: "provider-session-goal-provider-cleared-advance",
+		Fingerprint:       "sha256:provider-goal-after-clear",
+		ExpectedRevision:  2,
+		Goal: map[string]any{
+			"threadId":  "provider-session-goal-provider-cleared-advance",
+			"objective": "after clear", "status": "active",
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("advance cleared provider goal: %w", err)
+	}
+	if next.Revision != 3 || metadataString(next.Goal, "objective") != "after clear" {
+		return fmt.Errorf("cleared provider goal did not advance: %#v", next)
+	}
+	return nil
+}
+
+func runProviderAuthoredGoalStaleAfterClear(ctx context.Context, driver Driver) error {
+	if err := driver.Reset(ctx, liveSessionFixture("session-goal-provider-stale-after-clear", "")); err != nil {
+		return err
+	}
+	ref := agenthost.GoalControlInput{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-goal-provider-stale-after-clear",
+		Action: "set", Objective: "clear first",
+	}
+	if _, err := driver.GoalControl(ctx, ref); err != nil {
+		return fmt.Errorf("create Goal before stale provider observation: %w", err)
+	}
+	ref.Action, ref.Objective = "clear", ""
+	if _, err := driver.GoalControl(ctx, ref); err != nil {
+		return fmt.Errorf("clear Goal before stale provider observation: %w", err)
+	}
+	_, err := driver.AdoptProviderGoal(ctx, agenthost.ProviderGoalAdoptionInput{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-goal-provider-stale-after-clear",
+		ProviderSessionID: "provider-session-goal-provider-stale-after-clear",
+		Fingerprint:       "sha256:provider-goal-observed-before-clear",
+		ExpectedRevision:  1,
+		Goal: map[string]any{
+			"threadId":  "provider-session-goal-provider-stale-after-clear",
+			"objective": "clear first", "status": "active",
+		},
+	})
+	if !errors.Is(err, storesqlite.ErrGoalGenerationSuperseded) {
+		return fmt.Errorf("stale provider Goal adoption error=%v", err)
+	}
+	state, err := driver.GetGoalState(ctx, agenthost.SessionRef{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-goal-provider-stale-after-clear",
+	})
+	if err != nil {
+		return err
+	}
+	if state.Revision != 2 || state.Goal != nil || state.PendingOperationID != "" {
+		return fmt.Errorf("stale provider Goal adoption changed cleared state: %#v", state)
 	}
 	return nil
 }

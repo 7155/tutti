@@ -81,6 +81,17 @@ func (s *observedEffectiveHistoryStore) FailEditRetryRecovery(
 	return op, changed, err
 }
 
+func (s *observedEffectiveHistoryStore) QuarantineEditRetryOperation(
+	ctx context.Context,
+	input storesqlite.QuarantineEditRetryOperationInput,
+) (storesqlite.RuntimeOperation, bool, error) {
+	op, changed, err := s.EffectiveHistoryStore.QuarantineEditRetryOperation(ctx, input)
+	if err == nil && changed {
+		s.host.notifyCommitted(ctx, runtimeOperationDelta(RuntimeOperationFailed, op, nil))
+	}
+	return op, changed, err
+}
+
 type observedRuntimeOperationStore struct {
 	RuntimeOperationStore
 	host *Host
@@ -206,6 +217,14 @@ func (s *observedGoalStateStore) PrepareGoalControlOperation(ctx context.Context
 			audit = &value
 		}
 		s.host.notifyCommitted(ctx, goalOperationDelta(GoalOperationPrepared, op, state, audit))
+	}
+	return op, state, changed, err
+}
+
+func (s *observedGoalStateStore) AdoptProviderGoalOperation(ctx context.Context, input storesqlite.ProviderGoalAdoption) (storesqlite.GoalControlOperation, storesqlite.SessionGoalState, bool, error) {
+	op, state, changed, err := s.GoalStateStore.AdoptProviderGoalOperation(ctx, input)
+	if err == nil && changed {
+		s.host.notifyCommitted(ctx, goalOperationDelta(GoalOperationCompleted, op, state, nil))
 	}
 	return op, state, changed, err
 }

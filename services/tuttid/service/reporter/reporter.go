@@ -12,11 +12,14 @@ type Reporter = analyticsreporter.Reporter
 type NoopReporter = analyticsreporter.NoopReporter
 type DebugReporter = analyticsreporter.DebugReporter
 type TeaReporter = analyticsreporter.TeaReporter
+type DynamicContext = analyticsreporter.DynamicContext
 
 type Config struct {
-	Analytics      tuttitypes.AnalyticsConfig
-	DebugPublisher DebugPublisher
-	StateDir       string
+	Analytics              tuttitypes.AnalyticsConfig
+	DebugPublisher         DebugPublisher
+	StateDir               string
+	CommonParams           map[string]any
+	DynamicContextProvider func() DynamicContext
 }
 
 func New(config Config) (Reporter, error) {
@@ -30,7 +33,9 @@ func New(config Config) (Reporter, error) {
 			ChannelDomain: config.Analytics.ChannelDomain,
 			AppVersion:    config.Analytics.AppVersion,
 		},
-		DebugPublisher: config.DebugPublisher,
-		StateDir:       config.StateDir,
+		DebugPublisher:         config.DebugPublisher,
+		StateDir:               config.StateDir,
+		CommonParams:           config.CommonParams,
+		DynamicContextProvider: config.DynamicContextProvider,
 	})
 }

@@ -7,4 +7,6 @@ export {
   type AgentActivitySessionMappingOptions
 } from "./mappers.ts";
 export { agentActivityComposerOptionsFromTuttidResult } from "./composerOptions.ts";
+export { tuttiAgentSessionComposerSettingsFromActivity } from "./composerSettings.ts";
+export { agentActivityGoalControlResultFromTuttid } from "./goalControl.ts";
 export { agentActivitySessionDetailFromTuttid } from "./sessionDetail.ts";

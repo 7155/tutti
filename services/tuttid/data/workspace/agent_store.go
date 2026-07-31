@@ -370,6 +370,10 @@ func (s *SQLiteStore) PrepareGoalControlOperation(ctx context.Context, input age
 	return s.agentStore().PrepareGoalControlOperation(ctx, input)
 }
 
+func (s *SQLiteStore) AdoptProviderGoalOperation(ctx context.Context, input agentactivitybiz.ProviderGoalAdoption) (agentactivitybiz.GoalControlOperation, agentactivitybiz.SessionGoalState, bool, error) {
+	return s.agentStore().AdoptProviderGoalOperation(ctx, input)
+}
+
 func (s *SQLiteStore) GetGoalControlAudit(ctx context.Context, workspaceID string, agentSessionID string, operationID string) (agentactivitybiz.Message, bool, error) {
 	return s.agentReadStore().GetGoalControlAudit(ctx, workspaceID, agentSessionID, operationID)
 }

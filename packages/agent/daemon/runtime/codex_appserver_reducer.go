@@ -276,7 +276,11 @@ func (r codexAppServerReducer) reduceNotification(
 		// (returned reduction events are dropped without an active turn).
 		goal := payloadObject(params["goal"])
 		a.observeGoalTurnGeneration(session, strings.TrimSpace(asString(params["turnId"])), goal)
+		if a.providerGoalUpdateSuperseded(session.AgentSessionID, goal) {
+			return codexAppServerReduction{}
+		}
 		_, newStatus, statusChanged := a.applyGoalUpdate(session.AgentSessionID, goal)
+		a.scheduleProviderGoalAdoption(session, goal)
 		goalEvents := []activityshared.Event{}
 		if event, ok := normalizedGoalUpdatedEvent(session, "thread_goal_update"); ok {
 			goalEvents = append(goalEvents, event)

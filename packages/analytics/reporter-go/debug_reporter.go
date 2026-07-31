@@ -24,7 +24,7 @@ func (r *DebugReporter) Track(ctx context.Context, events ...Event) {
 		return
 	}
 
-	common := r.common.params()
+	common, _ := r.common.snapshot()
 	normalized := normalizeEvents(events, common)
 	if len(normalized) == 0 {
 		return

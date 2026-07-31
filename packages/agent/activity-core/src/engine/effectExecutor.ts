@@ -3,6 +3,7 @@ import type { AgentActivitySendInput } from "../types.ts";
 import type {
   AgentSessionActivateEffectInput,
   EngineCommandPort,
+  EngineCommandResultContract,
   EngineCommandResultIntent,
   EngineExternalCommand,
   EngineScheduledTask,
@@ -79,6 +80,12 @@ export function createEngineEffectExecutor({
       let timeoutTask: EngineScheduledTask | null = null;
       const abortController = new AbortController();
       abortControllersByCommandId.set(command.commandId, abortController);
+      const resultContract = commandResultContract(commandPort, command);
+      const execution = executeCommand(
+        commandPort,
+        command,
+        abortController.signal
+      );
 
       const finishTimeoutTask = (): void => {
         if (
@@ -107,17 +114,13 @@ export function createEngineEffectExecutor({
             commandType: command.type,
             ...commandCorrelationFields(command),
             outcome: "timedOut",
+            resultContract,
             type: "engine/commandResult"
           });
         });
         timeoutTasks.add(timeoutTask);
       }
 
-      const execution = executeCommand(
-        commandPort,
-        command,
-        abortController.signal
-      );
       execution.then(
         (value) => {
           if (settled) {
@@ -134,6 +137,7 @@ export function createEngineEffectExecutor({
             commandType: command.type,
             ...commandCorrelationFields(command),
             outcome: "succeeded",
+            resultContract,
             type: "engine/commandResult",
             value
           });
@@ -154,6 +158,7 @@ export function createEngineEffectExecutor({
             ...commandCorrelationFields(command),
             ...engineCommandErrorFields(error),
             outcome: "failed",
+            resultContract,
             type: "engine/commandResult"
           });
         }
@@ -193,6 +198,21 @@ function executeCommand(
       return effects.activateSession(activationInput(command), {
         signal
       });
+    case "goal/control":
+      return effects.controlGoal
+        ? effects.controlGoal(
+            {
+              action: command.action,
+              agentSessionId: command.agentSessionId,
+              clientSubmitId: command.clientSubmitId,
+              ...(command.objective ? { objective: command.objective } : {}),
+              workspaceId: command.workspaceId
+            },
+            { signal }
+          )
+        : Promise.reject(
+            new Error("AgentSessionEffectPort.controlGoal is not configured")
+          );
     case "queue/sendPrompt":
       return effects.sendInput(promptInput(command), { signal });
     case "session/updateSettings":
@@ -257,6 +277,16 @@ function executeCommand(
     default:
       return commandPort.execute(command, { signal });
   }
+}
+
+function commandResultContract(
+  commandPort: EngineCommandPort | EngineTypedCommandPort,
+  command: EngineExternalCommand
+): EngineCommandResultContract {
+  if (commandPort.kind !== "typed") return "opaque";
+  if (command.type === "session/activate") return "activation-v1";
+  if (command.type === "goal/control") return "goal-control-v1";
+  return "opaque";
 }
 
 function promptInput(

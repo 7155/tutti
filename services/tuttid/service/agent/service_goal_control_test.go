@@ -61,6 +61,19 @@ func (s *recordingGoalStateStore) PrepareGoalControlOperation(_ context.Context,
 		}, true, nil
 }
 
+func (*recordingGoalStateStore) AdoptProviderGoalOperation(_ context.Context, input agentactivitybiz.ProviderGoalAdoption) (agentactivitybiz.GoalControlOperation, agentactivitybiz.SessionGoalState, bool, error) {
+	objective, _ := input.Goal["objective"].(string)
+	return agentactivitybiz.GoalControlOperation{
+			OperationID: input.OperationID, WorkspaceID: input.WorkspaceID, AgentSessionID: input.AgentSessionID,
+			GoalRevision: 1, Action: "set", Objective: objective,
+			Status: agentactivitybiz.GoalOperationStatusCompleted, ProviderPhase: agentactivitybiz.GoalProviderPhaseApplied,
+		}, agentactivitybiz.SessionGoalState{
+			WorkspaceID: input.WorkspaceID, AgentSessionID: input.AgentSessionID,
+			Desired: clonePayload(input.Goal), Observed: clonePayload(input.Goal), Revision: 1,
+			SyncStatus: agentactivitybiz.GoalSyncStatusSynced,
+		}, true, nil
+}
+
 func (s *recordingGoalStateStore) MarkGoalControlOperationDispatched(_ context.Context, _ string, operationID string, _ int64) (agentactivitybiz.GoalControlOperation, bool, error) {
 	s.dispatched = append(s.dispatched, operationID)
 	return agentactivitybiz.GoalControlOperation{OperationID: operationID, GoalRevision: 1}, true, nil

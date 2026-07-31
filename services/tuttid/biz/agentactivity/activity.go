@@ -127,6 +127,7 @@ type RuntimeOperationCompletion = agentstore.RuntimeOperationCompletion
 type SessionGoalState = agentstore.SessionGoalState
 type GoalControlOperation = agentstore.GoalControlOperation
 type GoalControlOperationPrepare = agentstore.GoalControlOperationPrepare
+type ProviderGoalAdoption = agentstore.ProviderGoalAdoption
 type GoalControlOperationComplete = agentstore.GoalControlOperationComplete
 type GoalControlOperationAcknowledge = agentstore.GoalControlOperationAcknowledge
 type GoalObservationReconcile = agentstore.GoalObservationReconcile

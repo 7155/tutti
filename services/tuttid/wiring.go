@@ -16,6 +16,7 @@ import (
 	preferencesbiz "github.com/tutti-os/tutti/services/tuttid/biz/preferences"
 	workspacedata "github.com/tutti-os/tutti/services/tuttid/data/workspace"
 	tuttiserver "github.com/tutti-os/tutti/services/tuttid/server"
+	accountservice "github.com/tutti-os/tutti/services/tuttid/service/account"
 	agentservice "github.com/tutti-os/tutti/services/tuttid/service/agent"
 	agentextensionservice "github.com/tutti-os/tutti/services/tuttid/service/agentextension"
 	agentstatusservice "github.com/tutti-os/tutti/services/tuttid/service/agentstatus"
@@ -200,10 +201,22 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 
 	analyticsConfig := tuttitypes.ResolveAnalyticsConfig()
 	debugPublisher := resolveAnalyticsDebugPublisher(analyticsConfig, api.EventStreamService)
+	var dynamicContextProvider func() reporterservice.DynamicContext
+	if account, ok := api.AccountService.(*accountservice.Service); ok {
+		dynamicContextProvider = account.AnalyticsContext
+	}
 	analyticsReporter, err := reporterservice.New(reporterservice.Config{
 		Analytics:      analyticsConfig,
 		DebugPublisher: debugPublisher,
 		StateDir:       tuttitypes.DefaultStateDir(),
+		CommonParams: map[string]any{
+			"authority":       "client",
+			"business_app_id": "233749",
+			"client":          "desktop",
+			"environment":     tuttitypes.ResolveDefaultsFromEnv().Runtime.Env,
+			"schema_version":  1,
+		},
+		DynamicContextProvider: dynamicContextProvider,
 	})
 	if err != nil {
 		return fmt.Errorf("create analytics reporter: %w", err)
@@ -314,6 +327,9 @@ func attachAnalyticsReporter(api *tuttiapi.DaemonAPI, analyticsReporter reporter
 	}
 	if service, ok := api.AgentStatusService.(*agentstatusservice.Service); ok {
 		service.AnalyticsReporter = analyticsReporter
+	}
+	if service, ok := api.AccountService.(*accountservice.Service); ok {
+		service.SetAnalyticsReporter(analyticsReporter)
 	}
 }
 

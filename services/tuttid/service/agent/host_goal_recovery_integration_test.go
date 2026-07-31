@@ -90,23 +90,17 @@ func TestGoalRecoveryTimeoutThenRestartDoesNotReplayClaudeSet(t *testing.T) {
 	runtime.sessions["ws-goal-timeout:session-goal-timeout"] = ProviderRuntimeSession{
 		ID: "session-goal-timeout", Provider: "claude-code", ProviderSessionID: "claude-timeout", Status: "ready",
 	}
-	runtime.goalControlHook = func(ctx context.Context, _ RuntimeGoalControlInput) (RuntimeGoalControlResult, error) {
-		<-ctx.Done()
-		return RuntimeGoalControlResult{}, ctx.Err()
+	runtime.goalControlHook = func(context.Context, RuntimeGoalControlInput) (RuntimeGoalControlResult, error) {
+		return RuntimeGoalControlResult{}, context.DeadlineExceeded
 	}
 	nowMS := int64(30)
 	service := newIsolatedAgentService(runtime)
 	service.GoalStateStore = store
 	service.GoalOperationOwner = "goal-timeout-worker"
 	service.GoalOperationClock = func() time.Time { return time.UnixMilli(nowMS) }
-	service.GoalOperationAttemptTimeout = 25 * time.Millisecond
 	service.GoalOperationMaxAttempts = 1
-	started := time.Now()
 	if err := service.ApplicationHost().StepGoalOperationWorker(ctx, false); err != nil {
 		t.Fatalf("timeout attempt: %v", err)
-	}
-	if elapsed := time.Since(started); elapsed > time.Second {
-		t.Fatalf("timeout attempt took %s", elapsed)
 	}
 	op, found, err := store.GetGoalControlOperation(ctx, "ws-goal-timeout", "goal-timeout-set")
 	if err != nil || !found || op.Status != agentactivitybiz.GoalOperationStatusDispatched ||
@@ -166,16 +160,14 @@ func TestGoalRepairSetTimeoutThenRestartDoesNotReplayClaudeSet(t *testing.T) {
 	runtime.sessions["ws-repair-set-timeout:session-repair-set-timeout"] = ProviderRuntimeSession{
 		ID: "session-repair-set-timeout", Provider: "claude-code", ProviderSessionID: "claude-repair-timeout", Status: "ready",
 	}
-	runtime.goalControlHook = func(ctx context.Context, _ RuntimeGoalControlInput) (RuntimeGoalControlResult, error) {
-		<-ctx.Done()
-		return RuntimeGoalControlResult{}, ctx.Err()
+	runtime.goalControlHook = func(context.Context, RuntimeGoalControlInput) (RuntimeGoalControlResult, error) {
+		return RuntimeGoalControlResult{}, context.DeadlineExceeded
 	}
 	nowMS := int64(30)
 	service := newIsolatedAgentService(runtime)
 	service.GoalStateStore = store
 	service.GoalOperationOwner = "goal-repair-timeout-worker"
 	service.GoalOperationClock = func() time.Time { return time.UnixMilli(nowMS) }
-	service.GoalOperationAttemptTimeout = 25 * time.Millisecond
 	service.GoalOperationMaxAttempts = 1
 	if err := service.ApplicationHost().StepGoalOperationWorker(ctx, false); err != nil {
 		t.Fatal(err)

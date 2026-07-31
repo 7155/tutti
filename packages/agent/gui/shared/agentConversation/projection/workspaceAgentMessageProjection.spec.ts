@@ -51,6 +51,37 @@ describe("projectWorkspaceAgentMessagesToConversationVM", () => {
     ).toBeNull();
   });
 
+  it("preserves message whitespace through the Mobile conversation projection", () => {
+    const selectedSession = session();
+    const selectedMessage = message({
+      messageId: "streaming-whitespace",
+      version: 1,
+      role: "assistant",
+      kind: "text",
+      payload: { text: "\nHello  \n" }
+    });
+    const activitySnapshot: AgentActivitySnapshot = {
+      workspaceId: "workspace-1",
+      sessions: [selectedSession],
+      presences: [],
+      sessionMessagesById: {
+        [selectedSession.agentSessionId]: [selectedMessage]
+      }
+    };
+
+    const conversation = projectAgentActivitySessionToConversationVM({
+      activitySnapshot,
+      agentSessionId: selectedSession.agentSessionId
+    });
+    const assistantRow = conversation?.rows.find(
+      (row) => row.kind === "message" && row.speaker === "assistant"
+    );
+
+    expect(
+      assistantRow?.kind === "message" ? assistantRow.messages[0]?.body : null
+    ).toBe("\nHello  \n");
+  });
+
   it("filters supplied Turns to the selected Session", () => {
     const selectedSession = session();
     const selectedMessage = message({

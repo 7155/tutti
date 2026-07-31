@@ -1354,46 +1354,41 @@ invalid_grant`. Search `tuttid.log` for
   `options`, rather than through the top-level `models` object. If
   `session/prompt` then returns `stopReason: "end_turn"` without an assistant
   chunk or tool call, treat it as a hidden provider failure rather than a
-  successful empty answer. Separately inspect the structured desktop usage
-  probe code: `auth_required` means the selected API-key provider has no key,
-  `subscription_required` means the managed usage endpoint rejected the
-  account with HTTP 402, and `quota_exhausted` means a returned usage window
-  has no remaining quota. Coding Plan usage probes send the OAuth token only
-  to the official HTTPS `api.kimi.com` origin; a custom or non-HTTPS
-  `KIMI_CODE_BASE_URL` must fail before any outbound usage request.
-  Check the configuration directory that matches the selected runtime:
-  standalone Kimi Code uses `~/.kimi-code` (or `KIMI_CODE_HOME`), while the
-  managed `kimi-cli` runtime uses `~/.kimi` (or `KIMI_SHARE_DIR`).
+  successful empty answer. Check that the signed Kimi Extension routes
+  `/status` and `/usage` to the runtime with the shared `submitImmediate`
+  effect. Those commands must remain runtime-owned: Tutti Desktop should
+  report its account-usage probe as `unsupported` for `acp:kimi-code` and must
+  not parse Kimi configuration or credentials itself.
 - Root cause:
   Kimi Code can create an ACP session while no model is configured. Its ACP
   adapter maps some underlying model, authentication, plan, and balance
   failures to a normal `end_turn` with no output because ACP has no failed stop
   reason. The setup guard previously recognized only the top-level `models`
-  shape, while the desktop status port reduced provider probe failures to a
-  generic boolean.
+  shape. A provider-specific Desktop usage probe would also duplicate Kimi's
+  configuration, credential, endpoint, and quota semantics outside the signed
+  Extension/runtime boundary.
 - Fix:
-  Reject both empty ACP model shapes during setup. Project Kimi configuration
-  only to non-secret billing-mode fields and API-key presence, query the
-  managed Coding Plan usage endpoint only after validating its official HTTPS
-  origin, select the configuration directory using the active
-  standalone/runtime convention, and preserve stable error codes through the
-  Agent status port so AgentGUI can render actionable localized copy. A normal
-  ACP terminal with neither assistant output nor tool activity must settle as
+  Reject both empty ACP model shapes during generic setup. A normal ACP
+  terminal with neither assistant output nor tool activity must settle as
   `provider_empty_response`, producing a visible conversation error card that
   points users back to model and account setup. Turns with only thinking or a
-  system notice remain valid because they produced observable assistant output.
+  system notice remain valid because they produced observable assistant
+  output. Keep Kimi's `/status` and `/usage` behavior declarative in the signed
+  Extension and execute it through the Kimi ACP runtime, which remains the
+  owner of provider configuration, credentials, account APIs, and quota
+  interpretation.
 - Validation:
-  Cover empty and populated `models`/`configOptions` selectors, missing API
-  keys, Coding Plan HTTP 402, zero remaining quota, status-port error
-  projection, both Kimi configuration directory conventions, localized
-  configuration and `/status` errors, refusal to fetch usage from a custom
-  origin, thinking-only and notice-only ACP turns, and an otherwise normal
-  empty ACP `end_turn`.
+  Cover empty and populated `models`/`configOptions` selectors, thinking-only
+  and notice-only ACP turns, and an otherwise normal empty ACP `end_turn`.
+  Assert that an explicit Kimi Desktop usage probe stays `unsupported`, and
+  validate in the Extension repository that `/status` and `/usage` both use
+  `submitImmediate` against the pinned real runtime.
 - References:
   [standard_acp_setup.go](../../../packages/agent/daemon/runtime/standard_acp_setup.go)
   [standard_acp_turn.go](../../../packages/agent/daemon/runtime/standard_acp_turn.go)
-  [kimiCodeProviderUsageProbe.ts](../../../apps/desktop/src/main/kimiCodeProviderUsageProbe.ts)
   [createDesktopAgentStatusSource.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/createDesktopAgentStatusSource.ts)
+  [Agent Extensions](../../architecture/agent-extensions.md)
+  [Kimi Code Agent Extension](https://github.com/tutti-os/agent-extension-kimi-code)
 
 ### Claude Code sessions fail with `effectiveSource: "none"` when CC-Switch or similar proxy tools are used
 

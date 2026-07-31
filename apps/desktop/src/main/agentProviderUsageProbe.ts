@@ -15,7 +15,6 @@ import {
 import { getDesktopLogger } from "./logging.ts";
 import { outboundFetch } from "./net/outboundFetch.ts";
 import { probeClaudeCodeProvider } from "./claudeProviderUsageProbe.ts";
-import { probeKimiCodeProvider } from "./kimiCodeProviderUsageProbe.ts";
 export { setClaudeOAuthKeychainReaderForTesting } from "./claudeProviderUsageProbe.ts";
 
 const CODEX_DEFAULT_CHATGPT_BASE_URL = "https://chatgpt.com/backend-api/";
@@ -76,40 +75,10 @@ type DesktopAgentUsageProbeHandler = (
   capturedAtUnixMs: number
 ) => Promise<AgentProbeProvider>;
 
-interface DesktopAgentExtensionUsageProbeDescriptor {
-  handler: DesktopAgentUsageProbeHandler;
-  probeKind: string;
-  providerId: string;
-}
-
-// Signed Agent Extensions are intentionally not part of the built-in provider
-// catalog. Keep their Desktop-only account probes in one descriptor list so
-// default enumeration and dispatch cannot drift apart.
-const desktopAgentExtensionUsageProbeDescriptors: readonly DesktopAgentExtensionUsageProbeDescriptor[] =
-  [
-    {
-      handler: probeKimiCodeProvider,
-      probeKind: "kimi_code",
-      providerId: "acp:kimi-code"
-    }
-  ];
-
-const desktopAgentExtensionUsageProbeKindByProvider = new Map(
-  desktopAgentExtensionUsageProbeDescriptors.map((descriptor) => [
-    descriptor.providerId,
-    descriptor.probeKind
-  ])
-);
-
 function normalizeProbeProviders(providers: readonly string[] | undefined) {
-  const defaults = [
-    ...migratedAgentGUIProviderIdentityCatalog
-      .filter((entry) => entry.desktop.usageProbeKind !== "")
-      .map((entry) => entry.providerId),
-    ...desktopAgentExtensionUsageProbeDescriptors.map(
-      (descriptor) => descriptor.providerId
-    )
-  ];
+  const defaults = migratedAgentGUIProviderIdentityCatalog
+    .filter((entry) => entry.desktop.usageProbeKind !== "")
+    .map((entry) => entry.providerId);
   const normalized = (providers ?? defaults)
     .map(
       (provider) =>
@@ -202,7 +171,6 @@ async function resolveDesktopAgentProbe(
 ): Promise<AgentProbeProvider> {
   const probeKind =
     resolveAgentGUIProviderCatalogIdentity(provider)?.desktop.usageProbeKind ??
-    desktopAgentExtensionUsageProbeKindByProvider.get(provider) ??
     "";
   const handler = desktopAgentUsageProbeHandlers.get(probeKind);
   if (handler) {
@@ -227,14 +195,7 @@ const desktopAgentUsageProbeHandlers = new Map<
   DesktopAgentUsageProbeHandler
 >([
   ["codex", probeCodexProvider],
-  ["claude_code", probeClaudeCodeProvider],
-  ...desktopAgentExtensionUsageProbeDescriptors.map(
-    (descriptor) =>
-      [descriptor.probeKind, descriptor.handler] as [
-        string,
-        DesktopAgentUsageProbeHandler
-      ]
-  )
+  ["claude_code", probeClaudeCodeProvider]
 ]);
 
 // The usage probe runs in the Electron main process and hits the vendor account

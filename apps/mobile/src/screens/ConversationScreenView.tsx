@@ -12,14 +12,7 @@ import {
   useNativeTheme
 } from "@tutti-os/ui-system/native";
 import { useEffect, useRef, useState } from "react";
-import {
-  Linking,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View
-} from "react-native";
+import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
 import { MobileInteractionCard } from "../components/MobileConversationRows";
 import { MobileComposerDock } from "../components/MobileComposerDock";
 import { MobileConversationTimeline } from "../components/MobileConversationTimeline";
@@ -46,6 +39,7 @@ export function ConversationScreenView({
   onRefreshQuickPrompts,
   onRespond,
   onOpenSession,
+  onSelectProject,
   onSelectTarget,
   onSend,
   onStop,
@@ -70,6 +64,7 @@ export function ConversationScreenView({
     }
   ): void;
   onOpenSession(id: string): void;
+  onSelectProject(path: string | null): void;
   onSelectTarget(id: string): void;
   onSend(): void;
   onStop(): void;
@@ -141,7 +136,9 @@ export function ConversationScreenView({
         </View>
         <View style={styles.conversationTitle}>
           <Text numberOfLines={1} style={styles.sessionTitle}>
-            {model.selectedSession?.title || workspaceName}
+            {model.creating
+              ? t("newSession")
+              : model.selectedSession?.title || workspaceName}
           </Text>
           <View style={styles.locationRow}>
             <View style={styles.locationItem}>
@@ -271,25 +268,6 @@ export function ConversationScreenView({
       ) : model.creating ? (
         <View style={styles.center}>
           <Text style={styles.emptyText}>{t("newSessionHint")}</Text>
-          <ScrollView
-            contentContainerStyle={styles.targetList}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-          >
-            {model.targets.map((target) => (
-              <Pressable
-                key={target.id}
-                onPress={() => onSelectTarget(target.id)}
-                style={[
-                  styles.targetChip,
-                  target.id === model.selectedAgentTargetId &&
-                    styles.targetChipSelected
-                ]}
-              >
-                <Text style={styles.targetChipText}>{target.name}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
         </View>
       ) : (
         <View style={styles.center}>
@@ -306,6 +284,8 @@ export function ConversationScreenView({
           quickPromptLibrary={quickPromptLibrary}
           onDraftChange={onDraftChange}
           onRefreshQuickPrompts={onRefreshQuickPrompts}
+          onSelectProject={onSelectProject}
+          onSelectTarget={onSelectTarget}
           onSend={onSend}
           onStop={onStop}
           onUpdate={onUpdateComposerSettings}
@@ -429,16 +409,6 @@ function createStyles(theme: NativeTheme) {
       height: 64,
       width: "78%"
     },
-    sessionTitle: { color: theme.color.text, fontSize: 16, fontWeight: "700" },
-    targetChip: {
-      borderColor: theme.color.border,
-      borderRadius: theme.radius.large,
-      borderWidth: StyleSheet.hairlineWidth,
-      paddingHorizontal: theme.space.medium,
-      paddingVertical: theme.space.small
-    },
-    targetChipSelected: { borderColor: theme.color.accent },
-    targetChipText: { color: theme.color.text, fontSize: 13 },
-    targetList: { gap: theme.space.small }
+    sessionTitle: { color: theme.color.text, fontSize: 16, fontWeight: "700" }
   });
 }

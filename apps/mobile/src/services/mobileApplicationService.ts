@@ -21,6 +21,7 @@ import {
   IDeviceService,
   ILoginService,
   IMobileQuickPromptLibraryService,
+  IMobileUserProjectDirectoryService,
   IWorkspaceActivityService,
   IWorkspaceConversationRailService,
   IWorkspaceMediaService,
@@ -28,6 +29,7 @@ import {
 } from "./mobileServiceIdentifiers";
 import { ObservableService } from "./observableService";
 import { MobileQuickPromptLibraryService } from "./mobileQuickPromptLibraryService";
+import { MobileUserProjectDirectoryService } from "./mobileUserProjectDirectoryService";
 import type { AppLifecycleState, MobileServicePorts } from "./servicePorts";
 import { WorkspaceActivityService } from "./workspaceActivityService";
 import { WorkspaceCatalogService } from "./workspaceCatalogService";
@@ -72,6 +74,7 @@ interface AuthenticatedScope {
   directory: AgentDirectoryService;
   quickPrompts: MobileQuickPromptLibraryService;
   session: AccountSession;
+  userProjects: MobileUserProjectDirectoryService;
   workspaceCatalog: WorkspaceCatalogService;
 }
 
@@ -217,6 +220,7 @@ export class MobileApplicationService extends ObservableService<MobileApplicatio
       workspace,
       authenticated.client,
       authenticated.directory,
+      authenticated.userProjects,
       navigation,
       drafts,
       this.ports.clock,
@@ -317,6 +321,7 @@ export class MobileApplicationService extends ObservableService<MobileApplicatio
     const client = this.ports.createRemoteClient();
     const directory = new AgentDirectoryService(client);
     const quickPrompts = new MobileQuickPromptLibraryService(client);
+    const userProjects = new MobileUserProjectDirectoryService(client);
     const workspaceCatalog = new WorkspaceCatalogService(client);
     const deviceService = new DeviceService(
       session,
@@ -333,6 +338,7 @@ export class MobileApplicationService extends ObservableService<MobileApplicatio
     services.set(IDeviceService, deviceService);
     services.set(IAgentDirectoryService, directory);
     services.set(IMobileQuickPromptLibraryService, quickPrompts);
+    services.set(IMobileUserProjectDirectoryService, userProjects);
     const container = this.rootContainer.createChild(services);
     this.authenticatedScope = {
       client,
@@ -342,6 +348,7 @@ export class MobileApplicationService extends ObservableService<MobileApplicatio
       directory,
       quickPrompts,
       session,
+      userProjects,
       workspaceCatalog
     };
     this.publish({
@@ -373,6 +380,7 @@ export class MobileApplicationService extends ObservableService<MobileApplicatio
     scope.device = device;
     void scope.directory.load();
     void scope.quickPrompts.refresh();
+    void scope.userProjects.load();
     if (!preservingWorkspace) {
       this.publishAuthenticated(
         scope,
@@ -677,6 +685,7 @@ export class MobileApplicationService extends ObservableService<MobileApplicatio
     this.disposeWorkspaceScope();
     scope.device = null;
     scope.quickPrompts.reset();
+    scope.userProjects.reset();
     this.publishAuthenticated(scope, { phase: "idle" }, null);
   }
 

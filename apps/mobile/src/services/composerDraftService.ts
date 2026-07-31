@@ -3,6 +3,7 @@ import { ObservableService } from "./observableService";
 
 export interface ComposerDraftSnapshot {
   drafts: Readonly<Record<string, string>>;
+  selectedProjectPath: string | null;
   settingsByTargetId: Readonly<Record<string, AgentActivitySessionSettings>>;
 }
 
@@ -14,6 +15,7 @@ export class ComposerDraftService extends ObservableService<ComposerDraftSnapsho
     super();
     this.snapshot = {
       drafts: { ...previous?.drafts },
+      selectedProjectPath: previous?.selectedProjectPath ?? null,
       settingsByTargetId: { ...previous?.settingsByTargetId }
     };
   }
@@ -38,6 +40,17 @@ export class ComposerDraftService extends ObservableService<ComposerDraftSnapsho
     const drafts = { ...this.snapshot.drafts };
     delete drafts[key];
     this.snapshot = { ...this.snapshot, drafts };
+    this.emitChange();
+  }
+
+  getSelectedProjectPath(): string | null {
+    return this.snapshot.selectedProjectPath;
+  }
+
+  setSelectedProjectPath(path: string | null): void {
+    const selectedProjectPath = path?.trim() || null;
+    if (selectedProjectPath === this.snapshot.selectedProjectPath) return;
+    this.snapshot = { ...this.snapshot, selectedProjectPath };
     this.emitChange();
   }
 

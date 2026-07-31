@@ -35,6 +35,7 @@ import {
   previewMobileQuickPromptContent,
   type MobileTextSelection
 } from "./mobileQuickPromptPresentation";
+import { MobileComposerContextSelectors } from "./MobileComposerContextSelectors";
 
 type ComposerToolsMenu = "tools" | "model" | "permission" | "quickPrompts";
 
@@ -52,6 +53,8 @@ export function MobileComposerDock({
   quickPromptLibrary,
   onDraftChange,
   onRefreshQuickPrompts,
+  onSelectProject,
+  onSelectTarget,
   onSend,
   onStop,
   onUpdate
@@ -60,6 +63,8 @@ export function MobileComposerDock({
   quickPromptLibrary: MobileQuickPromptLibrarySnapshot;
   onDraftChange(value: string): void;
   onRefreshQuickPrompts(): Promise<void>;
+  onSelectProject(path: string | null): void;
+  onSelectTarget(agentTargetId: string): void;
   onSend(): void;
   onStop(): void;
   onUpdate(settings: AgentActivitySessionSettings): void;
@@ -78,6 +83,7 @@ export function MobileComposerDock({
     model.draft.trim() &&
     (!model.creating || model.selectedAgentTargetId) &&
     model.commandsAvailable &&
+    (!model.creating || model.composerOptionsLoadStatus !== "loading") &&
     !model.sending
   );
   const modelOptions = model.composerOptions?.models ?? [];
@@ -180,6 +186,13 @@ export function MobileComposerDock({
 
   return (
     <View style={styles.dock}>
+      {model.creating ? (
+        <MobileComposerContextSelectors
+          model={model}
+          onSelectProject={onSelectProject}
+          onSelectTarget={onSelectTarget}
+        />
+      ) : null}
       <MobileComposerSettingsSheet
         activationId={settingsActivationId}
         disabled={!model.commandsAvailable}

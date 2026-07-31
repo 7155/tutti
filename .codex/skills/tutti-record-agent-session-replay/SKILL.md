@@ -1,13 +1,13 @@
 ---
 name: tutti-record-agent-session-replay
-description: Record, inspect, replay, and catalog deterministic Tutti AgentGUI Session Replay cassettes. Use when Codex must turn a test case into a real Provider-backed cassette, add or run a named `--scenario` in `tools/scripts/run-agent-session-replay.mjs`, diagnose recording or replay mismatches, verify Provider frames and portable semantic state, capture AgentGUI evidence, or update a Feishu/Lark cassette inventory after successful record and replay.
+description: Record, inspect, and replay deterministic Tutti AgentGUI Session Replay cassettes. Use when Codex must turn a repository-owned test case into a real Provider-backed cassette, add or run an external named `--scenario`, diagnose recording or replay mismatches, verify Provider frames and portable semantic state, or capture AgentGUI evidence.
 ---
 
 # Record Tutti Agent Session Replay
 
 Produce evidence in this order:
 
-`case -> deterministic scenario -> real record -> cassette audit -> real replay -> catalog update`
+`case -> deterministic scenario -> real record -> cassette audit -> real replay -> case artifact update`
 
 Do not report a cassette as recorded before both the recording and a fresh
 Replay succeed.
@@ -21,17 +21,16 @@ Replay succeed.
 4. For lifecycle semantics, read `packages/agent/host/README.md` and keep those
    semantics in Host.
 5. Inspect `git status --short`. Preserve pre-existing work.
-6. If the case comes from a Feishu/Lark Base, use the `lark` skill to read the
-   exact row, field types, record ID, steps, assertions, Provider scope, and
-   requested cassette name. Delay all writes until verification succeeds.
+6. Read the case repository's `case.json`, `scenario.mjs`, fixtures, current
+   Cassette, and evidence. The repository is the case source of truth.
 
 Use CDP through the repository runner. Do not use Computer Use unless the user
 explicitly requests it.
 
 ## Design the scenario
 
-Add a lowercase scenario ID to
-`tools/scripts/run-agent-session-replay.mjs` and its argument tests.
+Add or update `cases/<scenario-id>/scenario.mjs` in the QA case repository.
+Do not add a case registry or case-specific scenario to the Tutti repository.
 
 Make the scenario deterministic:
 
@@ -60,6 +59,7 @@ Run:
 pnpm e2e:agent-gui -- \
   --record .tmp/cassettes/<scenario-id>_codex \
   --scenario <scenario-id> \
+  --scenario-file ../tutti-agent-session-replay-cases/cases/<scenario-id>/scenario.mjs \
   --agent-target-id local:codex \
   --keep-runtime \
   --timeout-ms 300000
@@ -122,18 +122,11 @@ Require the runner's `replay passed` result. Inspect
 Provider transport remains fail-closed. Only repository-declared
 observer-only probes may be absent or yield to causal traffic.
 
-## Update the catalog
+## Update the case artifacts
 
-Only after record and Replay pass:
-
-1. Re-read the target Base fields.
-2. Update the exact record ID.
-3. Set the cassette name to `{scenarioId}_{provider}` (for example `c01_codex`).
-4. Set recording status to `已录制`.
-5. Read the record back and verify both fields.
-
-Do not promote the row to `已接入断言` or `已通过` unless the requested
-repository assertion/gate level is also implemented and verified.
+Only after record and Replay pass, replace the case repository's
+`cases/<scenario-id>/cassette` and `evidence` directories and update its
+`case.json` status when required. Do not read or write a remote catalog.
 
 ## Finish
 
@@ -145,7 +138,7 @@ Report:
 - cassette names and artifact links;
 - record and Replay evidence per case;
 - Provider frame, interaction, tool, Turn, and final-response summaries;
-- catalog rows changed;
+- case repository artifacts changed;
 - implementation changes and why they changed;
 - changed-line distribution, separating pre-existing dirty work;
 - documentation impact;

@@ -201,6 +201,47 @@ func TestRunStandardACPSetupFlagsSessionWithoutUsableModel(t *testing.T) {
 	}
 }
 
+func TestRunStandardACPSetupOffersTerminalConfigurationForMissingProvider(t *testing.T) {
+	t.Parallel()
+
+	transport := newStandardACPTransport("Example Agent", "setup-session")
+	transport.conn.authMethods = []map[string]any{{
+		"id": "agent-setup", "name": "Configure Example Agent",
+		"type": "terminal", "args": []any{"--setup"},
+	}}
+	transport.conn.newSessionError = &acpError{
+		Code:    -32603,
+		Message: "Internal error",
+		Data:    json.RawMessage(`{"details":"No LLM provider configured. Run example setup for first-time configuration."}`),
+	}
+
+	result, err := runStandardACPSetupTest(t, transport, "")
+	if err != nil {
+		t.Fatalf("probe without method must expose configuration instead of failing: %v", err)
+	}
+	if result.Status != StandardACPSetupAuthRequired || len(result.AuthMethods) != 1 {
+		t.Fatalf("setup result = %#v", result)
+	}
+	if method := result.AuthMethods[0]; method.ID != "agent-setup" || method.Type != "terminal" ||
+		len(method.Args) != 1 || method.Args[0] != "--setup" {
+		t.Fatalf("terminal configuration method = %#v", method)
+	}
+}
+
+func TestStandardACPSetupMissingProviderRequiresAdvertisedTerminalConfiguration(t *testing.T) {
+	t.Parallel()
+
+	err := errors.New("No LLM provider configured")
+	if standardACPSetupNeedsConfiguration(err, nil) {
+		t.Fatal("missing provider without a terminal configuration method must remain a runtime failure")
+	}
+	if standardACPSetupNeedsConfiguration(errors.New("provider request failed"), []StandardACPAuthMethod{{
+		ID: "setup", Type: "terminal", Args: []string{"--setup"},
+	}}) {
+		t.Fatal("unrelated provider failures must remain runtime failures")
+	}
+}
+
 func TestRunStandardACPSetupReadyWithSeededModels(t *testing.T) {
 	t.Parallel()
 

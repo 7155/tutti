@@ -306,8 +306,9 @@ describe("AgentTargetSetupGate", () => {
       command: "/opt/kimi-code/bin/kimi login"
     });
     expect(
-      await screen.findByText(/terminal has been opened in the workspace/)
+      await screen.findByRole("button", { name: "Open setup" })
     ).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
 
     act(() => setup.publish(ready("extension:gemini")));
     await waitFor(() => expect(close).toHaveBeenCalledTimes(1));
@@ -328,6 +329,7 @@ describe("AgentTargetSetupGate", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Start sign in" })
     );
+    fireEvent.click(await screen.findByRole("button", { name: "Open setup" }));
     expect(
       await screen.findByText(/terminal has been opened in the workspace/)
     ).toBeTruthy();
@@ -380,6 +382,7 @@ describe("AgentTargetSetupGate", () => {
     );
     complete?.("timed_out");
 
+    fireEvent.click(await screen.findByRole("button", { name: "Open setup" }));
     expect(await screen.findByText(/Timed out waiting/)).toBeTruthy();
     expect(close).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Copy command" })).toBeTruthy();

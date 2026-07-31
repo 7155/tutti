@@ -290,6 +290,7 @@ function createAgentTargetSetupController(input: {
       return;
     }
     terminalLoginHandle = handle;
+    update({ dialogOpen: false });
     void handle.completion.then(
       (result) => settleTerminalLogin(generation, result),
       () => settleTerminalLogin(generation, "unavailable")

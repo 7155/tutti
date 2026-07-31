@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -13,6 +14,10 @@ import (
 )
 
 var ErrACPAuthMethodUnavailable = errors.New("ACP authentication method is unavailable")
+
+var standardACPUnconfiguredProviderPattern = regexp.MustCompile(
+	`(?i)\bno (?:llm|model|inference) provider configured\b`,
+)
 
 // ErrACPAuthMethodTerminal marks authentication methods of type "terminal".
 // The ACP authenticate request would run the provider's interactive CLI login
@@ -138,7 +143,7 @@ func RunStandardACPSetup(
 			}
 			return StandardACPSetupResult{Status: StandardACPSetupAuthRequired, AuthMethods: methods}, nil
 		}
-		if IsAuthenticationRequired(err) {
+		if IsAuthenticationRequired(err) || standardACPSetupNeedsConfiguration(err, methods) {
 			if methodID != "" {
 				return StandardACPSetupResult{Status: StandardACPSetupAuthRequired, AuthMethods: methods}, err
 			}
@@ -152,6 +157,18 @@ func RunStandardACPSetup(
 		return StandardACPSetupResult{}, fmt.Errorf("close ACP setup session: %w", err)
 	}
 	return StandardACPSetupResult{Status: StandardACPSetupReady, AuthMethods: methods, Account: account}, nil
+}
+
+func standardACPSetupNeedsConfiguration(err error, methods []StandardACPAuthMethod) bool {
+	if err == nil || !standardACPUnconfiguredProviderPattern.MatchString(err.Error()) {
+		return false
+	}
+	for _, method := range methods {
+		if method.Type == "terminal" && len(method.Args) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func parseStandardACPAuthenticatedAccount(result json.RawMessage, methodID string) *StandardACPAuthenticatedAccount {

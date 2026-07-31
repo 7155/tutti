@@ -126,6 +126,7 @@ type standardACPConnection struct {
 	authMethods                      []map[string]any
 	authenticateResult               map[string]any
 	authenticateError                *acpError
+	newSessionError                  *acpError
 	requireAuthentication            bool
 }
 

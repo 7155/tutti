@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { AgentActivitySessionSettings } from "@tutti-os/agent-activity-core";
 import type {
   CreateWorkspaceAgentSessionRequest,
   TuttidClient,
@@ -1643,16 +1644,26 @@ test("desktop agent activity adapter loads Claude models via composer options re
     runtimeApi: createRuntimeApi()
   });
 
+  const settings: AgentActivitySessionSettings = {
+    browserUse: false,
+    computerUse: false,
+    model: "opus"
+  };
   const options = await adapter.loadComposerOptions({
     cwd: "/repo",
     provider: "claude-code",
+    settings,
     workspaceId
   });
 
   assert.deepEqual(composerOptionsCalls, [
     {
       provider: "claude-code",
-      request: { cwd: "/repo", settings: {}, workspaceId }
+      request: {
+        cwd: "/repo",
+        settings: { browserUse: false, model: "opus" },
+        workspaceId
+      }
     }
   ]);
   assert.equal(options.modelConfigurable, true);

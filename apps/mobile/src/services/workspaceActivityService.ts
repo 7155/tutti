@@ -4,6 +4,7 @@ import {
   createAgentSessionEngine,
   parseAgentActivityGoalControlText,
   selectEngineSessionRuntimeAvailability,
+  selectPendingActivations,
   selectSessionGoalControlSettlement,
   type AgentActivitySessionSettings,
   type AgentActivityInteraction,
@@ -735,10 +736,20 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
           this.navigation.selectSession(submission.agentSessionId);
           continue;
         }
-        const record =
-          state.pendingIntents.activationsByRequestId[
-            submission.clientSubmitId
-          ];
+        const record = selectPendingActivations(state).find(
+          (activation) =>
+            activation.mode === "new" &&
+            activation.clientSubmitId === submission.clientSubmitId
+        );
+        if (record?.status === "canceled") {
+          this.pendingSubmissionsByDraftKey.delete(draftKey);
+          this.ambiguousDraftKeys.delete(draftKey);
+          this.errorCode = null;
+          if (!this.drafts.get(draftKey)) {
+            this.drafts.set(draftKey, submission.text);
+          }
+          continue;
+        }
         if (record?.status === "failed" || record?.status === "uncertain") {
           this.markSubmissionAmbiguous(draftKey, submission.text);
         }

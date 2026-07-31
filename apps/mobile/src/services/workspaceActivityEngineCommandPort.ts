@@ -18,7 +18,8 @@ import type {
 import {
   agentActivityComposerOptionsFromTuttidResult,
   agentActivitySessionFromTuttidSession,
-  agentActivityTurnFromTuttidTurn
+  agentActivityTurnFromTuttidTurn,
+  tuttiAgentSessionComposerSettingsFromActivity
 } from "@tutti-os/agent-activity-tuttid-adapter";
 import type { TuttidClient } from "@tutti-os/client-tuttid-ts";
 import { mobileLocale } from "../i18n";
@@ -113,7 +114,9 @@ export function executeWorkspaceActivityExtensionCommand(
             ...(command.cwd ? { cwd: command.cwd } : {}),
             locale: mobileLocale,
             workspaceId: command.workspaceId,
-            settings: command.settings ?? {}
+            settings: tuttiAgentSessionComposerSettingsFromActivity(
+              command.settings
+            )
           },
           { signal }
         )
@@ -336,7 +339,7 @@ function updateSessionSettings(
     .updateWorkspaceAgentSessionSettings(
       input.workspaceId,
       input.agentSessionId,
-      input.settings,
+      tuttiAgentSessionComposerSettingsFromActivity(input.settings),
       ...requestOptionsArgs(signal)
     )
     .then((session) => {

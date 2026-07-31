@@ -10,7 +10,8 @@ import {
   agentActivityMessageFromTuttidMessage,
   agentActivitySessionDetailFromTuttid as mapAgentActivitySessionDetailFromTuttid,
   agentActivitySessionFromTuttidSession as mapAgentActivitySessionFromTuttidSession,
-  agentActivityTuttiModeActivationFromTuttid
+  agentActivityTuttiModeActivationFromTuttid,
+  tuttiAgentSessionComposerSettingsFromActivity
 } from "@tutti-os/agent-activity-tuttid-adapter";
 export {
   agentActivityMessageFromTuttidMessage,
@@ -165,7 +166,9 @@ export function createDesktopAgentActivityAdapter({
                 ...(agentTargetId ? { agentTargetId } : {}),
                 ...(cwd ? { cwd } : {}),
                 workspaceId: input.workspaceId,
-                settings: input.settings ?? {}
+                settings: tuttiAgentSessionComposerSettingsFromActivity(
+                  input.settings
+                )
               },
               { signal }
             ),
@@ -234,6 +237,9 @@ export function createDesktopAgentActivityAdapter({
         const request: CreateWorkspaceAgentSessionRequest = {
           agentSessionId,
           agentTargetId,
+          ...(typeof input.browserUse === "boolean"
+            ? { browserUse: input.browserUse }
+            : {}),
           ...(recordingId ? { recordingId } : {}),
           ...(input.capabilityRefs?.length
             ? {

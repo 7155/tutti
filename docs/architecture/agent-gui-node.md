@@ -726,6 +726,10 @@ disable submission, but must not change editor editability.
   Canonical monotonicity guards prevent a late activation response from
   regressing newer realtime state.
   Surfaces clear a new-Session draft only after activation admission succeeds.
+  If an admitted new-Session activation is canceled before canonical Session
+  confirmation, the surface restores the submitted draft only while the
+  current draft is still empty, releases the pending `clientSubmitId`, and
+  allocates a fresh identity for the next explicit submission.
   Existing-Session Prompt submission enters through `engine.submitPrompt`.
   The surface keeps the stable `clientSubmitId` used by its draft-recovery and
   idempotent-retry bookkeeping; the Engine owns workspace scope, timestamps,
@@ -955,7 +959,10 @@ timeout and retry policy, and translates the semantic call to its internal
 the activation intent instead; provider-independent draft projection and
 Desktop-persisted defaults remain surface policy until activation. A renderer
 must not call the settings endpoint from a component or invent a
-provider-specific settings schema.
+provider-specific settings schema. Desktop and Mobile project the broader
+Engine settings through one generated-contract allowlist before composer-option
+or existing-Session settings requests. Both preserve supported fields such as
+`browserUse`; neither sends `computerUse` until OpenAPI adds that request field.
 Existing-Session Prompt sends similarly enter through `engine.submitPrompt`;
 Desktop and Mobile provide content plus a stable client submit identity, while
 the Engine owns common routing, confirmation expiry, and admission projection.
@@ -969,10 +976,11 @@ the host effect port.
 An activation intent's shared Session settings are not an HTTP create-field
 allowlist. Each host must construct a typed
 `CreateWorkspaceAgentSessionRequest` and forward only fields present in the
-generated contract. In particular, `computerUse` is a default-on runtime
-setting but is not currently a create-request field; Mobile must not add it as
-an extra property. Supporting an explicit first-Turn opt-out requires changing
-OpenAPI and the create adapter first.
+generated contract. Both hosts preserve `browserUse`, which is a supported
+create field. In contrast, `computerUse` is a default-on runtime setting but is
+not currently a create-request field; neither host may add it as an extra
+property. Supporting an explicit first-Turn opt-out requires changing OpenAPI
+and the create adapters first.
 
 Desktop and Mobile construct the headless controller through
 `@tutti-os/agent-gui/conversation-rail-controller` and supply its narrow

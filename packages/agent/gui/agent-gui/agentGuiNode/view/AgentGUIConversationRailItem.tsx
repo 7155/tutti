@@ -48,15 +48,12 @@ function agentGUIConversationIconPresentation(
     workspaceId
   });
   const maskIconUrl = targetPresentation?.maskIconUrl?.trim() ?? "";
-  const iconUrl = targetPresentation?.iconUrl?.trim() ?? "";
-  if (maskIconUrl && maskIconUrl !== iconUrl) {
-    return { kind: "mask", url: maskIconUrl };
-  }
-  if (iconUrl) {
-    return { kind: "image", url: iconUrl };
-  }
   if (maskIconUrl) {
     return { kind: "mask", url: maskIconUrl };
+  }
+  const iconUrl = targetPresentation?.iconUrl?.trim() ?? "";
+  if (iconUrl) {
+    return { kind: "image", url: iconUrl };
   }
   const providerIconUrl = resolveAgentGuiSessionProviderFlatIconUrl(provider);
   return providerIconUrl ? { kind: "mask", url: providerIconUrl } : null;

@@ -175,37 +175,6 @@ describe("AgentGUIConversationRailItem interaction lock", () => {
     ).toBeNull();
   });
 
-  it("reuses the target image when its mask points to the same opaque asset", () => {
-    const iconUrl = "data:image/png;base64,hermes";
-    const { container } = renderRailItem({
-      agentTargets: [
-        {
-          agentTargetId: "extension:hermes",
-          iconUrl,
-          maskIconUrl: iconUrl,
-          provider: "acp:hermes",
-          workspaceId: "workspace-1"
-        }
-      ],
-      isRailInteractionLocked: () => false,
-      item: {
-        agentTargetId: "extension:hermes",
-        provider: "acp:hermes"
-      }
-    });
-
-    expect(
-      container.querySelector<HTMLImageElement>(
-        ".agent-gui-node__conversation-provider-image"
-      )?.src
-    ).toBe(iconUrl);
-    expect(
-      container.querySelector(
-        ".agent-gui-node__conversation-provider-mask-icon"
-      )
-    ).toBeNull();
-  });
-
   it("opens exact Host target information from icon hover and row keyboard focus", async () => {
     const exactTarget: AgentGUIAgentTarget = {
       agentTargetId: "agent:shared",

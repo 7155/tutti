@@ -229,9 +229,7 @@ export function MobileComposerDock({
             />
           ) : model.sending ? (
             <ActivityIndicator color={theme.color.text} size="small" />
-          ) : (
-            <MicrophoneGlyph theme={theme} />
-          )}
+          ) : null}
         </View>
       </View>
 
@@ -450,21 +448,6 @@ export function MobileComposerDock({
   );
 }
 
-function MicrophoneGlyph({ theme }: { theme: NativeTheme }) {
-  const styles = createStyles(theme);
-  return (
-    <View
-      accessibilityElementsHidden
-      importantForAccessibility="no"
-      style={styles.mic}
-    >
-      <View style={styles.micCapsule} />
-      <View style={styles.micStem} />
-      <View style={styles.micBase} />
-    </View>
-  );
-}
-
 function createStyles(theme: NativeTheme) {
   return StyleSheet.create({
     actionButton: {
@@ -547,32 +530,6 @@ function createStyles(theme: NativeTheme) {
       gap: theme.space.small
     },
     loading: { marginVertical: theme.space.medium },
-    mic: {
-      alignItems: "center",
-      height: 36,
-      justifyContent: "center",
-      marginRight: theme.space.small,
-      width: 28
-    },
-    micBase: {
-      backgroundColor: theme.color.textSecondary,
-      borderRadius: 2,
-      height: 2,
-      marginTop: 3,
-      width: 14
-    },
-    micCapsule: {
-      borderColor: theme.color.textSecondary,
-      borderRadius: 7,
-      borderWidth: 2,
-      height: 18,
-      width: 12
-    },
-    micStem: {
-      backgroundColor: theme.color.textSecondary,
-      height: 5,
-      width: 2
-    },
     plus: {
       color: theme.color.text,
       fontSize: 31,

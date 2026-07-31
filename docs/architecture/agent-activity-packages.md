@@ -376,7 +376,11 @@ It does not own:
 platform-neutral mapping boundary between generated
 `@tutti-os/client-tuttid-ts` workspace-agent DTOs and `agent-activity-core`
 entities. Desktop and Mobile consume the same protocol-v2 contract assertions
-and Session, Turn, Message, and Tutti-mode projections.
+and Session, Turn, Message, and Tutti-mode projections. The package also owns
+the pure outbound create-Session and send-input projections into generated
+tuttid request DTOs. Those projections use explicit allowlists: activity-only
+prompt fields never cross the HTTP boundary, and Turn `capabilityRefs` survive
+both immediate send results and later detail reconciliation.
 Current-user identity is mandatory mapper input from the application host:
 Desktop supplies its local AgentGUI identity and Mobile supplies the immutable
 authenticated account user id.
@@ -384,9 +388,12 @@ authenticated account user id.
 It may depend on the generated client and `agent-activity-core`, but must not
 own HTTP execution, authentication, retries, event subscriptions, logging,
 i18n, Electron/React Native APIs, DI scopes, or command orchestration. Those
-remain application-host responsibilities. If a proposed extraction requires a
-large callback surface for those concerns, keep it in the application adapter
-instead.
+remain application-host responsibilities. Application hosts pass canonical
+activity inputs to this package and execute the returned generated request;
+for shared create/send/Turn contracts they do not maintain host-local request
+mirrors, object-spread casts, or response-field allowlists. If a proposed
+extraction requires a large callback surface for host concerns, keep it in the
+application adapter instead.
 
 ### `@tutti-os/agent-gui`
 

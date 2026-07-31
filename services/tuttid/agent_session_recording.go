@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	agentdaemon "github.com/tutti-os/tutti/packages/agent/daemon"
 	agentruntime "github.com/tutti-os/tutti/packages/agent/daemon/runtime"
 	agenthost "github.com/tutti-os/tutti/packages/agent/host"
 	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
@@ -139,9 +140,12 @@ func (observers agentProviderObservationObservers) ObserveProviderObservations(
 
 func buildAgentSessionRecordingService(
 	store workspacedata.CatalogStore,
-	transport replay.ProcessRecorder,
+	transport *agentdaemon.SessionRecordingProcessTransport,
 	agents *agentservice.Service,
 ) (*agentsessionreplay.Service, error) {
+	if transport == nil {
+		return nil, nil
+	}
 	productState, ok := store.(agentSessionReplayProductStateStore)
 	if !ok {
 		return nil, errors.New("agent session recording state store is unavailable")
@@ -165,24 +169,20 @@ func buildAgentSessionRecordingService(
 			NewID:     uuid.NewString,
 		},
 	}
-	if unitTransport, ok := transport.(interface {
-		SetProviderInputUnitSink(func(agentruntime.ProviderInputUnit) error)
-	}); ok {
-		unitTransport.SetProviderInputUnitSink(func(unit agentruntime.ProviderInputUnit) error {
-			service.ObserveProviderInputUnit(unit.RecordingID, unit.Position)
-			return service.Workflow.RecordProviderInputUnit(
-				context.Background(),
-				unit.RecordingID,
-				replay.ObservationJournalEntry{
-					SchemaVersion: replay.ObservationSchemaVersion,
-					Position:      unit.Position,
-					UnitKind:      unit.Kind,
-					Observations:  []replay.JournalObservation{},
-					Correlations:  []replay.CheckpointCommitCorrelation{},
-				},
-			)
-		})
-	}
+	transport.SetProviderInputUnitSink(func(unit agentruntime.ProviderInputUnit) error {
+		service.ObserveProviderInputUnit(unit.RecordingID, unit.Position)
+		return service.Workflow.RecordProviderInputUnit(
+			context.Background(),
+			unit.RecordingID,
+			replay.ObservationJournalEntry{
+				SchemaVersion: replay.ObservationSchemaVersion,
+				Position:      unit.Position,
+				UnitKind:      unit.Kind,
+				Observations:  []replay.JournalObservation{},
+				Correlations:  []replay.CheckpointCommitCorrelation{},
+			},
+		)
+	})
 	if err := service.Recover(context.Background()); err != nil {
 		return nil, err
 	}
@@ -190,10 +190,39 @@ func buildAgentSessionRecordingService(
 }
 
 func configureAgentSessionRecordingObservers(
-	projection *agentservice.ActivityProjection,
+	projection interface {
+		SetRootTurnObserver(agentservice.RootTurnObserver)
+		SetReplayCommitObserver(agentservice.ReplayCommitObserver)
+	},
 	runtime agentservice.RootTurnObserver,
 	recording *agentsessionreplay.Service,
 ) {
 	projection.SetRootTurnObserver(runtime)
-	projection.SetReplayCommitObserver(recording)
+	if recording != nil {
+		projection.SetReplayCommitObserver(recording)
+	}
+}
+
+func buildAgentCommitObserver(
+	projection agenthost.CommitObserver,
+	recordingEnabled bool,
+) (agenthost.CommitObserver, *agentCommitObserverRelay) {
+	if !recordingEnabled {
+		return projection, nil
+	}
+	relay := newAgentCommitObserverRelay(projection)
+	return relay, relay
+}
+
+func composeAgentProviderObservationObserver(
+	observers agentProviderObservationObservers,
+) agentruntime.ProviderObservationObserver {
+	switch len(observers) {
+	case 0:
+		return nil
+	case 1:
+		return observers[0]
+	default:
+		return observers
+	}
 }

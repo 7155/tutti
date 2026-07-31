@@ -109,7 +109,7 @@ type standardACPAdapter struct {
 	interactiveDispositionSink InteractiveDispositionSink
 	commandSink                CommandSnapshotSink
 	eventSink                  SessionEventSink
-	inputUnits                 providerInputUnitTracker
+	inputUnits                 *providerInputUnitTracker
 	configSink                 ConfigOptionsUpdateSink
 	promptImageMaterializer    providerPromptImageMaterializer
 	lifecycleMu                sync.Mutex

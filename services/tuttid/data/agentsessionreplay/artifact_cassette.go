@@ -280,7 +280,10 @@ func readProviderConnectionIDs(directory string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open projected provider tape: %w", err)
 	}
-	auditErr := replay.AuditProjectedProcessCassetteFrames(frames)
+	auditErr := replay.AuditProjectedProcessCassetteFrames(
+		frames,
+		manifest.Connections,
+	)
 	closeErr := frames.Close()
 	if err := errors.Join(auditErr, closeErr); err != nil {
 		return nil, fmt.Errorf("audit projected provider tape: %w", err)

@@ -152,7 +152,7 @@ type CodexAppServerAdapter struct {
 	interactiveDispositionSink InteractiveDispositionSink
 	commandSink                CommandSnapshotSink
 	eventSink                  SessionEventSink
-	inputUnits                 providerInputUnitTracker
+	inputUnits                 *providerInputUnitTracker
 	goalReconcileSink          GoalReconcileDurableSink
 	goalProvenanceSink         GoalProvenanceDurableSink
 	providerGoalAdoptionSink   ProviderGoalAdoptionSink
@@ -473,6 +473,7 @@ func newAppServerAdapter(
 		cancelGraceWindow:   defaultCodexAppServerCancelGraceWindow,
 		turnStartAckTimeout: defaultCodexAppServerTurnStartAckTimeout,
 		turnSteerTimeout:    defaultCodexAppServerTurnSteerTimeout,
+		inputUnits:          providerInputUnitTrackerForTransport(transport),
 	}
 }
 

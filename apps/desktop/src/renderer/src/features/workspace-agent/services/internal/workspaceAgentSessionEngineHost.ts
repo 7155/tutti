@@ -63,8 +63,8 @@ interface CreateWorkspaceAgentSessionEngineHostInput {
     signal?: AbortSignal
   ): Promise<unknown>;
   runtimeApi: Pick<DesktopRuntimeApi, "logTerminalDiagnostic">;
-  takePendingSessionRecording(workspaceId: string): string | null;
-  restorePendingSessionRecording(
+  takePendingSessionRecording?(workspaceId: string): string | null;
+  restorePendingSessionRecording?(
     workspaceId: string,
     recordingId: string
   ): void;

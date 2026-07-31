@@ -13,7 +13,7 @@ func TestAuditProjectedProcessCassetteFrames(t *testing.T) {
 			t,
 			map[string]any{"method": "turn/completed", "cwd": "${SESSION_CWD:root:1}"},
 		)
-		if err := AuditProjectedProcessCassetteFrames(strings.NewReader(frames)); err != nil {
+		if err := AuditProjectedProcessCassetteFrames(strings.NewReader(frames), codexTapeConnections()); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -23,7 +23,7 @@ func TestAuditProjectedProcessCassetteFrames(t *testing.T) {
 			t,
 			map[string]any{"method": "account/login/start"},
 		)
-		err := AuditProjectedProcessCassetteFrames(strings.NewReader(frames))
+		err := AuditProjectedProcessCassetteFrames(strings.NewReader(frames), codexTapeConnections())
 		if err == nil || !strings.Contains(err.Error(), "credential-bearing method") {
 			t.Fatalf("AuditProjectedProcessCassetteFrames error = %v", err)
 		}
@@ -34,7 +34,7 @@ func TestAuditProjectedProcessCassetteFrames(t *testing.T) {
 			t,
 			map[string]any{"method": "turn/completed", "cwd": "/Users/person/project"},
 		)
-		err := AuditProjectedProcessCassetteFrames(strings.NewReader(frames))
+		err := AuditProjectedProcessCassetteFrames(strings.NewReader(frames), codexTapeConnections())
 		if err == nil || !strings.Contains(err.Error(), "non-portable path") {
 			t.Fatalf("AuditProjectedProcessCassetteFrames error = %v", err)
 		}
@@ -48,11 +48,32 @@ func TestAuditProjectedProcessCassetteFrames(t *testing.T) {
 				"savedPath": "/Users/person/.codex/generated_images/image.png",
 			},
 		)
-		err := AuditProjectedProcessCassetteFrames(strings.NewReader(frames))
+		err := AuditProjectedProcessCassetteFrames(strings.NewReader(frames), codexTapeConnections())
 		if err == nil || !strings.Contains(err.Error(), "non-portable path") {
 			t.Fatalf("AuditProjectedProcessCassetteFrames error = %v", err)
 		}
 	})
+}
+
+func TestAuditProjectedProcessCassetteFramesRejectsUnregisteredProvider(t *testing.T) {
+	frames := projectedProviderFrame(t, map[string]any{"method": "initialize"})
+	err := AuditProjectedProcessCassetteFrames(
+		strings.NewReader(frames),
+		[]ProcessCassetteConnectionRecord{{
+			ConnectionID: "connection-1",
+			Provider:     "cursor",
+		}},
+	)
+	if err == nil || !strings.Contains(err.Error(), "no replay adapter") {
+		t.Fatalf("AuditProjectedProcessCassetteFrames error = %v", err)
+	}
+}
+
+func codexTapeConnections() []ProcessCassetteConnectionRecord {
+	return []ProcessCassetteConnectionRecord{{
+		ConnectionID: "connection-1",
+		Provider:     "codex",
+	}}
 }
 
 func projectedProviderFrame(t *testing.T, value any) string {

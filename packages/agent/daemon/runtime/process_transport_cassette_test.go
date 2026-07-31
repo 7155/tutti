@@ -18,6 +18,17 @@ import (
 	sessionreplay "github.com/tutti-os/tutti/packages/agent/session-replay"
 )
 
+func codexReplayDescriptorForCassetteTest(
+	t *testing.T,
+) sessionreplay.ProviderReplayDescriptor {
+	t.Helper()
+	descriptor, ok := sessionreplay.FindProviderReplayByProvider(ProviderCodex)
+	if !ok {
+		t.Fatal("Codex replay descriptor is missing")
+	}
+	return descriptor
+}
+
 type cassetteTestTransport struct {
 	connection *cassetteTestConnection
 }
@@ -644,7 +655,15 @@ func TestReplayProcessTransportMatchesJSONRPCRequestSemanticsAndMapsResponseID(t
 		`{"id":9,"method":"turn/start","params":{"threadId":"thread-1","input":[{"text":"请回答：1+2=?","type":"text"}],"approvalPolicy":"on-request","model":"gpt-5.3-codex-spark"}}` + "\n",
 	)
 
-	responseIDs, matches := processCassetteJSONMatch(expected, actual, "", "", "")
+	descriptor := codexReplayDescriptorForCassetteTest(t)
+	responseIDs, matches := processCassetteJSONMatch(
+		descriptor,
+		expected,
+		actual,
+		"",
+		"",
+		"",
+	)
 	if !matches {
 		t.Fatal("semantically identical JSON-RPC request did not match")
 	}
@@ -653,7 +672,14 @@ func TestReplayProcessTransportMatchesJSONRPCRequestSemanticsAndMapsResponseID(t
 	}
 
 	changedPrompt := bytes.Replace(actual, []byte("1+2"), []byte("3+1"), 1)
-	if _, matches := processCassetteJSONMatch(expected, changedPrompt, "", "", ""); matches {
+	if _, matches := processCassetteJSONMatch(
+		descriptor,
+		expected,
+		changedPrompt,
+		"",
+		"",
+		"",
+	); matches {
 		t.Fatal("JSON-RPC request with changed prompt matched")
 	}
 }
@@ -704,8 +730,9 @@ func TestRecordingAndReplayProcessTransportProjectsPlanDecisionClientUserMessage
 		t.Fatal(err)
 	}
 	params, _ := projectedMessage["params"].(map[string]any)
-	if got := payloadString(params, "clientUserMessageId"); got !=
-		portableProcessCassettePlanDecisionClientUserMessageID {
+	descriptor := codexReplayDescriptorForCassetteTest(t)
+	wantPortableID := descriptor.Tape.GeneratedRequestFields[0].PortableValue
+	if got := payloadString(params, "clientUserMessageId"); got != wantPortableID {
 		t.Fatalf("persisted clientUserMessageId = %q, want portable marker", got)
 	}
 
@@ -735,7 +762,14 @@ func TestReplayProcessTransportKeepsOrdinaryClientUserMessageIDStrict(t *testing
 	actual := []byte(
 		`{"id":10,"method":"turn/start","params":{"clientUserMessageId":"user-submit-2"}}` + "\n",
 	)
-	if _, matches := processCassetteJSONMatch(expected, actual, "", "", ""); matches {
+	if _, matches := processCassetteJSONMatch(
+		codexReplayDescriptorForCassetteTest(t),
+		expected,
+		actual,
+		"",
+		"",
+		"",
+	); matches {
 		t.Fatal("ordinary clientUserMessageId mismatch matched")
 	}
 }
@@ -750,7 +784,7 @@ func TestReplayProcessTransportMapsProtocolCWDWhenProcessCWDIsEmpty(t *testing.T
 		t.Fatal(err)
 	}
 	connection, err := recording.Start(context.Background(), ProcessSpec{
-		Provider: ProviderCursor, ProtocolCWD: "/recorded/project",
+		Provider: ProviderCodex, ProtocolCWD: "/recorded/project",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -771,7 +805,7 @@ func TestReplayProcessTransportMapsProtocolCWDWhenProcessCWDIsEmpty(t *testing.T
 		t.Fatal(err)
 	}
 	replayed, err := replay.Start(context.Background(), ProcessSpec{
-		Provider: ProviderCursor, ProtocolCWD: "/",
+		Provider: ProviderCodex, ProtocolCWD: "/",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -780,6 +814,22 @@ func TestReplayProcessTransportMapsProtocolCWDWhenProcessCWDIsEmpty(t *testing.T
 		`{"id":1,"method":"session/load","params":{"cwd":"/"}}` + "\n",
 	)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRecordingProcessTransportRejectsProviderWithoutReplayAdapter(t *testing.T) {
+	recording, err := NewRecordingProcessTransport(
+		cassetteTestTransport{connection: &cassetteTestConnection{}},
+		t.TempDir(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = recording.Start(context.Background(), ProcessSpec{
+		Provider: ProviderCursor,
+	})
+	if err == nil || !strings.Contains(err.Error(), "no replay adapter") {
+		t.Fatalf("Start() error = %v, want missing replay adapter", err)
 	}
 }
 

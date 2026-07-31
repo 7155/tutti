@@ -80,7 +80,8 @@ export async function registerIpcHandlers(
     deps.daemonEndpoint,
     deps.logger,
     deps.tuttidClient,
-    deps.fileDialogs
+    deps.fileDialogs,
+    deps.preferences
   );
   registerUpdateIpc(deps.updateService);
   registerWallpaperIpc();

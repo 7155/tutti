@@ -132,24 +132,29 @@ func (w *processCassetteWriter) start(
 	if w.finalized {
 		return "", errors.New("process cassette is already finalized")
 	}
+	sessionKey := normalizeProcessCassetteIdentity(spec.AgentSessionID)
+	nextLaunch := w.sessionLaunches[sessionKey] + 1
+	cwd := processCassetteCWD{
+		recorded: processCassetteProtocolCWD(spec),
+		token:    fmt.Sprintf("${SESSION_CWD:%s:%d}", sessionKey, nextLaunch),
+	}
+	projection, err := newProcessCassetteProjection(spec, cwd)
+	if err != nil {
+		return "", err
+	}
 	w.nextConnection++
 	connectionID := fmt.Sprintf("connection-%d", w.nextConnection)
-	sessionKey := normalizeProcessCassetteIdentity(spec.AgentSessionID)
-	w.sessionLaunches[sessionKey]++
-	cwdToken := fmt.Sprintf("${SESSION_CWD:%s:%d}", sessionKey, w.sessionLaunches[sessionKey])
+	w.sessionLaunches[sessionKey] = nextLaunch
 	w.manifest.Connections = append(w.manifest.Connections, ProcessCassetteConnectionRecord{
 		ConnectionID:       connectionID,
 		Provider:           spec.Provider,
 		AgentSessionID:     spec.AgentSessionID,
 		RootAgentSessionID: rootProcessSessionID(spec),
-		LaunchOrdinal:      w.sessionLaunches[sessionKey],
-		CWDToken:           cwdToken,
+		LaunchOrdinal:      nextLaunch,
+		CWDToken:           cwd.token,
 		CaptureOrigin:      captureOrigin,
 	})
-	w.connectionCWD[connectionID] = processCassetteCWD{
-		recorded: processCassetteProtocolCWD(spec),
-		token:    cwdToken,
-	}
+	w.connectionCWD[connectionID] = cwd
 	w.active++
 	if err := w.writeManifestLocked(); err != nil {
 		w.active--
@@ -158,10 +163,7 @@ func (w *processCassetteWriter) start(
 		delete(w.projections, connectionID)
 		return "", err
 	}
-	w.projections[connectionID] = newProcessCassetteProjection(
-		spec,
-		w.connectionCWD[connectionID],
-	)
+	w.projections[connectionID] = projection
 	return connectionID, nil
 }
 

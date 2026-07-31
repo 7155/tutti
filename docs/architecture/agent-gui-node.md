@@ -262,11 +262,30 @@ When enabled, Desktop injects its recording and replay controls through generic
 AgentGUI render slots. AgentGUI contains no recording/replay API, controller,
 state, provider branch, component, or copy.
 
-`services/tuttid/service/agentsessionreplay` is the application owner for both
-Recording state. Desktop reads its authoritative recording list
-after mounting and projects commands; React state is never the source of an
-active Recording. `packages/agent/daemon/runtime` retains only
-the concrete recording and scripted replay transport mechanics.
+`packages/agent/session-replay` owns the provider-neutral Recording/Cassette
+workflow, status transitions, portable contracts, and validation policy.
+`services/tuttid/service/agentsessionreplay` is Tutti's HTTP/product adapter and
+composition surface; Desktop is the Electron/renderer adapter and composition
+surface. Desktop reads the authoritative recording list after mounting and
+projects commands; React state is never the source of an active Recording.
+`packages/agent/daemon/runtime` retains only concrete recording and scripted
+replay transport mechanics.
+
+The default-off preference is a startup composition gate, not only a UI gate.
+The renderer awaits initial persisted preference hydration before it constructs
+the Workspace service container, so composition never reads transient in-memory
+defaults. The preferences module owns this readiness seam; Replay remains a
+consumer of the hydrated feature flag and does not add a parallel event center.
+The main-process Replay composition module owns manager/access/control creation
+and all Replay IPC bindings; general runtime IPC supplies only Electron and
+daemon adapters. When disabled, Desktop main does not create the Replay process
+manager, access adapters, control writer, or Replay IPC handlers. The renderer does not create
+the Replay service, recording binding, recorder/observer maps, or Engine
+intent/command observer. Enabled composition creates the renderer recorder only
+for the lifetime of an active Recording and mounts isolated Replay observers
+only inside the Replay runtime. Changing the preference does not claim to
+recompose a running daemon or renderer; the next process composition applies
+the new value.
 
 A Recording captures a time window over the root SessionGraph. Root Turn
 settlement, child creation, and Goal continuation do not complete it. Explicit

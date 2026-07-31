@@ -43,6 +43,7 @@ import type { IWorkspaceFilePreviewSurfaceHost } from "../../../workspace-file-p
 import type { IWorkspaceUserProjectService } from "../../../workspace-user-project/services/workspaceUserProjectService.interface.ts";
 import type { IAgentProviderStatusService as AgentProviderStatusService } from "../../../workspace-agent/services/agentProviderStatusService.interface.ts";
 import type { IAgentQuickPromptService as AgentQuickPromptService } from "../../../workspace-agent/services/agentQuickPromptService.interface.ts";
+import type { AgentSessionReplayDesktopComposition } from "../../../agent-session-replay/services/agentSessionReplayDesktopComposition.ts";
 import type { IAgentsService as AgentsService } from "../../../workspace-agent/services/agentsService.interface.ts";
 import type { IWorkspaceAgentActivityService as WorkspaceAgentActivityService } from "../../../workspace-agent/services/workspaceAgentActivityService.interface.ts";
 import type { IWorkspaceAgentPromptSessionService as WorkspaceAgentPromptSessionService } from "../../../workspace-agent/services/workspaceAgentPromptSessionService.interface.ts";
@@ -72,6 +73,7 @@ const workspaceDockNativePreviewTimeoutMs = 2_500;
 
 export interface WorkspaceWorkbenchHostInputResolverDependencies {
   agentQuickPromptService?: AgentQuickPromptService;
+  agentSessionReplayComposition?: AgentSessionReplayDesktopComposition | null;
   agentProviderStatusService: AgentProviderStatusService;
   agentsService: AgentsService;
   appCenterService: IWorkspaceAppCenterService;
@@ -156,6 +158,8 @@ export class WorkspaceWorkbenchHostInputResolver {
     const contributionRegistry = resolveWorkbenchCapabilityRegistry(
       createTuttiWorkbenchProductProfile({
         agentQuickPromptService: this.dependencies.agentQuickPromptService,
+        agentSessionReplayComposition:
+          this.dependencies.agentSessionReplayComposition,
         appI18n: input.appI18n,
         appLocale: input.appLocale,
         appCenterService: this.dependencies.appCenterService,

@@ -45,6 +45,9 @@ func (t *providerInputUnitTracker) begin(
 	ctx context.Context,
 	agentSessionID string,
 ) func() {
+	if t == nil {
+		return func() {}
+	}
 	unit, ok := ProviderInputUnitFromContext(ctx)
 	if !ok || agentSessionID == "" || unit.Position.ConnectionID == "" {
 		return func() {}
@@ -74,7 +77,7 @@ func (t *providerInputUnitTracker) stamp(
 	agentSessionID string,
 	events []activityshared.Event,
 ) []activityshared.Event {
-	if len(events) == 0 {
+	if t == nil || len(events) == 0 {
 		return events
 	}
 	t.mu.Lock()
@@ -95,6 +98,16 @@ func (t *providerInputUnitTracker) stamp(
 		}
 	}
 	return events
+}
+
+func providerInputUnitTrackerForTransport(
+	transport ProcessTransport,
+) *providerInputUnitTracker {
+	tracking, ok := transport.(ProviderInputUnitTrackingTransport)
+	if !ok || !tracking.TracksProviderInputUnits() {
+		return nil
+	}
+	return &providerInputUnitTracker{}
 }
 
 func stampProviderInputUnitFromError(

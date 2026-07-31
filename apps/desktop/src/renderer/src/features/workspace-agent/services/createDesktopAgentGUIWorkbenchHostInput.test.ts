@@ -23,6 +23,10 @@ import {
 import { DESKTOP_WORKSPACE_FILE_HOME_LOCATION_ID } from "../../workspace-file-manager/services/desktopWorkspaceFileLocations.ts";
 import { createDesktopAgentGUIWorkbenchHostInput } from "./createDesktopAgentGUIWorkbenchHostInput.ts";
 import type { IWorkspaceAgentActivityService } from "./workspaceAgentActivityService.interface.ts";
+import {
+  createAgentSessionReplayDesktopComposition,
+  type AgentSessionReplayActivityPort
+} from "../../agent-session-replay/services/agentSessionReplayDesktopComposition.ts";
 
 const workspaceId = "workspace-1";
 
@@ -133,26 +137,48 @@ test("desktop agent GUI workbench host input reuses workspace runtime services",
   );
 });
 
-test("desktop agent GUI workbench host injects cassette import into the replay service", async () => {
-  const requests: Parameters<
-    DesktopRuntimeApi["importAgentSessionReplayCassettes"]
-  >[0][] = [];
+test("desktop agent GUI workbench host input creates no replay service without composition", () => {
   const hostInput = createDesktopAgentGUIWorkbenchHostInput({
     hostFilesApi: createHostFilesApi(),
     tuttidClient: createTuttidClient(),
     platformApi: createPlatformApi(),
     richTextAtService: createRichTextAtService({ providers: [] }),
-    runtimeApi: createRuntimeApi({
-      async importAgentSessionReplayCassettes(input) {
-        requests.push(input);
-        return { canceled: false, failedCount: 2, importedCount: 0 };
-      }
-    }),
+    runtimeApi: createRuntimeApi(),
     workspaceAgentActivityService: createWorkspaceAgentActivityService([]),
     workspaceId
   });
 
-  const result = await hostInput.agentSessionReplayService.importCassettes();
+  assert.equal(hostInput.agentSessionReplayService, null);
+});
+
+test("desktop agent GUI workbench host injects cassette import into the replay service", async () => {
+  const requests: Parameters<
+    DesktopRuntimeApi["importAgentSessionReplayCassettes"]
+  >[0][] = [];
+  const runtimeApi = createRuntimeApi({
+    async importAgentSessionReplayCassettes(input) {
+      requests.push(input);
+      return { canceled: false, failedCount: 2, importedCount: 0 };
+    }
+  });
+  const activityService = createWorkspaceAgentActivityService([]);
+  const hostInput = createDesktopAgentGUIWorkbenchHostInput({
+    agentSessionReplayComposition: createAgentSessionReplayDesktopComposition({
+      activityPort: activityService,
+      runtimeApi,
+      tuttidClient: createTuttidClient(),
+      workspaceId
+    }),
+    hostFilesApi: createHostFilesApi(),
+    tuttidClient: createTuttidClient(),
+    platformApi: createPlatformApi(),
+    richTextAtService: createRichTextAtService({ providers: [] }),
+    runtimeApi,
+    workspaceAgentActivityService: activityService,
+    workspaceId
+  });
+
+  const result = await hostInput.agentSessionReplayService!.importCassettes();
 
   assert.deepEqual(requests, [{ workspaceId }]);
   assert.equal(result.outcome, "failed");
@@ -1667,7 +1693,7 @@ function createWorkspaceAgentActivityService(
       reasoningEffort?: string | null;
     };
   } = {}
-): IWorkspaceAgentActivityService {
+): IWorkspaceAgentActivityService & AgentSessionReplayActivityPort {
   const snapshot: AgentActivitySnapshot = {
     workspaceId,
     presences: [],

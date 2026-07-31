@@ -127,6 +127,10 @@ func ProjectPortableAgentState(
 	for sessionIndex := range projected.Sessions {
 		session := &projected.Sessions[sessionIndex]
 		sourceSession := &agent.Sessions[sessionIndex]
+		providerHome := replayProviderHome(
+			*sourceSession,
+			stateDirectory,
+		)
 		session.Cwd = portableReplayPath(session.Cwd, rootCWD)
 		session.RailProjectPath = portableReplayPath(
 			session.RailProjectPath,
@@ -149,16 +153,7 @@ func ProjectPortableAgentState(
 		for messageIndex := range session.Messages {
 			message := &session.Messages[messageIndex]
 			projectPortablePlanDecisionMessage(message)
-			projectPortableGeneratedImageMessage(
-				message,
-				filepath.Join(
-					filepath.Clean(strings.TrimSpace(stateDirectory)),
-					"agent",
-					"runs",
-					session.ID,
-					"codex-home",
-				),
-			)
+			projectPortableGeneratedImageMessage(message, providerHome)
 			if message.Kind != "tool_call" {
 				continue
 			}
@@ -181,6 +176,29 @@ func ProjectPortableAgentState(
 		}
 	}
 	return projected
+}
+
+func replayProviderHome(
+	session TuttiReplaySession,
+	stateDirectory string,
+) string {
+	descriptor, ok := sessionreplay.ResolveProviderReplay(
+		session.AgentTargetID,
+		session.Provider,
+	)
+	directory := strings.TrimSpace(
+		descriptor.PortableRuntime.SessionHomeDirectory,
+	)
+	if !ok || directory == "" {
+		return ""
+	}
+	return filepath.Join(
+		filepath.Clean(strings.TrimSpace(stateDirectory)),
+		"agent",
+		"runs",
+		session.ID,
+		directory,
+	)
 }
 
 func projectPortableGeneratedImageMessage(

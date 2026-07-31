@@ -1,7 +1,4 @@
 import { app, shell } from "electron";
-import { existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   desktopIpcChannels,
   type DesktopTerminalStreamUrlRequest,
@@ -19,15 +16,13 @@ import {
   type DesktopDaemonEndpoint
 } from "../transport/paths";
 import { listDesktopWorkspaceAgentProbes } from "../agentProviderUsageProbe";
-import { createAgentSessionReplayProcessManager } from "../agentSessionReplayProcessManager.ts";
-import {
-  createAgentSessionReplayControlWriter,
-  readAgentSessionReplayStatus
-} from "../agentSessionReplayStatus.ts";
-import { createAgentSessionReplayPlaybackAccess } from "../agentSessionReplayPlaybackAccess.ts";
-import { createAgentSessionReplayFolderAccess } from "../agentSessionReplayFolderAccess.ts";
-import { createAgentSessionReplayImportAccess } from "../agentSessionReplayImportAccess.ts";
 import type { DesktopFileDialogAccess } from "../host/desktopFileDialogAccess.ts";
+import type { DesktopHostPreferencesState } from "../desktopHostPreferences.ts";
+import {
+  AGENT_SESSION_RECORDING_FLAG,
+  isFeatureEnabled
+} from "../../shared/featureFlags/catalog.ts";
+import { installAgentSessionReplayRuntimeComposition } from "../agentSessionReplayRuntimeComposition.ts";
 import { registerDesktopIpcHandler } from "./handle";
 import { resolveOwnerWindowFromEvent } from "./ownerWindow.ts";
 
@@ -41,59 +36,26 @@ export function registerRuntimeIpc(
     | "prepareAgentSessionReplayWorkspace"
     | "updateAgentSessionReplayTransportPlayback"
   >,
-  fileDialogs: Pick<DesktopFileDialogAccess, "selectUploadFiles">
+  fileDialogs: Pick<DesktopFileDialogAccess, "selectUploadFiles">,
+  preferences: Pick<DesktopHostPreferencesState, "getFeatureFlags">
 ): { dispose(): void; shutdown(): Promise<void> } {
-  const replayProcessManager = createAgentSessionReplayProcessManager({
+  const replayProcessManager = installAgentSessionReplayRuntimeComposition({
     electronEntry: app.isPackaged ? null : app.getAppPath(),
     electronExecutable: process.execPath,
+    enabled: isFeatureEnabled(
+      preferences.getFeatureFlags(),
+      AGENT_SESSION_RECORDING_FLAG
+    ),
     environment: process.env,
+    fileDialogs,
+    isPackaged: app.isPackaged,
     logger,
     nodeExecutable: process.env.npm_node_execpath?.trim() || "node",
-    repositoryRoot: resolveAgentSessionReplayRoot()
+    registerIpcHandler: registerDesktopIpcHandler,
+    resolveOwnerWindow: resolveOwnerWindowFromEvent,
+    showItemInFolder: (path) => shell.showItemInFolder(path),
+    tuttidClient
   });
-  const sendReplayControl = createAgentSessionReplayControlWriter();
-  const replayPlayback = createAgentSessionReplayPlaybackAccess(tuttidClient);
-  const replayFolder = createAgentSessionReplayFolderAccess(
-    tuttidClient,
-    (path) => shell.showItemInFolder(path)
-  );
-  const replayImport = createAgentSessionReplayImportAccess(
-    tuttidClient,
-    fileDialogs
-  );
-  registerDesktopIpcHandler(
-    desktopIpcChannels.runtime.launchAgentSessionReplay,
-    (_event, input) => replayProcessManager.launch(input)
-  );
-  registerDesktopIpcHandler(
-    desktopIpcChannels.runtime.getAgentSessionReplayPlayback,
-    (_event, input) => replayPlayback.get(input)
-  );
-  registerDesktopIpcHandler(
-    desktopIpcChannels.runtime.getAgentSessionReplayStatus,
-    (_event, input) => readAgentSessionReplayStatus(input)
-  );
-  registerDesktopIpcHandler(
-    desktopIpcChannels.runtime.importAgentSessionReplayCassettes,
-    (event, input) =>
-      replayImport.importCassettes(input, resolveOwnerWindowFromEvent(event))
-  );
-  registerDesktopIpcHandler(
-    desktopIpcChannels.runtime.revealAgentSessionReplayCassette,
-    (_event, input) => replayFolder.reveal(input)
-  );
-  registerDesktopIpcHandler(
-    desktopIpcChannels.runtime.setAgentSessionReplayPlayback,
-    (_event, input) => replayPlayback.update(input)
-  );
-  registerDesktopIpcHandler(
-    desktopIpcChannels.runtime.sendAgentSessionReplayControl,
-    (_event, input) => sendReplayControl(input)
-  );
-  registerDesktopIpcHandler(
-    desktopIpcChannels.runtime.waitForAgentSessionReplay,
-    (_event, input) => replayProcessManager.waitForCompletion(input)
-  );
   registerDesktopIpcHandler(desktopIpcChannels.runtime.getBackendConfig, () =>
     resolveBackendConfig(endpoint)
   );
@@ -121,32 +83,12 @@ export function registerRuntimeIpc(
       logRendererDiagnostic(logger, input);
     }
   );
-  return replayProcessManager;
-}
-
-export function resolveAgentSessionReplayRoot(
-  currentDirectory = dirname(fileURLToPath(import.meta.url)),
-  isPackaged = app.isPackaged
-): string | null {
-  if (isPackaged) {
-    return null;
-  }
-  let candidate = resolve(currentDirectory);
-  for (;;) {
-    if (
-      existsSync(join(candidate, "pnpm-workspace.yaml")) &&
-      existsSync(
-        join(candidate, "tools", "scripts", "run-agent-session-replay.mjs")
-      )
-    ) {
-      return candidate;
+  return (
+    replayProcessManager ?? {
+      dispose() {},
+      async shutdown() {}
     }
-    const parent = dirname(candidate);
-    if (parent === candidate) {
-      return null;
-    }
-    candidate = parent;
-  }
+  );
 }
 
 function resolveBackendConfig(

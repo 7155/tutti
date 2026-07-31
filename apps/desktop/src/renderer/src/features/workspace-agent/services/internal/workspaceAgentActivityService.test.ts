@@ -219,7 +219,8 @@ test("Desktop Engine applies send results without a host-side Session dispatch",
         turn: workspaceAgentTurn({ phase: "submitted" })
       })
     } as unknown as TuttidClient,
-    runtimeApi: { logTerminalDiagnostic: async () => {} }
+    runtimeApi: { logTerminalDiagnostic: async () => {} },
+    sessionReplayEnabled: true
   });
   await service.load("ws-1");
   service.addSessionEngineActivityObserver("ws-1", {
@@ -358,7 +359,8 @@ test("Desktop Engine applies activation results through its authoritative projec
       createWorkspaceAgentSession: async () =>
         workspaceAgentSession({ status: "created" })
     } as unknown as TuttidClient,
-    runtimeApi: { logTerminalDiagnostic: async () => {} }
+    runtimeApi: { logTerminalDiagnostic: async () => {} },
+    sessionReplayEnabled: true
   });
   service.addSessionEngineActivityObserver("ws-1", {
     observeCommand() {},
@@ -4121,18 +4123,54 @@ function activityRecorderHarness() {
         workspaceId: "ws-1"
       })
     } as unknown as TuttidClient,
-    runtimeApi: { logTerminalDiagnostic: async () => {} }
+    runtimeApi: { logTerminalDiagnostic: async () => {} },
+    sessionReplayEnabled: true
   });
-  const recorders = (
-    service as unknown as {
-      sessionActivityEventRecorders: Map<string, unknown>;
-    }
-  ).sessionActivityEventRecorders;
-  return { appended, recorders, service };
+  const getRecorders = () =>
+    (
+      service as unknown as {
+        sessionActivityEventRecorders: Map<string, unknown> | null;
+      }
+    ).sessionActivityEventRecorders;
+  return { appended, getRecorders, service };
 }
 
-test("WorkspaceAgentActivityService keeps the engine observer path recorder-free without a recording", async () => {
-  const { appended, recorders, service } = activityRecorderHarness();
+test("WorkspaceAgentActivityService disabled composition creates no replay state", async () => {
+  const service = new WorkspaceAgentActivityService({
+    tuttidClient: {
+      listWorkspaceAgentSessions: async () => ({
+        hasMore: false,
+        sessions: [],
+        workspaceId: "ws-1"
+      })
+    } as unknown as TuttidClient,
+    runtimeApi: { logTerminalDiagnostic: async () => {} }
+  });
+  const engine = service.getSessionEngine("ws-1");
+  await service.load("ws-1");
+  engine.dispatch({
+    agentSessionId: "session-1",
+    promptId: "prompt-idle",
+    type: "queue/removed"
+  });
+
+  const replayState = service as unknown as {
+    sessionActivityEventRecorders: Map<string, unknown> | null;
+    sessionEngineActivityObservers: Map<string, unknown> | null;
+    sessionRecordingBinding: unknown | null;
+  };
+  assert.equal(replayState.sessionActivityEventRecorders, null);
+  assert.equal(replayState.sessionEngineActivityObservers, null);
+  assert.equal(replayState.sessionRecordingBinding, null);
+  assert.throws(
+    () => service.startSessionActivityEventRecording("ws-1", "recording-1"),
+    /agent_session_replay_not_composed/
+  );
+  service.dispose();
+});
+
+test("WorkspaceAgentActivityService keeps enabled observer state lazy without a recording", async () => {
+  const { appended, getRecorders, service } = activityRecorderHarness();
   const observedIntentTypes: string[] = [];
   const removeObserver = service.addSessionEngineActivityObserver("ws-1", {
     observeCommand: () => {},
@@ -4149,7 +4187,7 @@ test("WorkspaceAgentActivityService keeps the engine observer path recorder-free
     type: "queue/removed"
   });
 
-  assert.equal(recorders.size, 0);
+  assert.equal(getRecorders(), null);
   assert.equal(observedIntentTypes.includes("queue/removed"), true);
   assert.deepEqual(appended, []);
   removeObserver();
@@ -4157,7 +4195,7 @@ test("WorkspaceAgentActivityService keeps the engine observer path recorder-free
 });
 
 test("WorkspaceAgentActivityService constructs the recorder at start and drops it after seal or discard", async () => {
-  const { appended, recorders, service } = activityRecorderHarness();
+  const { appended, getRecorders, service } = activityRecorderHarness();
   const engine = service.getSessionEngine("ws-1");
   await service.load("ws-1");
 
@@ -4166,10 +4204,10 @@ test("WorkspaceAgentActivityService constructs the recorder at start and drops i
     promptId: "prompt-before",
     type: "queue/removed"
   });
-  assert.equal(recorders.size, 0);
+  assert.equal(getRecorders(), null);
 
   service.startSessionActivityEventRecording("ws-1", "recording-1");
-  assert.equal(recorders.size, 1);
+  assert.equal(getRecorders()?.size, 1);
   engine.dispatch({
     agentSessionId: "session-1",
     promptId: "prompt-recorded",
@@ -4177,7 +4215,7 @@ test("WorkspaceAgentActivityService constructs the recorder at start and drops i
   });
   await service.sealSessionActivityEventRecording("ws-1", "recording-1");
 
-  assert.equal(recorders.size, 0);
+  assert.equal(getRecorders(), null);
   assert.deepEqual(
     appended.flatMap((batch) => batch.types),
     ["queue/removed"]
@@ -4188,16 +4226,16 @@ test("WorkspaceAgentActivityService constructs the recorder at start and drops i
   );
 
   service.startSessionActivityEventRecording("ws-1", "recording-2");
-  assert.equal(recorders.size, 1);
+  assert.equal(getRecorders()?.size, 1);
   service.discardSessionActivityEventRecording("ws-1", "recording-2");
-  assert.equal(recorders.size, 0);
+  assert.equal(getRecorders(), null);
 
   engine.dispatch({
     agentSessionId: "session-1",
     promptId: "prompt-after",
     type: "queue/removed"
   });
-  assert.equal(recorders.size, 0);
+  assert.equal(getRecorders(), null);
   assert.equal(appended.length, 1);
   service.dispose();
 });

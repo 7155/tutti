@@ -26,7 +26,7 @@ export function useDesktopAgentGUIComposerFooterAccessory(input: {
             runtimeApi={runtimeApi}
           />
         ) : null}
-        {input.sessionRecordingEnabled ? (
+        {input.sessionRecordingEnabled && input.agentSessionReplayService ? (
           <AgentSessionReplayComposerAccessory
             composer={composer}
             launcher={

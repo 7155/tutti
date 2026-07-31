@@ -561,10 +561,11 @@ function DesktopAgentGUISurfaceImpl({
     },
     [workspaceId]
   );
-  const sessionRecordingEnabled = isFeatureEnabled(
-    desktopPreferencesState.featureFlags,
-    AGENT_SESSION_RECORDING_FLAG
-  );
+  const sessionRecordingEnabled =
+    isFeatureEnabled(
+      desktopPreferencesState.featureFlags,
+      AGENT_SESSION_RECORDING_FLAG
+    ) && agentSessionReplayService !== null;
   const renderComposerFooterAccessory =
     useDesktopAgentGUIComposerFooterAccessory({
       agentSessionReplayService,

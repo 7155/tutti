@@ -104,7 +104,7 @@ func completeArtifactCandidate(
 		t.Fatal(err)
 	}
 	for path, contents := range map[string]string{
-		layout.ProviderTapeKey + "/manifest.json": `{"schemaVersion":4,"projectionVersion":1,"status":"complete"}` + "\n",
+		layout.ProviderTapeKey + "/manifest.json": `{"schemaVersion":4,"projectionVersion":1,"status":"complete","connections":[{"connectionId":"connection-1","provider":"codex"}]}` + "\n",
 		layout.ProviderTapeKey + "/frames.jsonl":  "",
 		layout.ExpectedStateKey:                   `{"schemaVersion":1,"agent":{"rootSessionId":"session-1","sessions":[{"id":"session-1","kind":"root","agentTargetId":"local:codex","provider":"codex","providerSessionId":"provider-session-1","settings":{},"pinned":false,"turns":[],"messages":[],"interactions":[]}]},"tuttiMode":{"activations":[],"turnSnapshots":[]},"workflows":[],"issues":[]}` + "\n",
 	} {
@@ -535,7 +535,9 @@ func TestArtifactStoreExportsGeneratedImageBlob(t *testing.T) {
 	state := map[string]any{
 		"agent": map[string]any{
 			"sessions": []any{map[string]any{
-				"id": "session-1",
+				"id":            "session-1",
+				"agentTargetId": "local:codex",
+				"provider":      "codex",
 				"messages": []any{map[string]any{
 					"payload": map[string]any{
 						"output": map[string]any{

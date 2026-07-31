@@ -30,9 +30,10 @@ type attachmentReference struct {
 }
 
 type generatedImageReference struct {
-	AgentSessionID string
-	RelativePath   string
-	MimeType       string
+	AgentSessionID        string
+	ProviderHomeDirectory string
+	RelativePath          string
+	MimeType              string
 }
 
 // exportFixtureBlobs adds file dependencies explicitly referenced by the
@@ -96,8 +97,10 @@ func blobReferencesFromReplayState(
 	var state struct {
 		Agent struct {
 			Sessions []struct {
-				ID       string `json:"id"`
-				Messages []struct {
+				ID            string `json:"id"`
+				AgentTargetID string `json:"agentTargetId"`
+				Provider      string `json:"provider"`
+				Messages      []struct {
 					Payload map[string]any `json:"payload"`
 				} `json:"messages"`
 			} `json:"sessions"`
@@ -110,6 +113,10 @@ func blobReferencesFromReplayState(
 	var attachments []attachmentReference
 	var generatedImages []generatedImageReference
 	for _, session := range state.Agent.Sessions {
+		descriptor, _ := replay.ResolveProviderReplay(
+			session.AgentTargetID,
+			session.Provider,
+		)
 		for _, message := range session.Messages {
 			for _, image := range findAttachmentImages(message.Payload) {
 				reference := attachmentReference{
@@ -130,6 +137,8 @@ func blobReferencesFromReplayState(
 			}
 			for _, image := range findGeneratedImages(message.Payload) {
 				image.AgentSessionID = session.ID
+				image.ProviderHomeDirectory =
+					descriptor.PortableRuntime.SessionHomeDirectory
 				key := generatedImageBlobReferenceKey(
 					session.ID,
 					image.RelativePath,
@@ -244,6 +253,7 @@ func (s *Store) copyGeneratedImageBlob(
 	reference generatedImageReference,
 ) (blobManifestEntry, error) {
 	if !safeBlobSegment(reference.AgentSessionID) ||
+		!safeBlobSegment(reference.ProviderHomeDirectory) ||
 		!safeGeneratedImageRelativePath(reference.RelativePath) ||
 		path.Ext(reference.RelativePath) != promptImageExtension(reference.MimeType) {
 		return blobManifestEntry{}, errors.New("invalid generated image blob identity")
@@ -253,7 +263,7 @@ func (s *Store) copyGeneratedImageBlob(
 		"agent",
 		"runs",
 		reference.AgentSessionID,
-		"codex-home",
+		reference.ProviderHomeDirectory,
 		filepath.FromSlash(reference.RelativePath),
 	)
 	digest, size, err := copyPortableBlob(source, recordingDirectory)

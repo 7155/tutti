@@ -79,17 +79,6 @@ type ProcessCassetteChunk struct {
 	Message      string `json:"message,omitempty"`
 }
 
-// ProcessCassetteMethodCarriesCredentials reports Provider methods that must
-// never survive into a projected replay tape.
-func ProcessCassetteMethodCarriesCredentials(method string) bool {
-	switch strings.TrimSpace(method) {
-	case "account/login/start", "account/chatgptAuthTokens/refresh":
-		return true
-	default:
-		return false
-	}
-}
-
 func IsProviderPathField(key string) bool {
 	switch strings.ToLower(strings.TrimSpace(key)) {
 	case "cwd", "cwds", "path", "paths", "projectpath", "project_path",
@@ -101,9 +90,31 @@ func IsProviderPathField(key string) bool {
 	}
 }
 
-// AuditProjectedProcessCassetteFrames verifies that a Provider tape stream
-// contains only the structural values allowed after recording projection.
-func AuditProjectedProcessCassetteFrames(reader io.Reader) error {
+// AuditProjectedProcessCassetteFrames verifies a Provider tape using the
+// registered adapter for each manifest connection. Connections are required so
+// audit policy cannot silently fall back to another Provider's protocol rules.
+func AuditProjectedProcessCassetteFrames(
+	reader io.Reader,
+	connections []ProcessCassetteConnectionRecord,
+) error {
+	providers := make(map[string]ProviderReplayDescriptor, len(connections))
+	for _, connection := range connections {
+		descriptor, ok := FindProviderReplayByProvider(connection.Provider)
+		if !ok {
+			return fmt.Errorf(
+				"projected process cassette provider %q has no replay adapter",
+				connection.Provider,
+			)
+		}
+		if descriptor.Tape.AuditCodec != ProviderAuditCodecJSONRPCPortable {
+			return fmt.Errorf(
+				"projected process cassette provider %q has unsupported audit codec %q",
+				connection.Provider,
+				descriptor.Tape.AuditCodec,
+			)
+		}
+		providers[connection.ConnectionID] = descriptor
+	}
 	streams := map[string]*bytes.Buffer{}
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
@@ -140,6 +151,14 @@ func AuditProjectedProcessCassetteFrames(reader io.Reader) error {
 	}
 
 	for key, stream := range streams {
+		connectionID := processCassetteStreamConnectionID(key)
+		descriptor, ok := providers[connectionID]
+		if !ok {
+			return fmt.Errorf(
+				"projected process cassette connection %q has no replay adapter",
+				connectionID,
+			)
+		}
 		values, ok := decodeProcessCassetteJSONValues(stream.Bytes())
 		if !ok {
 			if processCassetteStreamKind(key) == "stderr" {
@@ -150,7 +169,7 @@ func AuditProjectedProcessCassetteFrames(reader io.Reader) error {
 		for _, value := range values {
 			if message, ok := value.(map[string]any); ok {
 				method, _ := message["method"].(string)
-				if ProcessCassetteMethodCarriesCredentials(method) {
+				if descriptor.MethodCarriesCredentials(method) {
 					return fmt.Errorf(
 						"projected process cassette contains credential-bearing method %q",
 						method,
@@ -163,6 +182,15 @@ func AuditProjectedProcessCassetteFrames(reader io.Reader) error {
 		}
 	}
 	return nil
+}
+
+func processCassetteStreamConnectionID(key string) string {
+	for index := len(key) - 1; index >= 0; index-- {
+		if key[index] == 0 {
+			return key[:index]
+		}
+	}
+	return key
 }
 
 // AuditProjectedProcessCassetteValue rejects sensitive fields and absolute

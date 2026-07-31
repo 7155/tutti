@@ -52,7 +52,7 @@ export interface DesktopAgentGUISurfaceContext {
 export interface DesktopAgentGUIWorkbenchBodyProps {
   agentActivityRuntime: AgentActivityRuntime;
   agentHostApi: AgentHostInputApi;
-  agentSessionReplayService: AgentSessionReplayService;
+  agentSessionReplayService: AgentSessionReplayService | null;
   agentStatusSource?: AgentStatusSource;
   tuttiModePlanReviewRuntime: NonNullable<
     AgentGUIProps["tuttiModePlanReviewRuntime"]

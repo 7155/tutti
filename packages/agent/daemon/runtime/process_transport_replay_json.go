@@ -13,6 +13,7 @@ import (
 )
 
 func processCassetteJSONMatch(
+	descriptor replay.ProviderReplayDescriptor,
 	expected []byte,
 	actual []byte,
 	recordedCWD string,
@@ -27,8 +28,8 @@ func processCassetteJSONMatch(
 	if !ok || len(expectedValues) != len(actualValues) {
 		return nil, false
 	}
-	projectProcessCassetteRuntimeGeneratedFields(expectedValues)
-	projectProcessCassetteRuntimeGeneratedFields(actualValues)
+	projectProcessCassetteRuntimeGeneratedFields(expectedValues, descriptor)
+	projectProcessCassetteRuntimeGeneratedFields(actualValues, descriptor)
 	responseIDs := map[string]any{}
 	for index := range expectedValues {
 		expectedValues[index] = mapProcessCassettePathFields(
@@ -96,15 +97,6 @@ func processCassetteJSONRPCID(value any) string {
 		return ""
 	}
 	return string(raw)
-}
-
-func isOptionalReplayProbeMethod(method string) bool {
-	switch strings.TrimSpace(method) {
-	case "thread/read", "thread/goal/get":
-		return true
-	default:
-		return false
-	}
 }
 
 func suppressSkippedProcessCassetteResponses(

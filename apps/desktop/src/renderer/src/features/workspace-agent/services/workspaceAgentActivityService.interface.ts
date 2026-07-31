@@ -20,8 +20,6 @@ import type {
   AgentActivitySnapshot,
   AgentActivitySnapshotListener,
   AgentSessionEngine,
-  EngineExternalCommand,
-  EngineIntent,
   AgentActivitySubmitInteractiveInput,
   AgentActivitySubmitInteractiveResult
 } from "@tutti-os/agent-activity-core";
@@ -139,31 +137,6 @@ export interface WorkspaceAgentComposerDefaultsInvalidatedEvent {
 
 export interface IWorkspaceAgentActivityService {
   readonly _serviceBrand: undefined;
-
-  armNextSessionRecording(workspaceId: string, recordingId: string): void;
-  clearNextSessionRecording(workspaceId: string, recordingId?: string): void;
-  // The activity event recorder tap exists only between start and the
-  // matching seal/discard; outside a recording the engine observer path is a
-  // no-op and constructs nothing.
-  startSessionActivityEventRecording(
-    workspaceId: string,
-    recordingId: string
-  ): void;
-  sealSessionActivityEventRecording(
-    workspaceId: string,
-    recordingId: string
-  ): Promise<void>;
-  discardSessionActivityEventRecording(
-    workspaceId: string,
-    recordingId: string
-  ): void;
-  addSessionEngineActivityObserver(
-    workspaceId: string,
-    observer: {
-      observeCommand(command: EngineExternalCommand): void;
-      observeIntent(intent: EngineIntent): void;
-    }
-  ): () => void;
 
   activateSession(
     input: Parameters<AgentActivityRuntime["activateSession"]>[0]

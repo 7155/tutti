@@ -81,6 +81,12 @@ type ProviderInputUnitCompletion interface {
 	CompleteProviderInputUnit(context.Context, ProviderInputUnit) error
 }
 
+// ProviderInputUnitTrackingTransport marks transports whose connections emit
+// stable process positions for recording or deterministic replay.
+type ProviderInputUnitTrackingTransport interface {
+	TracksProviderInputUnits() bool
+}
+
 type ProviderInputUnit struct {
 	RecordingID string
 	Position    sessionreplay.ProviderUnitPosition

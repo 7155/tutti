@@ -13,12 +13,12 @@ import (
 )
 
 const (
-	portableProcessCassetteAccountEmail                    = "replay-user@example.invalid"
-	portableProcessCassetteHomeToken                       = replay.PortableReplayHomeToken
-	portableProcessCassettePlanDecisionClientUserMessageID = "plan-decision:<runtime-operation>"
+	portableProcessCassetteAccountEmail = "replay-user@example.invalid"
+	portableProcessCassetteHomeToken    = replay.PortableReplayHomeToken
 )
 
 type processCassetteProjection struct {
+	descriptor     replay.ProviderReplayDescriptor
 	cwd            processCassetteCWD
 	personalRoots  []string
 	requestMethods map[string]string
@@ -28,12 +28,27 @@ type processCassetteProjection struct {
 func newProcessCassetteProjection(
 	spec ProcessSpec,
 	cwd processCassetteCWD,
-) *processCassetteProjection {
-	return &processCassetteProjection{
-		cwd:            cwd,
-		personalRoots:  processCassettePersonalRoots(spec),
-		requestMethods: map[string]string{},
+) (*processCassetteProjection, error) {
+	descriptor, ok := replay.FindProviderReplayByProvider(spec.Provider)
+	if !ok {
+		return nil, fmt.Errorf(
+			"provider %q has no replay adapter",
+			spec.Provider,
+		)
 	}
+	if descriptor.Tape.Codec != replay.ProviderTapeCodecJSONRPC ||
+		descriptor.Tape.ProjectionCodec != replay.ProviderProjectionCodecJSONRPCPortable {
+		return nil, fmt.Errorf(
+			"provider %q has unsupported replay projection adapter",
+			spec.Provider,
+		)
+	}
+	return &processCassetteProjection{
+		descriptor:     descriptor,
+		cwd:            cwd,
+		personalRoots:  processCassettePersonalRoots(spec, descriptor),
+		requestMethods: map[string]string{},
+	}, nil
 }
 
 func (p *processCassetteProjection) project(
@@ -69,7 +84,7 @@ func (p *processCassetteProjection) projectOutbound(
 		}
 		method, _ := message["method"].(string)
 		method = strings.TrimSpace(method)
-		if processCassetteMethodCarriesCredentials(method) {
+		if p.descriptor.MethodCarriesCredentials(method) {
 			return fmt.Errorf(
 				"process cassette recording rejects credential-bearing method %q",
 				method,
@@ -89,10 +104,6 @@ func (p *processCassetteProjection) projectOutbound(
 	pending.chunk.Data = base64.StdEncoding.EncodeToString(projected)
 	pending.ready = true
 	return nil
-}
-
-func processCassetteMethodCarriesCredentials(method string) bool {
-	return replay.ProcessCassetteMethodCarriesCredentials(method)
 }
 
 func (p *processCassetteProjection) projectStdout(
@@ -207,7 +218,7 @@ func (p *processCassetteProjection) projectInboundLine(data []byte) ([]byte, err
 			continue
 		}
 		if method, _ := message["method"].(string); strings.TrimSpace(method) != "" {
-			if processCassetteMethodCarriesCredentials(method) {
+			if p.descriptor.MethodCarriesCredentials(method) {
 				return nil, fmt.Errorf(
 					"process cassette recording rejects credential-bearing method %q",
 					method,
@@ -217,7 +228,7 @@ func (p *processCassetteProjection) projectInboundLine(data []byte) ([]byte, err
 		}
 		id := processCassetteJSONRPCID(message["id"])
 		method := p.requestMethods[id]
-		if method == appServerMethodAccountRead {
+		if method == p.descriptor.Tape.AccountReadMethod {
 			accountProjected = projectProcessCassetteAccountReadResponse(message) || accountProjected
 		}
 		if _, hasResult := message["result"]; hasResult {
@@ -261,7 +272,7 @@ func (p *processCassetteProjection) projectValues(
 	if err != nil {
 		return nil, false, fmt.Errorf("encode process cassette projection baseline: %w", err)
 	}
-	projectProcessCassetteRuntimeGeneratedFields(values)
+	projectProcessCassetteRuntimeGeneratedFields(values, p.descriptor)
 	if p.cwd.recorded != "" {
 		for index, value := range values {
 			values[index] = mapProcessCassettePathFields(
@@ -303,22 +314,34 @@ func (p *processCassetteProjection) projectValues(
 	return output.Bytes(), true, nil
 }
 
-func projectProcessCassetteRuntimeGeneratedFields(values []any) {
+func projectProcessCassetteRuntimeGeneratedFields(
+	values []any,
+	descriptor replay.ProviderReplayDescriptor,
+) {
 	for _, value := range values {
 		message, ok := value.(map[string]any)
-		if !ok || strings.TrimSpace(payloadString(message, "method")) != "turn/start" {
+		if !ok {
 			continue
 		}
+		method := strings.TrimSpace(payloadString(message, "method"))
 		params, _ := message["params"].(map[string]any)
-		clientUserMessageID := strings.TrimSpace(payloadString(params, "clientUserMessageId"))
-		if strings.HasPrefix(clientUserMessageID, "plan-decision:") &&
-			clientUserMessageID != portableProcessCassettePlanDecisionClientUserMessageID {
-			params["clientUserMessageId"] = portableProcessCassettePlanDecisionClientUserMessageID
+		for _, field := range descriptor.Tape.GeneratedRequestFields {
+			if method != field.Method {
+				continue
+			}
+			current := strings.TrimSpace(payloadString(params, field.Parameter))
+			if strings.HasPrefix(current, field.ValuePrefix) &&
+				current != field.PortableValue {
+				params[field.Parameter] = field.PortableValue
+			}
 		}
 	}
 }
 
-func processCassettePersonalRoots(spec ProcessSpec) []string {
+func processCassettePersonalRoots(
+	spec ProcessSpec,
+	descriptor replay.ProviderReplayDescriptor,
+) []string {
 	providerRoots := make([]string, 0, 1)
 	personalRoots := make([]string, 0, 2)
 	for _, env := range spec.Env {
@@ -326,11 +349,13 @@ func processCassettePersonalRoots(spec ProcessSpec) []string {
 		if !found {
 			continue
 		}
-		switch strings.ToUpper(strings.TrimSpace(name)) {
-		case "CODEX_HOME":
+		if descriptor.IsHomeEnvVar(name) {
 			if value = strings.TrimSpace(value); value != "" {
 				providerRoots = appendUniqueProcessCassetteRoot(providerRoots, value)
 			}
+			continue
+		}
+		switch strings.ToUpper(strings.TrimSpace(name)) {
 		case "HOME", "USERPROFILE":
 			if value = strings.TrimSpace(value); value != "" {
 				personalRoots = appendUniqueProcessCassetteRoot(personalRoots, value)

@@ -98,6 +98,7 @@ export interface WorkspaceAgentActivityServiceDependencies {
     agentTargetId: string
   ) => WorkspaceAgentProvider | null;
   workspaceUserProjectService?: IWorkspaceUserProjectService;
+  sessionReplayEnabled?: boolean;
 }
 
 type WorkspaceAgentActivityEntry = WorkspaceAgentSessionEngineHost;
@@ -117,18 +118,18 @@ export class WorkspaceAgentActivityService
     string,
     Promise<AgentActivitySnapshot>
   >();
-  private readonly sessionRecordingBinding = new AgentSessionRecordingBinding();
-  private readonly sessionActivityEventRecorders = new Map<
+  private sessionRecordingBinding: AgentSessionRecordingBinding | null = null;
+  private sessionActivityEventRecorders: Map<
     string,
     AgentSessionActivityEventRecorder
-  >();
-  private readonly sessionEngineActivityObservers = new Map<
+  > | null = null;
+  private sessionEngineActivityObservers: Map<
     string,
     Set<{
       observeCommand(command: EngineExternalCommand): void;
       observeIntent(intent: EngineIntent): void;
     }>
-  >();
+  > | null = null;
   constructor(dependencies: WorkspaceAgentActivityServiceDependencies) {
     super(dependencies);
     this.dependencies = dependencies;
@@ -162,11 +163,15 @@ export class WorkspaceAgentActivityService
   }
 
   armNextSessionRecording(workspaceId: string, recordingId: string): void {
-    this.sessionRecordingBinding.arm(workspaceId, recordingId);
+    this.assertSessionReplayEnabled();
+    (this.sessionRecordingBinding ??= new AgentSessionRecordingBinding()).arm(
+      workspaceId,
+      recordingId
+    );
   }
 
   clearNextSessionRecording(workspaceId: string, recordingId?: string): void {
-    this.sessionRecordingBinding.clear(workspaceId, recordingId);
+    this.sessionRecordingBinding?.clear(workspaceId, recordingId);
   }
 
   // Recorder lifecycle: an AgentSessionActivityEventRecorder exists only
@@ -178,9 +183,9 @@ export class WorkspaceAgentActivityService
     recordingId: string
   ): void {
     const normalizedWorkspaceId = normalizeWorkspaceId(workspaceId);
-    const existing = this.sessionActivityEventRecorders.get(
-      normalizedWorkspaceId
-    );
+    this.assertSessionReplayEnabled();
+    const recorders = (this.sessionActivityEventRecorders ??= new Map());
+    const existing = recorders.get(normalizedWorkspaceId);
     const recorder =
       existing ??
       new AgentSessionActivityEventRecorder({
@@ -196,7 +201,7 @@ export class WorkspaceAgentActivityService
       scopeId: normalizedWorkspaceId
     });
     if (!existing) {
-      this.sessionActivityEventRecorders.set(normalizedWorkspaceId, recorder);
+      recorders.set(normalizedWorkspaceId, recorder);
     }
   }
 
@@ -205,17 +210,15 @@ export class WorkspaceAgentActivityService
     recordingId: string
   ): Promise<void> {
     const normalizedWorkspaceId = normalizeWorkspaceId(workspaceId);
-    const recorder = this.sessionActivityEventRecorders.get(
-      normalizedWorkspaceId
-    );
+    const recorders = this.sessionActivityEventRecorders;
+    const recorder = recorders?.get(normalizedWorkspaceId);
     if (!recorder) return;
     // On seal failure the recorder keeps its pending batch so the caller can
     // retry seal; drop the instance only after the flush succeeded.
     await recorder.seal(recordingId);
-    if (
-      this.sessionActivityEventRecorders.get(normalizedWorkspaceId) === recorder
-    ) {
-      this.sessionActivityEventRecorders.delete(normalizedWorkspaceId);
+    if (recorders?.get(normalizedWorkspaceId) === recorder) {
+      recorders.delete(normalizedWorkspaceId);
+      if (recorders.size === 0) this.sessionActivityEventRecorders = null;
     }
   }
 
@@ -224,12 +227,13 @@ export class WorkspaceAgentActivityService
     recordingId: string
   ): void {
     const normalizedWorkspaceId = normalizeWorkspaceId(workspaceId);
-    const recorder = this.sessionActivityEventRecorders.get(
-      normalizedWorkspaceId
-    );
+    const recorders = this.sessionActivityEventRecorders;
+    if (!recorders) return;
+    const recorder = recorders.get(normalizedWorkspaceId);
     if (!recorder) return;
     recorder.discard(recordingId);
-    this.sessionActivityEventRecorders.delete(normalizedWorkspaceId);
+    recorders.delete(normalizedWorkspaceId);
+    if (recorders.size === 0) this.sessionActivityEventRecorders = null;
   }
 
   addSessionEngineActivityObserver(
@@ -240,31 +244,32 @@ export class WorkspaceAgentActivityService
     }
   ): () => void {
     const normalizedWorkspaceId = normalizeWorkspaceId(workspaceId);
-    let observers = this.sessionEngineActivityObservers.get(
-      normalizedWorkspaceId
-    );
+    this.assertSessionReplayEnabled();
+    const observerMap = (this.sessionEngineActivityObservers ??= new Map());
+    let observers = observerMap.get(normalizedWorkspaceId);
     if (!observers) {
       observers = new Set();
-      this.sessionEngineActivityObservers.set(normalizedWorkspaceId, observers);
+      observerMap.set(normalizedWorkspaceId, observers);
     }
     observers.add(observer);
     return () => {
       observers?.delete(observer);
       if (observers?.size === 0) {
-        this.sessionEngineActivityObservers.delete(normalizedWorkspaceId);
+        observerMap.delete(normalizedWorkspaceId);
+        if (observerMap.size === 0) this.sessionEngineActivityObservers = null;
       }
     };
   }
 
   private takeNextSessionRecording(workspaceId: string): string | null {
-    return this.sessionRecordingBinding.take(workspaceId);
+    return this.sessionRecordingBinding?.take(workspaceId) ?? null;
   }
 
   private restoreNextSessionRecording(
     workspaceId: string,
     recordingId: string
   ): void {
-    this.sessionRecordingBinding.restore(workspaceId, recordingId);
+    this.sessionRecordingBinding?.restore(workspaceId, recordingId);
   }
 
   getSnapshot(workspaceId: string): AgentActivitySnapshot {
@@ -996,30 +1001,38 @@ export class WorkspaceAgentActivityService
 
   protected createEntry(workspaceId: string): WorkspaceAgentActivityEntry {
     return createWorkspaceAgentSessionEngineHost({
-      // Hot path for every engine intent/command: when neither recording nor
-      // replay observation is active, both lookups miss and nothing else runs.
-      activityEventObserver: {
-        observeCommand: (command) => {
-          this.sessionActivityEventRecorders
-            .get(workspaceId)
-            ?.observeCommand(command);
-          this.notifySessionEngineActivityObservers(
-            workspaceId,
-            "observeCommand",
-            command
-          );
-        },
-        observeIntent: (intent) => {
-          this.sessionActivityEventRecorders
-            .get(workspaceId)
-            ?.observeIntent(intent);
-          this.notifySessionEngineActivityObservers(
-            workspaceId,
-            "observeIntent",
-            intent
-          );
-        }
-      },
+      ...(this.dependencies.sessionReplayEnabled
+        ? {
+            activityEventObserver: {
+              observeCommand: (command: EngineExternalCommand) => {
+                this.sessionActivityEventRecorders
+                  ?.get(workspaceId)
+                  ?.observeCommand(command);
+                this.notifySessionEngineActivityObservers(
+                  workspaceId,
+                  "observeCommand",
+                  command
+                );
+              },
+              observeIntent: (intent: EngineIntent) => {
+                this.sessionActivityEventRecorders
+                  ?.get(workspaceId)
+                  ?.observeIntent(intent);
+                this.notifySessionEngineActivityObservers(
+                  workspaceId,
+                  "observeIntent",
+                  intent
+                );
+              }
+            },
+            takePendingSessionRecording: (entryWorkspaceId: string) =>
+              this.takeNextSessionRecording(entryWorkspaceId),
+            restorePendingSessionRecording: (
+              entryWorkspaceId: string,
+              recordingId: string
+            ) => this.restoreNextSessionRecording(entryWorkspaceId, recordingId)
+          }
+        : {}),
       executeEngineActivateSession: async (input, options) => {
         const activation = await this.executeSessionActivationEffect(
           input,
@@ -1035,10 +1048,6 @@ export class WorkspaceAgentActivityService
       reconcileSession: (command, signal) =>
         this.executeSessionReconcileCommand(command, signal),
       runtimeApi: this.dependencies.runtimeApi,
-      takePendingSessionRecording: (workspaceId) =>
-        this.takeNextSessionRecording(workspaceId),
-      restorePendingSessionRecording: (workspaceId, recordingId) =>
-        this.restoreNextSessionRecording(workspaceId, recordingId),
       executeEngineSendInput: async (input, options) => {
         const result = await this.executeSendInputEffect(input, options);
         this.analytics.trackEngineSend(input, result);
@@ -1078,7 +1087,7 @@ export class WorkspaceAgentActivityService
     method: "observeCommand" | "observeIntent",
     value: EngineExternalCommand | EngineIntent
   ): void {
-    const observers = this.sessionEngineActivityObservers.get(workspaceId);
+    const observers = this.sessionEngineActivityObservers?.get(workspaceId);
     if (!observers) return;
     for (const observer of observers) {
       try {
@@ -1090,6 +1099,12 @@ export class WorkspaceAgentActivityService
       } catch {
         // Replay instrumentation cannot block the product command path.
       }
+    }
+  }
+
+  private assertSessionReplayEnabled(): void {
+    if (!this.dependencies.sessionReplayEnabled) {
+      throw new Error("agent_session_replay_not_composed");
     }
   }
 }

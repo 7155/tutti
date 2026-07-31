@@ -17,7 +17,7 @@ type Service struct {
 
 func (s *Service) Start(ctx context.Context, input StartInput) (Recording, error) {
 	agentTargetID := strings.TrimSpace(input.AgentTargetID)
-	if agentTargetID != "local:codex" {
+	if _, ok := replay.FindProviderReplayByTarget(agentTargetID); !ok {
 		return Recording{}, ErrUnsupportedTarget
 	}
 	if s == nil || s.Workflow == nil {
@@ -301,7 +301,8 @@ func validImportedCassette(cassette Cassette) bool {
 	if _, err := uuid.Parse(cassette.SourceRecordingID); err != nil {
 		return false
 	}
-	return cassette.AgentTargetID == "local:codex"
+	_, supported := replay.FindProviderReplayByTarget(cassette.AgentTargetID)
+	return supported
 }
 
 func (s *Service) Recover(ctx context.Context) error {

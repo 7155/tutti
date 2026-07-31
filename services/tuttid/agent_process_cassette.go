@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	agentdaemon "github.com/tutti-os/tutti/packages/agent/daemon"
-	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
 	agentruntime "github.com/tutti-os/tutti/packages/agent/daemon/runtime"
+	sessionreplay "github.com/tutti-os/tutti/packages/agent/session-replay"
 	tuttitypes "github.com/tutti-os/tutti/services/tuttid/types"
 )
 
@@ -39,7 +39,9 @@ type agentSessionReplayRegistration struct {
 	WorkspaceID        string `json:"workspaceId"`
 }
 
-func buildAgentProcessComposition() (agentProcessComposition, error) {
+func buildAgentProcessComposition(
+	sessionRecordingEnabled bool,
+) (agentProcessComposition, error) {
 	mode := strings.TrimSpace(os.Getenv(agentCassetteModeEnv))
 	if mode == agentCassetteModeReplay {
 		var registrations []agentSessionReplayRegistration
@@ -82,6 +84,13 @@ func buildAgentProcessComposition() (agentProcessComposition, error) {
 			replay: replay, replayRegistrations: registrations,
 		}, nil
 	}
+	if !sessionRecordingEnabled {
+		transport, err := buildAgentProcessTransport()
+		if err != nil {
+			return agentProcessComposition{}, err
+		}
+		return agentProcessComposition{transport: transport}, nil
+	}
 	recorder, err := buildSessionRecordingProcessTransport()
 	if err != nil {
 		return agentProcessComposition{}, err
@@ -101,31 +110,42 @@ func (t *agentReplayProviderHomeTransport) Start(
 	if t == nil || t.base == nil {
 		return nil, errors.New("agent session replay process transport is unavailable")
 	}
-	descriptor, found := providerregistry.Find(spec.Provider)
-	if found &&
-		descriptor.Runtime.Endpoint.ConfigKind == providerregistry.EndpointConfigKindCodexCLI {
+	descriptor, found := sessionreplay.FindProviderReplayByProvider(spec.Provider)
+	if found && len(descriptor.PortableRuntime.HomeEnvVars) > 0 {
 		sessionID := strings.TrimSpace(spec.AgentSessionID)
 		if sessionID == "" || filepath.Base(sessionID) != sessionID ||
 			strings.ContainsAny(sessionID, `/\\`) {
-			return nil, errors.New("agent session replay Codex home requires a safe Session identity")
+			return nil, errors.New("agent session replay Provider home requires a safe Session identity")
 		}
 		stateDir := filepath.Clean(strings.TrimSpace(t.stateDir))
 		if stateDir == "." || !filepath.IsAbs(stateDir) {
 			return nil, errors.New("agent session replay state directory must be absolute")
 		}
-		spec.Env = replaceProcessEnv(
-			spec.Env,
-			"CODEX_HOME",
-			filepath.Join(
-				stateDir,
-				"agent",
-				"runs",
-				sessionID,
-				"codex-home",
-			),
+		homeDirectory := strings.TrimSpace(
+			descriptor.PortableRuntime.SessionHomeDirectory,
 		)
+		if homeDirectory == "" || filepath.Base(homeDirectory) != homeDirectory ||
+			strings.ContainsAny(homeDirectory, `/\\`) {
+			return nil, errors.New("agent session replay Provider home directory is invalid")
+		}
+		home := filepath.Join(stateDir, "agent", "runs", sessionID, homeDirectory)
+		for _, name := range descriptor.PortableRuntime.HomeEnvVars {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				return nil, errors.New("agent session replay Provider home environment is invalid")
+			}
+			spec.Env = replaceProcessEnv(spec.Env, name, home)
+		}
 	}
 	return t.base.Start(ctx, spec)
+}
+
+func (t *agentReplayProviderHomeTransport) TracksProviderInputUnits() bool {
+	if t == nil {
+		return false
+	}
+	tracking, ok := t.base.(agentruntime.ProviderInputUnitTrackingTransport)
+	return ok && tracking.TracksProviderInputUnits()
 }
 
 func replaceProcessEnv(env []string, key, value string) []string {
@@ -235,6 +255,14 @@ func (t *agentSessionCassetteTransport) Finalize() error {
 		return nil
 	}
 	return t.finalize()
+}
+
+func (t *agentSessionCassetteTransport) TracksProviderInputUnits() bool {
+	if t == nil {
+		return false
+	}
+	tracking, ok := t.session.(agentruntime.ProviderInputUnitTrackingTransport)
+	return ok && tracking.TracksProviderInputUnits()
 }
 
 func (t *agentSessionCassetteTransport) ReplayPlaybackState() agentruntime.ReplayPlaybackState {

@@ -85,7 +85,7 @@ func TestProjectPortableAgentStateProjectsGeneratedImagePaths(t *testing.T) {
 	agent := TuttiReplayAgent{
 		RootSessionID: "session-1",
 		Sessions: []agenthost.HistoricalSession{{
-			ID: "session-1",
+			ID: "session-1", AgentTargetID: "local:codex", Provider: "codex",
 			Messages: []agenthost.HistoricalMessage{{
 				ID: "tool-message", Kind: "tool_call",
 				Payload: map[string]any{
@@ -111,6 +111,39 @@ func TestProjectPortableAgentStateProjectsGeneratedImagePaths(t *testing.T) {
 	if agent.Sessions[0].Messages[0].Payload["output"].(map[string]any)["savedPath"] !=
 		generatedPath {
 		t.Fatal("source Agent graph was mutated")
+	}
+}
+
+func TestProjectPortableAgentStateDoesNotApplyCodexHomeToUnregisteredProvider(
+	t *testing.T,
+) {
+	stateDirectory := t.TempDir()
+	generatedPath := filepath.Join(
+		stateDirectory,
+		"agent",
+		"runs",
+		"session-1",
+		"codex-home",
+		"generated_images",
+		"image.png",
+	)
+	agent := TuttiReplayAgent{
+		RootSessionID: "session-1",
+		Sessions: []agenthost.HistoricalSession{{
+			ID: "session-1", AgentTargetID: "local:cursor", Provider: "cursor",
+			Messages: []agenthost.HistoricalMessage{{
+				ID: "tool-message", Kind: "tool_call",
+				Payload: map[string]any{
+					"output": map[string]any{"savedPath": generatedPath},
+				},
+			}},
+		}},
+	}
+
+	projected := ProjectPortableAgentState(agent, stateDirectory)
+	output := projected.Sessions[0].Messages[0].Payload["output"].(map[string]any)
+	if output["savedPath"] != generatedPath {
+		t.Fatalf("unregistered Provider path was projected: %#v", output)
 	}
 }
 

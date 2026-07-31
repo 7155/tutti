@@ -6,6 +6,8 @@ import (
 
 	agenthost "github.com/tutti-os/tutti/packages/agent/host"
 	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
+	agentactivitybiz "github.com/tutti-os/tutti/packages/agent/store-sqlite"
+	agentservice "github.com/tutti-os/tutti/services/tuttid/service/agent"
 )
 
 type countingAgentCommitObserver struct {
@@ -19,6 +21,69 @@ func (o *countingAgentCommitObserver) ObserveCommitted(context.Context, agenthos
 
 type countingAgentProviderObservationObserver struct {
 	calls int
+}
+
+type recordingCompositionProjection struct {
+	root   agentservice.RootTurnObserver
+	replay agentservice.ReplayCommitObserver
+}
+
+func (p *recordingCompositionProjection) SetRootTurnObserver(
+	observer agentservice.RootTurnObserver,
+) {
+	p.root = observer
+}
+
+func (p *recordingCompositionProjection) SetReplayCommitObserver(
+	observer agentservice.ReplayCommitObserver,
+) {
+	p.replay = observer
+}
+
+type rootTurnObserverStub struct{}
+
+func (rootTurnObserverStub) ObserveRootTurnSettled(
+	context.Context,
+	string,
+	string,
+	agentactivitybiz.Turn,
+) {
+}
+
+func TestDisabledAgentSessionRecordingCompositionCreatesNoReplayDependencies(
+	t *testing.T,
+) {
+	projection := &countingAgentCommitObserver{}
+	commitObserver, relay := buildAgentCommitObserver(projection, false)
+	if commitObserver != projection || relay != nil {
+		t.Fatalf("disabled commit composition = (%T, %#v), want direct projection", commitObserver, relay)
+	}
+	service, err := buildAgentSessionRecordingService(nil, nil, nil)
+	if err != nil || service != nil {
+		t.Fatalf("disabled recording service = (%#v, %v), want nil, nil", service, err)
+	}
+	configured := &recordingCompositionProjection{}
+	runtime := rootTurnObserverStub{}
+	configureAgentSessionRecordingObservers(configured, runtime, nil)
+	if configured.root == nil || configured.replay != nil {
+		t.Fatalf("disabled observers = root:%T replay:%T", configured.root, configured.replay)
+	}
+	if observer := composeAgentProviderObservationObserver(nil); observer != nil {
+		t.Fatalf("disabled provider observer = %T, want nil", observer)
+	}
+	if verifier := composeAgentReplayVerifier(nil, nil); verifier != nil {
+		t.Fatalf("disabled replay verifier = %T, want nil", verifier)
+	}
+}
+
+func TestSingleProviderObservationObserverNeedsNoFanout(t *testing.T) {
+	observer := &countingAgentProviderObservationObserver{}
+	composed := composeAgentProviderObservationObserver(
+		agentProviderObservationObservers{observer},
+	)
+	if composed != observer {
+		t.Fatalf("single provider observer = %T, want direct observer", composed)
+	}
 }
 
 func (o *countingAgentProviderObservationObserver) ObserveProviderObservations(

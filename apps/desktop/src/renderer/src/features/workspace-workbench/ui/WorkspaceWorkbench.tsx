@@ -36,6 +36,7 @@ import { WorkspaceAgentSessionActivityReplayBinding } from "@renderer/features/a
 import { AgentSessionReplayWorkspaceBinding } from "@renderer/features/agent-session-replay/ui/AgentSessionReplayWorkspaceBinding.tsx";
 import { AgentSessionReplayWorkspaceProvider } from "@renderer/features/agent-session-replay/ui/AgentSessionReplayWorkspaceContext.tsx";
 import { AgentSessionReplayWorkspaceCoordinator } from "@renderer/features/agent-session-replay/services/agentSessionReplayWorkspaceCoordinator.ts";
+import type { AgentSessionReplayDesktopComposition } from "@renderer/features/agent-session-replay/services/agentSessionReplayDesktopComposition.ts";
 import { IAgentProviderStatusService } from "@renderer/features/workspace-agent/services/agentProviderStatusService.interface.ts";
 import { IAgentsService } from "@renderer/features/workspace-agent/services/agentsService.interface.ts";
 import { IWorkspaceAgentActivityService } from "@renderer/features/workspace-agent/services/workspaceAgentActivityService.interface.ts";
@@ -134,6 +135,7 @@ import {
 const workspaceDockRetentionActionPrefix = "workspace-dock-retention:";
 
 interface WorkspaceWorkbenchProps {
+  agentSessionReplayComposition: AgentSessionReplayDesktopComposition | null;
   enableWindowCloseGuard: boolean;
   headerSlot?: React.ReactNode;
   runtimeApi: DesktopRuntimeApi;
@@ -141,6 +143,7 @@ interface WorkspaceWorkbenchProps {
   workspaceID: string | null;
 }
 export function WorkspaceWorkbench({
+  agentSessionReplayComposition,
   enableWindowCloseGuard,
   headerSlot,
   runtimeApi,
@@ -176,6 +179,7 @@ export function WorkspaceWorkbench({
 
   return (
     <ReadyWorkspaceWorkbench
+      agentSessionReplayComposition={agentSessionReplayComposition}
       enableWindowCloseGuard={enableWindowCloseGuard}
       headerSlot={headerSlot}
       runtimeApi={runtimeApi}
@@ -189,6 +193,7 @@ export function WorkspaceWorkbench({
 }
 
 interface ReadyWorkspaceWorkbenchProps {
+  agentSessionReplayComposition: AgentSessionReplayDesktopComposition | null;
   enableWindowCloseGuard: boolean;
   headerSlot?: React.ReactNode;
   runtimeApi: DesktopRuntimeApi;
@@ -231,6 +236,7 @@ function ReadyWorkspaceWorkbench(props: ReadyWorkspaceWorkbenchProps) {
 }
 
 function ReadyWorkspaceWorkbenchWithSession({
+  agentSessionReplayComposition,
   enableWindowCloseGuard,
   headerSlot,
   hostSession,
@@ -906,7 +912,7 @@ function ReadyWorkspaceWorkbenchWithSession({
         >
           {replayWorkspaceCoordinator ? (
             <WorkspaceAgentSessionActivityReplayBinding
-              activitySource={workspaceAgentActivityService}
+              activitySource={agentSessionReplayComposition!.activityPort}
               workspaceId={state.workspace.id}
             />
           ) : null}

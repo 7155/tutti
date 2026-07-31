@@ -60,9 +60,11 @@ import { requestWorkspaceIssueManagerLaunch } from "../workspaceIssueManagerLaun
 import { requestGroupChatLaunch } from "../groupChatLaunchCoordinator.ts";
 import { useExternalStoreValue } from "../../ui/useExternalStoreValue.ts";
 import { workspaceAgentGuiNodeFrame } from "./workspaceWorkbenchComposition.ts";
+import type { AgentSessionReplayDesktopComposition } from "@renderer/features/agent-session-replay/services/agentSessionReplayDesktopComposition.ts";
 
 export function createWorkspaceAgentGuiContribution(input: {
   agentQuickPromptService?: AgentQuickPromptService;
+  agentSessionReplayComposition?: AgentSessionReplayDesktopComposition | null;
   agentProviderStatusService: AgentProviderStatusService;
   appCenterService: IWorkspaceAppCenterService;
   appI18n: I18nRuntime<string>;
@@ -105,6 +107,7 @@ export function createWorkspaceAgentGuiContribution(input: {
     : null;
   const agentGUIWorkbenchHostInput = createDesktopAgentGUIWorkbenchHostInput({
     agentQuickPromptService: input.agentQuickPromptService,
+    agentSessionReplayComposition: input.agentSessionReplayComposition,
     hostFilesApi: input.hostFilesApi,
     eventStreamClient: input.eventStreamClient,
     tuttidClient: input.tuttidClient,

@@ -8,6 +8,46 @@ import (
 	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
 )
 
+type providerInputTrackingTestTransport struct {
+	ProcessTransport
+	enabled bool
+}
+
+func (t providerInputTrackingTestTransport) TracksProviderInputUnits() bool {
+	return t.enabled
+}
+
+func TestProviderInputUnitTrackerCompositionIsTransportOptIn(t *testing.T) {
+	if tracker := providerInputUnitTrackerForTransport(cassetteTestTransport{}); tracker != nil {
+		t.Fatalf("raw transport tracker = %#v, want nil", tracker)
+	}
+	if tracker := providerInputUnitTrackerForTransport(
+		providerInputTrackingTestTransport{enabled: false},
+	); tracker != nil {
+		t.Fatalf("disabled tracking transport tracker = %#v, want nil", tracker)
+	}
+	tracking := providerInputTrackingTestTransport{enabled: true}
+	if tracker := providerInputUnitTrackerForTransport(tracking); tracker == nil {
+		t.Fatal("enabled tracking transport tracker = nil")
+	}
+	if adapter := NewCodexAppServerAdapter(cassetteTestTransport{}); adapter.inputUnits != nil {
+		t.Fatalf("raw Codex adapter tracker = %#v, want nil", adapter.inputUnits)
+	}
+	if adapter := NewCodexAppServerAdapter(tracking); adapter.inputUnits == nil {
+		t.Fatal("tracking Codex adapter tracker = nil")
+	}
+	for name, transport := range map[string]ProcessTransport{
+		"recording":         &RecordingProcessTransport{},
+		"replay":            &ReplayProcessTransport{},
+		"session recording": &SessionRecordingProcessTransport{},
+		"session replay":    &SessionReplayProcessTransport{},
+	} {
+		if tracker := providerInputUnitTrackerForTransport(transport); tracker == nil {
+			t.Fatalf("%s transport tracker = nil", name)
+		}
+	}
+}
+
 func TestProviderInputUnitTrackerStampsOneOrderedEventBatch(t *testing.T) {
 	var tracker providerInputUnitTracker
 	unit := ProviderInputUnit{

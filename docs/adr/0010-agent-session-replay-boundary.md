@@ -33,6 +33,10 @@ only maps Workspace DTOs and applies local target policy. Replay runtime state
 lives only in the isolated Desktop, daemon, and SQLite runtime and is discarded
 with that runtime. Cassette content never depends on a product database.
 
+The shared package remains the workflow owner. Tutti's service and Desktop
+layers own only their adapters and composition decisions; they must not grow a
+second Recording/Cassette state machine.
+
 Final replay verification compares typed Agent, Tutti Mode, Workflow, and Issue
 business state. It
 does not compare provider-discovered runtime context, capability catalogs, or
@@ -118,3 +122,14 @@ publishing a Cassette that can only fail later during replay. Replay bindings,
 drivers, and coordinators mount only inside the isolated replay runtime, and
 the renderer recorder exists only while a Recording is active; the normal
 Desktop path carries no replay machinery.
+
+The default-off `agent.sessionRecording` preference gates process composition
+at startup. The renderer waits for initial persisted preference hydration
+before constructing the Workspace service container; Replay consumes that
+hydrated decision without owning preference loading or update propagation.
+Disabled Desktop composition creates no Replay manager, access
+adapter, IPC handler, renderer Replay service, recording binding, recorder map,
+observer map, or Engine observer. Enabling composition preserves live recorder
+attachment only for an active Recording. A preference change does not
+retroactively rebuild a running daemon or renderer; it takes effect on the next
+process composition.

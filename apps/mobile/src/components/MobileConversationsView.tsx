@@ -18,6 +18,10 @@ import {
 } from "react-native";
 import { t } from "../i18n";
 import type { WorkspaceActivitySnapshot } from "../services/workspaceActivityService";
+import {
+  MobileKeyboardAvoidingView,
+  mobileKeyboardDismissMode
+} from "./MobileKeyboardAvoidingView";
 import { MobileComputerGlyph, MobileFolderGlyph } from "./MobileLocationGlyphs";
 
 type ConversationDialog =
@@ -102,7 +106,7 @@ export function MobileConversationsView({
   };
 
   return (
-    <View style={styles.root}>
+    <MobileKeyboardAvoidingView style={styles.root}>
       <View style={styles.header}>
         <View style={styles.headerButtonSlot}>
           <NativeIconButton
@@ -160,6 +164,8 @@ export function MobileConversationsView({
 
       <ScrollView
         contentContainerStyle={styles.list}
+        keyboardDismissMode={mobileKeyboardDismissMode}
+        keyboardShouldPersistTaps="handled"
         style={styles.sessionScroller}
       >
         {model.railStatus === "loading" && model.railSections.length === 0 ? (
@@ -438,7 +444,7 @@ export function MobileConversationsView({
           </View>
         </NativeSheet>
       ) : null}
-    </View>
+    </MobileKeyboardAvoidingView>
   );
 }
 

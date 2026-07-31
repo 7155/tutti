@@ -13,9 +13,7 @@ import {
 } from "@tutti-os/ui-system/native";
 import { useEffect, useRef, useState } from "react";
 import {
-  KeyboardAvoidingView,
   Linking,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -25,6 +23,10 @@ import {
 import { MobileInteractionCard } from "../components/MobileConversationRows";
 import { MobileComposerDock } from "../components/MobileComposerDock";
 import { MobileConversationTimeline } from "../components/MobileConversationTimeline";
+import {
+  MobileKeyboardAvoidingView,
+  mobileKeyboardDismissMode
+} from "../components/MobileKeyboardAvoidingView";
 import {
   MobileComputerGlyph,
   MobileFolderGlyph
@@ -126,10 +128,7 @@ export function ConversationScreenView({
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      style={styles.root}
-    >
+    <MobileKeyboardAvoidingView style={styles.root}>
       <View style={styles.conversationHeader}>
         <View style={styles.headerButtonSlot}>
           <NativeIconButton
@@ -178,7 +177,7 @@ export function ConversationScreenView({
         <View style={styles.conversationBody}>
           <ScrollView
             contentContainerStyle={styles.messageList}
-            keyboardDismissMode="interactive"
+            keyboardDismissMode={mobileKeyboardDismissMode}
             keyboardShouldPersistTaps="handled"
             maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
             onContentSizeChange={() => {
@@ -312,7 +311,7 @@ export function ConversationScreenView({
           onUpdate={onUpdateComposerSettings}
         />
       ) : null}
-    </KeyboardAvoidingView>
+    </MobileKeyboardAvoidingView>
   );
 }
 
@@ -333,7 +332,7 @@ function createStyles(theme: NativeTheme) {
       paddingHorizontal: theme.space.medium,
       paddingVertical: theme.space.small
     },
-    conversationBody: { flex: 1, position: "relative" },
+    conversationBody: { flex: 1, minHeight: 0, position: "relative" },
     conversationTitle: {
       backgroundColor: theme.color.panelRaised,
       borderColor: theme.color.border,

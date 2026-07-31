@@ -1,12 +1,9 @@
-import {
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  View
-} from "react-native";
+import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { type NativeTheme, useNativeTheme } from "@tutti-os/ui-system/native";
+import {
+  MobileKeyboardAvoidingView,
+  mobileKeyboardDismissMode
+} from "../components/MobileKeyboardAvoidingView";
 import { t } from "../i18n";
 import type { LoginSnapshot } from "../services/loginService";
 import { PrimaryButton } from "../components/PrimaryButton";
@@ -35,68 +32,73 @@ export function LoginScreenView({
       : code.trim().length < 4;
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      style={styles.root}
-    >
-      <View style={styles.brand}>
-        <View style={styles.mark}>
-          <Text style={styles.markText}>T</Text>
-        </View>
-        <Text style={styles.appName}>{t("appName")}</Text>
-      </View>
-      <View style={styles.content}>
-        <Text style={styles.eyebrow}>{t("welcome")}</Text>
-        <Text style={styles.title}>{t("loginTitle")}</Text>
-        <Text style={styles.subtitle}>{t("loginSubtitle")}</Text>
-
-        <View style={styles.form}>
-          <PrimaryButton
-            disabled={pending !== null}
-            label={t("githubLoginAction")}
-            loading={pending === "github"}
-            onPress={onSubmitGitHub}
-          />
-          <View style={styles.alternative}>
-            <View style={styles.divider} />
-            <Text style={styles.alternativeText}>{t("loginAlternative")}</Text>
-            <View style={styles.divider} />
+    <MobileKeyboardAvoidingView style={styles.root}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardDismissMode={mobileKeyboardDismissMode}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.brand}>
+          <View style={styles.mark}>
+            <Text style={styles.markText}>T</Text>
           </View>
-          <Text style={styles.label}>
-            {t(step === "email" ? "email" : "code")}
-          </Text>
-          <TextInput
-            autoCapitalize="none"
-            autoComplete={step === "email" ? "email" : "one-time-code"}
-            editable={pending === null}
-            inputMode={step === "email" ? "email" : "numeric"}
-            keyboardType={step === "email" ? "email-address" : "number-pad"}
-            onChangeText={step === "email" ? onEmailChange : onCodeChange}
-            onSubmitEditing={() => {
-              if (!disabled && pending === null) {
-                onSubmitEmail();
-              }
-            }}
-            placeholder={t(step === "email" ? "emailHint" : "codeHint")}
-            placeholderTextColor={theme.color.muted}
-            style={styles.input}
-            value={step === "email" ? email : code}
-          />
-          {step === "code" ? (
-            <Text style={styles.hint}>{t("emailSent")}</Text>
-          ) : null}
-          {errorCode === "request_failed" ? (
-            <Text style={styles.error}>{t("genericError")}</Text>
-          ) : null}
-          <PrimaryButton
-            disabled={disabled || pending !== null}
-            label={t(step === "email" ? "loginAction" : "verifyAction")}
-            loading={pending === "email"}
-            onPress={onSubmitEmail}
-          />
+          <Text style={styles.appName}>{t("appName")}</Text>
         </View>
-      </View>
-    </KeyboardAvoidingView>
+        <View style={styles.content}>
+          <Text style={styles.eyebrow}>{t("welcome")}</Text>
+          <Text style={styles.title}>{t("loginTitle")}</Text>
+          <Text style={styles.subtitle}>{t("loginSubtitle")}</Text>
+
+          <View style={styles.form}>
+            <PrimaryButton
+              disabled={pending !== null}
+              label={t("githubLoginAction")}
+              loading={pending === "github"}
+              onPress={onSubmitGitHub}
+            />
+            <View style={styles.alternative}>
+              <View style={styles.divider} />
+              <Text style={styles.alternativeText}>
+                {t("loginAlternative")}
+              </Text>
+              <View style={styles.divider} />
+            </View>
+            <Text style={styles.label}>
+              {t(step === "email" ? "email" : "code")}
+            </Text>
+            <TextInput
+              autoCapitalize="none"
+              autoComplete={step === "email" ? "email" : "one-time-code"}
+              editable={pending === null}
+              inputMode={step === "email" ? "email" : "numeric"}
+              keyboardType={step === "email" ? "email-address" : "number-pad"}
+              onChangeText={step === "email" ? onEmailChange : onCodeChange}
+              onSubmitEditing={() => {
+                if (!disabled && pending === null) {
+                  onSubmitEmail();
+                }
+              }}
+              placeholder={t(step === "email" ? "emailHint" : "codeHint")}
+              placeholderTextColor={theme.color.muted}
+              style={styles.input}
+              value={step === "email" ? email : code}
+            />
+            {step === "code" ? (
+              <Text style={styles.hint}>{t("emailSent")}</Text>
+            ) : null}
+            {errorCode === "request_failed" ? (
+              <Text style={styles.error}>{t("genericError")}</Text>
+            ) : null}
+            <PrimaryButton
+              disabled={disabled || pending !== null}
+              label={t(step === "email" ? "loginAction" : "verifyAction")}
+              loading={pending === "email"}
+              onPress={onSubmitEmail}
+            />
+          </View>
+        </View>
+      </ScrollView>
+    </MobileKeyboardAvoidingView>
   );
 }
 
@@ -188,6 +190,7 @@ function createStyles(theme: NativeTheme) {
       backgroundColor: theme.color.background,
       flex: 1
     },
+    scrollContent: { flexGrow: 1 },
     subtitle: {
       color: theme.color.textSecondary,
       fontSize: 15,

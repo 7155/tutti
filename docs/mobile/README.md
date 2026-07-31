@@ -261,6 +261,15 @@ screen composition and product-specific interaction.
 - `MobileUIProviders` owns the gesture root, safe-area provider, Bottom Sheet
   modal provider, and RN Primitives portal host. Do not mount duplicate roots
   inside screens.
+- Every screen with editable content uses the app-owned
+  `MobileKeyboardAvoidingView`: iOS applies keyboard padding, Android reduces
+  the available height, and Android keeps Activity `adjustResize` enabled for
+  edge-to-edge compatibility. The wrapper includes the top safe-area inset as
+  its screen-to-content offset; full-screen modal windows override that offset
+  to zero and bound keyboard-editable panels relative to the remaining height
+  instead of a fixed screen height. Scrollable content uses interactive
+  keyboard dismissal on iOS and on-drag dismissal on Android. Do not store
+  keyboard height in a service or add per-screen native keyboard listeners.
 - In a debug build, open the React Native developer menu and choose “Native UI
   gallery” to review the shared Native primitives on the actual renderer.
 - React Native Reusables is a source-copy starting point for a Native primitive;
@@ -270,9 +279,10 @@ screen composition and product-specific interaction.
   and dynamic-height sheets; wrap it behind a UI System Native component when
   it becomes a reusable product pattern. The shared compact `NativeSheet` uses
   React Native's window-level `Modal` instead, so its controlled open state does
-  not pass through `@gorhom/portal`. Callers provide its localized accessible
-  close label and may set one fixed height; multi-snap behavior remains outside
-  the compact primitive.
+  not pass through `@gorhom/portal`. It owns keyboard avoidance inside that
+  separate window; callers provide its localized accessible close label and may
+  set one fixed height. Multi-snap behavior remains outside the compact
+  primitive.
 - Agent message Markdown is rendered natively with
   `react-native-enriched-markdown`; it consumes the existing AgentGUI
   conversation VM and maps every color, radius, and spacing decision back to

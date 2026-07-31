@@ -107,20 +107,20 @@ export function useAgentGUIComposerOptionsSync(input: {
           agentTargetId: targetData.agentTargetId,
           settings: requestSettings
         })
-      ).then(() => {
-        const loadedOptions = composerOptionsForTarget({
-          snapshot: input.agentActivityRuntime.getSnapshot(input.workspaceId),
-          target: targetData
-        });
-        if (loadedOptions) {
-          input.onComposerDefaultsAuthorityReloadedRef.current.reconcileHomeDefaults(
-            targetData,
-            loadedOptions
-          );
-        }
+      ).then((returnedOptions) => {
+        const loadedOptions =
+          composerOptionsForTarget({
+            snapshot: input.agentActivityRuntime.getSnapshot(input.workspaceId),
+            target: targetData
+          }) ?? returnedOptions;
+        input.onComposerDefaultsAuthorityReloadedRef.current.reconcileHomeDefaults(
+          targetData,
+          loadedOptions
+        );
         if (options?.reconcileAcknowledgedDefaults) {
           input.onComposerDefaultsAuthorityReloadedRef.current.reloaded(
-            authorityRead.receipt
+            authorityRead.receipt,
+            returnedOptions
           );
         }
       });

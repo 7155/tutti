@@ -689,6 +689,19 @@ disable submission, but must not change editor editability.
   Mobile retain transport execution in their `EngineExtensionCommand`
   adapters and delegate pure generated-DTO projection to
   `@tutti-os/agent-activity-tuttid-adapter`
+- an acknowledged home Composer default remains an optimistic draft until a
+  later authoritative Composer-options response reports the same effective
+  field value. A successful read alone must not retire the draft because a
+  slow or overlapping provider discovery may still return an older default.
+  When a settled response omits that field, AgentGUI keeps the optimistic
+  intent but releases its confirmation marker so providers that cannot project
+  the field do not remain on permanent forced, uncached discovery. Concrete
+  conflicting authority is retried only for a bounded number of confirmation
+  reads; if a provider keeps normalizing, rejecting, or overriding the default,
+  AgentGUI protects the optimistic intent from generic option sanitization only
+  while that confirmation marker remains active. Releasing the marker lets later
+  settled options apply normal sanitization and return to the Engine's
+  signature-aware cache
 - the Engine alone translates shared activation, prompt send, settings update,
   Goal Control, turn cancel, Interaction response, rename, pin, and
   batch-delete commands into `AgentSessionEffectPort` calls. Desktop and Mobile

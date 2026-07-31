@@ -425,7 +425,10 @@ describe("useAgentGUIComposerSettingsActions", () => {
             reloadInput.settings
           );
         onComposerDefaultsAuthorityReloadedRef.current.reloaded(
-          authorityRead.receipt
+          authorityRead.receipt,
+          {
+            effectiveSettings: reloadInput.settings
+          } as AgentActivityComposerOptions
         );
       }
     );
@@ -530,7 +533,7 @@ describe("useAgentGUIComposerSettingsActions", () => {
     expect(setDraftSettingsBySessionId).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps acknowledged intent after a failed reload and retires it on the next authority read", async () => {
+  it("keeps acknowledged intent after a failed reload and releases confirmation when authority omits the field", async () => {
     const sessionEngine = createAgentSessionEngine({
       clock: { nowUnixMs: () => 1 },
       commandPort: { execute: vi.fn() },
@@ -606,7 +609,10 @@ describe("useAgentGUIComposerSettingsActions", () => {
     act(() => {
       // The daemon changed event may be observed before the publish ack.
       onComposerDefaultsAuthorityReloadedRef.current.reloaded(
-        preAckRead.receipt
+        preAckRead.receipt,
+        {
+          effectiveSettings: { permissionModeId: "full-access" }
+        } as AgentActivityComposerOptions
       );
     });
     expect(
@@ -648,10 +654,160 @@ describe("useAgentGUIComposerSettingsActions", () => {
     });
     act(() => {
       onComposerDefaultsAuthorityReloadedRef.current.reloaded(
-        authorityRead.receipt
+        authorityRead.receipt,
+        {} as AgentActivityComposerOptions
       );
     });
-    expect(draftSettingsBySessionIdRef.current).toEqual({});
+    expect(
+      draftSettingsBySessionIdRef.current[
+        "__agent_gui_node_defaults__:target:local:opencode"
+      ]
+    ).toEqual({ permissionModeId: "full-access" });
+    expect(
+      onComposerDefaultsAuthorityReloadedRef.current.prepareRead(
+        target,
+        draftSettingsBySessionIdRef.current[
+          "__agent_gui_node_defaults__:target:local:opencode"
+        ] ?? {}
+      )
+    ).toEqual({
+      force: false,
+      receipt: null,
+      settings: { permissionModeId: "full-access" }
+    });
+  });
+
+  it("does not sanitize an acknowledged model before a stale authority read is reconciled", async () => {
+    const sessionEngine = createAgentSessionEngine({
+      clock: { nowUnixMs: () => 1 },
+      commandPort: { execute: vi.fn() },
+      identity: { origin: "test", workspaceId: "workspace-1" },
+      scheduler: { schedule: () => ({ cancel() {} }) }
+    });
+    const data: AgentGUINodeData = {
+      agentTargetId: "local:opencode",
+      lastActiveAgentSessionId: null,
+      provider: "opencode"
+    };
+    const target = {
+      agentTargetId: "local:opencode",
+      data,
+      provider: "opencode" as const,
+      targetId: "local:opencode"
+    };
+    const draftKey = "__agent_gui_node_defaults__:target:local:opencode";
+    const draftSettingsBySessionIdRef: {
+      current: Record<string, AgentSessionComposerSettings>;
+    } = { current: {} };
+    const acknowledgement = deferred<AgentGUIRememberComposerDefaultsResult>();
+    const onComposerDefaultsAuthorityReloadedRef =
+      createComposerDefaultsAuthorityReconcilerRef();
+    const onDataChange = vi.fn();
+    const staleOptions = {
+      behavior: {
+        collapseModelOptionsToLatest: false,
+        modelOptionsAuthoritative: true,
+        refreshModelOptionsAfterSettings: false,
+        prewarmDraftSession: false,
+        planModeExclusiveWithPermissionMode: false
+      },
+      capabilities: null,
+      effectiveSettings: { model: "opencode/model-a" },
+      loadedAtUnixMs: 1,
+      modelConfigurable: true,
+      models: [{ label: "Model A", value: "opencode/model-a" }],
+      provider: "opencode",
+      reasoningConfigurable: false,
+      reasoningEfforts: [],
+      skills: [],
+      speeds: []
+    } satisfies AgentActivityComposerOptions;
+    const reloadComposerOptionsForTarget = vi.fn(
+      async (reloadInput: {
+        settings: AgentSessionComposerSettings;
+        target: typeof target;
+      }) => {
+        const authorityRead =
+          onComposerDefaultsAuthorityReloadedRef.current.prepareRead(
+            reloadInput.target,
+            reloadInput.settings
+          );
+        // Match the production ordering: generic option sanitization runs
+        // before the authority receipt is settled.
+        onComposerDefaultsAuthorityReloadedRef.current.reconcileHomeDefaults(
+          reloadInput.target,
+          staleOptions
+        );
+        onComposerDefaultsAuthorityReloadedRef.current.reloaded(
+          authorityRead.receipt,
+          staleOptions
+        );
+      }
+    );
+    const rendered = renderHook(() =>
+      useAgentGUIComposerSettingsActions({
+        activation: {
+          stateFor: vi.fn(() => "inactive" as const)
+        } as unknown as ReturnType<typeof useAgentGUIActivation>,
+        activeCanonicalComposerSettings: {},
+        activeConversationIdRef: { current: null },
+        activeEngineActiveTurn: null,
+        agentActivityRuntime: {
+          getSnapshot: () => ({})
+        } as unknown as AgentActivityRuntime,
+        composerSupportPermissionModeChangeDeferred: false,
+        dataRef: { current: data },
+        defaultReasoningEffort: null,
+        draftSettingsBySessionIdRef,
+        isMountedRef: { current: true },
+        loadDraftComposerOptions: vi.fn(),
+        onComposerDefaultsAuthorityReloadedRef,
+        onDataChangeRef: { current: onDataChange },
+        onRememberComposerDefaultsRef: {
+          current: vi.fn(() => acknowledgement.promise)
+        },
+        onShowMessageRef: { current: vi.fn() },
+        reloadComposerOptionsForTarget,
+        selectedComposerTargetDataRef: { current: target },
+        sessionEngine,
+        setDraftSettingsBySessionId: vi.fn(),
+        updateComposerSettingsRef: { current: vi.fn() },
+        workspaceId: "workspace-1"
+      })
+    );
+
+    act(() => {
+      rendered.result.current.updateComposerSettings({
+        model: "opencode/model-b"
+      });
+    });
+    await act(async () => {
+      acknowledgement.resolve({
+        acknowledgedFields: ["model"],
+        supersededFields: []
+      });
+      await acknowledgement.promise;
+    });
+
+    expect(reloadComposerOptionsForTarget).toHaveBeenCalledOnce();
+    expect(draftSettingsBySessionIdRef.current[draftKey]?.model).toBe(
+      "opencode/model-b"
+    );
+    expect(onDataChange).not.toHaveBeenCalled();
+    expect(
+      onComposerDefaultsAuthorityReloadedRef.current.prepareRead(
+        target,
+        draftSettingsBySessionIdRef.current[draftKey] ?? {}
+      )
+    ).toMatchObject({
+      force: true,
+      receipt: {
+        fields: {
+          model: { value: "opencode/model-b" }
+        }
+      },
+      settings: {}
+    });
   });
 });
 

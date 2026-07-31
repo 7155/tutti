@@ -807,7 +807,7 @@ disable submission, but must not change editor editability.
   update is fire-and-observe intent admission rather than a settlement Promise:
   the existing settings-operation selector remains the source of pending,
   failed, and unknown state. Hosts must not reconstruct mutation protocol with
-  `dispatchSessionMutation` and snapshot reads or construct raw
+  reducer intents and snapshot reads or construct raw
   `session/settingsUpdateRequested` fields for an existing Session.
   Session stop is also fire-and-observe admission: the Engine owns its command
   identity, 30-second cancellation timeout, duplicate fence, and 30-second
@@ -833,10 +833,9 @@ disable submission, but must not change editor editability.
   or the resumed Session's authoritative detail aggregate. The Engine validates
   the versioned `activation-v1` result contract, result scope, mode, and every
   nested Session/Turn/Interaction entity, then projects the aggregate in its
-  own drain. Untagged or opaque legacy command-port results remain
-  acknowledgements and do not enter canonical state. Desktop and Mobile effects
-  retain transport, DTO mapping, and product-local integration/observability
-  concerns, but must not pre-dispatch those projections.
+  own drain. Desktop and Mobile effects retain transport, DTO mapping, and
+  product-local integration/observability concerns, but must not pre-dispatch
+  those projections.
   Canonical monotonicity guards prevent a late activation response from
   regressing newer realtime state.
   Surfaces clear a new-Session draft only after activation admission succeeds.
@@ -2052,8 +2051,8 @@ the requested value, because Host owns the durable revision, operation, and
 audit. A typed response with `pending` or `applying` Goal state is `accepted`;
 `synced` is `succeeded`; explicit `failed`, `diverged`, and `unknown` states
 remain distinct. Only definitive protocol rejections become frontend
-`failed`. Timeout, transport loss, an opaque legacy acknowledgement, or a
-malformed typed success remains `unknown`; generic Session reconciliation does
+`failed`. Timeout, transport loss, or a malformed typed success remains
+`unknown`; generic Session reconciliation does
 not prove the outcome of a particular Goal operation. Retrying the same action
 from `unknown` reuses its original `clientSubmitId`, so Host resolves the same
 durable operation instead of creating a second one. A canonical Session Goal

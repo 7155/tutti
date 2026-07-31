@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createEngineEffectExecutor } from "./effectExecutor.ts";
+import { createTestEngineCommandPort } from "./testEngineCommandPort.ts";
 import type { AgentActivitySession } from "../types.ts";
 import type {
   AgentSessionEffectPort,
-  EngineCommandPort,
   EngineCommandResultIntent,
   EngineExternalCommand,
   EngineTypedCommandPort
@@ -334,41 +334,14 @@ test("projects shared commands onto typed lifecycle effects without host switche
   );
 });
 
-test("keeps the complete command union available to legacy hosts", async () => {
-  const observed: string[] = [];
-  const executed: EngineExternalCommand[] = [];
-  const command: EngineExternalCommand = {
-    agentSessionId: "session-legacy",
-    commandId: "cancel-legacy",
-    turnId: "turn-legacy",
-    type: "turn/cancel",
-    workspaceId: "workspace-legacy"
-  };
-  const result = await executeAndWait(
-    {
-      async execute(candidate) {
-        executed.push(candidate);
-      },
-      observe(candidate) {
-        observed.push(candidate.commandId);
-      }
-    },
-    command
-  );
-
-  assert.deepEqual(executed, [command]);
-  assert.deepEqual(observed, ["cancel-legacy"]);
-  assert.equal(result.resultContract, "opaque");
-});
-
 test("projects plan decisions with exact Engine provenance", async () => {
   let receivedOptions: unknown;
   let receivedSignal: AbortSignal | undefined;
   const result = await executeAndWait(
     {
-      async execute() {
+      ...createTestEngineCommandPort(async () => {
         throw new Error("unexpected generic execute");
-      },
+      }),
       async executePlanDecision(_command, options) {
         assert.ok(options);
         receivedOptions = options;
@@ -412,11 +385,9 @@ test("projects plan decisions with exact Engine provenance", async () => {
 test("rejects prompt settings preconditions that bypass the Engine state machine", async () => {
   let executed = false;
   const result = await executeAndWait(
-    {
-      async execute() {
-        executed = true;
-      }
-    },
+    createTestEngineCommandPort(async () => {
+      executed = true;
+    }),
     {
       agentSessionId: "session-1",
       clientSubmitId: "submit-1",
@@ -438,7 +409,7 @@ test("rejects prompt settings preconditions that bypass the Engine state machine
 });
 
 function executeAndWait(
-  commandPort: EngineCommandPort | EngineTypedCommandPort,
+  commandPort: EngineTypedCommandPort,
   command: EngineExternalCommand
 ): Promise<EngineCommandResultIntent> {
   return new Promise((resolve) => {

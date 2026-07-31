@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createLocalAgentGUIAgentTarget } from "../../../agentTargets";
 import type { AgentGUIRuntime } from "../../../agentActivityRuntime";
 import type { AgentHostUserProject } from "../../../host/agentHostApi";
+import { createTestEngineCommandPort } from "../../../shared/testing/createTestAgentSessionEngine";
 import type { AgentGUINodeData } from "../../../types";
 import type { AgentGUIConversationSummary } from "../model/agentGuiConversationModel";
 import type { AgentComposerDraft } from "../model/agentGuiNodeTypes";
@@ -182,12 +183,12 @@ function renderNewConversationScenario(input: {
   const commands: EngineExternalCommand[] = [];
   const sessionEngine = createAgentSessionEngine({
     clock: { nowUnixMs: () => 1 },
-    commandPort: {
+    commandPort: createTestEngineCommandPort({
       execute: (command) => {
         commands.push(command);
         return new Promise<never>(() => {});
       }
-    },
+    }),
     identity: { origin: "test", workspaceId: "workspace-1" },
     scheduler: { schedule: () => ({ cancel() {} }) }
   });

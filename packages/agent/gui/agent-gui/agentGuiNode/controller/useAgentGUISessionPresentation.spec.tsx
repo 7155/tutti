@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { createAgentSessionEngine } from "@tutti-os/agent-activity-core";
 import { describe, expect, it, vi } from "vitest";
+import { createTestEngineCommandPort } from "../../../shared/testing/createTestAgentSessionEngine";
 import type {
   AgentGUIObservationGap,
   AgentGUIObservationGapSource,
@@ -57,7 +58,9 @@ describe("useAgentGUISessionPresentation", () => {
     const targetConnectionSource = new FakeTargetConnectionSource();
     const sessionEngine = createAgentSessionEngine({
       clock: { nowUnixMs: () => 1 },
-      commandPort: { execute: vi.fn(() => new Promise(() => undefined)) },
+      commandPort: createTestEngineCommandPort({
+        execute: vi.fn(() => new Promise(() => undefined))
+      }),
       identity: { origin: "test", workspaceId: "workspace-1" },
       scheduler: { schedule: () => ({ cancel() {} }) }
     });
@@ -149,7 +152,9 @@ describe("useAgentGUISessionPresentation", () => {
     const observationGapSource = new FakeObservationGapSource();
     const sessionEngine = createAgentSessionEngine({
       clock: { nowUnixMs: () => 1 },
-      commandPort: { execute: vi.fn(() => new Promise(() => undefined)) },
+      commandPort: createTestEngineCommandPort({
+        execute: vi.fn(() => new Promise(() => undefined))
+      }),
       identity: { origin: "test", workspaceId: "workspace-1" },
       scheduler: { schedule: () => ({ cancel() {} }) }
     });

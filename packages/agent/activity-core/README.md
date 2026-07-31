@@ -75,14 +75,12 @@ Engine rules:
 - Reducers are pure and return new state plus command descriptions; the effect
   executor performs commands and feeds every settlement (success, failure,
   timeout) back into the loop as command-result intents.
-- New hosts implement `AgentSessionEffectPort` for activation, prompt send,
+- Hosts implement `AgentSessionEffectPort` for activation, prompt send,
   Goal Control, settings update, turn cancellation, Interaction response,
   rename, pin, and batch delete. The Engine owns command-to-capability
-  projection and
-  the settings-precondition state machine. A typed port declares
+  projection and the settings-precondition state machine. The command port declares
   `kind: "typed"` and its `execute` callback receives only
-  `EngineExtensionCommand`; the discriminated legacy shape keeps the
-  complete-command callback while existing package consumers migrate.
+  `EngineExtensionCommand`.
 - Timing is never read inside reducers. Deadlines are `scheduleExpiry`
   commands handled by the expiry clock, which re-enters the loop with expiry
   intents through the injected host scheduler.
@@ -92,9 +90,8 @@ Engine rules:
 - `getSnapshot()` / `subscribe()` expose the immutable state tree. React
   surfaces subscribe through the single `useEngineSelector` binding in
   `@tutti-os/agent-gui`.
-- `dispatchSessionMutation` remains a compatibility entrypoint for published
-  consumers migrating to the semantic Engine methods. New product-host code
-  must not construct mutation ids, timeout policy, or mutation-record reads.
+- Product hosts use the semantic Engine mutation methods and must not construct
+  mutation ids, timeout policy, or mutation-record reads.
 
 The state tree includes lifecycle entities, message windows, prompt queue,
 pending intents, composer options, runtime availability, reconciliation, and
@@ -379,9 +376,7 @@ settings result requires a provider-declared options refresh. That refresh is
 target-scoped and non-blocking for the current send. Timeout, abort,
 observation, and command-result dispatch remain owned by the Engine effect
 executor. Every typed effect receives its own Engine command's `AbortSignal`;
-hosts must propagate it through their transport. The legacy full-command
-`execute` path is compatibility-only for existing published-package consumers
-such as tsh.
+hosts must propagate it through their transport.
 
 ## Message Merge Rules
 

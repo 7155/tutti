@@ -4,6 +4,7 @@ import {
   normalizeAgentActivitySession,
   type AgentActivitySession
 } from "@tutti-os/agent-activity-core";
+import { createTestEngineCommandPort } from "../shared/testing/createTestAgentSessionEngine";
 import {
   buildWorkspaceAgentMessageCenterModelFromEngine,
   selectWorkspaceAgentAttentionItems,
@@ -602,7 +603,7 @@ describe("workspaceAgentConsumerSelectors", () => {
 function createEngine() {
   return createAgentSessionEngine({
     clock: { nowUnixMs: () => 1 },
-    commandPort: { execute: async () => ({}) },
+    commandPort: createTestEngineCommandPort({ execute: async () => ({}) }),
     identity: { origin: "test", workspaceId: "workspace-1" },
     scheduler: { schedule: () => ({ cancel() {} }) }
   });

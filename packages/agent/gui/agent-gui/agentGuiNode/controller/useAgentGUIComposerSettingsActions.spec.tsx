@@ -7,6 +7,7 @@ import {
 } from "@tutti-os/agent-activity-core";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentGUIRuntime } from "../../../agentActivityRuntime";
+import { createTestEngineCommandPort } from "../../../shared/testing/createTestAgentSessionEngine";
 import type { AgentSessionComposerSettings } from "../../../shared/agentSessionTypes";
 import type { AgentGUINodeData } from "../../../types";
 import type { AgentGUIRememberComposerDefaultsResult } from "./agentGuiController.providerHelpers";
@@ -18,7 +19,7 @@ describe("useAgentGUIComposerSettingsActions", () => {
   it("retires a remembered model rejected by the authoritative target catalog", () => {
     const sessionEngine = createAgentSessionEngine({
       clock: { nowUnixMs: () => 1 },
-      commandPort: { execute: vi.fn() },
+      commandPort: createTestEngineCommandPort({ execute: vi.fn() }),
       identity: { origin: "test", workspaceId: "workspace-1" },
       scheduler: { schedule: () => ({ cancel() {} }) }
     });
@@ -124,7 +125,7 @@ describe("useAgentGUIComposerSettingsActions", () => {
   it("preserves all explicit home defaults across stale options, transient empty selects, and unrelated patches", () => {
     const sessionEngine = createAgentSessionEngine({
       clock: { nowUnixMs: () => 1 },
-      commandPort: { execute: vi.fn() },
+      commandPort: createTestEngineCommandPort({ execute: vi.fn() }),
       identity: { origin: "test", workspaceId: "workspace-1" },
       scheduler: { schedule: () => ({ cancel() {} }) }
     });
@@ -257,7 +258,7 @@ describe("useAgentGUIComposerSettingsActions", () => {
     const execute = vi.fn(() => new Promise<unknown>(() => undefined));
     const sessionEngine = createAgentSessionEngine({
       clock: { nowUnixMs: () => 1 },
-      commandPort: { execute },
+      commandPort: createTestEngineCommandPort({ execute }),
       identity: { origin: "test", workspaceId: "workspace-1" },
       scheduler: { schedule: () => ({ cancel() {} }) }
     });
@@ -385,7 +386,7 @@ describe("useAgentGUIComposerSettingsActions", () => {
   it("reconciles A to B to A by exact field generation", async () => {
     const sessionEngine = createAgentSessionEngine({
       clock: { nowUnixMs: () => 1 },
-      commandPort: { execute: vi.fn() },
+      commandPort: createTestEngineCommandPort({ execute: vi.fn() }),
       identity: { origin: "test", workspaceId: "workspace-1" },
       scheduler: { schedule: () => ({ cancel() {} }) }
     });
@@ -536,7 +537,7 @@ describe("useAgentGUIComposerSettingsActions", () => {
   it("keeps acknowledged intent after a failed reload and releases confirmation when authority omits the field", async () => {
     const sessionEngine = createAgentSessionEngine({
       clock: { nowUnixMs: () => 1 },
-      commandPort: { execute: vi.fn() },
+      commandPort: createTestEngineCommandPort({ execute: vi.fn() }),
       identity: { origin: "test", workspaceId: "workspace-1" },
       scheduler: { schedule: () => ({ cancel() {} }) }
     });
@@ -680,7 +681,7 @@ describe("useAgentGUIComposerSettingsActions", () => {
   it("does not sanitize an acknowledged model before a stale authority read is reconciled", async () => {
     const sessionEngine = createAgentSessionEngine({
       clock: { nowUnixMs: () => 1 },
-      commandPort: { execute: vi.fn() },
+      commandPort: createTestEngineCommandPort({ execute: vi.fn() }),
       identity: { origin: "test", workspaceId: "workspace-1" },
       scheduler: { schedule: () => ({ cancel() {} }) }
     });

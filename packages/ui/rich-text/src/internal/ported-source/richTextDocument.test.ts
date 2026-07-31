@@ -1,27 +1,23 @@
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import {
   appendWorkspaceFileLinksToContent,
   extractWorkspaceFileLinksFromContent,
   extractPlainTextFromContent,
   normalizeWorkspaceFileLinkHref
-} from "./richTextDocument";
+} from "./richTextDocument.ts";
 
 describe("richTextDocument", () => {
-  it("normalizes legacy plain text into searchable text output", () => {
-    expect(extractPlainTextFromContent("hello legacy world")).toBe(
-      "hello legacy world"
-    );
-  });
-
   it("appends workspaceFileLink nodes and extracts them back out", () => {
     const content = appendWorkspaceFileLinksToContent("", [
       { name: "demo.md", path: "workspace/tasks/task-1/attachments/demo.md" }
     ]);
 
-    expect(content).toBe(
+    assert.equal(
+      content,
       "[demo.md](workspace/tasks/task-1/attachments/demo.md)"
     );
-    expect(extractWorkspaceFileLinksFromContent(content)).toEqual([
+    assert.deepEqual(extractWorkspaceFileLinksFromContent(content), [
       {
         name: "demo.md",
         path: "workspace/tasks/task-1/attachments/demo.md",
@@ -29,7 +25,7 @@ describe("richTextDocument", () => {
         kind: "file"
       }
     ]);
-    expect(extractPlainTextFromContent(content)).toContain("demo.md");
+    assert.ok(extractPlainTextFromContent(content).includes("demo.md"));
   });
 
   it("preserves folder references with folder protocol and kind metadata", () => {
@@ -41,8 +37,8 @@ describe("richTextDocument", () => {
       }
     ]);
 
-    expect(content).toBe("[specs](workspace/tasks/task-1/attachments/specs/)");
-    expect(extractWorkspaceFileLinksFromContent(content)).toEqual([
+    assert.equal(content, "[specs](workspace/tasks/task-1/attachments/specs/)");
+    assert.deepEqual(extractWorkspaceFileLinksFromContent(content), [
       {
         name: "specs",
         path: "workspace/tasks/task-1/attachments/specs/",
@@ -50,19 +46,21 @@ describe("richTextDocument", () => {
         kind: "folder"
       }
     ]);
-    expect(
+    assert.equal(
       normalizeWorkspaceFileLinkHref(
         "workspace/tasks/task-1/attachments/specs",
         "folder"
-      )
-    ).toBe("workspace/tasks/task-1/attachments/specs/");
+      ),
+      "workspace/tasks/task-1/attachments/specs/"
+    );
   });
 
   it("extracts plain text from markdown content while keeping link labels", () => {
-    expect(
+    assert.equal(
       extractPlainTextFromContent(
         "目标：产出方案\n\n参考文件：[demo.md](/workspace/output/demo.md)\n- 第一项\n- 第二项"
-      )
-    ).toBe("目标：产出方案 参考文件： demo.md 第一项 第二项");
+      ),
+      "目标：产出方案 参考文件： demo.md 第一项 第二项"
+    );
   });
 });

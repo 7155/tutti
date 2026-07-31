@@ -22,10 +22,11 @@ import {
 } from "@tutti-os/ui-system";
 import type { WorkbenchDockContext } from "../react/types.ts";
 import {
-  captureWorkbenchNodePreviewImage,
-  readCachedWorkbenchNodePreviewImage,
-  writeCachedWorkbenchNodePreviewImage
-} from "../react/useWorkbenchGenieAnimation.tsx";
+  readWorkbenchMinimizedDockPreviewImage,
+  resolveWorkbenchMinimizedDockPreviewImage,
+  resolveWorkbenchMinimizedDockPreviewRevision,
+  useWorkbenchMinimizedDockPreview
+} from "./useWorkbenchMinimizedDockPreview.ts";
 import {
   canCreateNewWindow,
   canCreateNewWindowInDockPopup,
@@ -2435,7 +2436,12 @@ export function WorkbenchHostDock({
           placement={dockPlacement}
           debugDiagnostics={debugDiagnostics}
           capturePreview={async (item) => {
-            const src = await captureMinimizedNodePreview(item.node);
+            const src = await resolveWorkbenchMinimizedDockPreviewImage({
+              capturePreview: () => captureMinimizedNodePreview(item.node),
+              dockPreviewCache,
+              node: item.node,
+              workspaceId
+            });
             return src ? { kind: "image", src } : null;
           }}
           dockPreviewCache={dockPreviewCache}
@@ -2462,12 +2468,13 @@ export function WorkbenchHostDock({
                     ? null
                     : (() => {
                         const previewImageUrl =
-                          readCachedWorkbenchNodePreviewImage(node.id);
+                          readWorkbenchMinimizedDockPreviewImage(node.id);
                         return previewImageUrl
                           ? ({ kind: "image", src: previewImageUrl } as const)
                           : null;
                       })(),
-              previewRevision: null,
+              previewRevision:
+                resolveWorkbenchMinimizedDockPreviewRevision(node),
               subtitle: node.data.instanceKey ?? node.data.instanceId,
               title: node.title
             };
@@ -2552,147 +2559,15 @@ function WorkbenchHostDockMinimizedNodePreview({
   ) => WorkbenchDockPreviewContent | null;
   workspaceId: string;
 }) {
-  const [componentPreview, setComponentPreview] = useState<
-    WorkbenchDockPreviewContent | null | undefined
-  >(undefined);
-  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(() =>
-    deferPreview ? null : readCachedWorkbenchNodePreviewImage(node.id)
-  );
-
-  useEffect(() => {
-    if (
-      deferPreview ||
-      !providePreview ||
-      componentPreview !== undefined ||
-      previewImageUrl
-    ) {
-      return undefined;
-    }
-
-    let cancelled = false;
-    let frameId: number | null = null;
-    let idleId: number | null = null;
-    let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
-    const setDeferredComponentPreview = () => {
-      if (cancelled) {
-        return;
-      }
-      setComponentPreview(providePreview(node) ?? null);
-    };
-    const scheduler = globalThis as typeof globalThis & {
-      cancelIdleCallback?: (id: number) => void;
-      cancelAnimationFrame?: (id: number) => void;
-      requestIdleCallback?: (
-        callback: () => void,
-        options?: { timeout?: number }
-      ) => number;
-      requestAnimationFrame?: (callback: () => void) => number;
-    };
-
-    if (typeof scheduler.requestIdleCallback === "function") {
-      idleId = scheduler.requestIdleCallback(setDeferredComponentPreview, {
-        timeout: 250
-      });
-    } else if (typeof scheduler.requestAnimationFrame === "function") {
-      frameId = scheduler.requestAnimationFrame(() => {
-        frameId = null;
-        timeoutId = globalThis.setTimeout(setDeferredComponentPreview, 0);
-      });
-    } else {
-      timeoutId = globalThis.setTimeout(setDeferredComponentPreview, 0);
-    }
-
-    return () => {
-      cancelled = true;
-      if (
-        idleId !== null &&
-        typeof scheduler.cancelIdleCallback === "function"
-      ) {
-        scheduler.cancelIdleCallback(idleId);
-      }
-      if (
-        frameId !== null &&
-        typeof scheduler.cancelAnimationFrame === "function"
-      ) {
-        scheduler.cancelAnimationFrame(frameId);
-      }
-      if (timeoutId !== null) {
-        globalThis.clearTimeout(timeoutId);
-      }
-    };
-  }, [
-    componentPreview,
-    deferPreview,
-    node.data.instanceId,
-    node.data.instanceKey,
-    node.data.typeId,
-    node.id,
-    node.minimizedAtUnixMs,
-    previewImageUrl,
-    providePreview
-  ]);
-
-  useEffect(() => {
-    if (deferPreview) {
-      return undefined;
-    }
-
-    let cancelled = false;
-    const cachedPreviewImageUrl = readCachedWorkbenchNodePreviewImage(node.id);
-    setPreviewImageUrl(cachedPreviewImageUrl);
-    const cacheKey = resolveDockPreviewCacheKey(workspaceId, node);
-    if (!cachedPreviewImageUrl && dockPreviewCache) {
-      void dockPreviewCache
-        .read(cacheKey)
-        .catch(() => null)
-        .then((persistedPreview) => {
-          if (cancelled || !persistedPreview) {
-            return;
-          }
-          writeCachedWorkbenchNodePreviewImage(node.id, persistedPreview);
-          setPreviewImageUrl(persistedPreview);
-        });
-    }
-    if (capturePreview) {
-      void Promise.resolve(capturePreview(node))
-        .catch(() => null)
-        .then((nextPreview) => {
-          if (cancelled || !nextPreview) {
-            return;
-          }
-          writeCachedWorkbenchNodePreviewImage(node.id, nextPreview);
-          dockPreviewCache?.write({
-            key: cacheKey,
-            previewImageUrl: nextPreview
-          });
-          setPreviewImageUrl(nextPreview);
-        });
-    }
-    if (cachedPreviewImageUrl || node.isMinimized || capturePreview) {
-      return () => {
-        cancelled = true;
-      };
-    }
-    void captureWorkbenchNodePreviewImage(node.id).then((nextPreview) => {
-      if (!cancelled) {
-        setPreviewImageUrl(nextPreview);
-      }
+  const { componentPreview, previewImageUrl } =
+    useWorkbenchMinimizedDockPreview({
+      capturePreview,
+      deferPreview,
+      dockPreviewCache,
+      node,
+      providePreview,
+      workspaceId
     });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    capturePreview,
-    deferPreview,
-    dockPreviewCache,
-    node.data.instanceId,
-    node.data.instanceKey,
-    node.data.typeId,
-    node.id,
-    node.minimizedAtUnixMs,
-    providePreview,
-    workspaceId
-  ]);
 
   if (deferPreview) {
     return renderMinimizedDockPreviewPlaceholder(className);

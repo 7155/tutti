@@ -293,8 +293,7 @@ execLoop:
 			}))
 			emitEvents(terminalEvents)
 		default:
-			if strings.TrimSpace(normalizer.CurrentAssistantText()) == "" &&
-				normalizer.SeenToolCallCount() == 0 {
+			if !normalizer.HasObservableOutput() {
 				const emptyResponseError = "provider_empty_response: ACP agent ended the turn without assistant output or tool activity"
 				terminalEvents := normalizer.FinishFailed(session, turnID)
 				terminalEvents = append(terminalEvents, standardACPRootProviderTurnCompletedEvent(session, turnID, activityshared.TurnOutcomeFailed, map[string]any{

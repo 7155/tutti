@@ -120,7 +120,10 @@ type standardACPConnection struct {
 	omitAssistantTextInPromptResults bool
 	// emptyPromptResult returns a normal ACP end_turn without any session
 	// updates, matching providers that hide a model/account failure.
-	emptyPromptResult        bool
+	emptyPromptResult bool
+	// promptResultUpdates replaces the normal prompt stream with only these
+	// session updates followed by end_turn.
+	promptResultUpdates      []map[string]any
 	setConfigOptionSnapshots []map[string]any
 	setModelSnapshots        []map[string]any
 	configOptions            []map[string]any

@@ -32,6 +32,30 @@ test("listDesktopWorkspaceAgentProbes resolves provider aliases through the cata
   assert.equal(result.providers[0]?.provider, "opencode");
 });
 
+test("listDesktopWorkspaceAgentProbes includes Kimi in the default provider set", async () => {
+  const previousCodexHome = process.env.CODEX_HOME;
+  const previousKimiCodeHome = process.env.KIMI_CODE_HOME;
+  const directory = await mkdtemp(join(tmpdir(), "tutti-default-providers-"));
+  try {
+    process.env.CODEX_HOME = directory;
+    process.env.KIMI_CODE_HOME = directory;
+
+    const result = await listDesktopWorkspaceAgentProbes({
+      includeUsage: false,
+      refresh: true,
+      workspaceId: "workspace-1"
+    });
+
+    assert.ok(
+      result.providers.some((provider) => provider.provider === "acp:kimi-code")
+    );
+  } finally {
+    restoreOptionalEnv("CODEX_HOME", previousCodexHome);
+    restoreOptionalEnv("KIMI_CODE_HOME", previousKimiCodeHome);
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
 test("listDesktopWorkspaceAgentProbes rejects Kimi API-key mode without an API key", async () => {
   const previousKimiCodeHome = process.env.KIMI_CODE_HOME;
   const previousKimiModelName = process.env.KIMI_MODEL_NAME;
@@ -155,20 +179,24 @@ test("listDesktopWorkspaceAgentProbes reports exhausted Kimi Coding Plan quota",
     delete process.env.KIMI_MODEL_NAME;
     delete process.env.KIMI_MODEL_API_KEY;
     await writeKimiCodingPlanFixture(directory);
-    setOutboundFetcherForTesting(
-      async () =>
-        new Response(
-          JSON.stringify({
-            limits: [
-              {
-                detail: { limit: 100, remaining: 0 },
-                window: { duration: 7, timeUnit: "DAY" }
-              }
-            ]
-          }),
-          { status: 200 }
-        )
-    );
+    setOutboundFetcherForTesting(async (url, init) => {
+      assert.equal(fetchInputUrl(url), "https://api.kimi.com/coding/v1/usages");
+      assert.equal(
+        new Headers(init?.headers).get("authorization"),
+        "Bearer kimi-access-token-1"
+      );
+      return new Response(
+        JSON.stringify({
+          limits: [
+            {
+              detail: { limit: 100, remaining: 0 },
+              window: { duration: 7, timeUnit: "DAY" }
+            }
+          ]
+        }),
+        { status: 200 }
+      );
+    });
 
     const result = await listDesktopWorkspaceAgentProbes({
       includeUsage: true,
@@ -184,6 +212,47 @@ test("listDesktopWorkspaceAgentProbes reports exhausted Kimi Coding Plan quota",
     assert.equal(provider?.usage?.quotas?.[0]?.percentRemaining, 0);
   } finally {
     restoreOptionalEnv("KIMI_CODE_HOME", previousKimiCodeHome);
+    restoreOptionalEnv("KIMI_MODEL_NAME", previousKimiModelName);
+    restoreOptionalEnv("KIMI_MODEL_API_KEY", previousKimiModelAPIKey);
+    setOutboundFetcherForTesting(null);
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test("listDesktopWorkspaceAgentProbes never sends Kimi OAuth tokens to a custom origin", async () => {
+  const previousKimiCodeHome = process.env.KIMI_CODE_HOME;
+  const previousKimiCodeBaseURL = process.env.KIMI_CODE_BASE_URL;
+  const previousKimiModelName = process.env.KIMI_MODEL_NAME;
+  const previousKimiModelAPIKey = process.env.KIMI_MODEL_API_KEY;
+  const directory = await mkdtemp(join(tmpdir(), "tutti-kimi-custom-origin-"));
+  let fetchCount = 0;
+  try {
+    process.env.KIMI_CODE_HOME = directory;
+    process.env.KIMI_CODE_BASE_URL = "https://attacker.example/coding/v1";
+    delete process.env.KIMI_MODEL_NAME;
+    delete process.env.KIMI_MODEL_API_KEY;
+    await writeKimiCodingPlanFixture(directory);
+    setOutboundFetcherForTesting(async () => {
+      fetchCount += 1;
+      throw new Error("Kimi usage fetch must not run for a custom origin");
+    });
+
+    const result = await listDesktopWorkspaceAgentProbes({
+      includeUsage: true,
+      providers: ["acp:kimi-code"],
+      refresh: true,
+      workspaceId: "workspace-1"
+    });
+
+    assert.equal(fetchCount, 0);
+    assert.equal(result.providers[0]?.lastError?.code, "parse_failed");
+    assert.match(
+      result.providers[0]?.lastError?.message ?? "",
+      /official HTTPS API endpoint/iu
+    );
+  } finally {
+    restoreOptionalEnv("KIMI_CODE_HOME", previousKimiCodeHome);
+    restoreOptionalEnv("KIMI_CODE_BASE_URL", previousKimiCodeBaseURL);
     restoreOptionalEnv("KIMI_MODEL_NAME", previousKimiModelName);
     restoreOptionalEnv("KIMI_MODEL_API_KEY", previousKimiModelAPIKey);
     setOutboundFetcherForTesting(null);

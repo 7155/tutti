@@ -17,6 +17,7 @@ import { outboundFetch } from "./net/outboundFetch.ts";
 const KIMI_CODE_PROVIDER = "acp:kimi-code";
 const KIMI_MANAGED_PROVIDER = "managed:kimi-code";
 const KIMI_DEFAULT_BASE_URL = "https://api.kimi.com/coding/v1";
+const KIMI_MANAGED_USAGE_ORIGIN = new URL(KIMI_DEFAULT_BASE_URL).origin;
 const KIMI_HTTP_TIMEOUT_MS = 8_000;
 
 interface KimiProviderMode {
@@ -281,7 +282,7 @@ async function fetchKimiManagedUsage(
   baseUrl: string,
   accessToken: string
 ): Promise<Record<string, unknown>> {
-  const response = await outboundFetch(`${baseUrl}/usages`, {
+  const response = await outboundFetch(kimiManagedUsageUrl(baseUrl), {
     headers: {
       Accept: "application/json",
       Authorization: `Bearer ${accessToken}`,
@@ -320,6 +321,33 @@ async function fetchKimiManagedUsage(
     );
   }
   return responseJson(response, "Kimi Coding Plan usage API");
+}
+
+function kimiManagedUsageUrl(baseUrl: string): URL {
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    throw new KimiProbeError(
+      "parse_failed",
+      "Kimi Coding Plan usage requires the official HTTPS API endpoint."
+    );
+  }
+  if (
+    url.protocol !== "https:" ||
+    url.origin !== KIMI_MANAGED_USAGE_ORIGIN ||
+    url.username !== "" ||
+    url.password !== "" ||
+    url.search !== "" ||
+    url.hash !== ""
+  ) {
+    throw new KimiProbeError(
+      "parse_failed",
+      "Kimi Coding Plan usage requires the official HTTPS API endpoint."
+    );
+  }
+  url.pathname = `${url.pathname.replace(/\/+$/u, "")}/usages`;
+  return url;
 }
 
 async function responseJson(

@@ -71,10 +71,45 @@ export async function listDesktopWorkspaceAgentProbes(
   };
 }
 
+type DesktopAgentUsageProbeHandler = (
+  input: AgentProviderProbeListInput,
+  capturedAtUnixMs: number
+) => Promise<AgentProbeProvider>;
+
+interface DesktopAgentExtensionUsageProbeDescriptor {
+  handler: DesktopAgentUsageProbeHandler;
+  probeKind: string;
+  providerId: string;
+}
+
+// Signed Agent Extensions are intentionally not part of the built-in provider
+// catalog. Keep their Desktop-only account probes in one descriptor list so
+// default enumeration and dispatch cannot drift apart.
+const desktopAgentExtensionUsageProbeDescriptors: readonly DesktopAgentExtensionUsageProbeDescriptor[] =
+  [
+    {
+      handler: probeKimiCodeProvider,
+      probeKind: "kimi_code",
+      providerId: "acp:kimi-code"
+    }
+  ];
+
+const desktopAgentExtensionUsageProbeKindByProvider = new Map(
+  desktopAgentExtensionUsageProbeDescriptors.map((descriptor) => [
+    descriptor.providerId,
+    descriptor.probeKind
+  ])
+);
+
 function normalizeProbeProviders(providers: readonly string[] | undefined) {
-  const defaults = migratedAgentGUIProviderIdentityCatalog
-    .filter((entry) => entry.desktop.usageProbeKind !== "")
-    .map((entry) => entry.providerId);
+  const defaults = [
+    ...migratedAgentGUIProviderIdentityCatalog
+      .filter((entry) => entry.desktop.usageProbeKind !== "")
+      .map((entry) => entry.providerId),
+    ...desktopAgentExtensionUsageProbeDescriptors.map(
+      (descriptor) => descriptor.providerId
+    )
+  ];
   const normalized = (providers ?? defaults)
     .map(
       (provider) =>
@@ -167,7 +202,8 @@ async function resolveDesktopAgentProbe(
 ): Promise<AgentProbeProvider> {
   const probeKind =
     resolveAgentGUIProviderCatalogIdentity(provider)?.desktop.usageProbeKind ??
-    (provider === "acp:kimi-code" ? "kimi_code" : "");
+    desktopAgentExtensionUsageProbeKindByProvider.get(provider) ??
+    "";
   const handler = desktopAgentUsageProbeHandlers.get(probeKind);
   if (handler) {
     return handler(input, capturedAtUnixMs);
@@ -186,18 +222,19 @@ async function resolveDesktopAgentProbe(
   };
 }
 
-type DesktopAgentUsageProbeHandler = (
-  input: AgentProviderProbeListInput,
-  capturedAtUnixMs: number
-) => Promise<AgentProbeProvider>;
-
 const desktopAgentUsageProbeHandlers = new Map<
   string,
   DesktopAgentUsageProbeHandler
 >([
   ["codex", probeCodexProvider],
   ["claude_code", probeClaudeCodeProvider],
-  ["kimi_code", probeKimiCodeProvider]
+  ...desktopAgentExtensionUsageProbeDescriptors.map(
+    (descriptor) =>
+      [descriptor.probeKind, descriptor.handler] as [
+        string,
+        DesktopAgentUsageProbeHandler
+      ]
+  )
 ]);
 
 // The usage probe runs in the Electron main process and hits the vendor account

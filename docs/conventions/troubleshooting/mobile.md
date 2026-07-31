@@ -158,6 +158,35 @@
   `apps/mobile/src/components/MobileComposerDock.tsx`,
   `apps/mobile/src/components/MobileComposerSettingsSheet.tsx`
 
+## Browser login completes but leaves the browser in front
+
+- **Symptom:** Mobile completes provider login, but the browser stays in front.
+  Switching back to Tutti manually reveals that the account session is already
+  available or allows the login flow to finish.
+- **Quick checks:** Confirm the localhost callback received a transfer code and
+  that transfer-code redemption succeeds. If the hosted result page's manual
+  “open App” action works, the account flow is healthy and only the browser-to-App
+  return path failed.
+- **Root cause:** Opening a raw external browser makes the hosted result page
+  responsible for returning to `tutti://auth/login`. Mobile browsers can reject
+  a custom-scheme navigation started by delayed JavaScript because it no longer
+  carries a direct user gesture, even though the localhost bridge already
+  completed the account transfer.
+- **Fix:** Keep the shared hosted login page, localhost bridge, and one-time
+  transfer-code redemption. Present that flow with `ASWebAuthenticationSession`
+  on iOS and AndroidX Auth Tab when the Android browser provider supports it, so
+  the operating system owns callback matching and foreground return. Android
+  falls back to the external system browser when Auth Tab is unavailable; the
+  hosted manual return action remains the recovery path for that fallback.
+- **Validation:** On physical iOS and Android devices, complete a real provider
+  login and confirm the browser dismisses and Tutti becomes foreground without
+  a manual app switch. Also cancel once, exercise an Android browser without Auth
+  Tab support, and verify the transfer code is redeemed no more than once.
+- **References:** `apps/mobile/ios/TuttiMobile/MobileWebAuthenticationSession.swift`,
+  `apps/mobile/ios/TuttiMobile/MobileBrowserAuthBridge.swift`,
+  `apps/mobile/android/app/src/main/java/dev/tutti/mobile/MainActivity.kt`,
+  `apps/mobile/android/app/src/main/java/dev/tutti/mobile/MobileBrowserAuthBridge.kt`
+
 ## Browser login returns to the App but remains signed out
 
 - **Symptom:** Android opens the Tutti Web login page, completes the provider
@@ -179,7 +208,7 @@
   cookie store. During migration, clear the legacy native `session_id` cookie
   at startup and sign-out, but keep cookie installation outside the application
   port contract.
-- **Validation:** Complete a real system-browser login, verify the App reaches the
+- **Validation:** Complete a real browser login, verify the App reaches the
   device page, restart the App, and verify the same account session still
   authorizes device-list requests.
 - **References:** `apps/mobile/src/services/accountClient.ts`,

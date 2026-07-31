@@ -603,6 +603,9 @@ export class WorkspaceAgentActivityService
         initialDisplayPrompt: input.initialDisplayPrompt ?? null,
         initialTuttiModeActivation: input.initialTuttiModeActivation ?? null,
         submitDiagnostics: input.submitDiagnostics,
+        ...(typeof input.settings?.browserUse === "boolean"
+          ? { browserUse: input.settings.browserUse }
+          : {}),
         model: input.settings?.model ?? null,
         planMode: input.settings?.planMode ?? null,
         permissionModeId: resolveComposerPermissionMode(input.settings),

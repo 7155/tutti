@@ -234,6 +234,9 @@ export function createDesktopAgentActivityAdapter({
         const request: CreateWorkspaceAgentSessionRequest = {
           agentSessionId,
           agentTargetId,
+          ...(typeof input.browserUse === "boolean"
+            ? { browserUse: input.browserUse }
+            : {}),
           ...(recordingId ? { recordingId } : {}),
           ...(input.capabilityRefs?.length
             ? {

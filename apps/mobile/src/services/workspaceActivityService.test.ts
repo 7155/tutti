@@ -1,5 +1,6 @@
 import {
   canonicalInteractionKey,
+  selectPendingActivations,
   type AgentSessionEngine
 } from "@tutti-os/agent-activity-core";
 import type {
@@ -569,6 +570,67 @@ describe("WorkspaceActivityService", () => {
 
     expect(service.getSnapshot().draft).toBe("start");
     expect(service.getSnapshot().sending).toBe(false);
+    service.dispose();
+  });
+
+  test("restores a canceled activation draft and uses a fresh submission identity", async () => {
+    const createInputs: Array<
+      Parameters<TuttidClient["createWorkspaceAgentSession"]>[1]
+    > = [];
+    const service = createService(
+      createClient({
+        composerOptions: async () => ({
+          behavior: {
+            collapseModelOptionsToLatest: false,
+            modelOptionsAuthoritative: true,
+            planModeExclusiveWithPermissionMode: false,
+            prewarmDraftSession: false,
+            refreshModelOptionsAfterSettings: false
+          },
+          effectiveSettings: {},
+          provider: "codex"
+        }),
+        create: (_workspaceId, input) => {
+          createInputs.push(input);
+          return new Promise<WorkspaceAgentSession>(() => undefined);
+        },
+        listMessages: emptyMessagePage,
+        session: () => null,
+        targets: [createTarget()]
+      })
+    );
+
+    await service.start();
+    await flushAsyncWork();
+    const engine = (
+      service as unknown as {
+        engine: AgentSessionEngine;
+      }
+    ).engine;
+    service.startCreating();
+    service.setDraft("start");
+
+    await service.send();
+    const activation = selectPendingActivations(engine.getSnapshot()).find(
+      (candidate) => candidate.mode === "new"
+    );
+    expect(activation).toBeDefined();
+    expect(service.getSnapshot().draft).toBe("");
+
+    engine.stopSession({
+      agentSessionId: activation!.agentSessionId
+    });
+    await flushAsyncWork();
+
+    expect(service.getSnapshot().draft).toBe("start");
+    expect(service.getSnapshot().ambiguousSubmission).toBe(false);
+
+    await service.send();
+
+    expect(createInputs).toHaveLength(2);
+    expect(createInputs[1]?.clientSubmitId).not.toBe(
+      createInputs[0]?.clientSubmitId
+    );
     service.dispose();
   });
 

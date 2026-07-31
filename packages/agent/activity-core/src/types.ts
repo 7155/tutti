@@ -356,6 +356,7 @@ export interface AgentActivityCreateSessionInput {
   /** 仅展示用的首轮文本(bundle 折叠成一个 chip);initialContent 仍带展开后的文件。 */
   initialDisplayPrompt?: string | null;
   submitDiagnostics?: AgentActivitySubmitDiagnostics;
+  browserUse?: boolean | null;
   model?: string | null;
   planMode?: boolean | null;
   permissionModeId?: string | null;

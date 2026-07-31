@@ -307,6 +307,14 @@ test("WorkspaceAgentActivityService.activateSession creates target-backed sessio
       status: "active"
     },
     mode: "new",
+    settings: {
+      browserUse: false,
+      model: "gpt-5",
+      permissionModeId: "auto",
+      planMode: true,
+      reasoningEffort: "high",
+      speed: "fast"
+    },
     title: "Shared Codex",
     visible: true,
     workspaceId: "ws-1"
@@ -329,12 +337,13 @@ test("WorkspaceAgentActivityService.activateSession creates target-backed sessio
         source: "slash_command",
         status: "active"
       },
-      model: null,
+      browserUse: false,
+      model: "gpt-5",
       noProject: null,
-      permissionModeId: null,
-      planMode: null,
-      reasoningEffort: null,
-      speed: null,
+      permissionModeId: "auto",
+      planMode: true,
+      reasoningEffort: "high",
+      speed: "fast",
       title: "Shared Codex",
       visible: true
     }
@@ -912,9 +921,15 @@ test("WorkspaceAgentActivityService does not reinterpret a failed Turn as activa
 test("WorkspaceAgentActivityService returns the authoritative canonical session after settings update", async () => {
   const controller = new AbortController();
   let requestSignal: AbortSignal | undefined;
+  let requestSettings: unknown = null;
   const updatedSession = workspaceAgentSession({
     provider: "claude-code",
-    settings: { model: "opus", planMode: true },
+    settings: {
+      browserUse: false,
+      computerUse: true,
+      model: "opus",
+      planMode: true
+    },
     status: "waiting"
   });
   const service = new WorkspaceAgentActivityService({
@@ -922,6 +937,7 @@ test("WorkspaceAgentActivityService returns the authoritative canonical session 
       updateWorkspaceAgentSessionSettings: async (
         ...args: Parameters<TuttidClient["updateWorkspaceAgentSessionSettings"]>
       ) => {
+        requestSettings = args[2];
         requestSignal = args[3]?.signal ?? undefined;
         return updatedSession;
       }
@@ -932,13 +948,29 @@ test("WorkspaceAgentActivityService returns the authoritative canonical session 
   const result = await service.updateSessionSettings({
     agentSessionId: "session-1",
     signal: controller.signal,
-    settings: { model: "opus", planMode: true },
+    settings: {
+      browserUse: false,
+      computerUse: true,
+      model: "opus",
+      planMode: true
+    },
     workspaceId: "ws-1"
   });
 
   assert.equal(result.agentSessionId, "session-1");
   assert.equal(requestSignal, controller.signal);
+  assert.deepEqual(requestSettings, {
+    browserUse: false,
+    computerUse: true,
+    model: "opus",
+    permissionModeId: null,
+    planMode: true,
+    reasoningEffort: null,
+    speed: null
+  });
   assert.deepEqual(result.settings, {
+    browserUse: false,
+    computerUse: true,
     model: "opus",
     permissionModeId: null,
     planMode: true,
@@ -949,6 +981,8 @@ test("WorkspaceAgentActivityService returns the authoritative canonical session 
   assert.equal(result.session.agentSessionId, "session-1");
   assert.equal(result.session.provider, "claude-code");
   assert.deepEqual(result.session.settings, {
+    browserUse: false,
+    computerUse: true,
     model: "opus",
     planMode: true
   });

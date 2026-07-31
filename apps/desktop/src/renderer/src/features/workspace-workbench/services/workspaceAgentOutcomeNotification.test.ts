@@ -6,6 +6,7 @@ import {
   normalizeAgentActivitySession,
   type AgentActivitySession,
   type AgentActivityTurn,
+  type AgentSessionEffectPort,
   type AgentSessionEngine
 } from "@tutti-os/agent-activity-core";
 import type { NotificationMessage } from "@tutti-os/ui-notifications";
@@ -246,9 +247,11 @@ function createTestEngine(): AgentSessionEngine {
   return createAgentSessionEngine({
     clock: { nowUnixMs: () => 1 },
     commandPort: {
+      effects: unexpectedSessionEffects(),
       execute: () => Promise.resolve(undefined),
       executePlanDecision: () =>
-        Promise.reject(new Error("unexpected plan decision command"))
+        Promise.reject(new Error("unexpected plan decision command")),
+      kind: "typed"
     },
     identity: {
       origin: AGENT_SESSION_ENGINE_LOCAL_ORIGIN,
@@ -260,6 +263,21 @@ function createTestEngine(): AgentSessionEngine {
       }
     }
   });
+}
+
+function unexpectedSessionEffects(): AgentSessionEffectPort {
+  const reject = () => Promise.reject(new Error("unexpected session effect"));
+  return {
+    activateSession: reject,
+    cancelTurn: reject,
+    controlGoal: reject,
+    deleteSessions: reject,
+    renameSession: reject,
+    respondToInteraction: reject,
+    sendInput: reject,
+    setSessionPinned: reject,
+    updateSessionSettings: reject
+  };
 }
 
 function dispatchSession(

@@ -253,12 +253,9 @@ activation. The Engine validates activation mode plus workspace/Session
 identity and nested Session/Turn/Interaction entities before applying that
 result through its canonical reducers. Desktop and Mobile effects may retain
 product-local integration and observability, but must not dispatch Session
-state before returning. The effect executor marks only typed activation results
-with the versioned `activation-v1` result contract; commands whose result shape
-is not authoritative remain opaque. An untagged or opaque result from the
-legacy complete-command port remains an acknowledgement and is never
-reinterpreted as an authoritative projection, so published consumers can
-migrate without payload-shape heuristics.
+state before returning. The effect executor marks activation results with the
+versioned `activation-v1` result contract; commands whose result shape is not
+authoritative remain opaque.
 New-Session Goal Control uses the same activation path. The Engine carries a
 typed `initialGoalControl`; Desktop and Mobile send it through the typed Create
 contract with empty initial content. Agent Host creates the Session and durable
@@ -323,10 +320,9 @@ Rename and pin effects return an authoritative Session envelope, and batch
 delete returns the complete typed deletion result. Reducers still validate
 those results before applying canonical state, while the public port prevents
 hosts from inventing a different result shape.
-`dispatchSessionMutation` remains compatibility-only while published consumers
-migrate and must not be used by new product-host code. Prompt precondition
-ordering and its helper port are Engine implementation details and are not
-exported from the package root. Reducer-only prompt continuation intents are
+The reducer mutation protocol remains an Engine implementation detail; product
+hosts use the semantic mutation methods. Prompt precondition ordering and its
+helper port are also not exported from the package root. Reducer-only prompt continuation intents are
 absent from public `EngineIntent`; their bookkeeping is also absent from
 `AgentSessionEngineState`, `getSnapshot()`, and subscription callbacks.
 
@@ -955,7 +951,7 @@ createAgentSessionEngine({
 ```
 
 `plan/submitDecision` uses the dedicated
-`EngineCommandPort.executePlanDecision` method. Its public
+`EngineTypedCommandPort.executePlanDecision` method. Its public
 `PlanSubmitDecisionResult` contains the durable operation identity returned by
 the Host. It must not pass through the generic `execute(): Promise<unknown>`
 path or manufacture an operation id from a command id.

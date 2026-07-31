@@ -2,7 +2,6 @@ import type { EngineDiagnosticSink } from "./diagnostics.ts";
 import type { AgentActivitySendInput } from "../types.ts";
 import type {
   AgentSessionActivateEffectInput,
-  EngineCommandPort,
   EngineCommandResultContract,
   EngineCommandResultIntent,
   EngineExternalCommand,
@@ -19,7 +18,7 @@ import type {
 // reducer transitions, never executed in place here.
 
 export interface CreateEngineEffectExecutorInput {
-  commandPort: EngineCommandPort | EngineTypedCommandPort;
+  commandPort: EngineTypedCommandPort;
   diagnosticSink?: EngineDiagnosticSink;
   onResult: (intent: EngineCommandResultIntent) => void;
   scheduler: EngineScheduler;
@@ -80,7 +79,7 @@ export function createEngineEffectExecutor({
       let timeoutTask: EngineScheduledTask | null = null;
       const abortController = new AbortController();
       abortControllersByCommandId.set(command.commandId, abortController);
-      const resultContract = commandResultContract(commandPort, command);
+      const resultContract = commandResultContract(command);
       const execution = executeCommand(
         commandPort,
         command,
@@ -168,7 +167,7 @@ export function createEngineEffectExecutor({
 }
 
 function executeCommand(
-  commandPort: EngineCommandPort | EngineTypedCommandPort,
+  commandPort: EngineTypedCommandPort,
   command: EngineExternalCommand,
   signal: AbortSignal
 ): Promise<unknown> {
@@ -190,15 +189,10 @@ function executeCommand(
           signal
         })
       : Promise.reject(
-          new Error("EngineCommandPort.executePlanDecision is not configured")
+          new Error(
+            "EngineTypedCommandPort.executePlanDecision is not configured"
+          )
         );
-  }
-  if (commandPort.kind !== "typed") {
-    return commandPort.execute(command, {
-      commandId: command.commandId,
-      origin: "engine",
-      signal
-    });
   }
   const effects = commandPort.effects;
   switch (command.type) {
@@ -298,10 +292,8 @@ function executeCommand(
 }
 
 function commandResultContract(
-  commandPort: EngineCommandPort | EngineTypedCommandPort,
   command: EngineExternalCommand
 ): EngineCommandResultContract {
-  if (commandPort.kind !== "typed") return "opaque";
   if (command.type === "session/activate") return "activation-v1";
   if (command.type === "goal/control") return "goal-control-v1";
   return "opaque";

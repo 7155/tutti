@@ -82,13 +82,11 @@ export type {
   EngineClock,
   EngineCommand,
   EngineCommandOutcome,
-  EngineCommandPort,
   EngineConnectionStatus,
   EngineDispatchOptions,
   EngineDomainReducer,
   EngineEffectOptions,
   EngineExternalCommand,
-  EngineExternalCommandExceptPlanDecision,
   EngineExtensionCommand,
   EngineIntent,
   EngineInternalCommand,
@@ -141,7 +139,6 @@ export type {
 } from "./engine/editRetry.types.ts";
 export {
   dispatchSessionForkThroughTurn,
-  dispatchSessionMutation,
   type DispatchSessionForkThroughTurnInput
 } from "./engine/sessionMutationDispatch.ts";
 export {

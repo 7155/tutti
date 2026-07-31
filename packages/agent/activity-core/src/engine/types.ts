@@ -67,8 +67,8 @@ export type EngineCommandOutcome = "failed" | "succeeded" | "timedOut";
 
 /**
  * Describes the runtime result contract used by one command execution.
- * Older command ports and manually dispatched results omit this field and
- * retain opaque acknowledgement semantics.
+ * Manually dispatched results may omit this field and retain opaque
+ * acknowledgement semantics.
  */
 export type EngineCommandResultContract =
   | "activation-v1"
@@ -204,11 +204,6 @@ export type EngineExternalCommand =
   | EditRetryCommand
   | TuttiModeActivationCommand;
 
-export type EngineExternalCommandExceptPlanDecision = Exclude<
-  EngineExternalCommand,
-  PlanSubmitDecisionCommand
->;
-
 type AgentSessionEffectCommand =
   | Extract<
       SessionMutationCommand,
@@ -222,8 +217,8 @@ type AgentSessionEffectCommand =
   | TurnCancelCommand;
 
 export type EngineExtensionCommand = Exclude<
-  EngineExternalCommandExceptPlanDecision,
-  AgentSessionEffectCommand
+  EngineExternalCommand,
+  AgentSessionEffectCommand | PlanSubmitDecisionCommand
 >;
 
 export type EngineCommand = EngineExternalCommand | EngineInternalCommand;
@@ -423,37 +418,18 @@ export interface AgentSessionEffectPort {
   ): Promise<unknown>;
 }
 
-interface EngineCommandPortBase {
-  observe?(command: EngineExternalCommand): void;
-  executePlanDecision?(
-    command: PlanSubmitDecisionCommand,
-    options?: EngineEffectOptions
-  ): Promise<PlanSubmitDecisionResult>;
-}
-
-/**
- * Compatibility surface for published-package consumers that still translate
- * the complete command union themselves.
- */
-export interface EngineCommandPort extends EngineCommandPortBase {
-  effects?: never;
-  kind?: "legacy";
-  execute(
-    command: EngineExternalCommandExceptPlanDecision,
-    options?: EngineEffectOptions
-  ): Promise<unknown>;
-}
-
-/**
- * Preferred host surface. The Engine owns shared lifecycle projection and the
- * host executes only platform/product extensions.
- */
-export interface EngineTypedCommandPort extends EngineCommandPortBase {
+/** The Engine owns lifecycle projection; hosts execute product extensions. */
+export interface EngineTypedCommandPort {
   effects: AgentSessionEffectPort;
   execute(
     command: EngineExtensionCommand,
     options?: EngineEffectOptions
   ): Promise<unknown>;
+  observe?(command: EngineExternalCommand): void;
+  executePlanDecision?(
+    command: PlanSubmitDecisionCommand,
+    options?: EngineEffectOptions
+  ): Promise<PlanSubmitDecisionResult>;
   kind: "typed";
 }
 

@@ -6,6 +6,7 @@ import {
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentGUIRuntime } from "../../../agentActivityRuntime";
+import { createTestEngineCommandPort } from "../../../shared/testing/createTestAgentSessionEngine";
 import type { AgentComposerDraft } from "../model/agentGuiNodeTypes";
 import { agentComposerDraftImages } from "../model/agentComposerDraft";
 import { useAgentGUIQueueActions } from "./useAgentGUIQueueActions";
@@ -23,7 +24,9 @@ describe("useAgentGUIQueueActions", () => {
     );
     const sessionEngine = createAgentSessionEngine({
       clock: { nowUnixMs: () => 1 },
-      commandPort: { execute: async () => undefined },
+      commandPort: createTestEngineCommandPort({
+        execute: async () => undefined
+      }),
       identity: { origin: "test", workspaceId: "workspace-1" },
       scheduler: { schedule: () => ({ cancel() {} }) }
     });

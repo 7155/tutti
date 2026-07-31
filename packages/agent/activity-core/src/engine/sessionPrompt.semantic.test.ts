@@ -3,8 +3,8 @@ import { test } from "node:test";
 import { normalizeAgentActivitySession } from "../sessionNormalization.ts";
 import type { AgentActivityTurn } from "../types.ts";
 import { createAgentSessionEngine } from "./createAgentSessionEngine.ts";
+import { createTestEngineCommandPort } from "./testEngineCommandPort.ts";
 import type {
-  EngineCommandPort,
   EngineExternalCommand,
   EngineIntent,
   EngineScheduler
@@ -14,12 +14,10 @@ function createHarness(active: boolean) {
   const commands: EngineExternalCommand[] = [];
   const observedIntents: EngineIntent[] = [];
   const scheduled: Array<{ canceled: boolean; delayMs: number }> = [];
-  const commandPort: EngineCommandPort = {
-    execute(command) {
-      commands.push(command);
-      return new Promise(() => undefined);
-    }
-  };
+  const commandPort = createTestEngineCommandPort((command) => {
+    commands.push(command);
+    return new Promise(() => undefined);
+  });
   const scheduler: EngineScheduler = {
     schedule(delayMs) {
       const task = { canceled: false, delayMs };

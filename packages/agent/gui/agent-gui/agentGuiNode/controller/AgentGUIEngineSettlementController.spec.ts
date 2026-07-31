@@ -4,7 +4,10 @@ import {
   selectPendingSubmitsForSession
 } from "@tutti-os/agent-activity-core";
 import { describe, expect, it, vi } from "vitest";
-import { createTestAgentSessionEngine } from "../../../shared/testing/createTestAgentSessionEngine";
+import {
+  createTestAgentSessionEngine,
+  createTestAgentSessionEngineWithEffects
+} from "../../../shared/testing/createTestAgentSessionEngine";
 import {
   agentComposerDraftPrompt,
   emptyAgentComposerDraft
@@ -294,28 +297,24 @@ describe("AgentGUIEngineSettlementController", () => {
   });
 
   it("settles a Goal draft when Host durably accepts an applying operation", async () => {
-    const engine = createTestAgentSessionEngine("test-workspace", {
-      effects: {
-        controlGoal: () =>
-          Promise.resolve({
-            goal: { objective: "ship it", status: "active" },
-            operationId: "goal-operation-1",
-            session: sessionWithGoal("old goal"),
-            state: {
-              desired: { objective: "ship it", status: "active" },
-              lastEvidence: { source: "test" },
-              observed: { objective: "old goal", status: "active" },
-              pendingOperationId: "goal-operation-1",
-              revision: 2,
-              syncStatus: "applying",
-              tombstoned: false,
-              updatedAtUnixMs: 2
-            }
-          })
-      },
-      execute: () => Promise.resolve({ ok: true }),
-      kind: "typed"
-    } as never);
+    const engine = createTestAgentSessionEngineWithEffects("test-workspace", {
+      controlGoal: () =>
+        Promise.resolve({
+          goal: { objective: "ship it", status: "active" },
+          operationId: "goal-operation-1",
+          session: sessionWithGoal("old goal"),
+          state: {
+            desired: { objective: "ship it", status: "active" },
+            lastEvidence: { source: "test" },
+            observed: { objective: "old goal", status: "active" },
+            pendingOperationId: "goal-operation-1",
+            revision: 2,
+            syncStatus: "applying",
+            tombstoned: false,
+            updatedAtUnixMs: 2
+          }
+        })
+    });
     engine.dispatch({
       session: sessionWithGoal("old goal"),
       type: "session/upserted"
@@ -369,13 +368,9 @@ describe("AgentGUIEngineSettlementController", () => {
     const rejection = Object.assign(new Error("invalid goal"), {
       code: "invalid_request"
     });
-    const engine = createTestAgentSessionEngine("test-workspace", {
-      effects: {
-        controlGoal: () => Promise.reject(rejection)
-      },
-      execute: () => Promise.resolve({ ok: true }),
-      kind: "typed"
-    } as never);
+    const engine = createTestAgentSessionEngineWithEffects("test-workspace", {
+      controlGoal: () => Promise.reject(rejection)
+    });
     engine.dispatch({
       session: sessionWithGoal("old goal"),
       type: "session/upserted"

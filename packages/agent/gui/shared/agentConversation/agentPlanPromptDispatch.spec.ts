@@ -3,6 +3,7 @@ import {
   createAgentSessionEngine,
   type EngineCommand
 } from "@tutti-os/agent-activity-core";
+import { createTestEngineCommandPort } from "../testing/createTestAgentSessionEngine";
 import { dispatchAgentPlanPromptAction } from "./agentPlanPromptDispatch";
 
 describe("dispatchAgentPlanPromptAction", () => {
@@ -16,7 +17,7 @@ describe("dispatchAgentPlanPromptAction", () => {
       const executedTypes: string[] = [];
       const engine = createAgentSessionEngine({
         clock: { nowUnixMs: () => 10 },
-        commandPort: {
+        commandPort: createTestEngineCommandPort({
           async executePlanDecision(command) {
             executedTypes.push(command.type);
             return {
@@ -34,7 +35,7 @@ describe("dispatchAgentPlanPromptAction", () => {
           async execute(command) {
             executedTypes.push(command.type);
           }
-        },
+        }),
         identity: { origin: "test", workspaceId: "workspace-1" },
         scheduler: { schedule: () => ({ cancel() {} }) }
       });
@@ -86,7 +87,9 @@ describe("dispatchAgentPlanPromptAction", () => {
   it("rejects a request id that is not the latest settled completed turn", () => {
     const engine = createAgentSessionEngine({
       clock: { nowUnixMs: () => 1 },
-      commandPort: { execute: async () => undefined },
+      commandPort: createTestEngineCommandPort({
+        execute: async () => undefined
+      }),
       identity: { origin: "test", workspaceId: "workspace-1" },
       scheduler: { schedule: () => ({ cancel() {} }) }
     });
@@ -105,11 +108,11 @@ describe("dispatchAgentPlanPromptAction", () => {
     const executed: EngineCommand[] = [];
     const engine = createAgentSessionEngine({
       clock: { nowUnixMs: () => 10 },
-      commandPort: {
+      commandPort: createTestEngineCommandPort({
         async execute(command) {
           executed.push(command);
         }
-      },
+      }),
       identity: { origin: "test", workspaceId: "workspace-1" },
       scheduler: { schedule: () => ({ cancel() {} }) }
     });

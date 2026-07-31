@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { normalizeAgentActivitySession } from "../sessionNormalization.ts";
 import type { AgentActivityGoalControlResult } from "../types.ts";
 import { createAgentSessionEngine } from "./createAgentSessionEngine.ts";
+import { createTestEngineCommandPort } from "./testEngineCommandPort.ts";
 import {
   selectSessionGoalControlPresentation,
   selectSessionGoalControlSettlement
@@ -487,9 +488,9 @@ test("uncertain rejection stays retryable while pre-admission rejection fails", 
 test("new-session Goal projection stops being optimistic after canonical hydration", () => {
   const engine = createAgentSessionEngine({
     clock: { nowUnixMs: () => 100 },
-    commandPort: {
-      execute: () => new Promise(() => undefined)
-    },
+    commandPort: createTestEngineCommandPort(
+      () => new Promise(() => undefined)
+    ),
     identity: { origin: "test", workspaceId: "workspace-1" },
     scheduler: { schedule: () => ({ cancel() {} }) }
   });

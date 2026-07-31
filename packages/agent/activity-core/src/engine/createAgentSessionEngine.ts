@@ -43,7 +43,6 @@ import {
   type AgentSessionSubmitPromptResult,
   type AgentSessionUpdateSettingsInput,
   type EngineClock,
-  type EngineCommandPort,
   type EngineDispatchOptions,
   type EngineIntent,
   type EngineScheduledTask,
@@ -80,7 +79,7 @@ const SESSION_PROMPT_CONFIRMATION_TIMEOUT_MS = 120_000;
 export interface CreateAgentSessionEngineInput {
   batchDelayMs?: number;
   clock: EngineClock;
-  commandPort: EngineCommandPort | EngineTypedCommandPort;
+  commandPort: EngineTypedCommandPort;
   diagnosticSink?: EngineDiagnosticSink;
   identity: AgentSessionEngineIdentity;
   intentObserver?: AgentSessionEngineIntentObserver;

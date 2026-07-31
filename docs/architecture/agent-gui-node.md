@@ -86,6 +86,11 @@ Realtime events reduce latency but are not automatically complete truth:
   truth, reconnects, Turn, Interaction, and state changes trigger authoritative
   reconciliation
 - event publication or observer failure cannot roll back a committed canonical transaction
+- message projections preserve the original textual content, including leading
+  and trailing whitespace; trimmed or whitespace-collapsed copies may decide
+  emptiness, synthetic-control suppression, or duplicate identity, but must not
+  replace the body passed to renderers. Markdown renderers continue to own
+  soft-break presentation.
 
 ### 1.6 Identity and correlation are explicit
 

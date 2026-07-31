@@ -65,10 +65,15 @@ import {
   type AppCenterHostActions
 } from "./AppCard.tsx";
 import {
+  countWorkspaceAppsInCategory,
+  filterWorkspaceAppsByCategory
+} from "../core/workspaceAppCategory.ts";
+import {
   resolveActiveAppCenterTab,
   resolveVisibleAppCenterTabs,
   type AppCenterAppTab
 } from "./appCenterTabs.ts";
+import type { WorkspaceAppCategoryId } from "../contracts/catalog.ts";
 
 type FactoryTemplateID =
   | "lovart"
@@ -78,12 +83,7 @@ type FactoryTemplateID =
   | "news"
   | "gomoku";
 export type { AppCenterAppTab } from "./appCenterTabs.ts";
-type RecommendedCategoryTabID =
-  | "all"
-  | "product-design"
-  | "office"
-  | "tools"
-  | "content-creation";
+type RecommendedCategoryTabID = "all" | WorkspaceAppCategoryId;
 type FactorySettingsMenu = "model" | "permission" | "provider" | "reasoning";
 
 interface FactoryTemplate {
@@ -537,15 +537,16 @@ export function AppCenterPanel({
     recommendedApps,
     copy
   );
-  const activeRecommendedCategoryLabel =
-    recommendedCategoryTabs.find(
-      (tab) => tab.id === activeRecommendedCategoryTab
-    )?.category ?? null;
+  const activeRecommendedCategory = recommendedCategoryTabs.find(
+    (tab) => tab.id === activeRecommendedCategoryTab
+  );
   const activeRecommendedApps =
-    activeRecommendedCategoryLabel == null
+    activeRecommendedCategory?.category == null
       ? recommendedAppsForAllTab
-      : recommendedApps.filter(
-          (app) => app.category === activeRecommendedCategoryLabel
+      : filterWorkspaceAppsByCategory(
+          recommendedApps,
+          activeRecommendedCategory.category,
+          activeRecommendedCategory.label
         );
   const activeApps =
     activeAppTab === "recommended"
@@ -1483,7 +1484,7 @@ function AppCardGrid({
 }
 
 interface RecommendedCategoryTab {
-  readonly category: string | null;
+  readonly category: WorkspaceAppCategoryId | null;
   readonly count: number;
   readonly id: RecommendedCategoryTabID;
   readonly label: string;
@@ -1493,16 +1494,6 @@ function createRecommendedCategoryTabs(
   apps: AppCenterViewModel["apps"],
   copy: AppCenterI18nRuntime
 ): RecommendedCategoryTab[] {
-  const categoryCounts = new Map<string, number>();
-
-  for (const app of apps) {
-    const category = app.category?.trim();
-    if (!category) {
-      continue;
-    }
-    categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + 1);
-  }
-
   return recommendedCategoryTabDefinitions.map((definition) => {
     if (definition.id === "all") {
       return {
@@ -1513,12 +1504,12 @@ function createRecommendedCategoryTabs(
       };
     }
 
-    const category = copy.t(definition.labelKey);
+    const label = copy.t(definition.labelKey);
     return {
-      category,
-      count: categoryCounts.get(category) ?? 0,
+      category: definition.id,
+      count: countWorkspaceAppsInCategory(apps, definition.id, label),
       id: definition.id,
-      label: category
+      label
     };
   });
 }

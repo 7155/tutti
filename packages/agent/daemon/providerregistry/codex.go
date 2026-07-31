@@ -34,11 +34,11 @@ func codexDescriptor() ProviderDescriptor {
 			Kind:                   StatusKindCodexCLI,
 			AuthOutputParserKind:   AuthOutputParserKindCodex,
 			AuthMarkerParserKind:   AuthMarkerParserKindFileExists,
-			AuthCommandRunnerKind:  AuthCommandRunnerKindGeneric,
+			AuthCommandRunnerKind:  AuthCommandRunnerKindCodexAppServerAccount,
 			StaticSpecResolverKind: StaticSpecResolverKindManagedNode,
 			MinVersion:             CodexMinVersion,
 			BinaryNames:            []string{"codex"},
-			AuthStatusCommand:      []string{"login", "-c", `service_tier="fast"`, "status"},
+			AuthStatusCommand:      []string{"-c", `service_tier="fast"`, "app-server"},
 			AuthMarkerPaths:        []string{"~/.codex/auth.json"},
 			APIEndpoints: []string{
 				"https://chatgpt.com/backend-api/codex",

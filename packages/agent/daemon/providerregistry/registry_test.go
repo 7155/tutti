@@ -182,6 +182,10 @@ func TestMigratedCodexDescriptorIsComplete(t *testing.T) {
 	if descriptor.Status.MinVersion != CodexMinVersion {
 		t.Fatalf("Status.MinVersion = %q", descriptor.Status.MinVersion)
 	}
+	if descriptor.Status.AuthCommandRunnerKind != AuthCommandRunnerKindCodexAppServerAccount ||
+		!slices.Equal(descriptor.Status.AuthStatusCommand, []string{"-c", `service_tier="fast"`, "app-server"}) {
+		t.Fatalf("Status auth probe = %q / %#v", descriptor.Status.AuthCommandRunnerKind, descriptor.Status.AuthStatusCommand)
+	}
 	if descriptor.Status.Install.PackageName != "@openai/codex" ||
 		descriptor.Status.Install.BinaryName != "codex" ||
 		!descriptor.Status.Install.IncludeOptional {

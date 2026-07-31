@@ -256,7 +256,7 @@ func Validate(descriptor ProviderDescriptor) error {
 		return fmt.Errorf("provider %q auth marker parser kind %q is unsupported", providerID, descriptor.Status.AuthMarkerParserKind)
 	}
 	switch descriptor.Status.AuthCommandRunnerKind {
-	case AuthCommandRunnerKindGeneric, AuthCommandRunnerKindClaudeGate, AuthCommandRunnerKindCursor:
+	case AuthCommandRunnerKindGeneric, AuthCommandRunnerKindClaudeGate, AuthCommandRunnerKindCodexAppServerAccount, AuthCommandRunnerKindCursor:
 	default:
 		return fmt.Errorf("provider %q auth command runner kind %q is unsupported", providerID, descriptor.Status.AuthCommandRunnerKind)
 	}

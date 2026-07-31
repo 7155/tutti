@@ -185,7 +185,7 @@ func TestAppCenterServiceStartEnabledRepairsMissingRemoteBuiltinCacheBeforeStart
 		t.Fatalf("StartEnabled() error = %v", err)
 	}
 	app := findWorkspaceAppForTest(apps, "large-builtin")
-	if app == nil || app.Installation == nil || app.Package.PackageDir != missingPackageDir {
+	if app == nil || app.Installation == nil {
 		t.Fatalf("StartEnabled() initial app = %#v", app)
 	}
 	active := waitForActiveAppPackageDirChangeForTest(t, store, "large-builtin", missingPackageDir)

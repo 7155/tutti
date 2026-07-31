@@ -2,6 +2,7 @@ import type {
   AgentActivityComposerOptions,
   AgentActivityComposerOptionsLoadStatus
 } from "./composerOptions.types.ts";
+import type { AgentActivityInitialGoalControl } from "./goalControl.types.ts";
 import type {
   AgentActivityDurableMessage,
   AgentActivityMessage,
@@ -348,6 +349,7 @@ export interface AgentActivityCreateSessionInput {
   cwd?: string | null;
   noProject?: boolean | null;
   capabilityRefs?: readonly AgentActivityCapabilityReference[] | null;
+  initialGoalControl?: AgentActivityInitialGoalControl | null;
   initialTuttiModeActivation?: AgentActivityInitialTuttiModeActivation | null;
   railPlacement?: AgentActivityRailPlacement;
   initialContent?: AgentPromptContentBlock[] | null;
@@ -431,6 +433,8 @@ export type {
 export interface AgentActivityGoalControlResult {
   session: AgentActivitySession;
   goal?: AgentActivitySessionGoal | null;
+  operationId?: string | null;
+  state?: AgentActivitySessionGoalState | null;
 }
 
 export interface AgentActivitySubmitInteractiveInput {
@@ -616,6 +620,27 @@ export interface AgentActivitySessionGoal {
   iterations?: number;
   durationMs?: number;
   tokens?: number;
+}
+
+export type AgentActivitySessionGoalSyncStatus =
+  | "pending"
+  | "applying"
+  | "synced"
+  | "diverged"
+  | "unknown"
+  | "failed";
+
+export interface AgentActivitySessionGoalState {
+  desired?: AgentActivitySessionGoal | null;
+  observed?: AgentActivitySessionGoal | null;
+  revision: number;
+  tombstoned: boolean;
+  syncStatus: AgentActivitySessionGoalSyncStatus;
+  pendingOperationId?: string | null;
+  lastEvidence: Readonly<Record<string, unknown>>;
+  lastError?: string;
+  observedAtUnixMs?: number | null;
+  updatedAtUnixMs: number;
 }
 
 export interface AgentActivitySessionUsage {

@@ -890,7 +890,8 @@ export interface TuttidClient
   goalControlWorkspaceAgentSession(
     workspaceID: string,
     agentSessionID: string,
-    request: WorkspaceAgentSessionGoalControlRequest
+    request: WorkspaceAgentSessionGoalControlRequest,
+    requestOptions?: TuttidRequestOptions
   ): Promise<GoalControlWorkspaceAgentSessionResponse>;
   getWorkspaceAgentSessionGoal(
     workspaceID: string,

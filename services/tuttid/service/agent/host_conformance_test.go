@@ -16,6 +16,7 @@ import (
 	agentactivitybiz "github.com/tutti-os/tutti/services/tuttid/biz/agentactivity"
 	agenttargetbiz "github.com/tutti-os/tutti/services/tuttid/biz/agenttarget"
 	workspacebiz "github.com/tutti-os/tutti/services/tuttid/biz/workspace"
+	workspacedata "github.com/tutti-os/tutti/services/tuttid/data/workspace"
 )
 
 func TestServiceAdapterAgentHostConformance(t *testing.T) {
@@ -276,9 +277,12 @@ func (d *legacyHostConformanceDriver) Reset(_ context.Context, fixture hostconfo
 	d.service.CommitObserver = d.commitObserver
 	d.service.SessionReader = d.sessions
 	d.service.SessionPurgeStore = d.sessions
-	d.service.SessionInitializer = legacyHostConformanceSessionInitializer{sessions: d.sessions}
-	d.service.TurnSummaryReader = d.turns
 	canonicalStore := openAgentServiceSQLiteStore(d.t)
+	d.service.SessionInitializer = legacyHostConformanceSessionInitializer{
+		canonicalStore: canonicalStore,
+		sessions:       d.sessions,
+	}
+	d.service.TurnSummaryReader = d.turns
 	d.service.SubmitClaimStore = canonicalStore
 	d.service.RuntimeOperationStore = d.operationPort
 	d.service.StaleTurnSettler = conformanceStaleTurnSettler{steps: &steps}
@@ -345,6 +349,10 @@ func (d *legacyHostConformanceDriver) Reset(_ context.Context, fixture hostconfo
 		case "clear":
 			providerGoal = nil
 		}
+		resultGoal := providerGoal
+		if fixture.EmptyPauseResumeGoal && (input.Action == "pause" || input.Action == "resume") {
+			resultGoal = nil
+		}
 		providerPhase := "applied"
 		evidence := map[string]any{"confidence": "authoritative"}
 		if fixture.AcceptGoalControlsOnly {
@@ -352,7 +360,7 @@ func (d *legacyHostConformanceDriver) Reset(_ context.Context, fixture hostconfo
 			evidence = map[string]any{"confidence": "accepted_only", "phase": "accepted"}
 		}
 		return RuntimeGoalControlResult{
-			AgentSessionID: input.AgentSessionID, Goal: clonePayload(providerGoal),
+			AgentSessionID: input.AgentSessionID, Goal: clonePayload(resultGoal),
 			Evidence: evidence, ProviderPhase: providerPhase,
 		}, nil
 	}
@@ -565,7 +573,7 @@ func (d *legacyHostConformanceDriver) Create(
 	}
 	session, err := d.service.Create(ctx, workspaceID, CreateSessionInput{
 		AgentSessionID: input.AgentSessionID, AgentTargetID: agentTargetID, Provider: input.Provider,
-		InitialContent: input.InitialContent, InitialDisplayPrompt: input.InitialDisplayPrompt,
+		InitialContent: input.InitialContent, InitialGoalControl: input.InitialGoalControl, InitialDisplayPrompt: input.InitialDisplayPrompt,
 		Metadata: input.Metadata, ClientSubmitID: input.ClientSubmitID, Title: input.Title, Cwd: input.Cwd,
 		PermissionModeID: input.PermissionModeID, Model: input.Model, PlanMode: input.PlanMode,
 		BrowserUse: input.BrowserUse, ComputerUse: input.ComputerUse,
@@ -585,8 +593,11 @@ func (d *legacyHostConformanceDriver) Create(
 			d.createdTurns[clientSubmitID] = turnID
 		}
 	} else if clientSubmitID := strings.TrimSpace(input.ClientSubmitID); clientSubmitID != "" {
-		turnID = d.createdTurns[clientSubmitID]
-		if turnID == "" {
+		_, textGoal := agenthost.ParseTypedGoalControl(input.InitialContent, false)
+		if input.InitialGoalControl == nil && !textGoal {
+			turnID = d.createdTurns[clientSubmitID]
+		}
+		if input.InitialGoalControl == nil && !textGoal && turnID == "" {
 			return hostconformance.SessionObservation{}, "", fmt.Errorf("typed create submit %q has no canonical turn", clientSubmitID)
 		}
 	}
@@ -847,7 +858,7 @@ func (d *legacyHostConformanceDriver) GoalControl(ctx context.Context, input age
 		result, err := d.service.ApplicationHost().GoalControl(ctx, input)
 		return hostGoalControlObservation(result), err
 	}
-	result, err := d.service.goalControl(ctx, input.WorkspaceID, input.AgentSessionID, input.Action, input.Objective, input.SubmissionMetadata)
+	result, err := d.service.goalControl(ctx, input.WorkspaceID, input.AgentSessionID, input.Action, input.Objective, input.ClientSubmitID, input.SubmissionMetadata)
 	if err != nil {
 		return hostconformance.GoalObservation{}, err
 	}
@@ -1146,7 +1157,8 @@ func (d *legacyHostConformanceDriver) recordSubmittedTurn(workspaceID, sessionID
 }
 
 type legacyHostConformanceSessionInitializer struct {
-	sessions *fakeSessionReader
+	canonicalStore *workspacedata.SQLiteStore
+	sessions       *fakeSessionReader
 }
 
 func (i legacyHostConformanceSessionInitializer) InitializeRuntimeSession(
@@ -1155,10 +1167,32 @@ func (i legacyHostConformanceSessionInitializer) InitializeRuntimeSession(
 	railPlacement *agenthost.RailPlacement,
 ) (PersistedSession, error) {
 	persisted, err := (fakeSessionInitializer{}).InitializeRuntimeSession(ctx, session, railPlacement)
-	if err == nil {
-		i.sessions.sessions[persisted.WorkspaceID+":"+persisted.ID] = persisted
+	if err != nil {
+		return PersistedSession{}, err
 	}
-	return persisted, err
+	i.sessions.sessions[persisted.WorkspaceID+":"+persisted.ID] = persisted
+	if i.canonicalStore != nil {
+		if _, err := i.canonicalStore.Get(ctx, persisted.WorkspaceID); errors.Is(err, workspacedata.ErrWorkspaceNotFound) {
+			if err := i.canonicalStore.Create(ctx, workspacebiz.Summary{
+				ID:   persisted.WorkspaceID,
+				Name: "Host conformance",
+			}); err != nil {
+				return PersistedSession{}, err
+			}
+		} else if err != nil {
+			return PersistedSession{}, err
+		}
+		if _, err := i.canonicalStore.ReportSessionState(ctx, agentactivitybiz.SessionStateReport{
+			WorkspaceID:       persisted.WorkspaceID,
+			AgentSessionID:    persisted.ID,
+			Provider:          persisted.Provider,
+			ProviderSessionID: persisted.ProviderSessionID,
+			OccurredAtUnixMS:  persisted.UpdatedAtUnixMS,
+		}); err != nil {
+			return PersistedSession{}, err
+		}
+	}
+	return persisted, nil
 }
 
 func legacyHostSessionObservation(session Session) hostconformance.SessionObservation {

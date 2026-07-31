@@ -27,8 +27,8 @@ func (s *Service) AdoptProviderGoal(ctx context.Context, input agenthost.Provide
 	return result, nil
 }
 
-func (s *Service) GoalControl(ctx context.Context, workspaceID string, agentSessionID string, action string, objective string) (GoalControlSessionResult, error) {
-	return s.goalControl(ctx, workspaceID, agentSessionID, action, objective, nil)
+func (s *Service) GoalControl(ctx context.Context, workspaceID string, agentSessionID string, action string, objective string, clientSubmitID string) (GoalControlSessionResult, error) {
+	return s.goalControl(ctx, workspaceID, agentSessionID, action, objective, clientSubmitID, nil)
 }
 
 func (s *Service) goalControl(
@@ -37,11 +37,13 @@ func (s *Service) goalControl(
 	agentSessionID string,
 	action string,
 	objective string,
+	clientSubmitID string,
 	submissionMetadata map[string]any,
 ) (GoalControlSessionResult, error) {
 	result, err := s.ApplicationHost().GoalControl(ctx, agenthost.GoalControlInput{
 		WorkspaceID: strings.TrimSpace(workspaceID), AgentSessionID: strings.TrimSpace(agentSessionID),
 		Action: strings.TrimSpace(action), Objective: strings.TrimSpace(objective),
+		ClientSubmitID:     strings.TrimSpace(clientSubmitID),
 		SubmissionMetadata: clonePayload(submissionMetadata),
 	})
 	if err != nil {

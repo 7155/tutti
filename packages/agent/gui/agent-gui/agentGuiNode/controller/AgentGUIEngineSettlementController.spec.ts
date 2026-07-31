@@ -13,9 +13,9 @@ import type {
   AgentComposerDraft,
   SubmittedDraftSnapshot
 } from "../model/agentGuiNodeTypes";
-import { AgentGUIHomeDraftSettlementController } from "./AgentGUIHomeDraftSettlementController";
+import { AgentGUIEngineSettlementController } from "./AgentGUIEngineSettlementController";
 
-describe("AgentGUIHomeDraftSettlementController", () => {
+describe("AgentGUIEngineSettlementController", () => {
   it("clears a matching home draft after activation confirmation", () => {
     const engine = createTestAgentSessionEngine();
     const sourceScopeKey = "project:/workspace/app";
@@ -28,7 +28,7 @@ describe("AgentGUIHomeDraftSettlementController", () => {
     let drafts: Record<string, AgentComposerDraft> = {
       [sourceScopeKey]: submittedDraft
     };
-    const controller = new AgentGUIHomeDraftSettlementController({
+    const controller = new AgentGUIEngineSettlementController({
       applyDraftUpdate: (update) => {
         drafts = update(drafts);
       },
@@ -81,7 +81,7 @@ describe("AgentGUIHomeDraftSettlementController", () => {
     let drafts: Record<string, AgentComposerDraft> = {
       [sourceScopeKey]: emptyAgentComposerDraft()
     };
-    const controller = new AgentGUIHomeDraftSettlementController({
+    const controller = new AgentGUIEngineSettlementController({
       applyDraftUpdate: (update) => {
         drafts = update(drafts);
       },
@@ -143,7 +143,7 @@ describe("AgentGUIHomeDraftSettlementController", () => {
     let drafts: Record<string, AgentComposerDraft> = {
       [sourceScopeKey]: emptyAgentComposerDraft()
     };
-    const controller = new AgentGUIHomeDraftSettlementController({
+    const controller = new AgentGUIEngineSettlementController({
       applyDraftUpdate: (update) => {
         drafts = update(drafts);
       },
@@ -228,7 +228,7 @@ describe("AgentGUIHomeDraftSettlementController", () => {
     let drafts: Record<string, AgentComposerDraft> = {
       [sourceScopeKey]: emptyAgentComposerDraft()
     };
-    const controller = new AgentGUIHomeDraftSettlementController({
+    const controller = new AgentGUIEngineSettlementController({
       applyDraftUpdate: (update) => {
         drafts = update(drafts);
       },
@@ -292,7 +292,143 @@ describe("AgentGUIHomeDraftSettlementController", () => {
     detach();
     engine.dispose();
   });
+
+  it("settles a Goal draft when Host durably accepts an applying operation", async () => {
+    const engine = createTestAgentSessionEngine("test-workspace", {
+      effects: {
+        controlGoal: () =>
+          Promise.resolve({
+            goal: { objective: "ship it", status: "active" },
+            operationId: "goal-operation-1",
+            session: sessionWithGoal("old goal"),
+            state: {
+              desired: { objective: "ship it", status: "active" },
+              lastEvidence: { source: "test" },
+              observed: { objective: "old goal", status: "active" },
+              pendingOperationId: "goal-operation-1",
+              revision: 2,
+              syncStatus: "applying",
+              tombstoned: false,
+              updatedAtUnixMs: 2
+            }
+          })
+      },
+      execute: () => Promise.resolve({ ok: true }),
+      kind: "typed"
+    } as never);
+    engine.dispatch({
+      session: sessionWithGoal("old goal"),
+      type: "session/upserted"
+    });
+    const sourceScopeKey = "session:session-1";
+    const submittedDraft: AgentComposerDraft = [
+      { type: "text", text: "/goal ship it" }
+    ];
+    let drafts: Record<string, AgentComposerDraft> = {
+      [sourceScopeKey]: submittedDraft
+    };
+    const goalControlSettlements = {
+      "session-1": {
+        action: "set" as const,
+        clientSubmitId: "goal-submit-1",
+        submittedDraftSnapshot: {
+          content: submittedDraft,
+          sourceScopeKey,
+          targetAgentSessionId: "session-1"
+        }
+      }
+    };
+    const controller = new AgentGUIEngineSettlementController({
+      applyDraftUpdate: (update) => {
+        drafts = update(drafts);
+      },
+      engine,
+      goalControlSettlements,
+      snapshots: {}
+    });
+    const detach = controller.attach();
+
+    expect(
+      engine.controlGoal({
+        action: "set",
+        agentSessionId: "session-1",
+        clientSubmitId: "goal-submit-1",
+        objective: "ship it"
+      }).accepted
+    ).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(agentComposerDraftPrompt(drafts[sourceScopeKey]!)).toBe("");
+    });
+    expect(goalControlSettlements).toEqual({});
+    detach();
+    engine.dispose();
+  });
+
+  it("reports a definitive Goal rejection without clearing its draft", async () => {
+    const rejection = Object.assign(new Error("invalid goal"), {
+      code: "invalid_request"
+    });
+    const engine = createTestAgentSessionEngine("test-workspace", {
+      effects: {
+        controlGoal: () => Promise.reject(rejection)
+      },
+      execute: () => Promise.resolve({ ok: true }),
+      kind: "typed"
+    } as never);
+    engine.dispatch({
+      session: sessionWithGoal("old goal"),
+      type: "session/upserted"
+    });
+    const failed = vi.fn();
+    const goalControlSettlements = {
+      "session-1": {
+        action: "clear" as const,
+        clientSubmitId: "goal-submit-1",
+        submittedDraftSnapshot: null
+      }
+    };
+    const controller = new AgentGUIEngineSettlementController({
+      applyDraftUpdate: vi.fn(),
+      engine,
+      goalControlSettlements,
+      isCurrentConversation: () => true,
+      onGoalControlFailed: failed,
+      snapshots: {}
+    });
+    const detach = controller.attach();
+
+    engine.controlGoal({
+      action: "clear",
+      agentSessionId: "session-1",
+      clientSubmitId: "goal-submit-1"
+    });
+
+    await vi.waitFor(() => expect(failed).toHaveBeenCalledTimes(1));
+    expect(failed.mock.calls[0]?.[0]).toMatchObject({
+      clientSubmitId: "goal-submit-1",
+      errorCode: "invalid_request",
+      status: "failed"
+    });
+    expect(goalControlSettlements).toEqual({});
+    detach();
+    engine.dispose();
+  });
 });
+
+function sessionWithGoal(objective: string) {
+  return normalizeAgentActivitySession({
+    activeTurnId: null,
+    agentSessionId: "session-1",
+    cwd: "/workspace/app",
+    goal: { objective, status: "active" },
+    latestTurnInteractions: [],
+    pendingInteractions: [],
+    provider: "codex",
+    title: "session",
+    workspaceId: "test-workspace"
+  });
+}
 
 function requestActivation(
   engine: ReturnType<typeof createTestAgentSessionEngine>,

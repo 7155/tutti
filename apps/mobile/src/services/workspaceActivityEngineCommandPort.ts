@@ -4,6 +4,8 @@ import type {
   AgentSessionEffectPort,
   AgentActivityCancelTurnInput,
   AgentActivityDeleteSessionsResult,
+  AgentActivityGoalControlResult,
+  AgentSessionGoalControlEffectInput,
   AgentActivitySendInput,
   AgentActivitySession,
   AgentActivitySessionDetailSnapshot,
@@ -31,6 +33,11 @@ interface WorkspaceActivityEngineCommandContext {
     expectedAgentSessionId: string,
     detail: Awaited<ReturnType<TuttidClient["getWorkspaceAgentSession"]>>
   ): AgentActivitySessionDetailSnapshot;
+  mapGoalControlResult(
+    response: Awaited<
+      ReturnType<TuttidClient["goalControlWorkspaceAgentSession"]>
+    >
+  ): AgentActivityGoalControlResult;
   reconcileSession(
     command: SessionReconcileCommand,
     signal?: AbortSignal
@@ -46,6 +53,8 @@ export function createWorkspaceActivityEffectPort(
       activateSession(getContext(), input, options?.signal),
     cancelTurn: (input, options) =>
       cancelTurn(getContext(), input, options?.signal),
+    controlGoal: (input, options) =>
+      controlGoal(getContext(), input, options?.signal),
     deleteSessions: (input, options) =>
       deleteSessions(getContext(), input, options?.signal),
     renameSession: (input, options) =>
@@ -59,6 +68,25 @@ export function createWorkspaceActivityEffectPort(
     updateSessionSettings: (input, options) =>
       updateSessionSettings(getContext(), input, options?.signal)
   };
+}
+
+function controlGoal(
+  context: WorkspaceActivityEngineCommandContext,
+  input: AgentSessionGoalControlEffectInput,
+  signal?: AbortSignal
+): Promise<AgentActivityGoalControlResult> {
+  return context.client
+    .goalControlWorkspaceAgentSession(
+      input.workspaceId,
+      input.agentSessionId,
+      {
+        action: input.action,
+        clientSubmitId: input.clientSubmitId,
+        ...(input.objective ? { objective: input.objective } : {})
+      },
+      ...requestOptionsArgs(signal)
+    )
+    .then(context.mapGoalControlResult);
 }
 
 export function executeWorkspaceActivityExtensionCommand(
@@ -150,8 +178,13 @@ async function activateSession(
         : {}),
       clientSubmitId: input.clientSubmitId,
       cwd: input.cwd ?? null,
-      initialContent: toTuttidPromptContent(input.initialContent ?? []),
+      initialContent: input.initialGoalControl
+        ? []
+        : toTuttidPromptContent(input.initialContent ?? []),
       initialDisplayPrompt: input.initialDisplayPrompt ?? null,
+      ...(input.initialGoalControl
+        ? { initialGoalControl: { ...input.initialGoalControl } }
+        : {}),
       ...(input.initialTuttiModeActivation
         ? {
             initialTuttiModeActivation: {

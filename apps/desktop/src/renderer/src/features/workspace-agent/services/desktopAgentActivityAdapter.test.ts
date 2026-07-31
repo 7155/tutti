@@ -442,15 +442,24 @@ test("desktop agent activity adapter forwards typed submit diagnostics", async (
           signal: requestOptions?.signal,
           workspaceId: requestWorkspaceId
         });
-        return createSendInputResponse(
+        const response = createSendInputResponse(
           createSession({ id: agentSessionId, status: "running" })
         );
+        return {
+          ...response,
+          turn: {
+            ...response.turn,
+            capabilityRefs: [
+              { capability: "tutti" as const, source: "slash_command" as const }
+            ]
+          }
+        };
       }
     }),
     runtimeApi: createRuntimeApi()
   });
 
-  await adapter.sendInput({
+  const result = await adapter.sendInput({
     clientSubmitId: "submit-1",
     workspaceId,
     agentSessionId: "agent-session-1",
@@ -481,6 +490,9 @@ test("desktop agent activity adapter forwards typed submit diagnostics", async (
       signal: controller.signal,
       workspaceId
     }
+  ]);
+  assert.deepEqual(result.kind === "turn" ? result.turn.capabilityRefs : null, [
+    { capability: "tutti", source: "slash_command" }
   ]);
 });
 
@@ -801,7 +813,10 @@ test("desktop agent activity adapter forwards HTTPS image URLs structurally", as
         mimeType: "image/png",
         url,
         attachmentId: "remote-image",
-        name: "image.png"
+        name: "image.png",
+        hostPath: "/tmp/local-only.png",
+        uploadStatus: "uploaded",
+        uri: "file:///tmp/local-only.png"
       }
     ],
     workspaceId
@@ -1327,7 +1342,7 @@ test("desktop agent activity adapter rejects unuploaded file prompt blocks", asy
       ],
       workspaceId
     }),
-    /File prompt blocks must be uploaded before desktop submission/
+    /File prompt blocks must be uploaded before submission/
   );
 });
 

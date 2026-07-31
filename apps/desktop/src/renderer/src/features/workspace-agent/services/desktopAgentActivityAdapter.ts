@@ -2,16 +2,18 @@ import {
   workspaceAgentSessionStatus,
   type AgentActivityAdapter,
   type AgentActivitySession,
-  type AgentActivitySessionDetailSnapshot,
-  type AgentPromptContentBlock
+  type AgentActivitySessionDetailSnapshot
 } from "@tutti-os/agent-activity-core";
 import {
   agentActivityGoalControlResultFromTuttid,
   agentActivityMessageFromTuttidMessage,
   agentActivitySessionDetailFromTuttid as mapAgentActivitySessionDetailFromTuttid,
   agentActivitySessionFromTuttidSession as mapAgentActivitySessionFromTuttidSession,
+  agentActivityTurnFromTuttidTurn,
   agentActivityTuttiModeActivationFromTuttid,
-  tuttiAgentSessionComposerSettingsFromActivity
+  tuttiAgentSessionComposerSettingsFromActivity,
+  tuttiCreateWorkspaceAgentSessionRequestFromActivity,
+  tuttiSendWorkspaceAgentSessionInputRequestFromActivity
 } from "@tutti-os/agent-activity-tuttid-adapter";
 export {
   agentActivityMessageFromTuttidMessage,
@@ -19,10 +21,6 @@ export {
 } from "@tutti-os/agent-activity-tuttid-adapter";
 import type {
   TuttidClient,
-  AgentSubmitDiagnostics,
-  AgentPromptContentBlock as TuttidAgentPromptContentBlock,
-  CreateWorkspaceAgentSessionRequest,
-  SendWorkspaceAgentSessionInputRequest,
   WorkspaceAgentSession,
   WorkspaceAgentSessionDetailResponse,
   WorkspaceAgentSessionForkOperation,
@@ -234,62 +232,16 @@ export function createDesktopAgentActivityAdapter({
         });
         const agentTargetId = requiredAgentTargetId(input.agentTargetId);
         recordingId = takePendingSessionRecording?.(input.workspaceId) ?? null;
-        const request: CreateWorkspaceAgentSessionRequest = {
-          agentSessionId,
-          agentTargetId,
-          ...(typeof input.browserUse === "boolean"
-            ? { browserUse: input.browserUse }
-            : {}),
-          ...(recordingId ? { recordingId } : {}),
-          ...(input.capabilityRefs?.length
-            ? {
-                capabilityRefs: input.capabilityRefs.map(
-                  toTuttidCapabilityReference
-                )
-              }
-            : {}),
-          clientSubmitId: input.clientSubmitId,
-          cwd: input.cwd ?? null,
-          initialContent: input.initialGoalControl
-            ? []
-            : toTuttidPromptContentBlocks(input.initialContent ?? []),
-          initialDisplayPrompt: input.initialDisplayPrompt ?? null,
-          ...(input.initialGoalControl
-            ? { initialGoalControl: { ...input.initialGoalControl } }
-            : {}),
-          ...(input.initialTuttiModeActivation
-            ? {
-                initialTuttiModeActivation: {
-                  effect:
-                    input.initialTuttiModeActivation.effect ??
-                    input.initialTuttiModeActivation.orchestrationIntensity ??
-                    null,
-                  source: input.initialTuttiModeActivation.source,
-                  speed: input.initialTuttiModeActivation.speed,
-                  status: input.initialTuttiModeActivation.status
-                }
-              }
-            : {}),
-          ...(input.submitDiagnostics
-            ? {
-                submitDiagnostics: toTuttidSubmitDiagnostics(
-                  input.submitDiagnostics
-                )
-              }
-            : {}),
-          model: input.model ?? null,
-          noProject:
-            input.noProject ?? (normalizeText(input.cwd) ? null : true),
-          ...(input.railPlacement
-            ? { railPlacement: { ...input.railPlacement } }
-            : {}),
-          planMode: input.planMode ?? null,
-          permissionModeId: input.permissionModeId ?? null,
-          reasoningEffort: input.reasoningEffort ?? null,
-          speed: input.speed ?? null,
-          title: input.title ?? null,
-          visible: input.visible ?? null
-        };
+        const request = tuttiCreateWorkspaceAgentSessionRequestFromActivity(
+          {
+            ...input,
+            agentSessionId,
+            agentTargetId,
+            noProject:
+              input.noProject ?? (normalizeText(input.cwd) ? null : true)
+          },
+          { recordingId }
+        );
         const session = await tuttidClient.createWorkspaceAgentSession(
           input.workspaceId,
           request,
@@ -343,26 +295,8 @@ export function createDesktopAgentActivityAdapter({
         submitDiagnostics: input.submitDiagnostics,
         workspaceId: input.workspaceId
       });
-      const request: SendWorkspaceAgentSessionInputRequest = {
-        clientSubmitId: input.clientSubmitId,
-        ...(input.capabilityRefs?.length
-          ? {
-              capabilityRefs: input.capabilityRefs.map(
-                toTuttidCapabilityReference
-              )
-            }
-          : {}),
-        content: toTuttidPromptContentBlocks(input.content),
-        displayPrompt: input.displayPrompt ?? null,
-        ...(input.guidance === true ? { guidance: true } : {}),
-        ...(input.submitDiagnostics
-          ? {
-              submitDiagnostics: toTuttidSubmitDiagnostics(
-                input.submitDiagnostics
-              )
-            }
-          : {})
-      };
+      const request =
+        tuttiSendWorkspaceAgentSessionInputRequestFromActivity(input);
       let result: Awaited<
         ReturnType<TuttidClient["sendWorkspaceAgentSessionInput"]>
       >;
@@ -423,7 +357,7 @@ export function createDesktopAgentActivityAdapter({
           result.session
         ),
         turnId: result.turnId,
-        turn: result.turn
+        turn: agentActivityTurnFromTuttidTurn(result.turn)
       };
     },
     async updateTuttiModeActivation(input) {
@@ -716,18 +650,6 @@ function agentActivityForkSessionResult(
   };
 }
 
-function toTuttidCapabilityReference(reference: {
-  capability: string;
-  source: "slash_command";
-}): { capability: "tutti"; source: "slash_command" } {
-  if (reference.capability !== "tutti") {
-    throw new Error(
-      `Unsupported workspace agent capability reference: ${reference.capability}`
-    );
-  }
-  return { capability: "tutti", source: reference.source };
-}
-
 function reportDesktopAgentMessageListDiagnostic(
   runtimeApi: Pick<DesktopRuntimeApi, "logTerminalDiagnostic">,
   workspaceId: string,
@@ -802,70 +724,12 @@ export function createDesktopAgentActivitySessionId(): string {
   return `00000000-0000-4000-8000-${fallbackHex.slice(0, 12)}`;
 }
 
-function toTuttidSubmitDiagnostics(input: {
-  blockCount?: number;
-  hasImage?: boolean;
-  promptLength?: number;
-  queued?: boolean;
-  source?: string;
-  submittedAtUnixMs?: number;
-}): AgentSubmitDiagnostics {
-  return {
-    ...(input.blockCount !== undefined ? { blockCount: input.blockCount } : {}),
-    ...(input.hasImage !== undefined ? { hasImage: input.hasImage } : {}),
-    ...(input.promptLength !== undefined
-      ? { promptLength: input.promptLength }
-      : {}),
-    ...(input.queued !== undefined ? { queued: input.queued } : {}),
-    ...(input.source !== undefined ? { source: input.source } : {}),
-    ...(input.submittedAtUnixMs !== undefined
-      ? { submittedAtUnixMs: input.submittedAtUnixMs }
-      : {})
-  };
-}
-
 function requiredAgentTargetId(value: string | null | undefined): string {
   const agentTargetId = normalizeText(value);
   if (!agentTargetId) {
     throw new Error("Agent target id is required to create an agent session.");
   }
   return agentTargetId;
-}
-
-function toTuttidPromptContentBlocks(
-  content: readonly AgentPromptContentBlock[]
-): TuttidAgentPromptContentBlock[] {
-  return content.flatMap((block) => {
-    if (block.type === "file") {
-      throw new Error(
-        "File prompt blocks must be uploaded before desktop submission."
-      );
-    }
-    const nextBlock: TuttidAgentPromptContentBlock = { type: block.type };
-    if (block.attachmentId !== undefined) {
-      nextBlock.attachmentId = block.attachmentId;
-    }
-    if (block.data !== undefined) {
-      nextBlock.data = block.data;
-    }
-    if (block.url !== undefined) {
-      nextBlock.url = block.url;
-    }
-    if (block.mimeType !== undefined) {
-      nextBlock.mimeType =
-        block.mimeType as TuttidAgentPromptContentBlock["mimeType"];
-    }
-    if (block.name !== undefined) {
-      nextBlock.name = block.name;
-    }
-    if (block.path !== undefined) {
-      nextBlock.path = block.path;
-    }
-    if (block.text !== undefined) {
-      nextBlock.text = block.text;
-    }
-    return [nextBlock];
-  });
 }
 
 function withAbortableRequestTimeout<T>(

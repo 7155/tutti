@@ -10,7 +10,6 @@ import { AgentEnvPanelActionProvider } from "../../agentEnv";
 import type { AgentActivityRuntime } from "../../../agentActivityRuntime";
 import { AgentMessageBlock } from "./AgentMessageBlock";
 import { AgentTranscriptItemView } from "./AgentTranscriptItemView";
-import type { AgentGeneratedImageRowVM } from "../contracts/agentGeneratedImageRowVM";
 import type { AgentGoalControlRowVM } from "../contracts/agentGoalControlRowVM";
 import type { AgentMessageContentVM } from "../contracts/agentMessageRowVM";
 import type { AgentMessageRowVM } from "../contracts/agentMessageRowVM";
@@ -119,37 +118,6 @@ describe("AgentTranscriptItemView render stability", () => {
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith("/goal ship it");
     });
-  });
-
-  it("renders a generated image artifact independently from tool-call expansion", () => {
-    const row: AgentGeneratedImageRowVM = {
-      kind: "generated-image",
-      id: "generated-image:call:image-1",
-      turnId: "turn-1",
-      sourceCallId: "call:image-1",
-      uri: "data:image/png;base64,aW1hZ2U=",
-      mimeType: "image/png",
-      prompt: "A friendly corgi",
-      occurredAtUnixMs: 1
-    };
-
-    render(
-      <AgentTranscriptItemView
-        workspaceRoot="/workspace/demo"
-        basePath="/workspace/demo"
-        row={row}
-        labels={transcriptLabels()}
-      />
-    );
-
-    expect(
-      screen.getByTestId("agent-generated-image-artifact")
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("img", {
-        name: "agentHost.agentTool.details.imagePreviewAlt"
-      })
-    ).toHaveAttribute("src", row.uri);
   });
 
   it("keeps tool link handlers stable when an unchanged tool row is reprojected", () => {

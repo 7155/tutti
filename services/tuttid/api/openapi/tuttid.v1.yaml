@@ -7881,11 +7881,13 @@ components:
     DesktopDefaultAgentProvider:
       type: string
       enum:
+        - tutti-agent
         - claude-code
         - codex
         - cursor
         - opencode
       x-enum-varnames:
+        - DesktopDefaultAgentProviderTuttiAgent
         - DesktopDefaultAgentProviderClaudeCode
         - DesktopDefaultAgentProviderCodex
         - DesktopDefaultAgentProviderCursor
@@ -12471,6 +12473,7 @@ components:
       additionalProperties: false
       required:
         - session
+        - goal
         - kind
       properties:
         session:
@@ -12579,6 +12582,7 @@ components:
         - turnId
         - agentSessionId
         - providerForkBindingAvailable
+        - providerForkBindingState
         - phase
         - origin
         - outcome
@@ -12598,9 +12602,21 @@ components:
         providerForkBindingAvailable:
           type: boolean
           description: >-
-            Whether this canonical Turn currently has the provider Turn
-            binding required to attempt an exact native Fork. Historical
-            prefix state does not participate in this projection.
+            Whether this canonical Turn currently has a durably persisted
+            provider Turn binding. This remains false while a settled
+            historical Turn is waiting for an on-demand recovery attempt.
+        providerForkBindingState:
+          type: string
+          description: >-
+            Canonical provider binding state for Fork projection. bound means
+            the durable provider Turn identity is ready; recovery_required
+            means a settled historical Turn must complete the Host's
+            fail-closed evidence recovery before Fork can be offered;
+            unavailable means the Turn cannot be used as a Fork boundary.
+          enum:
+            - bound
+            - recovery_required
+            - unavailable
         phase:
           $ref: "#/components/schemas/WorkspaceAgentTurnPhase"
         origin:
@@ -13624,6 +13640,15 @@ components:
             - resume
             - clear
             - set
+          x-enum-varnames:
+            - WorkspaceAgentSessionGoalControlRequestActionPause
+            - WorkspaceAgentSessionGoalControlRequestActionResume
+            - WorkspaceAgentSessionGoalControlRequestActionClear
+            - WorkspaceAgentSessionGoalControlRequestActionSet
+        clientSubmitId:
+          type: string
+          minLength: 1
+          description: Caller-stable idempotency identity for this Goal Control mutation.
         objective:
           type: string
     WorkspaceAgentSessionGoalControlResponse:
@@ -13631,6 +13656,7 @@ components:
       additionalProperties: false
       required:
         - session
+        - goal
       properties:
         session:
           $ref: "#/components/schemas/WorkspaceAgentSession"
@@ -13706,6 +13732,27 @@ components:
           $ref: "#/components/schemas/WorkspaceAgentSession"
         state:
           $ref: "#/components/schemas/WorkspaceAgentSessionGoalState"
+    WorkspaceAgentInitialGoalControl:
+      type: object
+      additionalProperties: false
+      required:
+        - action
+      properties:
+        action:
+          type: string
+          enum:
+            - pause
+            - resume
+            - clear
+            - set
+          x-enum-varnames:
+            - WorkspaceAgentInitialGoalControlActionPause
+            - WorkspaceAgentInitialGoalControlActionResume
+            - WorkspaceAgentInitialGoalControlActionClear
+            - WorkspaceAgentInitialGoalControlActionSet
+        objective:
+          type: string
+          minLength: 1
     CreateWorkspaceAgentSessionRequest:
       type: object
       additionalProperties: false
@@ -13735,9 +13782,13 @@ components:
           $ref: "#/components/schemas/AgentSubmitDiagnostics"
         initialContent:
           type: array
-          minItems: 1
           items:
             $ref: "#/components/schemas/AgentPromptContentBlock"
+        initialGoalControl:
+          allOf:
+            - $ref: "#/components/schemas/WorkspaceAgentInitialGoalControl"
+          nullable: true
+          description: Optional typed Goal Control applied after the Session is created without opening an initial Turn. Must not be combined with non-empty initialContent.
         initialDisplayPrompt:
           type: string
           nullable: true
@@ -14138,6 +14189,11 @@ components:
             - pause
             - resume
             - set-timing-mode
+          x-enum-varnames:
+            - UpdateAgentSessionReplayTransportPlaybackRequestCommandSetSpeed
+            - UpdateAgentSessionReplayTransportPlaybackRequestCommandPause
+            - UpdateAgentSessionReplayTransportPlaybackRequestCommandResume
+            - UpdateAgentSessionReplayTransportPlaybackRequestCommandSetTimingMode
         speed:
           type: number
           format: double
@@ -15246,6 +15302,70 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkspaceFileUploadConflict"
+    WorkbenchLayoutPreset:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+      properties:
+        kind:
+          enum:
+            - balanced
+            - row
+            - column
+          type: string
+    WorkbenchNormalizedFrame:
+      type: object
+      additionalProperties: false
+      required:
+        - x
+        - y
+        - width
+        - height
+      properties:
+        x:
+          type: number
+          minimum: 0
+          maximum: 1
+        y:
+          type: number
+          minimum: 0
+          maximum: 1
+        width:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+          maximum: 1
+        height:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+          maximum: 1
+    WorkbenchLockedLayout:
+      type: object
+      additionalProperties: false
+      required:
+        - preset
+        - nodeIDs
+      properties:
+        preset:
+          $ref: "#/components/schemas/WorkbenchLayoutPreset"
+        nodeIDs:
+          type: array
+          minItems: 2
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 160
+        normalizedFrames:
+          type: object
+          propertyNames:
+            type: string
+            minLength: 1
+            maxLength: 160
+          additionalProperties:
+            $ref: "#/components/schemas/WorkbenchNormalizedFrame"
     WorkbenchSize:
       type: object
       additionalProperties: false
@@ -15431,6 +15551,8 @@ components:
           nullable: true
         layoutBasis:
           $ref: "#/components/schemas/WorkbenchLayoutBasis"
+        lockedLayout:
+          $ref: "#/components/schemas/WorkbenchLockedLayout"
         metadata:
           type: object
           additionalProperties: true

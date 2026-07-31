@@ -89,6 +89,11 @@ type MessageSemantics = agentstore.MessageSemantics
 type MessagePage = agentstore.MessagePage
 
 type Turn = agentstore.Turn
+
+func HasUsableProviderTurnBinding(turn Turn) bool {
+	return agentstore.HasUsableProviderTurnBinding(turn)
+}
+
 type SessionTurnCursor = agentstore.SessionTurnCursor
 type ListSessionTurnSummariesInput = agentstore.ListSessionTurnSummariesInput
 type SessionTurnSummary = agentstore.SessionTurnSummary
@@ -122,6 +127,7 @@ type RuntimeOperationCompletion = agentstore.RuntimeOperationCompletion
 type SessionGoalState = agentstore.SessionGoalState
 type GoalControlOperation = agentstore.GoalControlOperation
 type GoalControlOperationPrepare = agentstore.GoalControlOperationPrepare
+type ProviderGoalAdoption = agentstore.ProviderGoalAdoption
 type GoalControlOperationComplete = agentstore.GoalControlOperationComplete
 type GoalControlOperationAcknowledge = agentstore.GoalControlOperationAcknowledge
 type GoalObservationReconcile = agentstore.GoalObservationReconcile

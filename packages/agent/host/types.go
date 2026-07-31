@@ -198,6 +198,20 @@ type SessionForkProviderTurnBinding struct {
 	CheckpointMessageID string
 }
 
+type RuntimeProviderTurnBindingRecoveryInput struct {
+	Source               ProviderRuntimeSession
+	CanonicalTurnID      string
+	RecoveryToken        string
+	LegacyTextHMACKey    string
+	LegacyTextHMACDigest string
+}
+
+type RuntimeProviderTurnBindingRecoveryResult struct {
+	ProviderSessionID           string
+	ProviderTurnID              string
+	ProviderCheckpointMessageID string
+}
+
 type SessionForkStateBindingMode string
 
 const (
@@ -322,10 +336,11 @@ type RuntimeExecResult struct {
 type RuntimeDispatchDisposition string
 
 const (
-	RuntimeDispatchDispositionApplied        RuntimeDispatchDisposition = "applied"
-	RuntimeDispatchDispositionRejected       RuntimeDispatchDisposition = "rejected"
-	RuntimeDispatchDispositionNotDispatched  RuntimeDispatchDisposition = "not_dispatched"
-	RuntimeDispatchDispositionOutcomeUnknown RuntimeDispatchDisposition = "outcome_unknown"
+	RuntimeDispatchDispositionApplied                    RuntimeDispatchDisposition = "applied"
+	RuntimeDispatchDispositionAppliedWithoutProviderTurn RuntimeDispatchDisposition = "applied_without_provider_turn"
+	RuntimeDispatchDispositionRejected                   RuntimeDispatchDisposition = "rejected"
+	RuntimeDispatchDispositionNotDispatched              RuntimeDispatchDisposition = "not_dispatched"
+	RuntimeDispatchDispositionOutcomeUnknown             RuntimeDispatchDisposition = "outcome_unknown"
 )
 
 type RuntimeAcceptanceSource string
@@ -386,7 +401,9 @@ type RuntimeProviderTurnAcceptanceInput struct {
 	RootTurnID                string
 	ExpectedProviderSessionID string
 	ExpectedProviderTurnID    string
-	ClientUserMessageID       string
+	// ClientUserMessageID is opaque provider correlation evidence. It must not
+	// reuse the canonical RootTurnID as provider-owned client identity.
+	ClientUserMessageID string
 }
 
 type RuntimeSubmitProvenanceInput struct {
@@ -525,10 +542,14 @@ type RailPlacement struct {
 // import paths, workspace resolution, identity, and transport state are not
 // part of this type.
 type CreateSessionInput struct {
-	AgentSessionID       string
-	AgentTargetID        string
-	Provider             string
-	InitialContent       []PromptContentBlock
+	AgentSessionID string
+	AgentTargetID  string
+	Provider       string
+	InitialContent []PromptContentBlock
+	// InitialGoalControl applies a Goal mutation after creating the Session
+	// without opening an initial Turn. It is mutually exclusive with
+	// InitialContent; ClientSubmitID is the durable mutation identity.
+	InitialGoalControl   *TypedGoalControl
 	InitialDisplayPrompt string
 	Metadata             map[string]any
 	// ClientSubmitID is the caller-owned idempotency identity for the optional
@@ -855,6 +876,30 @@ type GoalControlResult struct {
 	Goal        map[string]any
 	OperationID string
 	GoalState   *storesqlite.SessionGoalState
+}
+
+// ProviderGoalAdoptionInput identifies one Goal generation that the provider
+// created while executing an accepted Turn. Fingerprint is derived from the
+// provider's immutable generation fields and makes notification replay
+// idempotent.
+type ProviderGoalAdoptionInput struct {
+	WorkspaceID       string
+	AgentSessionID    string
+	ProviderSessionID string
+	Fingerprint       string
+	// ExpectedRevision is the canonical Goal revision observed when the
+	// provider generation entered the adoption lane. Host rejects the
+	// adoption if a newer set/clear/pause/resume serialized first.
+	ExpectedRevision int64
+	Goal             map[string]any
+}
+
+type ProviderGoalAdoptionResult struct {
+	Canonical   storesqlite.Session
+	Goal        map[string]any
+	OperationID string
+	Revision    int64
+	RepairEpoch int64
 }
 
 type GoalStateResult struct {

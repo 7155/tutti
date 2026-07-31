@@ -55,6 +55,8 @@ type EffectiveHistoryStore interface {
 	PrepareEditRetryReplacementRedispatch(context.Context, storesqlite.PrepareEditRetryReplacementRedispatchInput) (storesqlite.RuntimeOperation, bool, error)
 	CompleteEditRetryRuntimeOperation(context.Context, storesqlite.CompleteEditRetryRuntimeOperationInput) (storesqlite.RuntimeOperationCompletion, bool, error)
 	FailEditRetryRecovery(context.Context, storesqlite.FailEditRetryRecoveryInput) (storesqlite.RuntimeOperation, bool, error)
+	QuarantineEditRetryOperation(context.Context, storesqlite.QuarantineEditRetryOperationInput) (storesqlite.RuntimeOperation, bool, error)
+	ClearAbandonedEditRetryFence(context.Context, storesqlite.ClearAbandonedEditRetryFenceInput) (bool, error)
 }
 
 type CanonicalSubmitClaimStore interface {
@@ -122,6 +124,29 @@ type SessionForkRecoveryStore interface {
 type SessionForkRuntime interface {
 	ResolveSessionFork(context.Context, ProviderRuntimeSession) (SessionForkDriverDescriptor, error)
 	ForkSession(context.Context, RuntimeSessionForkInput) (RuntimeSessionForkResult, error)
+}
+
+// SessionForkTurnBindingRecoveryRuntime performs a read-only provider-history
+// lookup for an exact opaque token or a complete legacy text proof. It must
+// never infer identity from Turn position.
+type SessionForkTurnBindingRecoveryRuntime interface {
+	RecoverProviderTurnBinding(
+		context.Context,
+		RuntimeProviderTurnBindingRecoveryInput,
+	) (RuntimeProviderTurnBindingRecoveryResult, error)
+}
+
+type SessionForkTurnBindingRecoveryStore interface {
+	FindSubmitClaimByCanonicalTurn(
+		context.Context,
+		string,
+		string,
+		string,
+	) (storesqlite.SubmitClaim, bool, error)
+	RecoverProviderTurnBinding(
+		context.Context,
+		storesqlite.ProviderTurnBindingRecovery,
+	) (storesqlite.ProviderTurnBindingRecoveryResult, error)
 }
 
 // SessionForkContextPolicy decides whether host-owned session context can be
@@ -273,6 +298,7 @@ type WorktreeGarbageCollector interface {
 
 type GoalStateStore interface {
 	PrepareGoalControlOperation(context.Context, storesqlite.GoalControlOperationPrepare) (storesqlite.GoalControlOperation, storesqlite.SessionGoalState, bool, error)
+	AdoptProviderGoalOperation(context.Context, storesqlite.ProviderGoalAdoption) (storesqlite.GoalControlOperation, storesqlite.SessionGoalState, bool, error)
 	GetGoalControlAudit(context.Context, string, string, string) (storesqlite.Message, bool, error)
 	MarkGoalControlOperationDispatched(context.Context, string, string, int64) (storesqlite.GoalControlOperation, bool, error)
 	AcknowledgeGoalControlOperation(context.Context, storesqlite.GoalControlOperationAcknowledge) (storesqlite.GoalControlOperation, storesqlite.SessionGoalState, bool, error)

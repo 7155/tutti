@@ -58,6 +58,84 @@ func runCreateWithInitialContent(ctx context.Context, driver Driver) error {
 	return nil
 }
 
+func runCreateWithInitialGoal(ctx context.Context, driver Driver) error {
+	if err := driver.Reset(ctx, Fixture{}); err != nil {
+		return err
+	}
+	if _, _, err := driver.Create(ctx, "workspace-1", agenthost.CreateSessionInput{
+		AgentSessionID: "session-ambiguous-initial-goal",
+		AgentTargetID:  "target-1",
+		Provider:       "codex",
+		ClientSubmitID: "create-goal-ambiguous-1",
+		InitialContent: []agenthost.PromptContentBlock{{
+			Type: "text",
+			Text: "ordinary prompt",
+		}},
+		InitialGoalControl: &agenthost.TypedGoalControl{
+			Action:    "set",
+			Objective: "ship the feature",
+		},
+	}); !errors.Is(err, agenthost.ErrInvalidArgument) {
+		return fmt.Errorf("ambiguous initial goal error=%v", err)
+	}
+	if metrics := driver.Metrics(); metrics.StartCalls != 0 {
+		return fmt.Errorf("ambiguous initial goal start calls=%d", metrics.StartCalls)
+	}
+
+	if err := driver.Reset(ctx, Fixture{CompleteGoalOnSet: true}); err != nil {
+		return err
+	}
+	input := agenthost.CreateSessionInput{
+		AgentSessionID: "session-initial-goal",
+		AgentTargetID:  "target-1",
+		Provider:       "codex",
+		ClientSubmitID: "create-goal-submit-1",
+		InitialGoalControl: &agenthost.TypedGoalControl{
+			Action:    "set",
+			Objective: "ship the feature",
+		},
+	}
+	session, turnID, err := driver.Create(ctx, "workspace-1", input)
+	if err != nil {
+		return fmt.Errorf("create with typed initial goal: %w", err)
+	}
+	if session.SessionID != "session-initial-goal" || turnID != "" {
+		return fmt.Errorf("create with typed initial goal = %#v turn %q", session, turnID)
+	}
+	goal, err := driver.GetGoalState(ctx, agenthost.SessionRef{
+		WorkspaceID:    "workspace-1",
+		AgentSessionID: "session-initial-goal",
+	})
+	if err != nil {
+		return fmt.Errorf("read typed initial goal: %w", err)
+	}
+	if goal.Goal["objective"] != "ship the feature" {
+		return fmt.Errorf("typed initial goal = %#v", goal.Goal)
+	}
+	replayed, replayedTurnID, err := driver.Create(ctx, "workspace-1", input)
+	if err != nil {
+		return fmt.Errorf("retry create with typed initial goal: %w", err)
+	}
+	if replayed.SessionID != session.SessionID || replayedTurnID != "" {
+		return fmt.Errorf(
+			"retried typed initial goal = %#v turn %q, want session %q without turn",
+			replayed,
+			replayedTurnID,
+			session.SessionID,
+		)
+	}
+	metrics := driver.Metrics()
+	if metrics.StartCalls != 1 || metrics.ExecCalls != 0 || metrics.GoalControlCalls != 1 {
+		return fmt.Errorf(
+			"create with typed initial goal calls start=%d exec=%d goal=%d",
+			metrics.StartCalls,
+			metrics.ExecCalls,
+			metrics.GoalControlCalls,
+		)
+	}
+	return nil
+}
+
 func runCreateWithRailPlacement(ctx context.Context, driver Driver) error {
 	if err := driver.Reset(ctx, Fixture{}); err != nil {
 		return err
@@ -232,6 +310,56 @@ func runSendInput(ctx context.Context, driver Driver) error {
 	}
 	if metrics := driver.Metrics(); metrics.ExecCalls != 1 {
 		return fmt.Errorf("send input exec calls=%d", metrics.ExecCalls)
+	}
+	return nil
+}
+
+func runNewTurnsRequireDurableProviderAcceptance(
+	ctx context.Context,
+	driver Driver,
+) error {
+	if err := driver.Reset(ctx, Fixture{}); err != nil {
+		return err
+	}
+	_, _, err := driver.Create(ctx, "workspace-1", agenthost.CreateSessionInput{
+		AgentSessionID: "session-acceptance-create",
+		AgentTargetID:  "target-1",
+		Provider:       "codex",
+		InitialContent: []agenthost.PromptContentBlock{{
+			Type: "text", Text: "create with durable acceptance",
+		}},
+		ClientSubmitID: "acceptance-create-1",
+	})
+	if err != nil {
+		return fmt.Errorf("create with provider acceptance: %w", err)
+	}
+	if !driver.Metrics().LastExecRequiresProviderAcceptance {
+		return errors.New("initial Turn did not require durable provider acceptance")
+	}
+
+	if err := driver.Reset(
+		ctx,
+		liveSessionFixture("session-acceptance-send", ""),
+	); err != nil {
+		return err
+	}
+	_, err = driver.SendInput(
+		ctx,
+		agenthost.SessionRef{
+			WorkspaceID: "workspace-1", AgentSessionID: "session-acceptance-send",
+		},
+		agenthost.SendInput{
+			Content: []agenthost.PromptContentBlock{{
+				Type: "text", Text: "send with durable acceptance",
+			}},
+			ClientSubmitID: "acceptance-send-1",
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("send with provider acceptance: %w", err)
+	}
+	if !driver.Metrics().LastExecRequiresProviderAcceptance {
+		return errors.New("sent Turn did not require durable provider acceptance")
 	}
 	return nil
 }

@@ -17,7 +17,10 @@ test("projects shared commands onto typed lifecycle effects without host switche
   const effects: AgentSessionEffectPort = {
     async activateSession(input, options) {
       calls.push({ input, kind: "activate", signal: options?.signal });
-      return { accepted: true };
+      return {
+        activation: { mode: "new", status: "attached" },
+        session
+      };
     },
     async cancelTurn(input, options) {
       calls.push({ input, kind: "cancel", signal: options?.signal });
@@ -58,7 +61,7 @@ test("projects shared commands onto typed lifecycle effects without host switche
     }
   };
 
-  await executeAndWait(port, {
+  const activationResult = await executeAndWait(port, {
     agentSessionId: "session-1",
     agentTargetId: "target-1",
     capabilityRefs: [{ capability: "tutti", source: "slash_command" }],
@@ -89,7 +92,8 @@ test("projects shared commands onto typed lifecycle effects without host switche
     visible: false,
     workspaceId: "workspace-1"
   });
-  await executeAndWait(port, {
+  assert.equal(activationResult.resultContract, "activation-v1");
+  const sendResult = await executeAndWait(port, {
     agentSessionId: "session-1",
     capabilityRefs: [{ capability: "tutti", source: "slash_command" }],
     clientSubmitId: "submit-send",
@@ -101,6 +105,7 @@ test("projects shared commands onto typed lifecycle effects without host switche
     type: "queue/sendPrompt",
     workspaceId: "workspace-1"
   });
+  assert.equal(sendResult.resultContract, "opaque");
   await executeAndWait(port, {
     agentSessionId: "session-1",
     commandId: "settings-1",
@@ -236,7 +241,7 @@ test("keeps the complete command union available to legacy hosts", async () => {
     type: "turn/cancel",
     workspaceId: "workspace-legacy"
   };
-  await executeAndWait(
+  const result = await executeAndWait(
     {
       async execute(candidate) {
         executed.push(candidate);
@@ -250,6 +255,7 @@ test("keeps the complete command union available to legacy hosts", async () => {
 
   assert.deepEqual(executed, [command]);
   assert.deepEqual(observed, ["cancel-legacy"]);
+  assert.equal(result.resultContract, "opaque");
 });
 
 test("rejects prompt settings preconditions that bypass the Engine state machine", async () => {

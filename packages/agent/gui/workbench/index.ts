@@ -8,6 +8,7 @@ export {
 } from "./contribution.ts";
 export type {
   AgentGuiWorkbenchProviderAvailability,
+  AgentGuiWorkbenchProviderAvailabilitySource,
   AgentGuiWorkbenchContributionCopy,
   AgentGuiWorkbenchContributionCopyOverrides,
   AgentGuiWorkbenchRenderBodyHelpers,
@@ -73,6 +74,10 @@ export {
   type AgentGuiWorkbenchHeaderCopy,
   type AgentGuiWorkbenchHeaderProps
 } from "./header.ts";
+export {
+  createAgentGuiWorkbenchRailLayoutStore,
+  type AgentGuiWorkbenchRailLayoutStore
+} from "./agentGuiWorkbenchRailLayout.ts";
 export type { AgentGuiWorkbenchSessionMenuAdditionalAction } from "./AgentGuiWorkbenchSessionMenu.tsx";
 export {
   resolveAgentGuiWorkbenchHeaderTitle,

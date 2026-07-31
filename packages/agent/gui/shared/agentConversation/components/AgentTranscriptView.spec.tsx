@@ -13,6 +13,7 @@ import {
   AgentTranscriptView,
   areAgentTranscriptViewPropsEqual
 } from "./AgentTranscriptView";
+import { AgentObservationGapSourceProvider } from "../AgentObservationGapContext";
 import { AgentTurnDisclosureProvider } from "./AgentTurnDisclosureContext";
 import { projectAgentConversationVM } from "../projection/agentConversationProjection";
 
@@ -223,7 +224,7 @@ describe("AgentTranscriptView", () => {
     expect(onForkThroughTurn.mock.calls).toEqual([["turn-1"], ["turn-2"]]);
   });
 
-  it("only exposes Fork for Turns verified in provider-native history", () => {
+  it("does not expose Fork for Turns whose binding state is unavailable", () => {
     const detail = detailViewModel();
     const secondTurn = {
       ...detail.turns[0]!,
@@ -255,6 +256,7 @@ describe("AgentTranscriptView", () => {
             outcome: "completed",
             phase: "settled",
             providerForkBindingAvailable: false,
+            providerForkBindingState: "unavailable",
             settledAtUnixMs: 7_000
           }),
           canonicalTurn({
@@ -289,7 +291,53 @@ describe("AgentTranscriptView", () => {
     ).toHaveLength(1);
   });
 
-  it("fails closed when provider Turn boundary identities are unknown", () => {
+  it.each(["codex", "claude-code", "cursor", "opencode"])(
+    "hides Fork for a settled historical %s Turn that still requires binding recovery",
+    (provider) => {
+      const detail = detailViewModel();
+      const conversation = projectAgentConversationVM(
+        detailViewModel({
+          activity: {
+            ...detail.activity,
+            agentProvider: provider
+          },
+          session: normalizeAgentActivitySession({
+            ...detail.session,
+            lifecycleCapabilities: { fork: false, forkThroughTurn: true },
+            provider
+          }),
+          sessionTurns: [
+            canonicalTurn({
+              outcome: "completed",
+              phase: "settled",
+              providerForkBindingAvailable: false,
+              providerForkBindingState: "recovery_required",
+              settledAtUnixMs: 7_000
+            })
+          ]
+        })
+      );
+      render(
+        <AgentTranscriptView
+          conversation={conversation}
+          labels={{
+            thinkingLabel: "Thought process",
+            toolCallsLabel: (count: number) => `Tool calls (${count})`,
+            processing: "Planning next moves",
+            turnSummary: "Changed files"
+          }}
+          onForkThroughTurn={vi.fn()}
+        />
+      );
+      expect(
+        screen.queryByRole("button", {
+          name: "agentHost.agentGui.forkThroughTurn"
+        })
+      ).toBeNull();
+    }
+  );
+
+  it("hides Fork when provider binding recovery is unavailable", () => {
     const detail = detailViewModel();
     const conversation = projectAgentConversationVM(
       detailViewModel({
@@ -302,6 +350,7 @@ describe("AgentTranscriptView", () => {
             outcome: "completed",
             phase: "settled",
             providerForkBindingAvailable: false,
+            providerForkBindingState: "unavailable",
             settledAtUnixMs: 7_000
           })
         ]
@@ -1336,6 +1385,65 @@ describe("AgentTranscriptView", () => {
         vi.advanceTimersByTime(2_000);
       });
       expect(screen.getByText("Processed for 47s")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("replaces live duration and pauses the processing animation during an observation gap", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(50_000);
+    const turn = canonicalTurn();
+    const baseDetail = detailViewModel();
+    try {
+      const { container } = render(
+        <AgentObservationGapSourceProvider
+          source={{
+            getObservationGap: (agentSessionId, turnId) =>
+              agentSessionId === "session-1" && turnId === "turn-1"
+                ? {
+                    startedAtUnixMs: 48_000,
+                    presentationState: "peer-offline"
+                  }
+                : null,
+            subscribe: () => () => undefined
+          }}
+        >
+          <AgentTranscriptView
+            conversation={projectAgentConversationVM(
+              detailViewModel({
+                session: {
+                  ...baseDetail.session,
+                  activeTurnId: turn.turnId,
+                  activeTurn: turn
+                },
+                sessionTurns: [turn],
+                showProcessingIndicator: true
+              })
+            )}
+            labels={{
+              thinkingLabel: "Thought process",
+              toolCallsLabel: (count) => `Tool calls (${count})`,
+              processing: "Planning next moves",
+              turnSummary: "Changed files"
+            }}
+          />
+        </AgentObservationGapSourceProvider>
+      );
+
+      expect(
+        screen.getByText("Other device offline · Progress pending sync")
+      ).toBeTruthy();
+      expect(screen.queryByText("Processed for 43s")).toBeNull();
+      expect(
+        container.querySelector(".tsh-inline-loading-ellipsis--entry-timing")
+      ).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(2_000);
+      });
+      expect(
+        screen.getByText("Other device offline · Progress pending sync")
+      ).toBeTruthy();
     } finally {
       vi.useRealTimers();
     }
@@ -3478,6 +3586,7 @@ function canonicalTurn(
     origin: "user_prompt",
     phase: "running",
     providerForkBindingAvailable: true,
+    providerForkBindingState: "bound",
     startedAtUnixMs: 5_000,
     turnId: "turn-1",
     updatedAtUnixMs: 6_000,
@@ -3498,6 +3607,10 @@ function translateTestKey(
       return `Processed for ${minutes}m`;
     case "agentHost.agentGui.turnProcessedMinutesSeconds":
       return `Processed for ${minutes}m ${seconds}s`;
+    case "agentHost.agentGui.turnPeerDeviceOfflinePendingSync":
+      return "Other device offline · Progress pending sync";
+    case "agentHost.agentGui.turnPeerDeviceProgressSynchronizing":
+      return "Synchronizing progress from other device…";
     case "agentHost.agentGui.turnTotalSeconds":
       return `Total ${seconds}s`;
     case "agentHost.agentGui.turnTotalMinutes":

@@ -45,7 +45,7 @@ type AgentSessionService interface {
 	Clear(context.Context, string) (agentservice.ClearSessionsResult, error)
 	Delete(context.Context, string, string) (agentservice.DeleteSessionResult, error)
 	CancelTurn(context.Context, string, string, string) (agentservice.CancelTurnResult, error)
-	GoalControl(ctx context.Context, workspaceID string, agentSessionID string, action string, objective string) (agentservice.GoalControlSessionResult, error)
+	GoalControl(ctx context.Context, workspaceID string, agentSessionID string, action string, objective string, clientSubmitID string) (agentservice.GoalControlSessionResult, error)
 	GetGoalState(context.Context, string, string) (agentservice.GoalStateSessionResult, error)
 	ReconcileGoal(context.Context, string, string) (agentservice.GoalStateSessionResult, error)
 	SendInput(context.Context, string, string, agentservice.SendInput) (agentservice.SendInputResult, error)
@@ -215,7 +215,7 @@ func (api DaemonAPI) ListWorkspaceAgentSessionMessages(ctx context.Context, requ
 		}
 		input.Limit = *request.Params.Limit
 	}
-	slog.Info("workspace agent session messages list requested",
+	slog.Debug("workspace agent session messages list requested",
 		"event", "workspace.agent_session.messages.api.list_requested",
 		"workspace_id", workspaceID,
 		"agent_session_id", agentSessionID,
@@ -270,7 +270,7 @@ func (api DaemonAPI) ListWorkspaceAgentSessionMessages(ctx context.Context, requ
 		return writeListWorkspaceAgentSessionMessagesError(err), nil
 	}
 	firstVersion, lastVersion := generatedAgentSessionMessageVersionRange(messages)
-	slog.Info("workspace agent session messages list completed",
+	slog.Debug("workspace agent session messages list completed",
 		"event", "workspace.agent_session.messages.api.list_completed",
 		"workspace_id", workspaceID,
 		"agent_session_id", agentSessionID,

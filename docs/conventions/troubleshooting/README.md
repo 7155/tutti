@@ -41,7 +41,8 @@ Use the focused runtime index or open one area directly:
   unknown after canonical message provenance conflicts, completed Claude Code
   Turns that lack a Fork entry because provider identity was not observed from
   the durable transcript, and Claude Fork operations that fail because an empty
-  SDK query never creates a durable provider child.
+  query never creates a durable provider child. It also covers a Claude Query
+  that keeps returning connection errors after the machine network recovers.
 - [Agent Approvals And Child Sessions](./agent-approvals-subagents.md): Approval gates, plan exits, root/parent/child event attribution, child sessions, and Message Center.
   Includes provider-native work that continues invisibly after root cancellation
   and late child creation racing the durable cancel boundary.
@@ -111,6 +112,7 @@ App Center, workspace-app lifecycle, App Factory, file references, and File Mana
 
 - [App Factory job keeps loading after AgentGUI Stop](./workspace-apps-files.md#app-factory-job-keeps-loading-after-agentgui-stop)
 - [App Center list requests repeatedly log runtime preload](./workspace-apps-files.md#app-center-list-requests-repeatedly-log-runtime-preload)
+- [Workspace app commands fail inside Corepack before pnpm starts](./workspace-apps-files.md#workspace-app-commands-fail-inside-corepack-before-pnpm-starts)
 - [Workspace app uninstall fails on cached manifest validation](./workspace-apps-files.md#workspace-app-uninstall-fails-on-cached-manifest-validation)
 - [Workspace app update reopens the old dock window](./workspace-apps-files.md#workspace-app-update-reopens-the-old-dock-window)
 - [Agent inline app opening leaks into the OS App Center](./workspace-apps-files.md#agent-inline-app-opening-leaks-into-the-os-app-center)

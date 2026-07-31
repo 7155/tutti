@@ -159,7 +159,23 @@ provider runtime observation
 
 `services/tuttid/api/openapi/tuttid.v1.yaml` is authoritative for HTTP request/response contracts. It projects the canonical domain; it does not replace `store-sqlite/canonical`.
 
-### 2.4 On-demand status
+### 2.4 Ephemeral observation gaps
+
+A Host may expose an ephemeral observation gap for one exact Session and Turn
+when its caller-side projection may be stale. The gap is presentation-only:
+AgentGUI pauses the processing animation, keeps recovery chrome visible, and
+blocks commands that require current state until the Host removes the gap. A
+Host may additionally classify the gap as peer-offline or synchronizing; while
+that classification is present, AgentGUI replaces the numeric live duration
+with the matching status copy. An older Host that omits the classification
+retains the frozen-duration fallback.
+
+An observation gap does not settle, interrupt, or otherwise rewrite the
+canonical Turn. The Host owns reconnect and catch-up fencing and must remove
+the gap only after the same Turn is authoritative again. When the capability
+is absent, AgentGUI preserves its existing lifecycle presentation.
+
+### 2.5 On-demand status
 
 AgentGUI owns one provider-neutral `AgentStatusController` for `/status`, Agent
 Info, and Agent Config. These surfaces are explicit bounded reads; mounting an
@@ -231,7 +247,7 @@ Tutti Agent use their validated local credential files as the primary auth
 signal; malformed files may fall back to one CLI check. Cursor's single
 `about --format json` result supplies both auth and version when available.
 
-### 2.5 Developer cassette replay
+### 2.6 Developer cassette replay
 
 The developer-only `agent.sessionRecording` desktop preference defaults off.
 When enabled, Desktop injects its recording and replay controls through generic
@@ -576,7 +592,8 @@ The engine owns:
 - canonical Session, Turn, Interaction, and Message indexes
 - pending activation/submit intents and optimistic projections
 - prompt queue, send-now, and cancel-then-send coordination
-- session mutation, settings, composer options, and operation state
+- session mutation, Goal Control, settings, composer options, and operation
+  state
 - workspace/session reconciliation state
 - ephemeral per-Session runtime command availability projected by the host
 - attention/read state and cross-surface selectors
@@ -664,14 +681,15 @@ disable submission, but must not change editor editability.
   Mobile retain only transport and DTO mapping in their
   `EngineExtensionCommand` adapters
 - the Engine alone translates shared activation, prompt send, settings update,
-  turn cancel, Interaction response, rename, pin, and batch-delete commands
-  into `AgentSessionEffectPort` calls. Desktop and Mobile effect ports retain
-  transport and DTO mapping but must not duplicate a command-type switch for
-  these shared effects. Host activity facades call
+  Goal Control, turn cancel, Interaction response, rename, pin, and
+  batch-delete commands into `AgentSessionEffectPort` calls. Desktop and Mobile
+  effect ports retain transport and DTO mapping but must not duplicate a
+  command-type switch for these shared effects. Host activity facades call
+  `engine.activateSession`, `engine.submitPrompt`, `engine.controlGoal`,
   `engine.stopSession`, `engine.updateSessionSettings`, `engine.renameSession`,
-  `engine.setSessionPinned`, and `engine.deleteSessions`; these deep methods
-  own the applicable workspace projection, command or mutation identity,
-  timeout, cancellation, settlement, and canonical result projection. Settings
+  `engine.setSessionPinned`, and `engine.deleteSessions`; these deep methods own
+  the applicable workspace projection, protocol or mutation identity, timeout,
+  cancellation, settlement, and canonical result projection. Settings
   update is fire-and-observe intent admission rather than a settlement Promise:
   the existing settings-operation selector remains the source of pending,
   failed, and unknown state. Hosts must not reconstruct mutation protocol with
@@ -681,6 +699,45 @@ disable submission, but must not change editor editability.
   identity, 30-second cancellation timeout, duplicate fence, and 30-second
   first-Turn waiting window. Desktop AgentGUI and Native Mobile call
   `engine.stopSession` and never construct raw `session/stopRequested` fields.
+  Existing-Session Goal Control is also fire-and-observe admission. The caller
+  proposes one stable `clientSubmitId`; the Engine admission returns the
+  effective identity used for settlement. The Engine owns workspace scope,
+  command identity, the 30-second transport timeout, one in-flight operation
+  per Session, optimistic Goal projection, typed result validation, and
+  delivery-unknown reconciliation. AgentGUI reads
+  `selectSessionGoalControlPresentation` and never stores a parallel optimistic
+  Goal or settles the transport Promise itself. Desktop and Mobile effects send
+  the request and map the authoritative Session/Goal/operation evidence only.
+  Session activation enters through `engine.activateSession`. Desktop AgentGUI
+  and Native Mobile keep product-specific target selection, placement, initial
+  content/settings, and stable request identities, while the Engine owns
+  workspace scope, timestamps, construction of `activation/requested`, the
+  accepted result, and one 120-second confirmation window. The confirmation
+  deadline is later than the 90-second new-Session command timeout so a valid
+  slow runtime startup cannot expire while the command may still succeed.
+  The typed activation effect returns either the created authoritative Session
+  or the resumed Session's authoritative detail aggregate. The Engine validates
+  the versioned `activation-v1` result contract, result scope, mode, and every
+  nested Session/Turn/Interaction entity, then projects the aggregate in its
+  own drain. Untagged or opaque legacy command-port results remain
+  acknowledgements and do not enter canonical state. Desktop and Mobile effects
+  retain transport, DTO mapping, and product-local integration/observability
+  concerns, but must not pre-dispatch those projections.
+  Canonical monotonicity guards prevent a late activation response from
+  regressing newer realtime state.
+  Surfaces clear a new-Session draft only after activation admission succeeds.
+  If an admitted new-Session activation is canceled before canonical Session
+  confirmation, the surface restores the submitted draft only while the
+  current draft is still empty, releases the pending `clientSubmitId`, and
+  allocates a fresh identity for the next explicit submission.
+  Existing-Session Prompt submission enters through `engine.submitPrompt`.
+  The surface keeps the stable `clientSubmitId` used by its draft-recovery and
+  idempotent-retry bookkeeping; the Engine owns workspace scope, timestamps,
+  routing protocol, the shared 120-second confirmation window, and the
+  accepted/queued admission result. Desktop AgentGUI and Native Mobile clear a
+  submitted draft only after that result confirms admission, and never
+  construct raw `submit/requested` fields or rebuild admission from selectors.
+  New-Session initial content continues to travel with activation.
   Platform-only commands remain in each host's `EngineExtensionCommand`
   adapter. Every effect propagates the Engine-owned AbortSignal to its
   transport. Rename, pin, and delete settle through the shared Session-mutation
@@ -902,15 +959,28 @@ timeout and retry policy, and translates the semantic call to its internal
 the activation intent instead; provider-independent draft projection and
 Desktop-persisted defaults remain surface policy until activation. A renderer
 must not call the settings endpoint from a component or invent a
-provider-specific settings schema.
+provider-specific settings schema. Desktop and Mobile project the broader
+Engine settings through one generated-contract allowlist before composer-option
+or existing-Session settings requests. Both preserve supported fields such as
+`browserUse`; neither sends `computerUse` until OpenAPI adds that request field.
+Existing-Session Prompt sends similarly enter through `engine.submitPrompt`;
+Desktop and Mobile provide content plus a stable client submit identity, while
+the Engine owns common routing, confirmation expiry, and admission projection.
+New- and existing-Session activation enters through `engine.activateSession`.
+The surfaces retain target selection, placement, initial draft projection, and
+stable request identity; the Engine derives workspace and timing fields,
+projects the typed intent, and reports whether it was admitted. Actual Session
+creation, resume, and initial Turn lifecycle remain owned by Agent Host behind
+the host effect port.
 
 An activation intent's shared Session settings are not an HTTP create-field
 allowlist. Each host must construct a typed
 `CreateWorkspaceAgentSessionRequest` and forward only fields present in the
-generated contract. In particular, `computerUse` is a default-on runtime
-setting but is not currently a create-request field; Mobile must not add it as
-an extra property. Supporting an explicit first-Turn opt-out requires changing
-OpenAPI and the create adapter first.
+generated contract. Both hosts preserve `browserUse`, which is a supported
+create field. In contrast, `computerUse` is a default-on runtime setting but is
+not currently a create-request field; neither host may add it as an extra
+property. Supporting an explicit first-Turn opt-out requires changing OpenAPI
+and the create adapters first.
 
 Desktop and Mobile construct the headless controller through
 `@tutti-os/agent-gui/conversation-rail-controller` and supply its narrow
@@ -1195,6 +1265,12 @@ The provider descriptor's target sort order owns the default built-in Agent
 order. Tutti Agent is the first built-in target; an explicit device-local
 Provider Rail reorder remains a presentation preference and takes precedence
 over that default.
+
+Tutti Agent is also the first Desktop default Provider for ambiguous new
+entries. An exact persisted Agent Target or an explicit launch request still
+takes precedence. AgentGUI and launch surfaces that require readiness fall back
+through the authoritative ready Agent Directory when that default is
+unavailable.
 
 The directory owns Agent presentation. `agents[].iconUrl` is the primary
 presentation asset used by conversation identity, Message Center, mentions,
@@ -1528,16 +1604,20 @@ start a Commerce request.
 The optional `renderSlots.agentConfigAccount` is a presentation-only Host
 chrome seam for the exact selected Agent Target. Its paired
 `hostActions.onAgentConfigMenuOpen` notification lets the Host refresh account
-state without hiding workflow in the render slot. Returning no content keeps
-the provider account and quota block unchanged. AgentGUI never derives billing
-ownership from provider identity.
+state without hiding workflow in the render slot. Returning no renderable
+content keeps the provider account and quota block unchanged. Returning the
+package-owned `AgentGUIConfigAccountFallbackSuppressed` marker suppresses those
+generic fallback rows without adding Host content.
 
 Tutti Desktop fills this seam only for its self-owned local Tutti Agent target.
 The Desktop Account service remains the source of account, membership, credit,
 and Commerce-link state; opening the target menu asks that service to refresh,
-and the render slot stays request-free. Signed-out, shared, and non-Tutti
-targets return no Host content and retain AgentGUI's provider account and quota
-presentation.
+and the render slot stays request-free. Its compact Agent menu omits the
+redundant Tutti account identity row while retaining credit, membership, and
+account-center actions. A signed-out local Tutti Agent returns the suppression
+marker because the generic provider-account and quota rows do not describe its
+Host-owned account model. Other providers return `null` and retain AgentGUI's
+default provider-account and quota presentation.
 The optional `renderSlots.agentTargetInfo` seam enriches the exact target icon
 in the provider Rail and Conversation Rail. The same
 `AgentGUIAgentTargetInfoRenderer` may be passed to
@@ -1554,7 +1634,15 @@ package signals such as `hostActions.onConversationRailLayoutChange`; it must
 not observe package DOM, CSS variables, or class names with
 `MutationObserver`. Composer affordances belong in AgentGUI itself or a
 narrow `renderSlots` contract, not in host-owned portals inserted into package
-DOM.
+DOM. During a Conversation Rail drag, AgentGUI emits this signal with
+`resizing: true`; the Workbench and standalone desktop headers apply that
+ephemeral width only to their own grid alignment, while the existing
+`onUpdateNode` path remains the sole persistent width write. Hosts must not
+write node state for each pointer movement. AgentGUI updates both its grid
+track (`--agent-gui-conversation-rail-width`) and the Rail content width
+(`--agent-gui-conversation-rail-content-width`) in that same pointer move;
+updating only one leaves blank space when expanding or overflows detail content
+when shrinking.
 
 ### 6.3 `AgentActivityRuntime` and `AgentHostApi`
 
@@ -1737,13 +1825,18 @@ back to the engine draft when no snapshot exists. `capabilityRefs` remain
 independent audit provenance and must never substitute for
 `initialTuttiModeActivation`.
 An activation may instead carry `initialGoalControl`. In that branch the engine
-and runtime adapter preserve the structured `{action, objective}` command, the
-host integration creates a non-provisional Session without initial content,
-and Goal control completes without manufacturing a Turn. The structured field
-is authoritative; integrations must not reparse the display prompt to recover
-Goal semantics. AgentGUI represents the pending control and its durable audit
-with the same client-submit presentation identity, so canonical replacement
-does not remove and recreate the visible `goal-control` row.
+and runtime adapter preserve the structured `{action, objective}` command.
+Desktop and Mobile map it to the typed `initialGoalControl` Create field and
+send an empty `initialContent`; the daemon delegates that field to Agent Host,
+which creates a non-provisional Session and the durable Goal operation without
+manufacturing a Turn. Typed initial Goal and non-empty initial content are
+mutually exclusive. The structured field is authoritative; integrations must
+not reparse the display prompt or forward `/goal ...` as backend command text
+to recover Goal semantics. Host retains text parsing only for compatibility
+callers that omit the structured field. AgentGUI represents the pending control
+and its durable audit with the same client-submit presentation identity, so
+canonical replacement does not remove and recreate the visible `goal-control`
+row.
 The pending activation carries the same resolved project section key as the
 create command. Exact rail projection therefore shows the conversation as soon
 as the intent is accepted; it does not wait for provider startup or invent a
@@ -1792,6 +1885,44 @@ composer submit
 ```
 
 A successful response includes the exact Turn. Clients must not repair a missing Turn by polling, sleeping, or synthesizing an entity.
+
+### 7.2.1 Existing conversation Goal Control
+
+```text
+AgentGUI goal action or structured /goal submit
+  -> engine.controlGoal(action, clientSubmitId)
+  -> Engine Goal operation + optimistic Goal projection
+  -> Desktop or Mobile AgentSessionEffectPort.controlGoal
+  -> tuttid HTTP request carrying the same clientSubmitId
+  -> Agent Host durable Goal saga
+  -> typed Session/Goal/operation result
+  -> Engine validates Goal state and applies the returned canonical Session
+```
+
+Every admitted action reaches Host, even when the projected Goal already has
+the requested value, because Host owns the durable revision, operation, and
+audit. A typed response with `pending` or `applying` Goal state is `accepted`;
+`synced` is `succeeded`; explicit `failed`, `diverged`, and `unknown` states
+remain distinct. Only definitive protocol rejections become frontend
+`failed`. Timeout, transport loss, an opaque legacy acknowledgement, or a
+malformed typed success remains `unknown`; generic Session reconciliation does
+not prove the outcome of a particular Goal operation. Retrying the same action
+from `unknown` reuses its original `clientSubmitId`, so Host resolves the same
+durable operation instead of creating a second one. A canonical Session Goal
+cannot settle the operation by value equality because it carries no operation
+identity. At most one operation record is retained per Session and Session
+removal clears it. The package root exposes presentation and settlement
+selectors, and the public Engine snapshot contains only their derived state,
+not the raw Goal operation ledger. These maps are sparse and update only the
+Session IDs whose Goal, Goal operation, or Goal-bearing activation changed, so
+Turn streaming and unrelated Session changes preserve the Goal branch and
+unaffected presentation references. The response `goal` is Host's durable
+desired projection; provider observation remains in Goal state and may be
+empty without clearing the visible Goal. Only a durable tombstone produces
+`goal: null`. A definitive failure releases the old identity; only an unknown
+result retains it for an explicit retry. The legacy
+`AgentActivityRuntime.goalControl` adapter remains a compatibility surface,
+but shared AgentGUI does not call it.
 
 ### 7.3 Interaction response
 
@@ -1957,7 +2088,9 @@ activation flags, and those rows consume their live `IAgentsService` Targets
 and package-provided identity assets rather than becoming built-in provider
 descriptors. Its Enable/Disable control reads all Agent Targets from
 `IAgentsService` and persists the daemon-owned Agent Target `enabled` field.
-Disabled targets remain in this settings control plane so they can be
+Tutti Agent is the built-in exception: its target is always enabled, its row
+cannot be disabled, and it has no separate developer visibility switch.
+Other disabled targets remain in this settings control plane so they can be
 re-enabled, but they are excluded from the AgentGUI agent projection and from
 CLI discovery and launch. The device-global provider-rail preferences remain
 presentation-only (ordering and optional sidebar personalization); they do not

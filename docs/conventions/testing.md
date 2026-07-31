@@ -47,6 +47,14 @@ pre-running every boundary/typecheck lane that `check:changed` already owns;
 some overlap between its selected tests and an intentionally broader suite may
 be unavoidable.
 
+Tests that verify recovery semantics after a timeout should inject the
+appropriate deadline error directly instead of depending on a very short
+wall-clock timer. Reserve real timers for tests whose subject is the timeout
+boundary itself, and give those timers enough scheduling margin for a parallel
+CI runner while keeping a separate generous upper-bound assertion. This keeps
+provider-timeout behavior distinct from runner scheduling and fixture startup
+latency.
+
 `pnpm check:full` prepares builtin app assets once, then uses the prepared Go
 lint and test entrypoints. This prevents concurrent validation lanes from
 writing the same generated assets. It captures complete task output under

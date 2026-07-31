@@ -2,6 +2,7 @@ import type {
   AgentActivityComposerOptions,
   AgentActivityComposerOptionsLoadStatus
 } from "./composerOptions.types.ts";
+import type { AgentActivityInitialGoalControl } from "./goalControl.types.ts";
 import type {
   AgentActivityDurableMessage,
   AgentActivityMessage,
@@ -348,12 +349,14 @@ export interface AgentActivityCreateSessionInput {
   cwd?: string | null;
   noProject?: boolean | null;
   capabilityRefs?: readonly AgentActivityCapabilityReference[] | null;
+  initialGoalControl?: AgentActivityInitialGoalControl | null;
   initialTuttiModeActivation?: AgentActivityInitialTuttiModeActivation | null;
   railPlacement?: AgentActivityRailPlacement;
   initialContent?: AgentPromptContentBlock[] | null;
   /** 仅展示用的首轮文本(bundle 折叠成一个 chip);initialContent 仍带展开后的文件。 */
   initialDisplayPrompt?: string | null;
   submitDiagnostics?: AgentActivitySubmitDiagnostics;
+  browserUse?: boolean | null;
   model?: string | null;
   planMode?: boolean | null;
   permissionModeId?: string | null;
@@ -431,6 +434,8 @@ export type {
 export interface AgentActivityGoalControlResult {
   session: AgentActivitySession;
   goal?: AgentActivitySessionGoal | null;
+  operationId?: string | null;
+  state?: AgentActivitySessionGoalState | null;
 }
 
 export interface AgentActivitySubmitInteractiveInput {
@@ -515,6 +520,11 @@ export type AgentActivityTurnOutcome =
   | "canceled"
   | "interrupted";
 
+export type AgentActivityProviderForkBindingState =
+  | "bound"
+  | "recovery_required"
+  | "unavailable";
+
 /**
  * Durable provenance assigned when the Turn is created. Historical Turns must
  * remain `legacy_unknown`; clients must never infer an origin from later state.
@@ -533,8 +543,10 @@ export interface AgentActivityCompletedCommand {
 
 export interface AgentActivityTurn {
   agentSessionId: string;
-  /** Exact selected-Turn binding needed to attempt a provider-native Fork. */
+  /** Whether the exact provider Turn binding is already durably persisted. */
   providerForkBindingAvailable?: boolean;
+  /** Distinguishes a bound Turn from one that may enter on-demand recovery. */
+  providerForkBindingState?: AgentActivityProviderForkBindingState;
   /** Audit-only capability provenance for the turn; never current mode state. */
   capabilityRefs?: readonly AgentActivityCapabilityReference[];
   completedCommand?: AgentActivityCompletedCommand | null;
@@ -609,6 +621,27 @@ export interface AgentActivitySessionGoal {
   iterations?: number;
   durationMs?: number;
   tokens?: number;
+}
+
+export type AgentActivitySessionGoalSyncStatus =
+  | "pending"
+  | "applying"
+  | "synced"
+  | "diverged"
+  | "unknown"
+  | "failed";
+
+export interface AgentActivitySessionGoalState {
+  desired?: AgentActivitySessionGoal | null;
+  observed?: AgentActivitySessionGoal | null;
+  revision: number;
+  tombstoned: boolean;
+  syncStatus: AgentActivitySessionGoalSyncStatus;
+  pendingOperationId?: string | null;
+  lastEvidence: Readonly<Record<string, unknown>>;
+  lastError?: string;
+  observedAtUnixMs?: number | null;
+  updatedAtUnixMs: number;
 }
 
 export interface AgentActivitySessionUsage {

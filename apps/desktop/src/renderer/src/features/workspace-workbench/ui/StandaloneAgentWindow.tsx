@@ -79,6 +79,7 @@ import { useWorkspaceSettingsService } from "./useWorkspaceSettingsService";
 import type { WorkspaceWorkbenchCapabilitySettingsTarget } from "../services/workspaceWorkbenchHostService.interface";
 import { resolveDesktopWindowIntent } from "@shared/contracts/windowIntent.ts";
 import { useStandaloneAgentLaunchRouting } from "./useStandaloneAgentLaunchRouting.ts";
+import { useStandaloneAgentWindowConversationRailLayout } from "./useStandaloneAgentWindowConversationRailLayout.ts";
 import {
   StandaloneAgentWindowHeader,
   useStandaloneAgentWindowHeaderIdentity
@@ -509,6 +510,8 @@ export function StandaloneAgentWindow({
     [desktopApi.dockPreviewCache]
   );
   const instanceId = useMemo(() => createAgentGuiWorkbenchInstanceId(), []);
+  const { onConversationRailLayoutChange, railLayoutStore } =
+    useStandaloneAgentWindowConversationRailLayout(standaloneAgentNodeId);
   const activeAgentTargetId = nodeState.agentTargetId?.trim() || null;
   const activeAgent = agents.find(
     (agent) => agent.agentTargetId === activeAgentTargetId
@@ -774,6 +777,7 @@ export function StandaloneAgentWindow({
               identity={headerIdentity}
               nodeId={standaloneAgentNodeId}
               providerRailWidthPx={agentGuiWorkbenchProviderRailWidthPx}
+              railLayoutStore={railLayoutStore}
               primaryAccessory={<AppUpdateStatus presentation="standalone" />}
               toolSidebar={isContentLoading ? null : toolSidebar}
               showConversationRailToggle={!isContentLoading}
@@ -859,6 +863,7 @@ export function StandaloneAgentWindow({
                 agentGuiHostInput.trackAgentProviderChatReady
               }
               onEngagementEvent={trackStandaloneAgentGUIEngagement}
+              onConversationRailLayoutChange={onConversationRailLayoutChange}
               trackWorkspaceFileReferences={
                 agentGuiHostInput.trackWorkspaceFileReferences
               }

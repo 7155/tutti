@@ -9,6 +9,7 @@ import {
   type ReactNode,
   type Ref
 } from "react";
+import { providerForkBindingAllowsAttempt } from "@tutti-os/agent-activity-core";
 import type { WorkspaceLinkAction } from "../../../contexts/workspace/presentation/renderer/actions/workspaceLinkActions";
 import type { AgentMessageMarkdownWorkspaceAppIcon } from "../../AgentMessageMarkdown";
 import type { AgentGUIProviderSkillOption } from "../../../agent-gui/agentGuiNode/model/agentGuiNodeTypes";
@@ -40,6 +41,7 @@ import {
   escapeCssString,
   findLastMessageRowIndex,
   findTurnDividerRowIndexes,
+  isAssistantParticipantContentRow,
   transcriptRowKey,
   useAgentTranscriptDisplayRows,
   useEnteringTranscriptRows,
@@ -61,6 +63,7 @@ import {
   type AgentTranscriptEditRetryControl,
   useAgentTranscriptEditRetryProjection
 } from "./useAgentTranscriptEditRetryProjection";
+import { useAgentObservationGap } from "../AgentObservationGapContext";
 
 const AGENT_TRANSCRIPT_DISCLOSURE_TURN_GAP_PX = 24;
 const AGENT_TRANSCRIPT_LEGACY_TURN_GAP_PX = 12;
@@ -129,22 +132,6 @@ function participantPresentationEqual(
   );
 }
 
-function isAssistantParticipantContentRow(
-  row: AgentConversationVM["rows"][number]
-): boolean {
-  switch (row.kind) {
-    case "message":
-      return row.speaker === "assistant";
-    case "generated-image":
-    case "processing":
-    case "tool-group":
-    case "turn-summary":
-      return true;
-    case "goal-control":
-      return false;
-  }
-}
-
 function transcriptLabelsEqual(
   previous: AgentTranscriptViewProps["labels"],
   next: AgentTranscriptViewProps["labels"]
@@ -186,6 +173,7 @@ function transcriptCanonicalTurnsEqual(
           turn.outcome === nextTurn.outcome &&
           turn.providerForkBindingAvailable ===
             nextTurn.providerForkBindingAvailable &&
+          turn.providerForkBindingState === nextTurn.providerForkBindingState &&
           turn.startedAtUnixMs === nextTurn.startedAtUnixMs &&
           turn.settledAtUnixMs === nextTurn.settledAtUnixMs
         );
@@ -296,6 +284,9 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
     virtualListOffsetFromScrollOrigin,
     setVirtualListOffsetFromScrollOrigin
   ] = useState(0);
+  const agentSessionId = conversation.sourceDetail.session.agentSessionId;
+  const activeTurnId = conversation.sourceDetail.session.activeTurnId;
+  const observationGap = useAgentObservationGap(agentSessionId, activeTurnId);
   const participantHeadersEnabled = participantPresentation?.enabled === true;
   // Participant-header presentation (Agent board session detail): tool-group
   // rows attach to the assistant message that follows them instead of sitting
@@ -381,7 +372,15 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
           isActiveTurn,
           {
             collapseIntermediateAssistantReplies:
-              !conversation.sourceDetail.session.imported
+              !conversation.sourceDetail.session.imported,
+            liveFrozenAtUnixMs:
+              group.turnId !== null && group.turnId === activeTurnId
+                ? observationGap?.startedAtUnixMs
+                : null,
+            liveObservationGapPresentationState:
+              group.turnId !== null && group.turnId === activeTurnId
+                ? observationGap?.presentationState
+                : null
           }
         )
       ] as const;
@@ -402,7 +401,6 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
     () => assessAgentTranscriptComplexity(turnGroups).shouldVirtualize,
     [turnGroups]
   );
-  const agentSessionId = conversation.sourceDetail.session.agentSessionId;
   const { rowVirtualizer, setVirtualizerHostElement, virtualizerHostRef } =
     useAgentTranscriptVirtualizer({
       agentSessionId,
@@ -558,6 +556,12 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
           participantPresentation={participantPresentation}
           showParticipantHeader={showParticipantHeader}
           isActiveTurn={isActiveTurn}
+          processingPaused={
+            isActiveTurn &&
+            row.turnId !== null &&
+            row.turnId === activeTurnId &&
+            observationGap !== null
+          }
           toolGroupExpanded={
             row.kind === "tool-group"
               ? expandedToolRows[rowKey] === true
@@ -585,7 +589,7 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
       lifecycleCapabilities.forkThroughTurn !== true ||
       !canonicalTurn ||
       canonicalTurn.phase !== "settled" ||
-      canonicalTurn.providerForkBindingAvailable !== true
+      !providerForkBindingAllowsAttempt(canonicalTurn)
     ) {
       return null;
     }

@@ -53,6 +53,7 @@ describe("P0 new-conversation placement scenarios", () => {
     );
 
     const activation = await scenario.waitForActivation();
+    expect(scenario.activateSession).toHaveBeenCalledTimes(1);
     expect(activation).toMatchObject({
       cwd: "",
       initialContent: [{ type: "text", text: "start a new chat" }],
@@ -190,6 +191,7 @@ function renderNewConversationScenario(input: {
     identity: { origin: "test", workspaceId: "workspace-1" },
     scheduler: { schedule: () => ({ cancel() {} }) }
   });
+  const activateSession = vi.spyOn(sessionEngine, "activateSession");
   const target = createLocalAgentGUIAgentTarget("codex");
   const dataRef: { current: AgentGUINodeData } = {
     current: {
@@ -318,6 +320,7 @@ function renderNewConversationScenario(input: {
     });
     const { submitPrompt } = useAgentGUISubmitInteractionActions({
       activation,
+      activeConversationId: activeConversationIdRef.current,
       activeConversationIdRef,
       activeEngineActiveTurn: null,
       activeEnginePendingInteractions: [],
@@ -331,7 +334,6 @@ function renderNewConversationScenario(input: {
       isCurrentConversation: () => false,
       isRespondingToInteraction: false,
       isSessionMarkedNonResumable: () => false,
-      optimisticGoalControl: null,
       persistActiveConversation: vi.fn(),
       planActionsRef: {
         current: {
@@ -347,7 +349,6 @@ function renderNewConversationScenario(input: {
       setDraftByScopeKey,
       setGoalClearNoticeSequence: vi.fn(),
       setIntent: vi.fn(),
-      setOptimisticGoalControl: vi.fn(),
       startConversation,
       submitPromptRef: { current: vi.fn() },
       submittedDraftSnapshotsRef,
@@ -358,6 +359,7 @@ function renderNewConversationScenario(input: {
   });
 
   return {
+    activateSession,
     requestNewConversation() {
       requestAgentGUINewConversation({
         activeConversationId: activeConversationIdRef.current,

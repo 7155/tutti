@@ -30,8 +30,28 @@ func (h *Host) CreateSession(ctx context.Context, workspaceID string, input Crea
 		return CreateSessionResult{}, err
 	}
 	typedGoal, isTypedGoal := ParseTypedGoalControl(normalized, false)
+	if input.InitialGoalControl != nil {
+		if len(normalized) != 0 {
+			return CreateSessionResult{}, ErrInvalidArgument
+		}
+		typedGoal, err = normalizeTypedGoalControl(*input.InitialGoalControl)
+		if err != nil {
+			return CreateSessionResult{}, err
+		}
+		isTypedGoal = true
+	}
 	metadata := submissionMetadata(input.Metadata, input.ClientSubmitID)
 	goalMetadata := clonePayload(metadata)
+	goalInput := GoalControlInput{
+		WorkspaceID: workspaceID, AgentSessionID: input.AgentSessionID,
+		Action: typedGoal.Action, Objective: typedGoal.Objective,
+		ClientSubmitID: input.ClientSubmitID, SubmissionMetadata: goalMetadata,
+	}
+	if isTypedGoal {
+		if replay, found, replayErr := h.replayInitialGoalCreate(ctx, input, goalInput); found || replayErr != nil {
+			return replay, replayErr
+		}
+	}
 	claimMetadata := metadata
 	if isTypedGoal || len(normalized) == 0 {
 		normalized = nil
@@ -143,11 +163,8 @@ func (h *Host) CreateSession(ctx context.Context, workspaceID string, input Crea
 		return CreateSessionResult{Session: session, Canonical: canonicalSession}, nil
 	}
 	if isTypedGoal {
-		goalResult, goalErr := h.goalControl(ctx, GoalControlInput{
-			WorkspaceID: workspaceID, AgentSessionID: session.ID,
-			Action: typedGoal.Action, Objective: typedGoal.Objective,
-			SubmissionMetadata: goalMetadata,
-		})
+		goalInput.AgentSessionID = session.ID
+		goalResult, goalErr := h.goalControl(ctx, goalInput)
 		if goalErr != nil {
 			// A typed goal starts from a non-provisional, already published
 			// session. Preserve that canonical session on command failure just as
@@ -192,9 +209,15 @@ func (h *Host) CreateSession(ctx context.Context, workspaceID string, input Crea
 		CapabilityRefs: append([]CapabilityReference(nil), input.CapabilityRefs...), Content: preparedContent.Hydrated,
 		DisplayPrompt: displayPrompt, InitialTitle: initialTitle, InitialTitleBase: session.Title,
 		Metadata: cloneMap(metadata), TuttiModeSnapshot: input.TuttiModeSnapshot,
+		RequireProviderAcceptance: true,
 	})
 	if err != nil {
 		h.observeStep(ctx, "session_create", "runtime_exec", session.ID, session.Provider, startedAt, err)
+		if execResult.ProviderDispatch.Disposition == RuntimeDispatchDispositionApplied ||
+			execResult.ProviderDispatch.Disposition == RuntimeDispatchDispositionOutcomeUnknown {
+			claimPending = false
+			return CreateSessionResult{}, errors.Join(ErrSubmitDeliveryUnknown, err)
+		}
 		return CreateSessionResult{}, cleanup(err, true, true)
 	}
 	turnID = strings.TrimSpace(execResult.TurnID)
@@ -365,6 +388,7 @@ func (h *Host) SendInput(ctx context.Context, ref SessionRef, input SendInput) (
 		goalResult, goalErr := h.goalControl(ctx, GoalControlInput{
 			WorkspaceID: ref.WorkspaceID, AgentSessionID: ref.AgentSessionID,
 			Action: typedGoal.Action, Objective: typedGoal.Objective,
+			ClientSubmitID:     input.ClientSubmitID,
 			SubmissionMetadata: metadata,
 		})
 		if goalErr != nil {
@@ -466,13 +490,17 @@ func (h *Host) sendInputSerialized(
 			CapabilityRefs:                  append([]CapabilityReference(nil), input.CapabilityRefs...), Content: preparedContent.Hydrated,
 			DisplayPrompt: displayPrompt, InitialTitle: initialTitle, InitialTitleBase: session.Title,
 			Guidance: input.Guidance, Metadata: cloneMap(metadata), TuttiModeSnapshot: input.TuttiModeSnapshot,
+			RequireProviderAcceptance: !input.Guidance,
 		})
 	}()
 	if err != nil {
 		h.observeStep(ctx, "message_send", "runtime_exec", ref.AgentSessionID, session.Provider, startedAt, err)
-		if input.Guidance {
+		if input.Guidance ||
+			execResult.ProviderDispatch.Disposition == RuntimeDispatchDispositionApplied ||
+			execResult.ProviderDispatch.Disposition == RuntimeDispatchDispositionOutcomeUnknown {
 			// Guidance targets an already-live turn and transport failure cannot
-			// prove rejection. Preserve the claim as a replay fence.
+			// prove rejection. A positive/unknown provider dispatch likewise
+			// preserves the claim as a recovery fence.
 			claimPending = false
 			return SendInputResult{}, errors.Join(ErrSubmitDeliveryUnknown, err)
 		}
@@ -667,6 +695,19 @@ func (h *Host) requireSendAllowedByEffectiveHistory(ctx context.Context, ref Ses
 	history, found, err := h.effectiveHistory.GetSessionHistory(ctx, ref.WorkspaceID, ref.AgentSessionID)
 	if err != nil || !found || history.RecoveryState == storesqlite.SessionHistoryRecoveryReady {
 		return err
+	}
+	if h.editRetryDisabled {
+		// Durable edit-retry is neutralized, so a fence whose owning operation is
+		// no longer in flight can never clear through the saga (recovery only
+		// quarantines claimable operations; a previously failed one is invisible
+		// to it). Heal it here so the session is not send-blocked forever; if the
+		// clear does not apply (operation still in flight), fall through to the
+		// normal fence error.
+		if cleared, clearErr := h.effectiveHistory.ClearAbandonedEditRetryFence(ctx, storesqlite.ClearAbandonedEditRetryFenceInput{
+			WorkspaceID: ref.WorkspaceID, AgentSessionID: ref.AgentSessionID, NowUnixMS: h.now().UnixMilli(),
+		}); clearErr == nil && cleared {
+			return nil
+		}
 	}
 	switch history.RecoveryState {
 	case storesqlite.SessionHistoryRecoveryRollbackPending:

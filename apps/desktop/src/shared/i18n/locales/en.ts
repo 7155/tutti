@@ -1,11 +1,11 @@
 export const en = {
   browser: {
     chromeImportNotification: {
-      completed: "Imported {{imported}} Cookies from Chrome.",
-      failed: "Chrome Cookie import did not complete.",
+      completed: "Imported {{imported}} login Cookies.",
+      failed: "Login Cookie import did not complete.",
       partial:
-        "Imported {{imported}} Cookies from Chrome; some entries were skipped or failed.",
-      title: "Chrome login state import"
+        "Imported {{imported}} login Cookies; some entries were skipped or failed.",
+      title: "Login state import"
     }
   },
   common: {
@@ -195,9 +195,6 @@ export const en = {
       newConversation: "New session",
       openNewWindow: "Open new window",
       untitledConversation: "Untitled conversation",
-      openSessionUnavailableDescription:
-        "This agent session no longer exists or cannot be opened.",
-      openSessionUnavailableTitle: "Session unavailable",
       sessionMenu: {
         copyAsMarkdown: "Copy as Markdown",
         copyAsReference: "Copy as reference",
@@ -1255,11 +1252,6 @@ export const en = {
         showAppDeveloperSourcesLabel: "Show app authors and source",
         showAppDeveloperSourcesSaveFailed:
           "We couldn't update App Center source display.",
-        tuttiAgentSwitchDescription:
-          "Shows account and agent development controls.",
-        tuttiAgentSwitchLabel: "Tutti Agent Switch",
-        tuttiAgentSwitchSaveFailed:
-          "We couldn't update Tutti Agent availability.",
         visibilityDescription:
           "Hide this panel from settings. Tap the version number in About seven times to bring it back",
         visibilityLabel: "Show developer panel"

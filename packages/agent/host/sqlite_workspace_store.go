@@ -480,6 +480,37 @@ func (s *SQLiteWorkspaceStore) FindTurnByClientSubmitID(ctx context.Context, wor
 	return store.FindTurnByClientSubmitID(ctx, workspaceID, sessionID, clientSubmitID)
 }
 
+func (s *SQLiteWorkspaceStore) FindSubmitClaimByCanonicalTurn(
+	ctx context.Context,
+	workspaceID, sessionID, turnID string,
+) (storesqlite.SubmitClaim, bool, error) {
+	store, err := s.store(workspaceID)
+	if err != nil {
+		return storesqlite.SubmitClaim{}, false, err
+	}
+	return store.FindSubmitClaimByCanonicalTurn(
+		ctx,
+		workspaceID,
+		sessionID,
+		turnID,
+	)
+}
+
+func (s *SQLiteWorkspaceStore) RecoverProviderTurnBinding(
+	ctx context.Context,
+	input storesqlite.ProviderTurnBindingRecovery,
+) (storesqlite.ProviderTurnBindingRecoveryResult, error) {
+	store, err := s.store(input.WorkspaceID)
+	if err != nil {
+		return storesqlite.ProviderTurnBindingRecoveryResult{}, err
+	}
+	result, err := store.RecoverProviderTurnBinding(ctx, input)
+	if err == nil && result.Changed {
+		NotifyCommitted(ctx, s.Observer, CanonicalDelta(result.CommitDelta))
+	}
+	return result, err
+}
+
 func (s *SQLiteWorkspaceStore) ListLatestTurnInteractions(ctx context.Context, workspaceID string, sessionIDs []string) (map[string][]storesqlite.Interaction, error) {
 	store, err := s.store(workspaceID)
 	if err != nil {
@@ -593,6 +624,22 @@ func (s *SQLiteWorkspaceStore) FailEditRetryRecovery(ctx context.Context, input 
 		return storesqlite.RuntimeOperation{}, false, err
 	}
 	return store.FailEditRetryRecovery(ctx, input)
+}
+
+func (s *SQLiteWorkspaceStore) QuarantineEditRetryOperation(ctx context.Context, input storesqlite.QuarantineEditRetryOperationInput) (storesqlite.RuntimeOperation, bool, error) {
+	store, err := s.store(input.WorkspaceID)
+	if err != nil {
+		return storesqlite.RuntimeOperation{}, false, err
+	}
+	return store.QuarantineEditRetryOperation(ctx, input)
+}
+
+func (s *SQLiteWorkspaceStore) ClearAbandonedEditRetryFence(ctx context.Context, input storesqlite.ClearAbandonedEditRetryFenceInput) (bool, error) {
+	store, err := s.store(input.WorkspaceID)
+	if err != nil {
+		return false, err
+	}
+	return store.ClearAbandonedEditRetryFence(ctx, input)
 }
 
 func (s *SQLiteWorkspaceStore) ListSessionTurnSummaries(ctx context.Context, input storesqlite.ListSessionTurnSummariesInput) (storesqlite.SessionTurnSummaryPage, error) {

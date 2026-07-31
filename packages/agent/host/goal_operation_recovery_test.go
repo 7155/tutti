@@ -129,9 +129,8 @@ func TestGoalClearRepeatedTimeoutEventuallyFails(t *testing.T) {
 	})
 	runtime := &goalWorkerRuntime{
 		sessions: map[string]ProviderRuntimeSession{},
-		controlHook: func(ctx context.Context, _ RuntimeGoalControlInput) (RuntimeGoalControlResult, error) {
-			<-ctx.Done()
-			return RuntimeGoalControlResult{}, ctx.Err()
+		controlHook: func(context.Context, RuntimeGoalControlInput) (RuntimeGoalControlResult, error) {
+			return RuntimeGoalControlResult{}, context.DeadlineExceeded
 		},
 	}
 	runtime.setSession(ProviderRuntimeSession{
@@ -141,7 +140,7 @@ func TestGoalClearRepeatedTimeoutEventuallyFails(t *testing.T) {
 	host := New(Config{
 		CanonicalStore: goalWorkerCanonicalStore(session), Runtime: runtime,
 		GoalStore: store, GoalRuntime: runtime, GoalClock: fixedClock{at: time.UnixMilli(now)},
-		GoalAttemptTimeout: 20 * time.Millisecond, GoalMaxAttempts: 1,
+		GoalMaxAttempts: 1,
 	})
 	if err := host.StepGoalOperationWorker(t.Context(), false); err != nil {
 		t.Fatal(err)
@@ -168,16 +167,15 @@ func TestGoalRuntimeUnavailableKeepsPreparedUntilFirstProviderDispatch(t *testin
 	})
 	runtime := &goalWorkerRuntime{
 		sessions: map[string]ProviderRuntimeSession{},
-		controlHook: func(ctx context.Context, _ RuntimeGoalControlInput) (RuntimeGoalControlResult, error) {
-			<-ctx.Done()
-			return RuntimeGoalControlResult{}, ctx.Err()
+		controlHook: func(context.Context, RuntimeGoalControlInput) (RuntimeGoalControlResult, error) {
+			return RuntimeGoalControlResult{}, context.DeadlineExceeded
 		},
 	}
 	now := int64(20)
 	host := New(Config{
 		CanonicalStore: goalWorkerCanonicalStore(session), Runtime: runtime,
 		GoalStore: store, GoalRuntime: runtime, GoalClock: fixedClock{at: time.UnixMilli(now)},
-		GoalAttemptTimeout: 20 * time.Millisecond, GoalMaxAttempts: 1,
+		GoalMaxAttempts: 1,
 	})
 	if err := host.StepGoalOperationWorker(t.Context(), false); err != nil {
 		t.Fatal(err)
@@ -260,13 +258,13 @@ func TestGoalRecoveryProviderQueryAndApplyTimeoutReleaseLease(t *testing.T) {
 				CanonicalStore: goalWorkerCanonicalStore(session), Runtime: runtime,
 				GoalStore: store, GoalRuntime: runtime, GoalOwner: "goal-hang-worker",
 				GoalClock:          fixedClock{at: time.UnixMilli(now)},
-				GoalAttemptTimeout: 25 * time.Millisecond, GoalMaxAttempts: 1,
+				GoalAttemptTimeout: 500 * time.Millisecond, GoalMaxAttempts: 1,
 			})
 			started := time.Now()
 			if err := host.StepGoalOperationWorker(t.Context(), false); err != nil {
 				t.Fatalf("worker timeout: %v", err)
 			}
-			if elapsed := time.Since(started); elapsed > time.Second {
+			if elapsed := time.Since(started); elapsed > 5*time.Second {
 				t.Fatalf("worker timeout took %s", elapsed)
 			}
 			op, found, err := store.GetGoalControlOperation(
@@ -319,13 +317,13 @@ func TestGoalRecoveryStartupBudgetBoundsHangingProvider(t *testing.T) {
 		CanonicalStore: goalWorkerCanonicalStore(session), Runtime: runtime,
 		GoalStore: store, GoalRuntime: runtime, GoalOwner: "goal-startup-budget-worker",
 		GoalClock: fixedClock{at: time.UnixMilli(30)}, GoalAttemptTimeout: time.Second,
-		GoalRecoveryBudget: 40 * time.Millisecond,
+		GoalRecoveryBudget: 500 * time.Millisecond,
 	})
 	started := time.Now()
 	if err := host.RecoverGoalOperations(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if elapsed := time.Since(started); elapsed > time.Second {
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
 		t.Fatalf("startup recovery exceeded bounded budget: %s", elapsed)
 	}
 	op, found, err := store.GetGoalControlOperation(
@@ -411,14 +409,14 @@ func TestManualGoalReconcileProviderTimeoutIsBounded(t *testing.T) {
 	})
 	host := New(Config{
 		CanonicalStore: goalWorkerCanonicalStore(session), Runtime: runtime,
-		GoalRuntime: runtime, GoalAttemptTimeout: 25 * time.Millisecond,
+		GoalRuntime: runtime, GoalAttemptTimeout: 500 * time.Millisecond,
 	})
 	started := time.Now()
 	_, err := host.ReconcileGoal(t.Context(), SessionRef{
 		WorkspaceID:    session.WorkspaceID,
 		AgentSessionID: session.ID,
 	})
-	if err == nil || time.Since(started) > time.Second {
+	if err == nil || time.Since(started) > 5*time.Second {
 		t.Fatalf("err=%v elapsed=%s", err, time.Since(started))
 	}
 }

@@ -449,6 +449,237 @@ test("invalid successful activation acknowledgement remains uncertain", () => {
   );
 });
 
+test("legacy activation results remain opaque acknowledgements", () => {
+  const state = reduce(
+    createInitialPendingIntentsState(),
+    existingActivation()
+  ).state;
+  const result = reduce(state, {
+    commandId: "activate:activation-existing",
+    commandType: "session/activate",
+    correlationId: "activation-existing",
+    outcome: "succeeded",
+    type: "engine/commandResult",
+    value: {
+      activation: { mode: "existing", status: "already_attached" },
+      session: session("session-new")
+    }
+  });
+
+  assert.equal(
+    result.state.activationsByRequestId["activation-existing"]?.status,
+    "requested"
+  );
+  assert.deepEqual(result.followUpIntents, undefined);
+});
+
+test("typed new-session activation returns its authoritative Session to the Engine", () => {
+  const state = reduce(createInitialPendingIntentsState(), activation()).state;
+  const authoritativeSession = {
+    ...session("session-new"),
+    createdAtUnixMs: 2
+  };
+  const result = reduce(state, {
+    commandId: "activate:activation-1",
+    commandType: "session/activate",
+    correlationId: "activation-1",
+    outcome: "succeeded",
+    resultContract: "activation-v1",
+    type: "engine/commandResult",
+    value: {
+      activation: { mode: "new", status: "attached" },
+      session: authoritativeSession
+    }
+  });
+
+  assert.deepEqual(result.followUpIntents, [
+    { session: authoritativeSession, type: "session/upserted" }
+  ]);
+  assert.equal(
+    result.state.activationsByRequestId["activation-1"]?.status,
+    "requested"
+  );
+});
+
+test("typed existing-session activation returns its detail aggregate to the Engine", () => {
+  const state = reduce(
+    createInitialPendingIntentsState(),
+    existingActivation()
+  ).state;
+  const authoritativeSession = session("session-new");
+  const turn = { ...runningTurn(), agentSessionId: "session-new" };
+  const result = reduce(state, {
+    commandId: "activate:activation-existing",
+    commandType: "session/activate",
+    correlationId: "activation-existing",
+    outcome: "succeeded",
+    resultContract: "activation-v1",
+    type: "engine/commandResult",
+    value: {
+      activation: { mode: "existing", status: "already_attached" },
+      detail: {
+        childSessions: [],
+        lifecycleCapabilitiesProjected: true,
+        projection: "authoritative",
+        session: authoritativeSession,
+        turns: [turn]
+      },
+      session: authoritativeSession
+    }
+  });
+
+  assert.deepEqual(result.followUpIntents, [
+    {
+      childSessions: [],
+      session: authoritativeSession,
+      turns: [turn],
+      type: "session/detailSnapshotReceived",
+      workspaceId: "workspace-1"
+    }
+  ]);
+});
+
+test("typed activation results cannot omit or escape their requested scope", () => {
+  const newState = reduce(
+    createInitialPendingIntentsState(),
+    activation()
+  ).state;
+  const missingSession = reduce(newState, {
+    commandId: "activate:activation-1",
+    commandType: "session/activate",
+    correlationId: "activation-1",
+    outcome: "succeeded",
+    resultContract: "activation-v1",
+    type: "engine/commandResult",
+    value: {
+      activation: { mode: "new", status: "attached" }
+    }
+  });
+  assert.equal(
+    missingSession.state.activationsByRequestId["activation-1"]?.status,
+    "uncertain"
+  );
+  assert.deepEqual(missingSession.followUpIntents, undefined);
+
+  const existingState = reduce(
+    createInitialPendingIntentsState(),
+    existingActivation()
+  ).state;
+  const escapedChild = reduce(existingState, {
+    commandId: "activate:activation-existing",
+    commandType: "session/activate",
+    correlationId: "activation-existing",
+    outcome: "succeeded",
+    resultContract: "activation-v1",
+    type: "engine/commandResult",
+    value: {
+      activation: { mode: "existing", status: "already_attached" },
+      detail: {
+        childSessions: [
+          {
+            ...session("session-child"),
+            workspaceId: "workspace-other"
+          }
+        ],
+        lifecycleCapabilitiesProjected: true,
+        projection: "authoritative",
+        session: session("session-new"),
+        turns: []
+      },
+      session: session("session-new")
+    }
+  });
+  assert.equal(
+    escapedChild.state.activationsByRequestId["activation-existing"]?.status,
+    "uncertain"
+  );
+  assert.deepEqual(escapedChild.followUpIntents, undefined);
+});
+
+test("typed activation rejects malformed nested Session entities", () => {
+  const state = reduce(createInitialPendingIntentsState(), activation()).state;
+  const result = reduce(state, {
+    commandId: "activate:activation-1",
+    commandType: "session/activate",
+    correlationId: "activation-1",
+    outcome: "succeeded",
+    resultContract: "activation-v1",
+    type: "engine/commandResult",
+    value: {
+      activation: { mode: "new", status: "attached" },
+      session: {
+        ...session("session-new"),
+        pendingInteractions: [null]
+      }
+    }
+  });
+
+  assert.equal(
+    result.state.activationsByRequestId["activation-1"]?.errorCode,
+    "invalid_command_result"
+  );
+  assert.equal(
+    result.state.activationsByRequestId["activation-1"]?.status,
+    "uncertain"
+  );
+  assert.deepEqual(result.followUpIntents, undefined);
+});
+
+test("confirmed activation may hydrate detail but cannot be failed by a late result", () => {
+  let state = reduce(
+    createInitialPendingIntentsState(),
+    existingActivation()
+  ).state;
+  state = reduce(state, {
+    session: session("session-new"),
+    type: "session/upserted"
+  }).state;
+  assert.equal(
+    state.activationsByRequestId["activation-existing"]?.status,
+    "confirmed"
+  );
+
+  const failed = reduce(state, {
+    commandId: "activate:activation-existing",
+    commandType: "session/activate",
+    correlationId: "activation-existing",
+    outcome: "succeeded",
+    resultContract: "activation-v1",
+    type: "engine/commandResult",
+    value: {
+      activation: { mode: "existing", status: "failed" },
+      error: { code: "late_failure", message: "late failure" }
+    }
+  });
+  assert.equal(failed.state, state);
+  assert.deepEqual(failed.followUpIntents, undefined);
+
+  const hydrated = reduce(state, {
+    commandId: "activate:activation-existing",
+    commandType: "session/activate",
+    correlationId: "activation-existing",
+    outcome: "succeeded",
+    resultContract: "activation-v1",
+    type: "engine/commandResult",
+    value: {
+      activation: { mode: "existing", status: "already_attached" },
+      detail: {
+        childSessions: [],
+        lifecycleCapabilitiesProjected: true,
+        projection: "authoritative",
+        session: session("session-new"),
+        turns: [{ ...runningTurn(), agentSessionId: "session-new" }]
+      },
+      session: session("session-new")
+    }
+  });
+  assert.equal(hydrated.state, state);
+  assert.equal(
+    hydrated.followUpIntents?.[0]?.type,
+    "session/detailSnapshotReceived"
+  );
+});
+
 test("activation confirmation requires an exact workspace-scoped fresh snapshot", () => {
   let state = reduce(createInitialPendingIntentsState(), activation()).state;
   state = reduce(state, {
@@ -703,6 +934,19 @@ function activation() {
     settings: { model: "model-1" },
     title: "New session",
     workspaceId: "workspace-1"
+  };
+}
+
+function existingActivation() {
+  const {
+    clientSubmitId: _clientSubmitId,
+    optimisticTitle: _optimisticTitle,
+    ...input
+  } = activation();
+  return {
+    ...input,
+    mode: "existing" as const,
+    requestId: "activation-existing"
   };
 }
 

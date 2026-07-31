@@ -117,7 +117,12 @@ export interface PreferencesDesktopPreferencesV1 {
   agentDockLayout: "legacySplit" | "unified";
   appCatalogChannel: "production" | "staging";
   browserUseConnectionMode?: "isolated" | "autoConnect";
-  defaultAgentProvider: "claude-code" | "codex" | "cursor" | "opencode";
+  defaultAgentProvider:
+    | "tutti-agent"
+    | "claude-code"
+    | "codex"
+    | "cursor"
+    | "opencode";
   dockIconStyle: "default" | "flat";
   dockPlacement: "bottom" | "left";
   deletedAgentConversationRetentionDays: 15 | 30;
@@ -294,22 +299,40 @@ export type AgentActivityUpdatedPayloadV1 =
         eventType: "message_update";
         latestVersion: number;
         acceptedCount: number;
-        messages: readonly {
-          agentSessionId: string;
-          kind: string;
-          messageId: string;
-          payload: Record<string, unknown>;
-          role: string;
-          sequence: number;
-          version: number;
-          turnId: string;
-          status?: string;
-          occurredAtUnixMs: number;
-          startedAtUnixMs?: number;
-          completedAtUnixMs?: number;
-          createdAtUnixMs?: number;
-          updatedAtUnixMs?: number;
-        }[];
+        messages: readonly (
+          | {
+              agentSessionId: string;
+              kind: "collaboration";
+              messageId: string;
+              payload: Record<string, unknown>;
+              role: string;
+              sequence: number;
+              version: number;
+              turnId: null;
+              status?: string;
+              occurredAtUnixMs: number;
+              startedAtUnixMs?: number;
+              completedAtUnixMs?: number;
+              createdAtUnixMs?: number;
+              updatedAtUnixMs?: number;
+            }
+          | {
+              agentSessionId: string;
+              kind: string;
+              messageId: string;
+              payload: Record<string, unknown>;
+              role: string;
+              sequence: number;
+              version: number;
+              turnId: string;
+              status?: string;
+              occurredAtUnixMs: number;
+              startedAtUnixMs?: number;
+              completedAtUnixMs?: number;
+              createdAtUnixMs?: number;
+              updatedAtUnixMs?: number;
+            }
+        )[];
       };
     }
   | {

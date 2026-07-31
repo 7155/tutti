@@ -229,6 +229,35 @@ func TestAgentActivityUpdatedSessionAuditProtocolBoundary(t *testing.T) {
 	}
 }
 
+func TestAgentActivityUpdatedCollaborationMessageProtocolBoundary(t *testing.T) {
+	t.Parallel()
+	catalog := DefaultCatalog()
+	turnlessCollaboration := []byte(`{
+		"workspaceId":"workspace-1","agentSessionId":"session-1","eventType":"message_update",
+		"data":{"workspaceId":"workspace-1","agentSessionId":"session-1","eventType":"message_update","latestVersion":1,"acceptedCount":1,
+		"messages":[{"agentSessionId":"session-1","kind":"collaboration","messageId":"collab:run-1","payload":{"runId":"run-1"},"role":"assistant","sequence":1,"turnId":null,"occurredAtUnixMs":100,"version":1}]}
+	}`)
+	if err := catalog.ValidatePublish(TopicAgentActivityUpdated, DirectionServerToClient, turnlessCollaboration); err != nil {
+		t.Fatalf("turnless collaboration message rejected: %v", err)
+	}
+	missingTurnIDCollaboration := []byte(`{
+		"workspaceId":"workspace-1","agentSessionId":"session-1","eventType":"message_update",
+		"data":{"workspaceId":"workspace-1","agentSessionId":"session-1","eventType":"message_update","latestVersion":1,"acceptedCount":1,
+		"messages":[{"agentSessionId":"session-1","kind":"collaboration","messageId":"collab:run-1","payload":{"runId":"run-1"},"role":"assistant","sequence":1,"occurredAtUnixMs":100,"version":1}]}
+	}`)
+	if err := catalog.ValidatePublish(TopicAgentActivityUpdated, DirectionServerToClient, missingTurnIDCollaboration); err == nil {
+		t.Fatal("collaboration message without turnId passed event protocol validation")
+	}
+	turnScopedCollaboration := []byte(`{
+		"workspaceId":"workspace-1","agentSessionId":"session-1","eventType":"message_update",
+		"data":{"workspaceId":"workspace-1","agentSessionId":"session-1","eventType":"message_update","latestVersion":1,"acceptedCount":1,
+		"messages":[{"agentSessionId":"session-1","kind":"collaboration","messageId":"collab:run-1","payload":{"runId":"run-1"},"role":"assistant","sequence":1,"turnId":"turn-1","occurredAtUnixMs":100,"version":1}]}
+	}`)
+	if err := catalog.ValidatePublish(TopicAgentActivityUpdated, DirectionServerToClient, turnScopedCollaboration); err == nil {
+		t.Fatal("turn-scoped collaboration message passed event protocol validation")
+	}
+}
+
 func TestAgentActivityUpdatedValidationRejectsUnknownTypedEntityFields(t *testing.T) {
 	t.Parallel()
 
@@ -244,7 +273,7 @@ func TestAgentActivityUpdatedValidationRejectsUnknownTypedEntityFields(t *testin
 			"occurredAtUnixMs":1,
 			"activeTurnId":null,
 			"unexpected":true,
-			"turn":{"turnId":"turn-1","agentSessionId":"agent-session-1","providerForkBindingAvailable":false,"phase":"settled","origin":"user_prompt","outcome":"completed","error":null,"fileChanges":null,"completedCommand":null,"startedAtUnixMs":1,"settledAtUnixMs":1,"updatedAtUnixMs":1}
+			"turn":{"turnId":"turn-1","agentSessionId":"agent-session-1","providerForkBindingAvailable":false,"providerForkBindingState":"recovery_required","phase":"settled","origin":"user_prompt","outcome":"completed","error":null,"fileChanges":null,"completedCommand":null,"startedAtUnixMs":1,"settledAtUnixMs":1,"updatedAtUnixMs":1}
 		}
 	}`
 	if err := catalog.ValidatePublish(
@@ -303,7 +332,7 @@ func TestAgentActivityUpdatedValidationEnforcesFullEntityStateMachines(t *testin
 	validSettledTurn := `{
 		"workspaceId":"workspace-1","agentSessionId":"session-1","eventType":"turn_update",
 		"data":{"workspaceId":"workspace-1","agentSessionId":"session-1","eventType":"turn_update","occurredAtUnixMs":10,"activeTurnId":null,
-		"turn":{"turnId":"turn-1","agentSessionId":"session-1","providerForkBindingAvailable":false,"phase":"settled","origin":"user_prompt","outcome":"completed","error":null,"fileChanges":null,"completedCommand":null,"startedAtUnixMs":1,"settledAtUnixMs":10,"updatedAtUnixMs":10}}
+		"turn":{"turnId":"turn-1","agentSessionId":"session-1","providerForkBindingAvailable":false,"providerForkBindingState":"recovery_required","phase":"settled","origin":"user_prompt","outcome":"completed","error":null,"fileChanges":null,"completedCommand":null,"startedAtUnixMs":1,"settledAtUnixMs":10,"updatedAtUnixMs":10}}
 	}`
 	if err := catalog.ValidatePublish(TopicAgentActivityUpdated, DirectionServerToClient, []byte(validSettledTurn)); err != nil {
 		t.Fatalf("valid settled turn: %v", err)
@@ -311,7 +340,7 @@ func TestAgentActivityUpdatedValidationEnforcesFullEntityStateMachines(t *testin
 	validLiveTurn := `{
 		"workspaceId":"workspace-1","agentSessionId":"session-1","eventType":"turn_update",
 		"data":{"workspaceId":"workspace-1","agentSessionId":"session-1","eventType":"turn_update","occurredAtUnixMs":11,"activeTurnId":"turn-live",
-		"turn":{"turnId":"turn-live","agentSessionId":"session-1","providerForkBindingAvailable":true,"phase":"running","origin":"goal_continuation","sourceGoalOperationId":"goal-op-1","sourceGoalRevision":1,"sourceGoalRepairEpoch":0,"outcome":null,"error":null,"fileChanges":null,"completedCommand":null,"startedAtUnixMs":11,"settledAtUnixMs":null,"updatedAtUnixMs":11}}
+		"turn":{"turnId":"turn-live","agentSessionId":"session-1","providerForkBindingAvailable":true,"providerForkBindingState":"bound","phase":"running","origin":"goal_continuation","sourceGoalOperationId":"goal-op-1","sourceGoalRevision":1,"sourceGoalRepairEpoch":0,"outcome":null,"error":null,"fileChanges":null,"completedCommand":null,"startedAtUnixMs":11,"settledAtUnixMs":null,"updatedAtUnixMs":11}}
 	}`
 	if err := catalog.ValidatePublish(TopicAgentActivityUpdated, DirectionServerToClient, []byte(validLiveTurn)); err != nil {
 		t.Fatalf("valid live turn with nullable outcome: %v", err)
@@ -347,6 +376,50 @@ func TestAgentActivityUpdatedValidationRequiresProviderForkBindingAvailability(t
 	}
 }
 
+func TestAgentActivityUpdatedValidationRequiresConsistentProviderForkBindingState(t *testing.T) {
+	t.Parallel()
+
+	valid := `{
+		"workspaceId":"workspace-1","agentSessionId":"session-1","eventType":"turn_update",
+		"data":{"workspaceId":"workspace-1","agentSessionId":"session-1","eventType":"turn_update","occurredAtUnixMs":10,"activeTurnId":null,
+		"turn":{"turnId":"turn-1","agentSessionId":"session-1","providerForkBindingAvailable":false,"providerForkBindingState":"recovery_required","phase":"settled","origin":"user_prompt","outcome":"completed","error":null,"fileChanges":null,"completedCommand":null,"startedAtUnixMs":1,"settledAtUnixMs":10,"updatedAtUnixMs":10}}
+	}`
+	tests := []struct {
+		name    string
+		payload string
+	}{
+		{
+			name:    "missing state",
+			payload: strings.Replace(valid, `,"providerForkBindingState":"recovery_required"`, "", 1),
+		},
+		{
+			name:    "bound without available identity",
+			payload: strings.Replace(valid, `"recovery_required"`, `"bound"`, 1),
+		},
+		{
+			name: "recovery before settlement",
+			payload: strings.NewReplacer(
+				`"phase":"settled"`, `"phase":"running"`,
+				`"outcome":"completed"`, `"outcome":null`,
+				`"settledAtUnixMs":10`, `"settledAtUnixMs":null`,
+			).Replace(valid),
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if err := DefaultCatalog().ValidatePublish(
+				TopicAgentActivityUpdated,
+				DirectionServerToClient,
+				[]byte(test.payload),
+			); err == nil {
+				t.Fatal("ValidatePublish() error = nil")
+			}
+		})
+	}
+}
+
 func TestAgentActivityUpdatedValidationAcceptsLiveTurnCapabilityReferences(t *testing.T) {
 	t.Parallel()
 	catalog := DefaultCatalog()
@@ -357,7 +430,7 @@ func TestAgentActivityUpdatedValidationAcceptsLiveTurnCapabilityReferences(t *te
 			payload := strings.Replace(`{
 		"workspaceId":"workspace-1","agentSessionId":"session-1","eventType":"turn_update",
 		"data":{"workspaceId":"workspace-1","agentSessionId":"session-1","eventType":"turn_update","occurredAtUnixMs":10,"activeTurnId":"turn-1",
-		"turn":{"turnId":"turn-1","agentSessionId":"session-1","providerForkBindingAvailable":false,"capabilityRefs":[{"capability":"tutti","source":"slash_command"}],"phase":"PHASE","origin":"user_prompt","outcome":null,"error":null,"fileChanges":null,"completedCommand":null,"startedAtUnixMs":10,"settledAtUnixMs":null,"updatedAtUnixMs":10}}
+		"turn":{"turnId":"turn-1","agentSessionId":"session-1","providerForkBindingAvailable":false,"providerForkBindingState":"unavailable","capabilityRefs":[{"capability":"tutti","source":"slash_command"}],"phase":"PHASE","origin":"user_prompt","outcome":null,"error":null,"fileChanges":null,"completedCommand":null,"startedAtUnixMs":10,"settledAtUnixMs":null,"updatedAtUnixMs":10}}
 	}`, "PHASE", phase, 1)
 			if err := catalog.ValidatePublish(TopicAgentActivityUpdated, DirectionServerToClient, []byte(payload)); err != nil {
 				t.Fatalf("valid %s turn with capability refs: %v", phase, err)
@@ -372,7 +445,7 @@ func TestAgentActivityUpdatedValidationRejectsUnsupportedTurnCapabilityReference
 	valid := `{
 		"workspaceId":"workspace-1","agentSessionId":"session-1","eventType":"turn_update",
 		"data":{"workspaceId":"workspace-1","agentSessionId":"session-1","eventType":"turn_update","occurredAtUnixMs":10,"activeTurnId":"turn-1",
-		"turn":{"turnId":"turn-1","agentSessionId":"session-1","providerForkBindingAvailable":false,"capabilityRefs":[{"capability":"tutti","source":"slash_command"}],"phase":"running","origin":"user_prompt","outcome":null,"error":null,"fileChanges":null,"completedCommand":null,"startedAtUnixMs":10,"settledAtUnixMs":null,"updatedAtUnixMs":10}}
+		"turn":{"turnId":"turn-1","agentSessionId":"session-1","providerForkBindingAvailable":false,"providerForkBindingState":"unavailable","capabilityRefs":[{"capability":"tutti","source":"slash_command"}],"phase":"running","origin":"user_prompt","outcome":null,"error":null,"fileChanges":null,"completedCommand":null,"startedAtUnixMs":10,"settledAtUnixMs":null,"updatedAtUnixMs":10}}
 	}`
 	invalid := []string{
 		strings.Replace(valid, `"capability":"tutti"`, `"capability":"other"`, 1),

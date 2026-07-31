@@ -1,14 +1,16 @@
 import type {
   AgentSessionActivateEffectInput,
+  AgentSessionActivateEffectResult,
   AgentSessionEffectPort,
   AgentActivityCancelTurnInput,
   AgentActivityDeleteSessionsResult,
+  AgentActivityGoalControlResult,
+  AgentSessionGoalControlEffectInput,
   AgentActivitySendInput,
   AgentActivitySession,
   AgentActivitySessionDetailSnapshot,
   AgentActivitySessionSettings,
   AgentActivitySubmitInteractiveInput,
-  AgentSessionEngine,
   EngineEffectOptions,
   EngineExtensionCommand,
   SessionReconcileCommand
@@ -16,7 +18,8 @@ import type {
 import {
   agentActivityComposerOptionsFromTuttidResult,
   agentActivitySessionFromTuttidSession,
-  agentActivityTurnFromTuttidTurn
+  agentActivityTurnFromTuttidTurn,
+  tuttiAgentSessionComposerSettingsFromActivity
 } from "@tutti-os/agent-activity-tuttid-adapter";
 import type { TuttidClient } from "@tutti-os/client-tuttid-ts";
 import { mobileLocale } from "../i18n";
@@ -24,7 +27,6 @@ import { toTuttidPromptContent } from "./workspaceActivityCommandSupport";
 
 interface WorkspaceActivityEngineCommandContext {
   client: TuttidClient;
-  engine: AgentSessionEngine;
   mapSession(
     session: Parameters<typeof agentActivitySessionFromTuttidSession>[1]
   ): AgentActivitySession;
@@ -32,6 +34,11 @@ interface WorkspaceActivityEngineCommandContext {
     expectedAgentSessionId: string,
     detail: Awaited<ReturnType<TuttidClient["getWorkspaceAgentSession"]>>
   ): AgentActivitySessionDetailSnapshot;
+  mapGoalControlResult(
+    response: Awaited<
+      ReturnType<TuttidClient["goalControlWorkspaceAgentSession"]>
+    >
+  ): AgentActivityGoalControlResult;
   reconcileSession(
     command: SessionReconcileCommand,
     signal?: AbortSignal
@@ -47,6 +54,8 @@ export function createWorkspaceActivityEffectPort(
       activateSession(getContext(), input, options?.signal),
     cancelTurn: (input, options) =>
       cancelTurn(getContext(), input, options?.signal),
+    controlGoal: (input, options) =>
+      controlGoal(getContext(), input, options?.signal),
     deleteSessions: (input, options) =>
       deleteSessions(getContext(), input, options?.signal),
     renameSession: (input, options) =>
@@ -60,6 +69,25 @@ export function createWorkspaceActivityEffectPort(
     updateSessionSettings: (input, options) =>
       updateSessionSettings(getContext(), input, options?.signal)
   };
+}
+
+function controlGoal(
+  context: WorkspaceActivityEngineCommandContext,
+  input: AgentSessionGoalControlEffectInput,
+  signal?: AbortSignal
+): Promise<AgentActivityGoalControlResult> {
+  return context.client
+    .goalControlWorkspaceAgentSession(
+      input.workspaceId,
+      input.agentSessionId,
+      {
+        action: input.action,
+        clientSubmitId: input.clientSubmitId,
+        ...(input.objective ? { objective: input.objective } : {})
+      },
+      ...requestOptionsArgs(signal)
+    )
+    .then(context.mapGoalControlResult);
 }
 
 export function executeWorkspaceActivityExtensionCommand(
@@ -86,7 +114,9 @@ export function executeWorkspaceActivityExtensionCommand(
             ...(command.cwd ? { cwd: command.cwd } : {}),
             locale: mobileLocale,
             workspaceId: command.workspaceId,
-            settings: command.settings ?? {}
+            settings: tuttiAgentSessionComposerSettingsFromActivity(
+              command.settings
+            )
           },
           { signal }
         )
@@ -121,7 +151,7 @@ async function activateSession(
   context: WorkspaceActivityEngineCommandContext,
   input: AgentSessionActivateEffectInput,
   signal?: AbortSignal
-): Promise<unknown> {
+): Promise<AgentSessionActivateEffectResult> {
   if (input.mode === "existing") {
     if (signal?.aborted) throw signal.reason;
     const detail = await context.client.getWorkspaceAgentSession(
@@ -131,13 +161,9 @@ async function activateSession(
       ...requestOptionsArgs(signal)
     );
     const mapped = context.mapSessionDetail(input.agentSessionId, detail);
-    context.engine.dispatch({
-      ...mapped,
-      type: "session/detailSnapshotReceived",
-      workspaceId: input.workspaceId
-    });
     return {
       activation: { mode: "existing", status: "already_attached" },
+      detail: mapped,
       session: mapped.session
     };
   }
@@ -155,8 +181,13 @@ async function activateSession(
         : {}),
       clientSubmitId: input.clientSubmitId,
       cwd: input.cwd ?? null,
-      initialContent: toTuttidPromptContent(input.initialContent ?? []),
+      initialContent: input.initialGoalControl
+        ? []
+        : toTuttidPromptContent(input.initialContent ?? []),
       initialDisplayPrompt: input.initialDisplayPrompt ?? null,
+      ...(input.initialGoalControl
+        ? { initialGoalControl: { ...input.initialGoalControl } }
+        : {}),
       ...(input.initialTuttiModeActivation
         ? {
             initialTuttiModeActivation: {
@@ -188,10 +219,6 @@ async function activateSession(
     { signal }
   );
   const activitySession = context.mapSession(session);
-  context.engine.dispatch({
-    session: activitySession,
-    type: "session/upserted"
-  });
   return {
     activation: { mode: "new", status: "attached" },
     session: activitySession
@@ -312,7 +339,7 @@ function updateSessionSettings(
     .updateWorkspaceAgentSessionSettings(
       input.workspaceId,
       input.agentSessionId,
-      input.settings,
+      tuttiAgentSessionComposerSettingsFromActivity(input.settings),
       ...requestOptionsArgs(signal)
     )
     .then((session) => {

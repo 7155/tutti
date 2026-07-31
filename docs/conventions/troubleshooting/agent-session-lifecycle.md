@@ -268,6 +268,40 @@ incomplete`, while a newly created session can still launch.
   failure, second-scan non-duplication, and outcome-write failure stopping
   startup.
 
+### A stuck edit-and-retry operation crashes the daemon on every launch
+
+- **Symptom:** After updating, `tuttid` exits immediately on every launch and the
+  desktop reports `tuttid exited before it published its listener info`; the daemon
+  log shows `recover agent host: process runtime operation <id>: agent session not
+found` (or `... agent history was rolled back but the edited turn still needs to
+be resent`). The app never opens.
+- **Quick checks:** Look for a durable `edit_retry` runtime operation stuck at the
+  `resend_pending` checkpoint — the last Turn was rolled back on the provider but
+  the replacement was never re-sent. While the daemon runs, the live worker only
+  logs this at 1 Hz; the fatality appears only on the next cold restart. The
+  affected session's `workspace_agent_session_history.recovery_state` is fenced
+  (non-`ready`).
+- **Root cause:** The cold-recovery pass (`RecoverRuntimeOperations`) treats a
+  per-operation error as fatal to `build tuttid server`, so a persisted edit-retry
+  operation that can never make progress becomes a boot poison pill. The live
+  worker tolerates the same error, which is why the app worked until the restart.
+- **Fix:** Durable edit-and-retry is disabled (`Config.EditRetryDisabled`, set in
+  production wiring). Recovery quarantines any leftover `edit_retry` operation —
+  marks it failed AND clears the session's effective-history fence back to `ready`
+  so the conversation can still send — and returns non-fatally, so existing poison
+  pills self-heal on the next boot. New edit-retries are refused at the entry
+  points. Sessions fenced before the neutralization (owning operation already
+  failed, so recovery cannot see it) self-heal at the send gate: the first send
+  clears an abandoned fence instead of rejecting. The durable rule: never let one
+  runtime operation's error abort daemon startup.
+- **Rescue:** For an install that cannot update yet, quit Tutti and run
+  `tools/scripts/rescue-edit-retry-poison-pill.sh`, which quarantines the stuck
+  rows and clears the session fence in `~/.tutti/tuttid.db` after backing it up.
+- **Validation:** `packages/agent/host/edit_retry_disabled_test.go` builds a
+  genuinely stuck operation, asserts enabled recovery is boot-fatal, and asserts
+  the disabled path quarantines it, returns nil, and leaves the session at
+  `recovery_state = ready`.
+
 ### Many stopped Tutti Mode conversations start again when the app opens
 
 - **Symptom:** Starting the desktop app makes several old Tutti Mode source
@@ -2945,6 +2979,45 @@ inline data URL instead`. Claude or standard ACP may instead receive no
   [pendingIntents.reducer.ts](../../../packages/agent/activity-core/src/engine/pendingIntents.reducer.ts)
   [acp_shared.go](../../../packages/agent/daemon/runtime/acp_shared.go)
 
+### Claude Code keeps returning ConnectionRefused after network recovery
+
+- Symptom:
+  A Claude Code Turn loses network access while sending and eventually reports
+  `API Error: Unable to connect to API (ConnectionRefused)`. After the machine
+  network recovers, later sends in the same Session keep failing, while a newly
+  created Claude Session succeeds.
+- Quick checks:
+  Correlate `agent_session.claude_sdk.lifecycle_event` by Agent Session and
+  provider Session id. An SDK `system/api_retry` event now records
+  `sdk_connection_error`, `sdk_retry_attempt`, `sdk_max_retries`, and
+  `sdk_retry_delay_ms`. A terminal result should carry
+  `sdk_result_is_error=true`; a numeric `sdk_api_error_status` instead points to
+  an HTTP/auth/provider response rather than a connection failure.
+- Root cause:
+  The Claude Agent SDK owns one long-lived Query and Claude Code subprocess for
+  streaming multi-Turn input. A connection failure can terminate the Turn while
+  leaving that Query unsuitable for later requests. Reusing it preserves the
+  bad per-process state even though host and VM networking have recovered.
+  Older sidecars also treated every `result/subtype=success` as a completed
+  Turn, ignoring the SDK's independent `is_error` flag.
+- Fix:
+  Preserve the failed Turn and its provider error. When the SDK terminal result
+  explicitly reports a connection failure, revoke and close that Query. The
+  next user send creates a fresh Query with `resume` set to the same provider
+  Session id. Do not automatically resend the failed prompt because delivery
+  may be ambiguous. Do not recycle the Query for a transient retry that
+  eventually succeeds or for a terminal HTTP/authentication error.
+- Validation:
+  Simulate `api_retry/error_status=null` followed by
+  `result/is_error=true/api_error_status=null`, then send a second Turn. Require
+  two Query generations, closure of the first, and `resume` on the second.
+  Also prove that retry-then-success and HTTP 401 failures retain the existing
+  Query.
+- References:
+  [messageRouter.ts](../../../packages/agent/claude-sdk-sidecar/src/messageRouter.ts)
+  [sessionRuntime.ts](../../../packages/agent/claude-sdk-sidecar/src/sessionRuntime.ts)
+  [sessionRuntime.recovery.test.ts](../../../packages/agent/claude-sdk-sidecar/src/sessionRuntime.recovery.test.ts)
+
 ### Cursor auto-continue invents interrupted work after a network drop
 
 - Symptom:
@@ -3351,6 +3424,82 @@ convergence deadline`.
 - References:
   [goal_operation_worker.go](../../../packages/agent/host/goal_operation_worker.go)
   [goal_scenarios.go](../../../packages/agent/host/conformance/goal_scenarios.go)
+
+### Cleared Goal reappears as a newer provider-authored Goal
+
+- Symptom:
+  Goal clear returns success and briefly shows “目标已移除”, but the active Goal
+  banner returns. The Goal table contains a completed clear followed by a new
+  provider-adoption `set` revision for the same objective. In a projection-only
+  variant, the table remains tombstoned with no later `set`, while the banner
+  still shows the pre-clear Goal.
+- Quick checks:
+  Correlate `workspace_agent_session.goal_control.completed action=clear` with
+  `agent_session.app_server.goal.provider_adopted`. If adoption was scheduled
+  before clear but completed immediately after it, inspect the adoption's
+  expected revision and the canonical revision committed by clear.
+  If no later adoption exists, inspect the Goal Control response: `goal` must
+  be present as `null`, and its embedded `session.goal` must also be null.
+- Root cause:
+  Provider Goal adoption runs off the app-server read loop. An observation
+  captured before clear could wait behind the serialized Goal actor; the old
+  implementation read the revision only after acquiring that actor, so the
+  delayed observation was mistaken for a new provider-authored Goal and
+  cleared the tombstone.
+  The projection-only variant made nullable `goal` optional on the wire. Go
+  therefore omitted a successful clear, the client fell back to a stale
+  runtime `session.goal`, and the Engine promoted that stale field after the
+  operation settled.
+- Fix:
+  Capture the canonical Goal revision while scheduling provider adoption and
+  carry it through the runtime, Host, and store boundary. The store compares
+  it with the current revision inside the same transaction that would advance
+  the Goal. Mutable progress snapshots from an already owned provider Goal
+  bind to that Goal's current operation identity instead of entering adoption.
+  Goal Control responses require a nullable `goal`, project the Host result
+  onto `session.goal`, and let the Engine normalize a synced Session from that
+  same authoritative field.
+- Validation:
+  Block provider adoption after it captures revision N, complete clear at
+  revision N+1, then release adoption. It must fail as superseded, leave the
+  Goal tombstoned at N+1, create no later `set` operation, and keep the runtime
+  Goal banner empty. Also return a synced clear beside a deliberately stale
+  Session Goal; JSON must contain `"goal": null`, and the Engine presentation
+  must remain empty.
+- References:
+  [goal_provider_adoption.go](../../../packages/agent/host/goal_provider_adoption.go)
+  [codex_appserver_provider_goal_adoption.go](../../../packages/agent/daemon/runtime/codex_appserver_provider_goal_adoption.go)
+  [daemon_agent_sessions_goal.go](../../../services/tuttid/api/daemon_agent_sessions_goal.go)
+  [sessionGoalControl.validation.ts](../../../packages/agent/activity-core/src/engine/sessionGoalControl.validation.ts)
+
+### Goal disappears after pause or resume
+
+- Symptom:
+  Pause or resume succeeds, but the Goal banner disappears while the durable
+  Goal still exists.
+- Quick checks:
+  Compare the Goal Control response's top-level `goal` with `state.desired`,
+  `state.observed`, and `state.tombstoned`. If `observed` is empty but
+  `desired` remains populated and not tombstoned, the provider supplied no
+  current observation; it did not clear the Goal.
+- Root cause:
+  The response projected the provider's per-action observation as the visible
+  Goal. Some providers can apply pause or resume while returning no Goal
+  observation, so the required nullable response serialized that absence as an
+  explicit clear.
+- Fix:
+  Host returns the durable desired projection as `GoalControlResult.Goal` and
+  keeps provider output in `GoalState.Observed`. The daemon only maps that
+  Host-owned result. Empty observation may produce `diverged` state, but only a
+  durable tombstone produces `goal: null`.
+- Validation:
+  Set a Goal, make the provider return no Goal for pause and resume, and verify
+  both responses retain the objective with the expected paused/active status,
+  report divergence, and carry no pending operation.
+- References:
+  [goal_control.go](../../../packages/agent/host/goal_control.go)
+  [goal_scenarios.go](../../../packages/agent/host/conformance/goal_scenarios.go)
+  [daemon_agent_sessions_goal.go](../../../services/tuttid/api/daemon_agent_sessions_goal.go)
 
 ### Revoked shared Goal starts again after handoff or desktop restart
 

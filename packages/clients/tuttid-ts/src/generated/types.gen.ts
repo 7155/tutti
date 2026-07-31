@@ -460,6 +460,7 @@ export type DesktopAgentComposerDefaults = {
 export type DesktopAgentConversationDetailMode = "coding" | "general";
 
 export type DesktopDefaultAgentProvider =
+  | "tutti-agent"
   | "claude-code"
   | "codex"
   | "cursor"
@@ -2510,7 +2511,7 @@ export type SendWorkspaceAgentSessionInputGoalControlResponse = {
    * Durable GoalControlOperation identity when kind is goalControl.
    */
   operationId?: string | null;
-  goal?: WorkspaceAgentSessionGoal | null;
+  goal: WorkspaceAgentSessionGoal | null;
   goalState?: WorkspaceAgentSessionGoalState | null;
 };
 
@@ -2564,9 +2565,13 @@ export type WorkspaceAgentTurn = {
   turnId: string;
   agentSessionId: string;
   /**
-   * Whether this canonical Turn currently has the provider Turn binding required to attempt an exact native Fork. Historical prefix state does not participate in this projection.
+   * Whether this canonical Turn currently has a durably persisted provider Turn binding. This remains false while a settled historical Turn is waiting for an on-demand recovery attempt.
    */
   providerForkBindingAvailable: boolean;
+  /**
+   * Canonical provider binding state for Fork projection. bound means the durable provider Turn identity is ready; recovery_required means a settled historical Turn must complete the Host's fail-closed evidence recovery before Fork can be offered; unavailable means the Turn cannot be used as a Fork boundary.
+   */
+  providerForkBindingState: "bound" | "recovery_required" | "unavailable";
   phase: WorkspaceAgentTurnPhase;
   /**
    * Durable business provenance; steer is input on an existing turn and is never an origin.
@@ -2967,12 +2972,16 @@ export type UpdateWorkspaceAgentSessionVisibilityRequest = {
 
 export type WorkspaceAgentSessionGoalControlRequest = {
   action: "pause" | "resume" | "clear" | "set";
+  /**
+   * Caller-stable idempotency identity for this Goal Control mutation.
+   */
+  clientSubmitId?: string;
   objective?: string;
 };
 
 export type WorkspaceAgentSessionGoalControlResponse = {
   session: WorkspaceAgentSession;
-  goal?: WorkspaceAgentSessionGoal | null;
+  goal: WorkspaceAgentSessionGoal | null;
   /**
    * Durable GoalControlOperation identity; null only for compatibility runtimes without a goal store.
    */
@@ -3006,6 +3015,11 @@ export type WorkspaceAgentSessionGoalStateResponse = {
   state: WorkspaceAgentSessionGoalState;
 };
 
+export type WorkspaceAgentInitialGoalControl = {
+  action: "pause" | "resume" | "clear" | "set";
+  objective?: string;
+};
+
 export type CreateWorkspaceAgentSessionRequest = {
   agentSessionId: string;
   /**
@@ -3019,6 +3033,10 @@ export type CreateWorkspaceAgentSessionRequest = {
   recordingId?: string | null;
   submitDiagnostics?: AgentSubmitDiagnostics;
   initialContent: Array<AgentPromptContentBlock>;
+  /**
+   * Optional typed Goal Control applied after the Session is created without opening an initial Turn. Must not be combined with non-empty initialContent.
+   */
+  initialGoalControl?: WorkspaceAgentInitialGoalControl | null;
   /**
    * Optional display-only text for the first turn (e.g. a folder bundle shown as one chip while initialContent carries the expanded files).
    */
@@ -3576,6 +3594,25 @@ export type PreflightUploadWorkspaceFilesResponse = {
   conflicts: Array<WorkspaceFileUploadConflict>;
 };
 
+export type WorkbenchLayoutPreset = {
+  kind: "balanced" | "row" | "column";
+};
+
+export type WorkbenchNormalizedFrame = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type WorkbenchLockedLayout = {
+  preset: WorkbenchLayoutPreset;
+  nodeIDs: Array<string>;
+  normalizedFrames?: {
+    [key: string]: WorkbenchNormalizedFrame;
+  };
+};
+
 export type WorkbenchSize = {
   width: number;
   height: number;
@@ -3638,6 +3675,7 @@ export type WorkbenchSnapshot = {
   spaces?: Array<WorkbenchSnapshotSpace>;
   activeSpaceId?: string | null;
   layoutBasis?: WorkbenchLayoutBasis;
+  lockedLayout?: WorkbenchLockedLayout;
   metadata?: {
     [key: string]: unknown;
   };

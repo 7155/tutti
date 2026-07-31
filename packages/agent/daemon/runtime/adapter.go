@@ -84,6 +84,13 @@ type SessionForkAdapter interface {
 	Fork(context.Context, SessionForkInput) (SessionForkResult, error)
 }
 
+type ProviderTurnBindingRecoveryAdapter interface {
+	RecoverProviderTurnBinding(
+		context.Context,
+		ProviderTurnBindingRecoveryInput,
+	) (ProviderTurnBindingRecoveryResult, error)
+}
+
 // TargetedCancelAdapter maps canonical root/child targets onto provider-native
 // handles. The controller supplies the root live session and never asks the
 // adapter to discover the durable child tree itself.
@@ -110,6 +117,23 @@ type AsyncExecAdapter interface {
 	ExecAsync(context.Context, Session, []PromptContentBlock, string, string, EventSink, CommandSnapshotSink) error
 }
 
+// ProviderAcceptanceExecAdapter exposes the provider's exact acceptance
+// receipt without making canonical lifecycle depend on provider-specific
+// notifications arriving later through the ordinary report queue.
+type ProviderAcceptanceExecAdapter interface {
+	Adapter
+	ExecWithProviderAcceptance(
+		context.Context,
+		Session,
+		[]PromptContentBlock,
+		string,
+		string,
+		EventSink,
+		CommandSnapshotSink,
+		ProviderDispatchSink,
+	) ([]activityshared.Event, error)
+}
+
 type EffectiveHistoryTurn struct {
 	ID                  string
 	Status              string
@@ -134,9 +158,10 @@ type HistoryReplacementExecInput struct {
 	TurnID        string
 }
 
-// ProviderDispatchSink reports the provider's direct replacement-start
-// outcome. Implementations must report exactly once before
-// ExecHistoryReplacement returns.
+// ProviderDispatchSink reports the provider's direct operation outcome. A
+// successful operation that does not create a provider Turn uses
+// DispatchDispositionAppliedWithoutProviderTurn. Implementations must report
+// exactly once before a typed execution method returns.
 type ProviderDispatchSink func(ProviderDispatchResult)
 
 // EffectiveHistoryAdapter is the complete provider capability required by
@@ -235,6 +260,18 @@ type GoalProvenanceDurableSink interface {
 
 type GoalProvenanceDurableSinkAdapter interface {
 	SetGoalProvenanceDurableSink(GoalProvenanceDurableSink)
+}
+
+type ProviderGoalAdoptionRequest struct {
+	Fingerprint      string
+	ExpectedRevision int64
+	Goal             map[string]any
+}
+
+type ProviderGoalAdoptionSink func(context.Context, Session, ProviderGoalAdoptionRequest) (GoalProvenanceBinding, error)
+
+type ProviderGoalAdoptionSinkAdapter interface {
+	SetProviderGoalAdoptionSink(ProviderGoalAdoptionSink)
 }
 
 type ConfigOptionsUpdateSinkAdapter interface {

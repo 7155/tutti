@@ -1,6 +1,7 @@
 import { NativeListRow, NativeSheet } from "@tutti-os/ui-system/native";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { Modal, TextInput } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import type { AgentActivitySessionSettings } from "@tutti-os/agent-activity-core";
 import type { WorkspaceActivitySnapshot } from "../services/workspaceActivityService";
 import { MobileComposerDock } from "./MobileComposerDock";
@@ -113,20 +114,27 @@ function composerDock(
   onUpdate: (settings: AgentActivitySessionSettings) => void = () => undefined
 ) {
   return (
-    <MobileComposerDock
-      model={model}
-      onDraftChange={() => undefined}
-      onRefreshQuickPrompts={() => Promise.resolve()}
-      onSend={() => undefined}
-      onStop={() => undefined}
-      onUpdate={onUpdate}
-      quickPromptLibrary={{
-        enabled: false,
-        errorCode: null,
-        prompts: [],
-        status: "ready"
+    <SafeAreaProvider
+      initialMetrics={{
+        frame: { height: 800, width: 400, x: 0, y: 0 },
+        insets: { bottom: 16, left: 0, right: 0, top: 24 }
       }}
-    />
+    >
+      <MobileComposerDock
+        model={model}
+        onDraftChange={() => undefined}
+        onRefreshQuickPrompts={() => Promise.resolve()}
+        onSend={() => undefined}
+        onStop={() => undefined}
+        onUpdate={onUpdate}
+        quickPromptLibrary={{
+          enabled: false,
+          errorCode: null,
+          prompts: [],
+          status: "ready"
+        }}
+      />
+    </SafeAreaProvider>
   );
 }
 

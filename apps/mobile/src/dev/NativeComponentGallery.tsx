@@ -7,7 +7,7 @@ import {
   useNativeTheme
 } from "@tutti-os/ui-system/native";
 import { useState, type ReactNode } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { t } from "../i18n";
 
 /** Native-only visual review surface for UI System primitive promotion. */
@@ -120,6 +120,11 @@ export function NativeComponentGallery({ onClose }: { onClose(): void }) {
         <View style={styles.sheetContent}>
           <Text style={styles.sheetTitle}>{t("nativeGallerySheet")}</Text>
           <Text style={styles.description}>{t("nativeGallerySheetBody")}</Text>
+          <TextInput
+            placeholder={t("messageHint")}
+            placeholderTextColor={theme.color.muted}
+            style={styles.sheetInput}
+          />
           <NativeButton
             label={t("cancel")}
             onPress={() => setSheetOpen(false)}
@@ -180,6 +185,16 @@ function createStyles(theme: NativeTheme) {
     sheetContent: {
       gap: theme.space.medium,
       padding: theme.space.large
+    },
+    sheetInput: {
+      backgroundColor: theme.color.panel,
+      borderColor: theme.color.border,
+      borderRadius: theme.radius.medium,
+      borderWidth: StyleSheet.hairlineWidth,
+      color: theme.color.text,
+      fontSize: 16,
+      minHeight: 48,
+      paddingHorizontal: theme.space.medium
     },
     sheetTitle: {
       color: theme.color.text,

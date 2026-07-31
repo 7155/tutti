@@ -26,6 +26,10 @@ import {
   type ComposerSettingMenu
 } from "./MobileComposerSettingsSheet";
 import {
+  MobileKeyboardAvoidingView,
+  mobileKeyboardDismissMode
+} from "./MobileKeyboardAvoidingView";
+import {
   addMobileQuickPrompt,
   filterMobileQuickPrompts,
   previewMobileQuickPromptContent,
@@ -241,208 +245,217 @@ export function MobileComposerDock({
         transparent
         visible={model.commandsAvailable && toolsMenu !== null}
       >
-        <Pressable onPress={() => setToolsMenu(null)} style={styles.backdrop}>
-          <Pressable
-            onPress={(event) => event.stopPropagation()}
-            style={styles.menu}
-          >
-            {toolsMenu === "tools" ? (
-              <>
-                {model.composerSettingsSupport.model &&
-                modelOptions.length > 0 ? (
-                  <NativeListRow
-                    description={selectedModelLabel}
-                    onPress={() => setToolsMenu("model")}
-                    title={t("model")}
-                    trailing={<Text style={styles.chevron}>›</Text>}
-                  />
-                ) : null}
-                {model.composerSettingsSupport.permission &&
-                permissionOptions.length > 0 ? (
-                  <NativeListRow
-                    description={selectedPermissionLabel}
-                    onPress={() => setToolsMenu("permission")}
-                    title={t("permissions")}
-                    trailing={<Text style={styles.chevron}>›</Text>}
-                  />
-                ) : null}
-                {model.composerSettingsSupport.plan ? (
-                  <NativeListRow
-                    description={
-                      model.composerSettings.planMode
-                        ? t("planModeOn")
-                        : t("planModeOff")
-                    }
-                    onPress={() => {
-                      onUpdate({
-                        planMode: !model.composerSettings.planMode
-                      });
-                      setToolsMenu(null);
-                    }}
-                    selected={model.composerSettings.planMode === true}
-                    title={t("planMode")}
-                  />
-                ) : null}
-                {quickPromptLibrary.enabled ? (
-                  <NativeListRow
-                    description={
-                      quickPromptLibrary.status === "loading"
-                        ? t("loadingQuickPrompts")
-                        : t("quickPromptsCount", {
-                            count: quickPromptLibrary.prompts.length
-                          })
-                    }
-                    onPress={() => setToolsMenu("quickPrompts")}
-                    title={t("quickPrompts")}
-                    trailing={<Text style={styles.chevron}>›</Text>}
-                  />
-                ) : null}
-                {model.composerOptionsLoadStatus === "loading" ? (
-                  <ActivityIndicator
-                    color={theme.color.accent}
-                    size="small"
-                    style={styles.loading}
-                  />
-                ) : null}
-                {quickPromptLibrary.status === "loading" &&
-                !quickPromptLibrary.enabled ? (
-                  <ActivityIndicator
-                    color={theme.color.accent}
-                    size="small"
-                    style={styles.loading}
-                  />
-                ) : null}
-                {!hasComposerTools &&
-                quickPromptLibrary.status !== "loading" ? (
-                  <Text style={styles.emptyMenu}>{t("noComposerActions")}</Text>
-                ) : null}
-              </>
-            ) : (
-              <>
-                <View style={styles.menuHeader}>
-                  <NativeIconButton
-                    accessibilityLabel={t("cancel")}
-                    icon={<Text style={styles.menuBackIcon}>←</Text>}
-                    onPress={() => setToolsMenu("tools")}
-                    style={styles.menuBackButton}
-                  />
-                  <Text style={styles.menuTitle}>
+        <MobileKeyboardAvoidingView
+          keyboardVerticalOffset={0}
+          style={styles.modalRoot}
+        >
+          <Pressable onPress={() => setToolsMenu(null)} style={styles.backdrop}>
+            <Pressable
+              onPress={(event) => event.stopPropagation()}
+              style={styles.menu}
+            >
+              {toolsMenu === "tools" ? (
+                <>
+                  {model.composerSettingsSupport.model &&
+                  modelOptions.length > 0 ? (
+                    <NativeListRow
+                      description={selectedModelLabel}
+                      onPress={() => setToolsMenu("model")}
+                      title={t("model")}
+                      trailing={<Text style={styles.chevron}>›</Text>}
+                    />
+                  ) : null}
+                  {model.composerSettingsSupport.permission &&
+                  permissionOptions.length > 0 ? (
+                    <NativeListRow
+                      description={selectedPermissionLabel}
+                      onPress={() => setToolsMenu("permission")}
+                      title={t("permissions")}
+                      trailing={<Text style={styles.chevron}>›</Text>}
+                    />
+                  ) : null}
+                  {model.composerSettingsSupport.plan ? (
+                    <NativeListRow
+                      description={
+                        model.composerSettings.planMode
+                          ? t("planModeOn")
+                          : t("planModeOff")
+                      }
+                      onPress={() => {
+                        onUpdate({
+                          planMode: !model.composerSettings.planMode
+                        });
+                        setToolsMenu(null);
+                      }}
+                      selected={model.composerSettings.planMode === true}
+                      title={t("planMode")}
+                    />
+                  ) : null}
+                  {quickPromptLibrary.enabled ? (
+                    <NativeListRow
+                      description={
+                        quickPromptLibrary.status === "loading"
+                          ? t("loadingQuickPrompts")
+                          : t("quickPromptsCount", {
+                              count: quickPromptLibrary.prompts.length
+                            })
+                      }
+                      onPress={() => setToolsMenu("quickPrompts")}
+                      title={t("quickPrompts")}
+                      trailing={<Text style={styles.chevron}>›</Text>}
+                    />
+                  ) : null}
+                  {model.composerOptionsLoadStatus === "loading" ? (
+                    <ActivityIndicator
+                      color={theme.color.accent}
+                      size="small"
+                      style={styles.loading}
+                    />
+                  ) : null}
+                  {quickPromptLibrary.status === "loading" &&
+                  !quickPromptLibrary.enabled ? (
+                    <ActivityIndicator
+                      color={theme.color.accent}
+                      size="small"
+                      style={styles.loading}
+                    />
+                  ) : null}
+                  {!hasComposerTools &&
+                  quickPromptLibrary.status !== "loading" ? (
+                    <Text style={styles.emptyMenu}>
+                      {t("noComposerActions")}
+                    </Text>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <View style={styles.menuHeader}>
+                    <NativeIconButton
+                      accessibilityLabel={t("cancel")}
+                      icon={<Text style={styles.menuBackIcon}>←</Text>}
+                      onPress={() => setToolsMenu("tools")}
+                      style={styles.menuBackButton}
+                    />
+                    <Text style={styles.menuTitle}>
+                      {toolsMenu === "model"
+                        ? t("model")
+                        : toolsMenu === "permission"
+                          ? t("permissions")
+                          : t("quickPrompts")}
+                    </Text>
+                  </View>
+                  {toolsMenu === "quickPrompts" ? (
+                    <TextInput
+                      accessibilityLabel={t("searchQuickPrompts")}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      onChangeText={setQuickPromptQuery}
+                      placeholder={t("searchQuickPrompts")}
+                      placeholderTextColor={theme.color.muted}
+                      style={styles.searchInput}
+                      value={quickPromptQuery}
+                    />
+                  ) : null}
+                  <ScrollView
+                    keyboardDismissMode={mobileKeyboardDismissMode}
+                    keyboardShouldPersistTaps="handled"
+                    nestedScrollEnabled
+                    showsVerticalScrollIndicator
+                    style={styles.menuOptions}
+                  >
                     {toolsMenu === "model"
-                      ? t("model")
-                      : toolsMenu === "permission"
-                        ? t("permissions")
-                        : t("quickPrompts")}
-                  </Text>
-                </View>
-                {toolsMenu === "quickPrompts" ? (
-                  <TextInput
-                    accessibilityLabel={t("searchQuickPrompts")}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    onChangeText={setQuickPromptQuery}
-                    placeholder={t("searchQuickPrompts")}
-                    placeholderTextColor={theme.color.muted}
-                    style={styles.searchInput}
-                    value={quickPromptQuery}
-                  />
-                ) : null}
-                <ScrollView
-                  nestedScrollEnabled
-                  showsVerticalScrollIndicator
-                  style={styles.menuOptions}
-                >
-                  {toolsMenu === "model"
-                    ? modelOptions.map((option) => (
+                      ? modelOptions.map((option) => (
+                          <NativeListRow
+                            key={option.value}
+                            onPress={() => {
+                              onUpdate({ model: option.value });
+                              setToolsMenu(null);
+                            }}
+                            selected={
+                              option.value === model.composerSettings.model
+                            }
+                            title={option.label}
+                          />
+                        ))
+                      : null}
+                    {toolsMenu === "permission"
+                      ? permissionOptions.map((option) => (
+                          <NativeListRow
+                            description={option.description}
+                            key={option.id}
+                            onPress={() => {
+                              onUpdate({ permissionModeId: option.id });
+                              setToolsMenu(null);
+                            }}
+                            selected={
+                              option.id ===
+                              model.composerSettings.permissionModeId
+                            }
+                            title={option.label ?? option.id}
+                          />
+                        ))
+                      : null}
+                    {toolsMenu === "quickPrompts"
+                      ? filteredQuickPrompts.map((prompt) => (
+                          <NativeListRow
+                            description={previewMobileQuickPromptContent(
+                              prompt.content
+                            )}
+                            key={prompt.id}
+                            onPress={() => selectQuickPrompt(prompt.content)}
+                            title={prompt.title}
+                          />
+                        ))
+                      : null}
+                    {toolsMenu === "quickPrompts" &&
+                    quickPromptLibrary.status === "error" ? (
+                      <View style={styles.quickPromptStatus}>
+                        <Text style={styles.errorText}>
+                          {t("quickPromptsLoadError")}
+                        </Text>
                         <NativeListRow
-                          key={option.value}
-                          onPress={() => {
-                            onUpdate({ model: option.value });
-                            setToolsMenu(null);
-                          }}
-                          selected={
-                            option.value === model.composerSettings.model
-                          }
-                          title={option.label}
+                          onPress={() => void onRefreshQuickPrompts()}
+                          title={t("retry")}
                         />
-                      ))
-                    : null}
-                  {toolsMenu === "permission"
-                    ? permissionOptions.map((option) => (
-                        <NativeListRow
-                          description={option.description}
-                          key={option.id}
-                          onPress={() => {
-                            onUpdate({ permissionModeId: option.id });
-                            setToolsMenu(null);
-                          }}
-                          selected={
-                            option.id ===
-                            model.composerSettings.permissionModeId
-                          }
-                          title={option.label ?? option.id}
-                        />
-                      ))
-                    : null}
-                  {toolsMenu === "quickPrompts"
-                    ? filteredQuickPrompts.map((prompt) => (
-                        <NativeListRow
-                          description={previewMobileQuickPromptContent(
-                            prompt.content
-                          )}
-                          key={prompt.id}
-                          onPress={() => selectQuickPrompt(prompt.content)}
-                          title={prompt.title}
-                        />
-                      ))
-                    : null}
-                  {toolsMenu === "quickPrompts" &&
-                  quickPromptLibrary.status === "error" ? (
-                    <View style={styles.quickPromptStatus}>
-                      <Text style={styles.errorText}>
-                        {t("quickPromptsLoadError")}
-                      </Text>
-                      <NativeListRow
-                        onPress={() => void onRefreshQuickPrompts()}
-                        title={t("retry")}
+                      </View>
+                    ) : null}
+                    {toolsMenu === "quickPrompts" &&
+                    quickPromptLibrary.status === "loading" ? (
+                      <ActivityIndicator
+                        color={theme.color.accent}
+                        size="small"
+                        style={styles.loading}
                       />
-                    </View>
-                  ) : null}
-                  {toolsMenu === "quickPrompts" &&
-                  quickPromptLibrary.status === "loading" ? (
-                    <ActivityIndicator
-                      color={theme.color.accent}
-                      size="small"
-                      style={styles.loading}
-                    />
-                  ) : null}
-                  {toolsMenu === "quickPrompts" &&
-                  quickPromptLibrary.status === "ready" &&
-                  quickPromptLibrary.prompts.length === 0 ? (
-                    <Text style={styles.emptyMenu}>
-                      {t("emptyQuickPrompts")}
-                    </Text>
-                  ) : null}
-                  {toolsMenu === "quickPrompts" &&
-                  quickPromptLibrary.status === "ready" &&
-                  quickPromptLibrary.prompts.length > 0 &&
-                  filteredQuickPrompts.length === 0 ? (
-                    <Text style={styles.emptyMenu}>
-                      {t("noQuickPromptResults")}
-                    </Text>
-                  ) : null}
-                  {toolsMenu !== "quickPrompts" &&
-                  model.composerOptionsLoadStatus === "loading" ? (
-                    <ActivityIndicator
-                      color={theme.color.accent}
-                      size="small"
-                      style={styles.loading}
-                    />
-                  ) : null}
-                </ScrollView>
-              </>
-            )}
+                    ) : null}
+                    {toolsMenu === "quickPrompts" &&
+                    quickPromptLibrary.status === "ready" &&
+                    quickPromptLibrary.prompts.length === 0 ? (
+                      <Text style={styles.emptyMenu}>
+                        {t("emptyQuickPrompts")}
+                      </Text>
+                    ) : null}
+                    {toolsMenu === "quickPrompts" &&
+                    quickPromptLibrary.status === "ready" &&
+                    quickPromptLibrary.prompts.length > 0 &&
+                    filteredQuickPrompts.length === 0 ? (
+                      <Text style={styles.emptyMenu}>
+                        {t("noQuickPromptResults")}
+                      </Text>
+                    ) : null}
+                    {toolsMenu !== "quickPrompts" &&
+                    model.composerOptionsLoadStatus === "loading" ? (
+                      <ActivityIndicator
+                        color={theme.color.accent}
+                        size="small"
+                        style={styles.loading}
+                      />
+                    ) : null}
+                  </ScrollView>
+                </>
+              )}
+            </Pressable>
           </Pressable>
-        </Pressable>
+        </MobileKeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -463,11 +476,9 @@ function createStyles(theme: NativeTheme) {
       fontSize: 11
     },
     backdrop: {
-      bottom: 0,
-      left: 0,
-      position: "absolute",
-      right: 0,
-      top: 0
+      flex: 1,
+      justifyContent: "flex-end",
+      paddingBottom: 96
     },
     chevron: {
       color: theme.color.muted,
@@ -547,18 +558,16 @@ function createStyles(theme: NativeTheme) {
       borderColor: theme.color.border,
       borderRadius: 24,
       borderWidth: StyleSheet.hairlineWidth,
-      bottom: 96,
-      left: theme.space.medium,
-      maxHeight: 560,
+      marginHorizontal: theme.space.medium,
+      maxHeight: "70%",
       padding: theme.space.small,
-      position: "absolute",
-      right: theme.space.medium,
       shadowColor: theme.color.text,
       shadowOffset: { height: 10, width: 0 },
       shadowOpacity: 0.16,
       shadowRadius: 24,
       elevation: 12
     },
+    modalRoot: { flex: 1 },
     menuBackButton: {
       height: 40,
       width: 40

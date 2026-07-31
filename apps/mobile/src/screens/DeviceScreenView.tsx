@@ -10,6 +10,10 @@ import {
   View
 } from "react-native";
 import { type NativeTheme, useNativeTheme } from "@tutti-os/ui-system/native";
+import {
+  MobileKeyboardAvoidingView,
+  mobileKeyboardDismissMode
+} from "../components/MobileKeyboardAvoidingView";
 import { PrimaryButton } from "../components/PrimaryButton";
 import { t } from "../i18n";
 import type { DeviceSnapshot } from "../services/deviceService";
@@ -70,7 +74,7 @@ export function DeviceScreenView({
                 : null;
 
   return (
-    <View style={styles.root}>
+    <MobileKeyboardAvoidingView style={styles.root}>
       <View style={styles.header}>
         <View>
           <Text style={styles.eyebrow}>{accountName || t("welcome")}</Text>
@@ -85,6 +89,8 @@ export function DeviceScreenView({
       </View>
       <ScrollView
         contentContainerStyle={styles.content}
+        keyboardDismissMode={mobileKeyboardDismissMode}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             onRefresh={onRefresh}
@@ -194,7 +200,7 @@ export function DeviceScreenView({
           />
         )}
       </View>
-    </View>
+    </MobileKeyboardAvoidingView>
   );
 }
 

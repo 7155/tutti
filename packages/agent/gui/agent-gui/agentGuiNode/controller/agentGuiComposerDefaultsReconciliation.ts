@@ -14,6 +14,12 @@ interface AgentGUIComposerDefaultsGeneration {
   value: string;
 }
 
+interface AgentGUIAcknowledgedComposerDefaultsGeneration extends AgentGUIComposerDefaultsGeneration {
+  confirmationReadsRemaining: number;
+}
+
+const composerDefaultsConfirmationReadLimit = 2;
+
 export interface AgentGUIComposerDefaultsMutation {
   draftKey: string;
   fields: Partial<
@@ -25,7 +31,10 @@ export interface AgentGUIComposerDefaultsLedger {
   acknowledgedByDraftKey: Record<
     string,
     Partial<
-      Record<AgentGUIComposerDefaultsField, AgentGUIComposerDefaultsGeneration>
+      Record<
+        AgentGUIComposerDefaultsField,
+        AgentGUIAcknowledgedComposerDefaultsGeneration
+      >
     >
   >;
   latestByDraftKey: Record<
@@ -115,7 +124,10 @@ export function acknowledgeAgentGUIComposerDefaultsMutation(
     ) {
       continue;
     }
-    acknowledged[field] = requested;
+    acknowledged[field] = {
+      ...requested,
+      confirmationReadsRemaining: composerDefaultsConfirmationReadLimit
+    };
     changed = true;
   }
   return changed;
@@ -141,7 +153,10 @@ export function prepareAcknowledgedComposerDefaultsAuthorityRead(
         latest[field] === entry.generation &&
         normalizeOptionalText(authoritySettings[field]) === entry.value
       ) {
-        receipt.fields[field] = { ...entry };
+        receipt.fields[field] = {
+          generation: entry.generation,
+          value: entry.value
+        };
         delete authoritySettings[field];
       }
     }
@@ -188,7 +203,13 @@ export function retireAcknowledgedComposerDefaultsForRead(
     }
     if (authoritativeValue !== readEntry.value) {
       // A concrete different value can be a stale overlapping discovery.
-      // Keep both the optimistic draft and its confirmation marker.
+      // Bound retries because some providers normalize or reject defaults and
+      // never echo the requested value. Keep the optimistic user intent after
+      // releasing the marker so later reads can reuse the Engine cache.
+      currentEntry.confirmationReadsRemaining -= 1;
+      if (currentEntry.confirmationReadsRemaining <= 0) {
+        delete acknowledged[field];
+      }
       continue;
     }
     if (normalizeOptionalText(settings[field]) === readEntry.value) {

@@ -192,6 +192,47 @@ describe("agentGuiComposerDefaultsReconciliation", () => {
     ).not.toBeNull();
   });
 
+  it("stops forcing reads after bounded concrete authority conflicts", () => {
+    const ledger = createAgentGUIComposerDefaultsLedger();
+    const mutation = registerAgentGUIComposerDefaultsMutation(
+      ledger,
+      draftKey,
+      { permissionModeId: "accept_edits" }
+    );
+    acknowledgeAgentGUIComposerDefaultsMutation(ledger, mutation, {
+      acknowledgedFields: ["permissionModeId"],
+      supersededFields: []
+    });
+    const settings = { permissionModeId: "accept_edits" };
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const read = prepareAcknowledgedComposerDefaultsAuthorityRead(
+        ledger,
+        draftKey,
+        settings
+      );
+      expect(read.force).toBe(true);
+      retireAcknowledgedComposerDefaultsForRead(
+        ledger,
+        read.receipt!,
+        settings,
+        { permissionModeId: "default" }
+      );
+    }
+
+    expect(
+      prepareAcknowledgedComposerDefaultsAuthorityRead(
+        ledger,
+        draftKey,
+        settings
+      )
+    ).toEqual({
+      force: false,
+      receipt: null,
+      settings
+    });
+  });
+
   it("stops forcing reads but keeps optimistic intent when authority omits the field", () => {
     const ledger = createAgentGUIComposerDefaultsLedger();
     const mutation = registerAgentGUIComposerDefaultsMutation(

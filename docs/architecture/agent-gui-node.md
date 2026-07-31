@@ -669,7 +669,11 @@ disable submission, but must not change editor editability.
   slow or overlapping provider discovery may still return an older default.
   When a settled response omits that field, AgentGUI keeps the optimistic
   intent but releases its confirmation marker so providers that cannot project
-  the field do not remain on permanent forced, uncached discovery
+  the field do not remain on permanent forced, uncached discovery. Concrete
+  conflicting authority is retried only for a bounded number of confirmation
+  reads; if a provider keeps normalizing, rejecting, or overriding the default,
+  AgentGUI likewise preserves the optimistic intent while releasing the marker
+  so later reads return to the Engine's signature-aware cache
 - the Engine alone translates shared activation, prompt send, settings update,
   turn cancel, Interaction response, rename, pin, and batch-delete commands
   into `AgentSessionEffectPort` calls. Desktop and Mobile effect ports retain

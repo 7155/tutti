@@ -1808,6 +1808,31 @@ invalid_grant`. Search `tuttid.log` for
   [AgentTargetSetupGate.tsx](../../../packages/agent/gui/agent-gui/agentGuiNode/view/AgentTargetSetupGate.tsx)
   [agentTargetSetupNotificationController.ts](../../../packages/agent/gui/shared/agentEnv/agentTargetSetupNotificationController.ts)
 
+### Standard ACP first-time configuration is reported as runtime installation failure
+
+- Symptom:
+  A managed standard ACP runtime installs and initializes successfully, but
+  `session/new` reports that no model or inference provider is configured.
+  Target setup then labels the installed runtime as failed instead of offering
+  the runtime's advertised terminal setup action.
+- Root cause:
+  Authentication classification covered credential and login failures but not
+  a runtime whose first-use gate is model-provider configuration. The setup
+  probe therefore discarded the terminal method learned from `initialize`.
+- Fix:
+  Treat an explicit missing-provider response as `auth_required` only when the
+  same `initialize` response advertised a usable terminal configuration
+  method. Keep the provider response as a hard runtime failure when no such
+  method exists, so unrelated launch failures are not hidden by the setup gate.
+- Validation:
+  Emulate `initialize` with a terminal setup method followed by a
+  missing-provider `session/new` error and assert that setup preserves the
+  method and returns `auth_required`. Also cover the no-method and unrelated
+  error boundaries.
+- References:
+  [standard_acp_setup.go](../../../packages/agent/daemon/runtime/standard_acp_setup.go)
+  [standard_acp_setup_test.go](../../../packages/agent/daemon/runtime/standard_acp_setup_test.go)
+
 ### Extension uv runtime install selects an incompatible system Python
 
 - Symptom:

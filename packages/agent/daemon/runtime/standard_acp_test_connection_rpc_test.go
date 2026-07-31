@@ -96,6 +96,12 @@ func (c *standardACPConnection) Send(data []byte) error {
 				})
 				continue
 			}
+			if c.newSessionError != nil {
+				c.sendJSON(map[string]any{
+					"jsonrpc": "2.0", "id": message.ID, "error": c.newSessionError,
+				})
+				continue
+			}
 			if c.commandUpdateOnNewSession {
 				c.sendAvailableCommandsUpdate()
 			}

@@ -250,6 +250,31 @@ dev.tutti.mobile` and inspect a narrow logcat window for the Go fatal message.
   `apps/mobile/src/services/mobileApplicationService.ts`,
   `apps/mobile/android/app/src/main/java/dev/tutti/mobile/DeviceLinkModule.kt`
 
+## iOS App crashes after loading the JavaScript bundle
+
+- **Symptom:** A physical iOS device downloads or evaluates the React Native
+  bundle, then the App exits with `SIGSEGV`. The crash report points at
+  `objc_retain` or `objc_storeStrong` below
+  `ObjCTurboModule::performMethodInvocation` on the JavaScript thread.
+- **Quick checks:** Capture the App console and the latest `.ips` crash report.
+  If the last log is JavaScript bundle evaluation and the faulting stack is a
+  synchronous Objective-C TurboModule invocation, inspect every blocking
+  synchronous Swift export used during startup before investigating Metro or
+  DeviceLink.
+- **Root cause:** React Native's Objective-C interoperability path expects an
+  object from a blocking synchronous method. Exporting a Swift method with a
+  primitive `Bool` return can leave the invocation result buffer shaped like an
+  object pointer; retaining that value then causes an invalid-address crash.
+- **Fix:** Return `NSNumber` from the Swift export. React Native converts it to
+  a JavaScript boolean, so the TypeScript contract remains `boolean`.
+- **Validation:** Build and sign the physical-device target, install it, launch
+  it with the device console attached, and keep the process alive beyond the
+  previous post-bundle crash window. Confirm the initial lifecycle state still
+  arrives as a JavaScript boolean.
+- **References:** `apps/mobile/ios/TuttiMobile/AppLifecycleModule.swift`,
+  `apps/mobile/ios/TuttiMobile/MobileNativeModules.m`,
+  `apps/mobile/src/native/appLifecyclePort.ts`
+
 ## iOS pod install intermittently reports pathname contains null byte
 
 - **Symptom:** `pnpm --filter @tutti-os/mobile ios:pods` downloads and installs

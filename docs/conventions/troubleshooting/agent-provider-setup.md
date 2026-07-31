@@ -1358,7 +1358,9 @@ invalid_grant`. Search `tuttid.log` for
   probe code: `auth_required` means the selected API-key provider has no key,
   `subscription_required` means the managed usage endpoint rejected the
   account with HTTP 402, and `quota_exhausted` means a returned usage window
-  has no remaining quota.
+  has no remaining quota. Coding Plan usage probes send the OAuth token only
+  to the official HTTPS `api.kimi.com` origin; a custom or non-HTTPS
+  `KIMI_CODE_BASE_URL` must fail before any outbound usage request.
   Check the configuration directory that matches the selected runtime:
   standalone Kimi Code uses `~/.kimi-code` (or `KIMI_CODE_HOME`), while the
   managed `kimi-cli` runtime uses `~/.kimi` (or `KIMI_SHARE_DIR`).
@@ -1372,18 +1374,21 @@ invalid_grant`. Search `tuttid.log` for
 - Fix:
   Reject both empty ACP model shapes during setup. Project Kimi configuration
   only to non-secret billing-mode fields and API-key presence, query the
-  managed Coding Plan usage endpoint, select the configuration directory using
-  the active standalone/runtime convention, and preserve stable error codes
-  through the Agent status port so AgentGUI can render actionable localized copy. A
-  normal ACP terminal with neither assistant output nor tool activity must
-  settle as `provider_empty_response`, producing a visible conversation error
-  card that points users back to model and account setup.
+  managed Coding Plan usage endpoint only after validating its official HTTPS
+  origin, select the configuration directory using the active
+  standalone/runtime convention, and preserve stable error codes through the
+  Agent status port so AgentGUI can render actionable localized copy. A normal
+  ACP terminal with neither assistant output nor tool activity must settle as
+  `provider_empty_response`, producing a visible conversation error card that
+  points users back to model and account setup. Turns with only thinking or a
+  system notice remain valid because they produced observable assistant output.
 - Validation:
   Cover empty and populated `models`/`configOptions` selectors, missing API
   keys, Coding Plan HTTP 402, zero remaining quota, status-port error
   projection, both Kimi configuration directory conventions, localized
-  configuration and `/status` errors, and an otherwise normal empty ACP
-  `end_turn`.
+  configuration and `/status` errors, refusal to fetch usage from a custom
+  origin, thinking-only and notice-only ACP turns, and an otherwise normal
+  empty ACP `end_turn`.
 - References:
   [standard_acp_setup.go](../../../packages/agent/daemon/runtime/standard_acp_setup.go)
   [standard_acp_turn.go](../../../packages/agent/daemon/runtime/standard_acp_turn.go)

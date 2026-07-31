@@ -3,6 +3,7 @@ import type {
   AgentActivitySendInput,
   AgentActivitySession,
   AgentActivitySessionDetailSnapshot,
+  AgentActivitySessionSettings,
   AgentSessionActivateEffectInput,
   TurnEditRetryCommand,
   TurnRecoverEditRetryCommand
@@ -18,6 +19,56 @@ function unexpectedGoalControlMapping(): never {
 }
 
 describe("createWorkspaceActivityEffectPort", () => {
+  test("filters unsupported settings from composer options requests", async () => {
+    const stopAfterCapture = new Error("stop after composer request capture");
+    const getAgentProviderComposerOptions = jest
+      .fn()
+      .mockRejectedValue(stopAfterCapture);
+    const settings: AgentActivitySessionSettings = {
+      browserUse: false,
+      computerUse: false,
+      model: "gpt-5"
+    };
+    await expect(
+      executeWorkspaceActivityExtensionCommand(
+        {
+          client: {
+            getAgentProviderComposerOptions
+          } as unknown as TuttidClient,
+          mapGoalControlResult: unexpectedGoalControlMapping,
+          mapSession(): AgentActivitySession {
+            throw new Error("unexpected Session mapping");
+          },
+          mapSessionDetail() {
+            throw new Error("unexpected detail mapping");
+          },
+          async reconcileSession() {},
+          async reconcileWorkspace() {}
+        },
+        {
+          commandId: "composer-1",
+          correlationId: "target-1",
+          provider: "codex",
+          settings,
+          targetKey: "target-1",
+          type: "composerOptions/load",
+          workspaceId: "workspace-1"
+        }
+      )
+    ).rejects.toBe(stopAfterCapture);
+
+    expect(getAgentProviderComposerOptions).toHaveBeenCalledWith(
+      "codex",
+      {
+        agentTargetId: "target-1",
+        locale: expect.any(String),
+        settings: { browserUse: false, model: "gpt-5" },
+        workspaceId: "workspace-1"
+      },
+      { signal: undefined }
+    );
+  });
+
   test("explicitly rejects edit-retry commands that Mobile does not support", async () => {
     const context = {
       client: {} as TuttidClient,
@@ -406,7 +457,11 @@ describe("createWorkspaceActivityEffectPort", () => {
         agentSessionId: "session-1",
         commandId: "settings-1",
         correlationId: "request-1",
-        settings: { model: "model-1" },
+        settings: {
+          browserUse: false,
+          computerUse: false,
+          model: "model-1"
+        },
         workspaceId: "workspace-1"
       },
       { signal: controller.signal }
@@ -415,7 +470,7 @@ describe("createWorkspaceActivityEffectPort", () => {
     expect(updateWorkspaceAgentSessionSettings).toHaveBeenCalledWith(
       "workspace-1",
       "session-1",
-      { model: "model-1" },
+      { browserUse: false, model: "model-1" },
       { signal: controller.signal }
     );
     expect(result).toEqual({

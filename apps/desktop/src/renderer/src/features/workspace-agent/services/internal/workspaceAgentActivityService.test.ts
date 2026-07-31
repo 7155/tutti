@@ -961,7 +961,6 @@ test("WorkspaceAgentActivityService returns the authoritative canonical session 
   assert.equal(requestSignal, controller.signal);
   assert.deepEqual(requestSettings, {
     browserUse: false,
-    computerUse: true,
     model: "opus",
     permissionModeId: null,
     planMode: true,

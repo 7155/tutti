@@ -16,6 +16,12 @@ public mapper accepts the generated `AgentProviderComposerOptionsResponse`
 contract. Only its documented `runtimeContext` remains opaque; typed Skill and
 capability catalogs do not grow compatibility fields in this adapter.
 
+`tuttiAgentSessionComposerSettingsFromActivity` is the reverse request
+projection shared by Desktop and Mobile. It forwards only fields declared by
+the generated `AgentSessionComposerSettings` contract. Broader Engine or
+presentation settings such as `computerUse` remain local unless OpenAPI first
+adds a matching request field.
+
 `agentActivitySessionDetailFromTuttid` is the single detail aggregate mapper for
 Desktop and Mobile. It validates and maps the root Session, nested child
 Sessions, and Turns as one value. The caller supplies the requested Session id;

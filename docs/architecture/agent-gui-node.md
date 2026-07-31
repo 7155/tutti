@@ -959,9 +959,10 @@ timeout and retry policy, and translates the semantic call to its internal
 the activation intent instead; provider-independent draft projection and
 Desktop-persisted defaults remain surface policy until activation. A renderer
 must not call the settings endpoint from a component or invent a
-provider-specific settings schema. Host normalization must preserve every
-shared setting supported by that operation; in particular, both Desktop and
-Mobile preserve `browserUse` and `computerUse` for existing-Session updates.
+provider-specific settings schema. Desktop and Mobile project the broader
+Engine settings through one generated-contract allowlist before composer-option
+or existing-Session settings requests. Both preserve supported fields such as
+`browserUse`; neither sends `computerUse` until OpenAPI adds that request field.
 Existing-Session Prompt sends similarly enter through `engine.submitPrompt`;
 Desktop and Mobile provide content plus a stable client submit identity, while
 the Engine owns common routing, confirmation expiry, and admission projection.

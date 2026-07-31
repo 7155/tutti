@@ -388,6 +388,13 @@ export function useAgentGUISessionPresentation(
       input.pendingApproval?.requestId ?? "",
       promptRequestId(pendingInteractivePrompt) ?? "",
       input.conversation?.activity.status ?? "",
+      input.conversation?.sourceDetail.showProcessingIndicator
+        ? "show-processing"
+        : "hide-processing",
+      input.conversation?.rows
+        .filter((row) => row.kind === "processing")
+        .map((row) => `${row.id}:${row.turnId ?? ""}`)
+        .join(",") ?? "",
       input.isCreatingConversation ? "creating" : "",
       input.isLoadingMessages ? "loading-messages" : "",
       input.isSubmitting ? "submitting" : "",
@@ -405,6 +412,9 @@ export function useAgentGUISessionPresentation(
       activeConversation: input.activeConversation,
       activeConversationBusy,
       activeConversationId: input.activeConversationId,
+      activeEngineActiveTurn: input.activeEngineActiveTurn,
+      activeEngineAvailability: input.activeEngineAvailability,
+      activeEngineLatestTurn: input.activeEngineLatestTurn,
       activeHasPendingSubmittedTurn,
       activeLiveState: input.activeLiveState,
       activeRuntimeSession: input.activeEngineSession,

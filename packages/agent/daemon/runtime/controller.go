@@ -9,6 +9,7 @@ import (
 
 	agentsessionstore "github.com/tutti-os/tutti/packages/agent/daemon/activity"
 	activityshared "github.com/tutti-os/tutti/packages/agent/daemon/activity/events"
+	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
 )
 
 var (
@@ -27,6 +28,7 @@ type execMetadataContextKey struct{}
 type Controller struct {
 	mu                          sync.Mutex
 	streamObserverMu            sync.RWMutex
+	providerObservationMu       sync.RWMutex
 	sessions                    map[string]Session
 	sessionAvailabilityWaiters  map[string]*sessionAvailabilityWaiter
 	adapters                    map[string]Adapter
@@ -46,6 +48,7 @@ type Controller struct {
 	providerGoalAdoptionSink    ProviderGoalAdoptionSink
 	terminalInteractions        terminalInteractiveDispositionStore
 	streamObserver              RuntimeStreamEventObserver
+	providerObservationObserver ProviderObservationObserver
 }
 
 // RuntimeStreamEventObserver receives the ordered precommit stream projection
@@ -58,6 +61,17 @@ type RuntimeStreamEventObserver interface {
 		string,
 		string,
 		[]StreamEvent,
+	) error
+}
+
+// ProviderObservationObserver receives capture-only provider observations
+// synchronously before their durable activity report is queued.
+type ProviderObservationObserver interface {
+	ObserveProviderObservations(
+		context.Context,
+		string,
+		string,
+		[]replay.ProviderObservationBatch,
 	) error
 }
 

@@ -15,6 +15,7 @@ import type {
   TuttidClient,
   WorkspaceAgentSession
 } from "@tutti-os/client-tuttid-ts";
+import { createDesktopAgentActivityAdapter } from "../desktopAgentActivityAdapter.ts";
 import {
   createWorkspaceAgentSessionEngineHost,
   executeWorkspaceAgentForkObservedAckCommand,
@@ -101,21 +102,22 @@ test("workspace engine host sends public intents and command settlements to the 
       observeCommand: (command) => commands.push(command),
       observeIntent: (intent) => intents.push(intent)
     },
-    activateSession: async () => ({}) as never,
-    cancelTurn: async () => ({}),
+    executeEngineActivateSession: async () => ({}) as never,
+    executeEngineCancelTurn: async () => ({}),
+    executeEngineGoalControl: async () => ({}) as never,
     reconcileSession: async () => ({}),
     restorePendingSessionRecording() {},
     runtimeApi: {
       logTerminalDiagnostic: async () => {}
     },
-    sendInput: async () => ({ ok: true }),
-    submitInteractive: async () => ({}) as never,
-    submitPlanDecision: async () => ({}) as never,
+    executeEngineSendInput: async () => ({ ok: true }),
+    executeEngineSubmitInteractive: async () => ({}) as never,
+    executeEngineSubmitPlanDecision: async () => ({}) as never,
     subscribeSessionEvents: () => () => {},
     takePendingSessionRecording: () => null,
     tuttidClient: {} as TuttidClient,
     unactivateSession: async () => ({}) as never,
-    updateSessionSettings: async () => ({}) as never,
+    executeEngineUpdateSessionSettings: async () => ({}) as never,
     updateTuttiModeActivation: async () => ({}) as never,
     workspaceId: "workspace-1"
   });
@@ -138,24 +140,25 @@ test("desktop host follows the shared settings-before-send workflow", async () =
   const operations: string[] = [];
   const updatedSession = session({ browserUse: true, updatedAtUnixMs: 2 });
   const host = createWorkspaceAgentSessionEngineHost({
-    activateSession: async () => ({}) as never,
-    cancelTurn: async () => ({}),
+    executeEngineActivateSession: async () => ({}) as never,
+    executeEngineCancelTurn: async () => ({}),
+    executeEngineGoalControl: async () => ({}) as never,
     reconcileSession: async () => ({}),
     restorePendingSessionRecording() {},
     runtimeApi: {
       logTerminalDiagnostic: async () => {}
     },
-    sendInput: async () => {
+    executeEngineSendInput: async () => {
       operations.push("send");
       throw new Error("send rejected");
     },
-    submitInteractive: async () => ({}) as never,
-    submitPlanDecision: async () => ({}) as never,
+    executeEngineSubmitInteractive: async () => ({}) as never,
+    executeEngineSubmitPlanDecision: async () => ({}) as never,
     subscribeSessionEvents: () => () => {},
     takePendingSessionRecording: () => null,
     tuttidClient: {} as TuttidClient,
     unactivateSession: async () => ({}) as never,
-    updateSessionSettings: async () => {
+    executeEngineUpdateSessionSettings: async () => {
       operations.push("settings");
       return {
         agentSessionId: "session-1",
@@ -211,22 +214,31 @@ test("desktop host lets the Engine apply Goal Control transport results", async 
       };
     }
   } as TuttidClient;
+  const runtimeApi = {
+    logTerminalDiagnostic: async () => {}
+  };
+  const adapter = createDesktopAgentActivityAdapter({
+    runtimeApi,
+    tuttidClient
+  });
   const host = createWorkspaceAgentSessionEngineHost({
-    activateSession: async () => ({}) as never,
-    cancelTurn: async () => ({}),
+    executeEngineActivateSession: async () => ({}) as never,
+    executeEngineCancelTurn: async () => ({}),
+    executeEngineGoalControl: (input, options) =>
+      options === undefined
+        ? adapter.goalControl(input)
+        : adapter.goalControl(input, options),
     reconcileSession: async () => ({}),
     restorePendingSessionRecording() {},
-    runtimeApi: {
-      logTerminalDiagnostic: async () => {}
-    },
-    sendInput: async () => ({ ok: true }),
-    submitInteractive: async () => ({}) as never,
-    submitPlanDecision: async () => ({}) as never,
+    runtimeApi,
+    executeEngineSendInput: async () => ({ ok: true }),
+    executeEngineSubmitInteractive: async () => ({}) as never,
+    executeEngineSubmitPlanDecision: async () => ({}) as never,
     subscribeSessionEvents: () => () => {},
     takePendingSessionRecording: () => null,
     tuttidClient,
     unactivateSession: async () => ({}) as never,
-    updateSessionSettings: async () => ({}) as never,
+    executeEngineUpdateSessionSettings: async () => ({}) as never,
     updateTuttiModeActivation: async () => ({}) as never,
     workspaceId: "workspace-1"
   });
@@ -275,21 +287,22 @@ test("workspace engine host still executes commands when the command observer fa
       },
       observeIntent: () => {}
     },
-    activateSession: async () => ({}) as never,
-    cancelTurn: async () => ({}),
+    executeEngineActivateSession: async () => ({}) as never,
+    executeEngineCancelTurn: async () => ({}),
+    executeEngineGoalControl: async () => ({}) as never,
     reconcileSession: async () => ({}),
     restorePendingSessionRecording() {},
     runtimeApi: {
       logTerminalDiagnostic: async () => {}
     },
-    sendInput: async () => ({ ok: true }),
-    submitInteractive: async () => ({}) as never,
-    submitPlanDecision: async () => ({}) as never,
+    executeEngineSendInput: async () => ({ ok: true }),
+    executeEngineSubmitInteractive: async () => ({}) as never,
+    executeEngineSubmitPlanDecision: async () => ({}) as never,
     subscribeSessionEvents: () => () => {},
     takePendingSessionRecording: () => null,
     tuttidClient: {} as TuttidClient,
     unactivateSession: async () => ({}) as never,
-    updateSessionSettings: async () => ({}) as never,
+    executeEngineUpdateSessionSettings: async () => ({}) as never,
     updateTuttiModeActivation: async () => ({}) as never,
     workspaceId: "workspace-1"
   });

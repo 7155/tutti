@@ -20,8 +20,6 @@ import type {
   AgentActivitySnapshot,
   AgentActivitySnapshotListener,
   AgentSessionEngine,
-  EngineExternalCommand,
-  EngineIntent,
   AgentActivitySubmitInteractiveInput,
   AgentActivitySubmitInteractiveResult
 } from "@tutti-os/agent-activity-core";
@@ -140,29 +138,9 @@ export interface WorkspaceAgentComposerDefaultsInvalidatedEvent {
 export interface IWorkspaceAgentActivityService {
   readonly _serviceBrand: undefined;
 
-  armNextSessionRecording?(workspaceId: string, recordingId: string): void;
-  clearNextSessionRecording?(workspaceId: string, recordingId?: string): void;
-  startSessionActivityEventRecording?(
-    workspaceId: string,
-    recordingId: string
-  ): void;
-  sealSessionActivityEventRecording?(
-    workspaceId: string,
-    recordingId: string
-  ): Promise<void>;
-  discardSessionActivityEventRecording?(
-    workspaceId: string,
-    recordingId: string
-  ): void;
-  addSessionEngineActivityObserver?(
-    workspaceId: string,
-    observer: {
-      observeCommand(command: EngineExternalCommand): void;
-      observeIntent(intent: EngineIntent): void;
-    }
-  ): () => void;
-
-  activateSession: AgentActivityRuntime["activateSession"];
+  activateSession(
+    input: Parameters<AgentActivityRuntime["activateSession"]>[0]
+  ): ReturnType<AgentActivityRuntime["activateSession"]>;
   cancelTurn?(
     input: AgentActivityCancelTurnInput
   ): Promise<

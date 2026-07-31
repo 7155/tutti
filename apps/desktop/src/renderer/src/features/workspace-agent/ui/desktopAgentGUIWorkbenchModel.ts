@@ -1,9 +1,4 @@
 import type {
-  AgentSessionEngine,
-  EngineExternalCommand,
-  EngineIntent
-} from "@tutti-os/agent-activity-core";
-import type {
   AgentActivityRuntime,
   AgentGUIAgentDirectorySnapshot,
   AgentGUIAllAgentsPresentation,
@@ -57,14 +52,7 @@ export interface DesktopAgentGUISurfaceContext {
 export interface DesktopAgentGUIWorkbenchBodyProps {
   agentActivityRuntime: AgentActivityRuntime;
   agentHostApi: AgentHostInputApi;
-  agentSessionReplayService: AgentSessionReplayService;
-  agentSessionActivityReplay: {
-    addObserver(observer: {
-      observeCommand(command: EngineExternalCommand): void;
-      observeIntent(intent: EngineIntent): void;
-    }): () => void;
-    engine: AgentSessionEngine;
-  };
+  agentSessionReplayService: AgentSessionReplayService | null;
   agentStatusSource?: AgentStatusSource;
   tuttiModePlanReviewRuntime: NonNullable<
     AgentGUIProps["tuttiModePlanReviewRuntime"]
@@ -98,6 +86,7 @@ export interface DesktopAgentGUIWorkbenchBodyProps {
     | "getAgentSessionReplayStatus"
     | "launchAgentSessionReplay"
     | "logTerminalDiagnostic"
+    | "revealAgentSessionReplayCassette"
     | "sendAgentSessionReplayControl"
     | "setAgentSessionReplayPlayback"
     | "waitForAgentSessionReplay"

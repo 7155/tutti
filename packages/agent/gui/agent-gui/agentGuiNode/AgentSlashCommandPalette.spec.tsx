@@ -70,6 +70,9 @@ describe("AgentSlashCommandPalette", () => {
     expect(palette).toBeInTheDocument();
 
     const option = screen.getByRole("option", { name: /tutti-cli/i });
+    expect(
+      screen.getByTestId("agent-gui-composer-slash-command-tutti-cli")
+    ).toBe(option);
     expect(option).toHaveAttribute("data-highlighted", "");
     expect(screen.getByText("tutti-cli")).toHaveClass("text-[13px]");
     expect(screen.getByText("Inspect tasks and agent context")).toHaveClass(

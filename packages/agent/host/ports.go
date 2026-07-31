@@ -214,6 +214,22 @@ type SessionPurgeStore interface {
 	PurgeDeletedSessions(context.Context, storesqlite.PurgeDeletedSessionsInput) (storesqlite.PurgeDeletedSessionsResult, error)
 }
 
+// HistoricalSessionStateStore is the canonical persistence boundary used by
+// Replay before normal Host recovery. The contract contains business entities,
+// not rows, table names, or migration details.
+type HistoricalSessionStateStore interface {
+	CaptureHistoricalSessionGraph(
+		context.Context,
+		string,
+		string,
+	) (HistoricalSessionGraph, error)
+	RestoreHistoricalSessionGraph(
+		context.Context,
+		string,
+		HistoricalSessionGraph,
+	) error
+}
+
 // RuntimeController is the provider-neutral live-runtime surface needed by
 // create, resume, send, exact cancel, interactive, plan, title, and visibility
 // workflows. Process transport and provider implementations stay behind it.

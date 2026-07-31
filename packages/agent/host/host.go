@@ -14,6 +14,7 @@ type Config struct {
 	SessionBatchManagement SessionBatchManagementStore
 	SessionDeletionGuard   SessionDeletionGuard
 	SessionPurge           SessionPurgeStore
+	HistoricalState        HistoricalSessionStateStore
 	SessionForks           SessionForkStore
 	SessionForkRecovery    SessionForkRecoveryStore
 	SessionForkRuntime     SessionForkRuntime
@@ -66,6 +67,7 @@ type Host struct {
 	sessionBatchManagement SessionBatchManagementStore
 	sessionDeletionGuard   SessionDeletionGuard
 	sessionPurge           SessionPurgeStore
+	historicalState        HistoricalSessionStateStore
 	sessionForks           SessionForkStore
 	sessionForkRecovery    SessionForkRecoveryStore
 	sessionForkRuntime     SessionForkRuntime
@@ -117,6 +119,7 @@ func New(config Config) *Host {
 		store: config.CanonicalStore, turnSubmissions: config.TurnSubmissions, effectiveHistory: config.EffectiveHistory,
 		sessionManagement: config.SessionManagement, sessionBatchManagement: config.SessionBatchManagement, sessionDeletionGuard: config.SessionDeletionGuard, sessionPurge: config.SessionPurge,
 		sessionForks: config.SessionForks, sessionForkRuntime: config.SessionForkRuntime,
+		historicalState:    config.HistoricalState,
 		sessionForkContext: config.SessionForkContext, sessionForkState: config.SessionForkState,
 		sessionForkAttachments: config.SessionForkAttachments,
 		runtime:                config.Runtime,

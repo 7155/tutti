@@ -1,9 +1,4 @@
 import type {
-  AgentSessionEngine,
-  EngineExternalCommand,
-  EngineIntent
-} from "@tutti-os/agent-activity-core";
-import type {
   AgentActivityRuntime,
   AgentGUIProps,
   AgentHostInputApi,
@@ -61,19 +56,13 @@ import { createDesktopAgentGeneratedFileMentionProvider } from "./internal/creat
 import { createDesktopAgentExternalPromptFilePreparer } from "./internal/prepareDesktopAgentExternalPromptFiles.ts";
 import { createDesktopAgentExternalPromptEntryResolver } from "./internal/resolveDesktopAgentExternalPromptEntries.ts";
 import { createDesktopTuttiModePlanReviewRuntime } from "./internal/desktopWorkspaceWorkflowRuntime.ts";
-import { AgentSessionReplayService } from "../../agent-session-replay/services/agentSessionReplayService.ts";
+import type { AgentSessionReplayDesktopComposition } from "../../agent-session-replay/services/agentSessionReplayDesktopComposition.ts";
+import type { AgentSessionReplayService } from "../../agent-session-replay/services/agentSessionReplayService.ts";
 
 export interface DesktopAgentGUIWorkbenchHostInput {
   agentActivityRuntime: AgentActivityRuntime;
   agentHostApi: AgentHostInputApi;
-  agentSessionReplayService: AgentSessionReplayService;
-  agentSessionActivityReplay: {
-    addObserver(observer: {
-      observeCommand(command: EngineExternalCommand): void;
-      observeIntent(intent: EngineIntent): void;
-    }): () => void;
-    engine: AgentSessionEngine;
-  };
+  agentSessionReplayService: AgentSessionReplayService | null;
   tuttiModePlanReviewRuntime: TuttiModePlanReviewRuntime;
   contextMentionProviders: readonly AgentContextMentionProvider[];
   trackAgentProviderChatReady: (input: { provider: string }) => Promise<void>;
@@ -110,6 +99,7 @@ export interface DesktopAgentGUIWorkbenchHostInput {
 
 export interface CreateDesktopAgentGUIWorkbenchHostInputInput {
   agentQuickPromptService?: IAgentQuickPromptService;
+  agentSessionReplayComposition?: AgentSessionReplayDesktopComposition | null;
   agentHostApi?: AgentHostInputApi | null;
   eventStreamClient?: TuttidEventStreamClient | null;
   hostFilesApi: DesktopHostFilesApi;
@@ -137,6 +127,7 @@ export interface CreateDesktopAgentGUIWorkbenchHostInputInput {
 
 export function createDesktopAgentGUIWorkbenchHostInput({
   agentQuickPromptService,
+  agentSessionReplayComposition,
   agentHostApi,
   eventStreamClient,
   hostFilesApi,
@@ -272,49 +263,10 @@ export function createDesktopAgentGUIWorkbenchHostInput({
     });
   const resolveExternalPromptEntries =
     createDesktopAgentExternalPromptEntryResolver({ platformApi });
-  const agentSessionReplayService = new AgentSessionReplayService({
-    armNextSessionRecording: (recordingId) =>
-      workspaceAgentActivityService.armNextSessionRecording?.(
-        workspaceId,
-        recordingId
-      ),
-    clearNextSessionRecording: (recordingId) =>
-      workspaceAgentActivityService.clearNextSessionRecording?.(
-        workspaceId,
-        recordingId
-      ),
-    discardActivityEventRecording: (recordingId) =>
-      workspaceAgentActivityService.discardSessionActivityEventRecording?.(
-        workspaceId,
-        recordingId
-      ),
-    sealActivityEventRecording: (recordingId) =>
-      workspaceAgentActivityService.sealSessionActivityEventRecording?.(
-        workspaceId,
-        recordingId
-      ) ?? Promise.resolve(),
-    startActivityEventRecording: (recordingId) =>
-      workspaceAgentActivityService.startSessionActivityEventRecording?.(
-        workspaceId,
-        recordingId
-      ),
-    tuttidClient,
-    workspaceId
-  });
   return {
     agentActivityRuntime,
     agentHostApi: resolvedAgentHostApi,
-    agentSessionActivityReplay: {
-      addObserver: (observer) =>
-        workspaceAgentActivityService.addSessionEngineActivityObserver?.(
-          workspaceId,
-          observer
-        ) ?? (() => {}),
-      get engine() {
-        return workspaceAgentActivityService.getSessionEngine(workspaceId);
-      }
-    },
-    agentSessionReplayService,
+    agentSessionReplayService: agentSessionReplayComposition?.service ?? null,
     tuttiModePlanReviewRuntime: createDesktopTuttiModePlanReviewRuntime({
       composerOptionsRuntime: agentActivityRuntime,
       tuttidClient,

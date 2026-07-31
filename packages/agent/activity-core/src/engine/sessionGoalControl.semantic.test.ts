@@ -311,6 +311,43 @@ test("explicit Goal clear overrides a stale runtime Session projection", async (
   );
 });
 
+test("Goal clear wins over a newer mid-flight Session version bump", async () => {
+  const existingGoal = goal("existing goal", "active");
+  const harness = createHarness(existingGoal);
+  // Simulate turn/session bumps that advance updatedAtUnixMs while clear RPC
+  // is in flight; the clear response Session itself stays on an older version.
+  harness.engine.dispatch({
+    session: session(existingGoal, 9_000),
+    type: "session/upserted"
+  });
+  harness.engine.controlGoal({
+    action: "clear",
+    agentSessionId: "session-1",
+    clientSubmitId: "goal-submit-1"
+  });
+
+  harness.resolve(0, null, 2, existingGoal);
+  await flushMicrotasks();
+
+  assert.equal(
+    harness.engine.getSnapshot().sessionLifecycle.sessionsById["session-1"]
+      ?.goal,
+    null
+  );
+  assert.deepEqual(
+    selectSessionGoalControlPresentation(
+      harness.engine.getSnapshot(),
+      "session-1"
+    ),
+    {
+      agentSessionId: "session-1",
+      goal: null,
+      optimistic: false,
+      status: "succeeded"
+    }
+  );
+});
+
 test("timeout remains delivery-unknown and an exact retry reuses Host identity", () => {
   const harness = createHarness();
   harness.engine.controlGoal({

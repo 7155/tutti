@@ -107,7 +107,7 @@ func (s *Store) ReportActivityState(
 		}
 	}
 	if accepted && input.RootProviderTurn != nil {
-		result.RootTurn, result.RootTurnAccepted, err = s.applyRootProviderTurnTransitionTx(ctx, tx, *input.RootProviderTurn, now)
+		result.RootTurn, result.RootTurnAccepted, result.RootProviderTurnAccepted, err = s.applyRootProviderTurnTransitionTx(ctx, tx, *input.RootProviderTurn, now)
 		if err != nil {
 			return ActivityStateReportResult{}, err
 		}
@@ -188,7 +188,7 @@ func activityStateMutations(result ActivityStateReportResult) []TransactionMutat
 	if result.TurnAccepted {
 		mutations = append(mutations, transactionMutation(result.Turn.WorkspaceID, result.Turn.AgentSessionID, MutationEntityTurn, result.Turn.TurnID, "upsert", result.Turn.UpdatedAtUnixMS))
 	}
-	if result.RootTurnAccepted {
+	if result.RootTurnAccepted || result.RootProviderTurnAccepted {
 		mutations = append(mutations, transactionMutation(result.RootTurn.WorkspaceID, result.RootTurn.AgentSessionID, MutationEntityTurn, result.RootTurn.TurnID, "upsert", result.RootTurn.UpdatedAtUnixMS))
 	}
 	if result.InteractionResult == InteractionTransitionApplied {

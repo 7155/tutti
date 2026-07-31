@@ -13,7 +13,11 @@ import {
   desktopErrorCodes,
   formatErrorMessage
 } from "../../shared/errors/desktopErrors.ts";
-import { getDesktopLogger, getDesktopLogSessionID } from "../logging.ts";
+import {
+  createBestEffortProcessSink,
+  getDesktopLogger,
+  getDesktopLogSessionID
+} from "../logging.ts";
 import {
   resolveBrowserNodeAutomationListenerInfoPath,
   resolveDesktopLogsDir,
@@ -28,8 +32,11 @@ import {
 
 const healthPollIntervalMs = 250;
 const healthTimeoutMs = 90_000;
+const maxStartupDiagnosticCharacters = 12_000;
 const shutdownTimeoutMs = 90_000;
 const staleProcessShutdownTimeoutMs = 3_000;
+const writeToProcessStdout = createBestEffortProcessSink(process.stdout);
+const writeToProcessStderr = createBestEffortProcessSink(process.stderr);
 
 const require = createRequire(import.meta.url);
 
@@ -125,18 +132,22 @@ class ManagedTuttid implements TuttidManager {
 
     this.process = child;
     this.stopRequested = false;
+    let startupDiagnostic = "";
     logger.info("managed tuttid spawned", {
       pid: child.pid ?? null
     });
 
     if (forwardStdout) {
       child.stdout?.on("data", (chunk: Buffer | string) => {
-        process.stdout.write(`[tuttid] ${chunk.toString()}`);
+        void writeToProcessStdout(`[tuttid] ${chunk.toString()}`);
       });
     }
 
     child.stderr?.on("data", (chunk: Buffer | string) => {
-      process.stderr.write(`[tuttid] ${chunk.toString()}`);
+      startupDiagnostic = `${startupDiagnostic}${chunk.toString()}`.slice(
+        -maxStartupDiagnosticCharacters
+      );
+      void writeToProcessStderr(`[tuttid] ${chunk.toString()}`);
       getDesktopLogger().error("managed tuttid stderr", {
         chunk: chunk.toString().trim(),
         error_code: desktopErrorCodes.managedProcessStderr
@@ -166,7 +177,7 @@ class ManagedTuttid implements TuttidManager {
       await waitUntilHealthy(this.tuttidClient, () => this.isProcessAlive());
     } catch (error) {
       await this.terminateProcess();
-      throw error;
+      throw managedTuttidStartupError(error, startupDiagnostic);
     }
 
     this.restartController.notifyStarted();
@@ -212,6 +223,27 @@ class ManagedTuttid implements TuttidManager {
 
     return this.process.exitCode === null && this.process.signalCode === null;
   }
+}
+
+export function managedTuttidStartupError(
+  error: unknown,
+  diagnostic: string
+): Error {
+  const message = formatErrorMessage(error);
+  const causeMessage = diagnostic.trim();
+  if (!causeMessage && error instanceof Error) {
+    return error;
+  }
+  return new Error(message, {
+    ...(causeMessage
+      ? {
+          cause: {
+            code: desktopErrorCodes.managedProcessStderr,
+            message: causeMessage
+          }
+        }
+      : {})
+  });
 }
 
 function resolveEndpointEnv(

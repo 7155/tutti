@@ -40,7 +40,7 @@ export function sessionGoalControlReducer(
       return requestGoalControl(state, intent, context);
     case "engine/commandResult":
       return intent.commandType === "goal/control"
-        ? settleGoalControl(state, intent)
+        ? settleGoalControl(state, intent, context)
         : unchanged(state);
     case "session/removed":
       return removeSession(state, intent.agentSessionId);
@@ -119,7 +119,8 @@ function requestGoalControl(
 
 function settleGoalControl(
   state: SessionGoalControlState,
-  intent: Extract<EngineIntent, { type: "engine/commandResult" }>
+  intent: Extract<EngineIntent, { type: "engine/commandResult" }>,
+  context: SessionGoalControlReducerContext
 ): EngineReducerResult<SessionGoalControlState> {
   const operation = Object.values(state.operationsBySessionId).find(
     (candidate) => candidate.commandId === intent.commandId
@@ -134,11 +135,41 @@ function settleGoalControl(
       operation
     );
     if (validation) {
+      // Goal-control responses can race turn/session bumps that raise
+      // updatedAtUnixMs while the RPC is in flight. Force the follow-up
+      // projection to be at least as new as the live canonical Session so
+      // shouldUseIncomingSession accepts an authoritative clear/set goal.
+      const currentSession =
+        context.sessionsById[operation.agentSessionId] ?? null;
+      const session = {
+        ...validation.session,
+        messageVersion: Math.max(
+          validation.session.messageVersion ?? 0,
+          currentSession?.messageVersion ?? 0
+        ),
+        updatedAtUnixMs: Math.max(
+          validation.session.updatedAtUnixMs ?? 0,
+          currentSession?.updatedAtUnixMs ?? 0,
+          currentSession?.lastEventUnixMs ?? 0,
+          operation.requestedAtUnixMs
+        )
+      };
+      const followUpIntents: EngineIntent[] = [
+        { session, type: "session/upserted" }
+      ];
+      // Clears must win even when a concurrent Session upsert is still
+      // rejected: patch the canonical Goal off-band so the banner cannot keep
+      // a tombstoned Goal alive from a stale mid-flight projection.
+      if (validation.goal === null && operation.action === "clear") {
+        followUpIntents.push({
+          agentSessionId: operation.agentSessionId,
+          patch: { goal: null, updatedAtUnixMs: session.updatedAtUnixMs },
+          type: "session/metadataPatched"
+        });
+      }
       return {
         commands: NO_COMMANDS,
-        followUpIntents: [
-          { session: validation.session, type: "session/upserted" }
-        ],
+        followUpIntents,
         state: replaceOperation(state, {
           ...operation,
           errorCode:

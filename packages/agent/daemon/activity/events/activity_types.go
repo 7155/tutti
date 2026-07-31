@@ -130,6 +130,18 @@ type Event struct {
 	ParentToolCallID     string
 	OccurredAtUnixMS     int64
 	Payload              EventPayload
+	// ProviderInputUnit is capture-only causality. It is never serialized into
+	// canonical state or a portable Cassette.
+	ProviderInputUnit *ProviderInputUnitContext
+}
+
+type ProviderInputUnitContext struct {
+	RecordingID  string
+	ConnectionID string
+	ChunkSeq     uint64
+	UnitIndex    uint64
+	EventIndex   uint64
+	UnitKind     string
 }
 
 // InteractionTransition is the provider-independent runtime statement for an

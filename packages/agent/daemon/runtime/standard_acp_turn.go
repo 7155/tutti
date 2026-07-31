@@ -42,6 +42,7 @@ func (a *standardACPAdapter) Exec(
 		}
 		eventsMu.Lock()
 		defer eventsMu.Unlock()
+		next = a.inputUnits.stamp(session.AgentSessionID, next)
 		next = a.stampTurnLifecycleSnapshots(acpSession, next)
 		events = append(events, next...)
 		if emit != nil {
@@ -127,6 +128,8 @@ execLoop:
 			"sessionId": acpSession.providerSessionID,
 			"prompt":    promptParams,
 		}, func(ctx context.Context, message acpMessage) error {
+			endInputUnit := a.inputUnits.begin(ctx, session.AgentSessionID)
+			defer endInputUnit()
 			slog.Debug("agent session ACP exec received message",
 				"event", "agent_session.acp.exec.message",
 				"provider", a.config.provider,
@@ -179,6 +182,7 @@ execLoop:
 				terminalEvents = append(terminalEvents, standardACPRootProviderTurnCompletedEvent(session, turnID, activityshared.TurnOutcomeCanceled, map[string]any{
 					"error": err.Error(),
 				}))
+				terminalEvents = stampProviderInputUnitFromError(err, terminalEvents)
 				emitEvents(terminalEvents)
 			} else if planLimitMessage, ok := acpProviderPlanLimitMessage(err); ok {
 				// Match cursor-agent's soft plan-gate path: show the provider
@@ -192,6 +196,7 @@ execLoop:
 					"stopReason": "end_turn",
 					"planLimit":  true,
 				}))
+				terminalEvents = stampProviderInputUnitFromError(err, terminalEvents)
 				emitEvents(terminalEvents)
 				slog.Info("agent session ACP exec settled plan-limit without failure card",
 					"event", "agent_session.acp.exec.plan_limit",
@@ -208,6 +213,7 @@ execLoop:
 				terminalEvents = append(terminalEvents, standardACPRootProviderTurnCompletedEvent(session, turnID, activityshared.TurnOutcomeFailed, map[string]any{
 					"error": err.Error(),
 				}))
+				terminalEvents = stampProviderInputUnitFromError(err, terminalEvents)
 				emitEvents(terminalEvents)
 			}
 			return snapshotEvents(), nil

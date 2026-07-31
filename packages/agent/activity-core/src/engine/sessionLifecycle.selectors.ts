@@ -1,6 +1,9 @@
 import type { AgentActivityInteraction, AgentActivityTurn } from "../types.ts";
 import type { AgentActivityDisplayStatus } from "../displayStatus.types.ts";
-import type { AgentSessionEngineStateBase } from "./types.ts";
+import type {
+  AgentSessionEngineState,
+  AgentSessionEngineStateBase
+} from "./types.ts";
 import type {
   InteractionResponseState,
   SessionCancelState,
@@ -177,6 +180,14 @@ export function selectEngineSessionSettingsUpdate(
   return (
     state.sessionLifecycle.operationBySessionId[id]?.settingsUpdate ?? null
   );
+}
+
+export function selectEngineGoalControl(
+  state: AgentSessionEngineState,
+  agentSessionId: string | null | undefined
+) {
+  const id = agentSessionId?.trim() ?? "";
+  return state.goalControl.presentationsBySessionId[id] ?? null;
 }
 
 export function selectEngineInteractionResponseError(

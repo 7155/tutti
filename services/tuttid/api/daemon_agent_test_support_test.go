@@ -275,7 +275,10 @@ func (s stubAgentSessionService) CancelTurn(ctx context.Context, workspaceID str
 	return s.cancelTurnFn(ctx, workspaceID, agentSessionID, turnID)
 }
 
-func (stubAgentSessionService) GoalControl(context.Context, string, string, string, string, string) (agentservice.GoalControlSessionResult, error) {
+func (stubAgentSessionService) GoalControl(
+	context.Context,
+	agentservice.GoalControlInput,
+) (agentservice.GoalControlSessionResult, error) {
 	return agentservice.GoalControlSessionResult{}, nil
 }
 

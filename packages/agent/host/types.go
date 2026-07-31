@@ -314,10 +314,7 @@ type RuntimeExecInput struct {
 	TuttiModeSnapshot               *TuttiModeTurnSnapshot
 }
 
-type CapabilityReference struct {
-	Capability string
-	Source     string
-}
+type CapabilityReference = storesqlite.CapabilityReference
 
 // TuttiModeTurnSnapshot is the immutable activation revision observed by one
 // turn. It is an execution input, not a reconstruction from capability refs.

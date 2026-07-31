@@ -78,10 +78,23 @@ func classifyProviderGoalGenerationLocked(
 		return providerGoalGenerationStale
 	}
 	if binding, found := appSession.goalGenerationBindings[fingerprint]; found {
-		if binding.ambiguous || binding.identity != current {
+		if binding.ambiguous {
 			return providerGoalGenerationStale
 		}
-		return providerGoalGenerationKnownCurrent
+		if binding.identity == current {
+			return providerGoalGenerationKnownCurrent
+		}
+		// Pause/resume advance the live operation identity without rebinding
+		// the set-time generation. Provider progress (including terminal
+		// complete) for that still-current generation must not be dropped as
+		// stale, or a later continuation nudge will revive an already-finished
+		// Goal. Cleared Goals leave appSession.goal empty and stay stale.
+		if len(appSession.goal) > 0 &&
+			fingerprint == appSession.currentGoalGenerationFingerprint &&
+			appSession.currentGoalGenerationIdentity == binding.identity {
+			return providerGoalGenerationKnownCurrent
+		}
+		return providerGoalGenerationStale
 	}
 	if claim := appSession.goalContinuationClaim; claim != nil && !claim.ready && claim.identity == current {
 		return providerGoalGenerationPendingLocal
@@ -115,7 +128,22 @@ func (a *CodexAppServerAdapter) providerGoalUpdateSuperseded(agentSessionID stri
 		revision:    appSession.goalRevision,
 		repairEpoch: appSession.goalRepairEpoch,
 	}
-	return classifyProviderGoalGenerationLocked(appSession, goal, fingerprint, current) == providerGoalGenerationStale
+	if classifyProviderGoalGenerationLocked(appSession, goal, fingerprint, current) != providerGoalGenerationStale {
+		return false
+	}
+	// Fingerprints include updatedAt, so pause/resume/complete snapshots miss
+	// the set-time binding and fall through the lineage classifier. That path
+	// also compares the live operation identity, which pause/resume advance
+	// without rebinding. Keep applying provider progress for the session's
+	// current generation lineage while a Goal is still present.
+	lineage := codexGoalGenerationLineage(goal)
+	if len(appSession.goal) > 0 &&
+		lineage != "" &&
+		lineage == appSession.currentGoalGenerationLineage &&
+		appSession.currentGoalGenerationIdentity.valid() {
+		return false
+	}
+	return true
 }
 
 func (a *CodexAppServerAdapter) bindCurrentProviderGoalGeneration(

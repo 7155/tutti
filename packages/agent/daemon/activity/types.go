@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
 	canonical "github.com/tutti-os/tutti/packages/agent/store-sqlite/canonical"
 )
 
@@ -42,6 +43,7 @@ type ReportActivityInput struct {
 	MessageUpdates        []WorkspaceAgentMessageUpdate
 	SessionAudits         []WorkspaceAgentSessionAuditUpdate
 	GoalReconcileRequests []WorkspaceAgentGoalReconcileRequest
+	ProviderObservations  []replay.ProviderObservationBatch
 }
 
 type ReportActivityReply struct {
@@ -297,6 +299,7 @@ type ConnectorInfo = canonical.ConnectorInfo
 
 // Deprecated: use canonical.EventSource.
 type EventSource = canonical.EventSource
+type ProviderObservationBatch = replay.ProviderObservationBatch
 
 type WorkspaceAgentStatePatch struct {
 	AgentSessionID        string                                    `json:"agentSessionId"`

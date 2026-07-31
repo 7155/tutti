@@ -1,8 +1,16 @@
 import {
   workspaceAgentSessionStatus,
   type AgentActivityAdapter,
+  type AgentActivityCreateSessionInput,
+  type AgentActivityGoalControlInput,
+  type AgentActivityGoalControlResult,
+  type AgentActivitySendInput,
+  type AgentActivitySendInputResult,
   type AgentActivitySession,
-  type AgentActivitySessionDetailSnapshot
+  type AgentActivitySessionDetailSnapshot,
+  type AgentActivitySubmitInteractiveInput,
+  type AgentActivitySubmitInteractiveResult,
+  type EngineEffectOptions
 } from "@tutti-os/agent-activity-core";
 import {
   agentActivityGoalControlResultFromTuttid,
@@ -53,6 +61,37 @@ const agentActivitySessionListLimit = 100;
 const sessionForkOperationPollBackoffMs = [0, 200, 500, 1_000, 2_000] as const;
 const sessionForkOperationMaxConsecutiveReadFailures = 3;
 
+export interface DesktopAgentActivityCommandAdapter extends AgentActivityAdapter {
+  createSession(
+    input: AgentActivityCreateSessionInput
+  ): Promise<AgentActivitySession>;
+  createSession(
+    input: AgentActivityCreateSessionInput,
+    options: EngineEffectOptions
+  ): Promise<AgentActivitySession>;
+  sendInput(
+    input: AgentActivitySendInput
+  ): Promise<AgentActivitySendInputResult>;
+  sendInput(
+    input: AgentActivitySendInput,
+    options: EngineEffectOptions
+  ): Promise<AgentActivitySendInputResult>;
+  goalControl(
+    input: AgentActivityGoalControlInput
+  ): Promise<AgentActivityGoalControlResult>;
+  goalControl(
+    input: AgentActivityGoalControlInput,
+    options: EngineEffectOptions
+  ): Promise<AgentActivityGoalControlResult>;
+  submitInteractive(
+    input: AgentActivitySubmitInteractiveInput
+  ): Promise<AgentActivitySubmitInteractiveResult>;
+  submitInteractive(
+    input: AgentActivitySubmitInteractiveInput,
+    options: EngineEffectOptions
+  ): Promise<AgentActivitySubmitInteractiveResult>;
+}
+
 export function agentActivitySessionFromTuttidSession(
   workspaceId: string,
   session: WorkspaceAgentSession,
@@ -85,7 +124,7 @@ export function createDesktopAgentActivityAdapter({
   runtimeApi,
   takePendingSessionRecording,
   restorePendingSessionRecording
-}: CreateDesktopAgentActivityAdapterInput): AgentActivityAdapter {
+}: CreateDesktopAgentActivityAdapterInput): DesktopAgentActivityCommandAdapter {
   return {
     async listSessions(input) {
       const response = await tuttidClient.listWorkspaceAgentSessions(
@@ -205,7 +244,7 @@ export function createDesktopAgentActivityAdapter({
         throw error;
       }
     },
-    async createSession(input) {
+    async createSession(input, options?: EngineEffectOptions) {
       reportDesktopAgentSubmitTrace(runtimeApi, {
         agentSessionId: input.agentSessionId?.trim() ?? null,
         clientSubmitId: input.clientSubmitId,
@@ -245,7 +284,7 @@ export function createDesktopAgentActivityAdapter({
         const session = await tuttidClient.createWorkspaceAgentSession(
           input.workspaceId,
           request,
-          { signal: input.signal }
+          agentCommandRequestOptions(options, input.signal)
         );
         reportDesktopAgentSubmitTrace(runtimeApi, {
           agentSessionId: session.id,
@@ -280,7 +319,7 @@ export function createDesktopAgentActivityAdapter({
         throw wrapLocalizedTuttidErrorIfSpecific(error, getActiveLocale());
       }
     },
-    async sendInput(input) {
+    async sendInput(input, options?: EngineEffectOptions) {
       reportDesktopAgentSubmitTrace(runtimeApi, {
         agentSessionId: input.agentSessionId,
         clientSubmitId: input.clientSubmitId,
@@ -301,18 +340,12 @@ export function createDesktopAgentActivityAdapter({
         ReturnType<TuttidClient["sendWorkspaceAgentSessionInput"]>
       >;
       try {
-        result = input.signal
-          ? await tuttidClient.sendWorkspaceAgentSessionInput(
-              input.workspaceId,
-              input.agentSessionId,
-              request,
-              { signal: input.signal }
-            )
-          : await tuttidClient.sendWorkspaceAgentSessionInput(
-              input.workspaceId,
-              input.agentSessionId,
-              request
-            );
+        result = await tuttidClient.sendWorkspaceAgentSessionInput(
+          input.workspaceId,
+          input.agentSessionId,
+          request,
+          agentCommandRequestOptions(options, input.signal)
+        );
       } catch (error) {
         reportDesktopAgentSubmitTrace(runtimeApi, {
           agentSessionId: input.agentSessionId,
@@ -391,7 +424,7 @@ export function createDesktopAgentActivityAdapter({
         changed: response.changed
       };
     },
-    async goalControl(input) {
+    async goalControl(input, options?: EngineEffectOptions) {
       const result = await tuttidClient.goalControlWorkspaceAgentSession(
         input.workspaceId,
         input.agentSessionId,
@@ -404,7 +437,7 @@ export function createDesktopAgentActivityAdapter({
             ? { objective: input.objective }
             : {})
         },
-        { ...(input.signal ? { signal: input.signal } : {}) }
+        agentCommandRequestOptions(options, input.signal)
       );
       return agentActivityGoalControlResultFromTuttid(
         input.workspaceId,
@@ -412,27 +445,20 @@ export function createDesktopAgentActivityAdapter({
         { currentUserId: DESKTOP_AGENT_GUI_CURRENT_USER_ID }
       );
     },
-    async submitInteractive(input) {
+    async submitInteractive(input, options?: EngineEffectOptions) {
       const request = {
         turnId: input.turnId,
         action: input.action ?? null,
         optionId: input.optionId ?? null,
         payload: input.payload ?? null
       };
-      const session = input.signal
-        ? await tuttidClient.submitWorkspaceAgentInteractive(
-            input.workspaceId,
-            input.agentSessionId,
-            input.requestId,
-            request,
-            { signal: input.signal }
-          )
-        : await tuttidClient.submitWorkspaceAgentInteractive(
-            input.workspaceId,
-            input.agentSessionId,
-            input.requestId,
-            request
-          );
+      const session = await tuttidClient.submitWorkspaceAgentInteractive(
+        input.workspaceId,
+        input.agentSessionId,
+        input.requestId,
+        request,
+        agentCommandRequestOptions(options, input.signal)
+      );
       return {
         session: agentActivitySessionFromTuttidSession(
           input.workspaceId,
@@ -527,6 +553,18 @@ export function createDesktopAgentActivityAdapter({
       };
     }
   };
+}
+
+function agentCommandRequestOptions(
+  options: EngineEffectOptions | undefined,
+  signal: AbortSignal | undefined
+) {
+  return options?.origin === "engine"
+    ? {
+        agentCommandOrigin: "renderer-engine" as const,
+        signal
+      }
+    : { signal };
 }
 
 function sessionForkDeliveryUnknownError(error: unknown): Error {

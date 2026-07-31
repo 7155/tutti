@@ -36,7 +36,7 @@ const logRendererDiagnostic = createRendererDiagnosticSink();
 installBrowserCrashLogging({
   logRendererDiagnostic
 });
-const workspaceWindowContainer: WorkspaceWindowContainerResult = (
+const workspaceWindowContainer: WorkspaceWindowContainerResult = await (
   await import("./app/windows/workspace/createWorkspaceWindowContainer.ts")
 ).createWorkspaceWindowContainer();
 

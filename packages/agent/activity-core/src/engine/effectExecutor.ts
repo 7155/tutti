@@ -184,18 +184,28 @@ function executeCommand(
   }
   if (command.type === "plan/submitDecision") {
     return commandPort.executePlanDecision
-      ? commandPort.executePlanDecision(command, { signal })
+      ? commandPort.executePlanDecision(command, {
+          commandId: command.commandId,
+          origin: "engine",
+          signal
+        })
       : Promise.reject(
           new Error("EngineCommandPort.executePlanDecision is not configured")
         );
   }
   if (commandPort.kind !== "typed") {
-    return commandPort.execute(command, { signal });
+    return commandPort.execute(command, {
+      commandId: command.commandId,
+      origin: "engine",
+      signal
+    });
   }
   const effects = commandPort.effects;
   switch (command.type) {
     case "session/activate":
       return effects.activateSession(activationInput(command), {
+        commandId: command.commandId,
+        origin: "engine",
         signal
       });
     case "goal/control":
@@ -208,13 +218,17 @@ function executeCommand(
               ...(command.objective ? { objective: command.objective } : {}),
               workspaceId: command.workspaceId
             },
-            { signal }
+            { commandId: command.commandId, origin: "engine", signal }
           )
         : Promise.reject(
             new Error("AgentSessionEffectPort.controlGoal is not configured")
           );
     case "queue/sendPrompt":
-      return effects.sendInput(promptInput(command), { signal });
+      return effects.sendInput(promptInput(command), {
+        commandId: command.commandId,
+        origin: "engine",
+        signal
+      });
     case "session/updateSettings":
       return effects.updateSessionSettings(
         {
@@ -224,7 +238,7 @@ function executeCommand(
           settings: command.settings,
           workspaceId: command.workspaceId
         },
-        { signal }
+        { commandId: command.commandId, origin: "engine", signal }
       );
     case "turn/cancel":
       return effects.cancelTurn(
@@ -233,7 +247,7 @@ function executeCommand(
           turnId: command.turnId,
           workspaceId: command.workspaceId
         },
-        { signal }
+        { commandId: command.commandId, origin: "engine", signal }
       );
     case "sessions/delete":
       return effects.deleteSessions(
@@ -241,7 +255,7 @@ function executeCommand(
           agentSessionIds: [...command.agentSessionIds],
           workspaceId: command.workspaceId
         },
-        { signal }
+        { commandId: command.commandId, origin: "engine", signal }
       );
     case "interaction/respond":
       return effects.respondToInteraction(
@@ -254,7 +268,7 @@ function executeCommand(
           turnId: command.turnId,
           workspaceId: command.workspaceId
         },
-        { signal }
+        { commandId: command.commandId, origin: "engine", signal }
       );
     case "session/setPinned":
       return effects.setSessionPinned(
@@ -263,7 +277,7 @@ function executeCommand(
           pinned: command.pinned,
           workspaceId: command.workspaceId
         },
-        { signal }
+        { commandId: command.commandId, origin: "engine", signal }
       );
     case "session/rename":
       return effects.renameSession(
@@ -272,10 +286,14 @@ function executeCommand(
           title: command.title,
           workspaceId: command.workspaceId
         },
-        { signal }
+        { commandId: command.commandId, origin: "engine", signal }
       );
     default:
-      return commandPort.execute(command, { signal });
+      return commandPort.execute(command, {
+        commandId: command.commandId,
+        origin: "engine",
+        signal
+      });
   }
 }
 

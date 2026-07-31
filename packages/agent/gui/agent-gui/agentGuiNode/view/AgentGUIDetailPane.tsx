@@ -312,7 +312,6 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
     },
     [submitInteractivePrompt]
   );
-  const canSwitchComposerProvider = true;
   const isInteractionPending =
     viewModel.interaction.isRespondingApproval ||
     composerGate.runtime.status === "blocked";
@@ -397,11 +396,8 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       agentTargets: composerProviderTargets,
       handoffAgentTargets: composerHandoffProviderTargets,
       showHandoffTargetOwnershipLabels,
-      providerSelectReadonly:
-        !canSwitchComposerProvider ||
-        viewModel.rail.activeConversationId !== null,
+      providerSelectReadonly: viewModel.rail.activeConversationId !== null,
       onProviderSelect:
-        canSwitchComposerProvider &&
         viewModel.rail.activeConversationId === null
           ? selectHomeComposerAgentTargetAndFocus
           : undefined,
@@ -425,6 +421,7 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
         : labels.initialPlaceholder,
       showStopButton:
         showStopButton || tuttiWorkflowComposer.tuttiExecutionActive,
+      activeTurnId: sourceActiveTurn?.turnId ?? null,
       draftOverridesStopButton: tuttiWorkflowComposer.tuttiExecutionActive,
       stopDisabled:
         stopDisabled ||
@@ -505,7 +502,6 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
     [
       capabilityMenuState,
       capabilityControlsReadOnly,
-      canSwitchComposerProvider,
       composerDisabledReason,
       composerGate,
       composerFocusRequestSequence,
@@ -543,6 +539,7 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       sendQueuedPromptNext,
       showPromptImagesUnsupported,
       showStopButton,
+      sourceActiveTurn?.turnId,
       showHandoffTargetOwnershipLabels,
       stopDisabled,
       slashStatus,
@@ -605,6 +602,7 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       isActive: baseComposerProps.isActive,
       isSendingTurn: baseComposerProps.isSendingTurn,
       isSubmittingPrompt: baseComposerProps.isSubmittingPrompt,
+      composerSettings: baseComposerProps.composerSettings,
       selectedAgentTarget: baseComposerProps.selectedAgentTarget
     }) ?? null;
   const bottomDockComposerProps = useMemo<AgentComposerProps>(
@@ -696,7 +694,6 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
         agentTargets={composerProviderTargets}
         selectedAgentTarget={composerSelectedProviderTarget}
         onProviderSelect={
-          canSwitchComposerProvider &&
           viewModel.rail.activeConversationId === null
             ? selectHomeComposerAgentTargetAndFocus
             : undefined

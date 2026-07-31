@@ -33,8 +33,9 @@ Use the focused runtime index or open one area directly:
   resume are covered here as well. Includes cassette replay
   startup that fails when concurrent provider input and output are treated as a
   strict scheduling order, false final-state mismatches caused by replay-generated
-  child identities, and canonical completion delayed behind a streaming activity-report
-  backlog. It also covers an active existing-Session Tutti snapshot being
+  child identities, an orphan managed Replay Desktop that crashes with `EPIPE`
+  after its owner exits, and canonical completion delayed behind a streaming
+  activity-report backlog. It also covers an active existing-Session Tutti snapshot being
   misread as provider Default mode, stopped Tutti Mode conversations revived by
   legacy startup wakes, provider-completed submissions reported as delivery
   unknown after canonical message provenance conflicts, completed Claude Code

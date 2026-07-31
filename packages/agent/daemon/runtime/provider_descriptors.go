@@ -143,9 +143,10 @@ func newStandardACPAdapterFromProviderDescriptor(
 			projectCurrentMode: standardACP.ProjectCurrentMode,
 			startupDiagnostics: standardACP.StartupDiagnostics,
 		},
-		transport: transport,
-		host:      host,
-		sessions:  make(map[string]*standardACPSession),
+		transport:  transport,
+		host:       host,
+		sessions:   make(map[string]*standardACPSession),
+		inputUnits: providerInputUnitTrackerForTransport(transport),
 	}
 }
 
@@ -226,6 +227,7 @@ func NewStandardACPAdapter(config StandardACPAdapterConfig, transport ProcessTra
 			env:                          func(session Session) []string { return standardACPEnv(session, host) },
 		},
 		transport: transport, host: host, sessions: make(map[string]*standardACPSession),
+		inputUnits: providerInputUnitTrackerForTransport(transport),
 	}
 	if decisions := automaticPermissionDecisionFromMap(config.AutomaticPermissionDecisions); decisions != nil {
 		adapter.config.automaticPermissionDecision = decisions

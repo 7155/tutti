@@ -40,7 +40,12 @@ import type {
   DesktopHostWindowResizeContentWidthResult,
   DesktopLaunchAgentSessionReplayInput,
   DesktopLaunchAgentSessionReplayResult,
+  DesktopRevealAgentSessionReplayCassetteInput,
   DesktopAgentSessionReplayPlayback,
+  DesktopGetAgentSessionReplayPlaybackInput,
+  DesktopGetAgentSessionReplayStatusInput,
+  DesktopImportAgentSessionReplayCassettesInput,
+  DesktopImportAgentSessionReplayCassettesResult,
   DesktopAgentSessionReplayStatus,
   DesktopSendAgentSessionReplayControlInput,
   DesktopSetAgentSessionReplayPlaybackInput,
@@ -63,13 +68,30 @@ import type {
 import type { BrowserNodeHostApi } from "@tutti-os/browser-node";
 
 export interface DesktopRuntimeApi {
-  getAgentSessionReplayPlayback(): Promise<DesktopAgentSessionReplayPlayback>;
-  getAgentSessionReplayStatus(): Promise<DesktopAgentSessionReplayStatus>;
+  getAgentSessionReplayPlayback(
+    input: DesktopGetAgentSessionReplayPlaybackInput
+  ): Promise<DesktopAgentSessionReplayPlayback>;
+  getAgentSessionReplayStatus(
+    input: DesktopGetAgentSessionReplayStatusInput
+  ): Promise<DesktopAgentSessionReplayStatus>;
   getBackendConfig(): Promise<DesktopBackendConfig>;
   getBusinessEventStreamUrl(): Promise<string>;
+  importAgentSessionReplayCassettes(
+    input: DesktopImportAgentSessionReplayCassettesInput
+  ): Promise<DesktopImportAgentSessionReplayCassettesResult>;
+  /**
+   * True only inside the isolated Agent Session Replay Desktop runtime
+   * (launched with TUTTI_AGENT_CASSETTE_MODE=replay). Synchronous so window
+   * composition can gate replay-only machinery at mount time. Optional so
+   * lightweight runtime fakes and the dev-web fallback stay valid.
+   */
+  isAgentSessionReplayRuntime?(): boolean;
   launchAgentSessionReplay(
     input: DesktopLaunchAgentSessionReplayInput
   ): Promise<DesktopLaunchAgentSessionReplayResult>;
+  revealAgentSessionReplayCassette(
+    input: DesktopRevealAgentSessionReplayCassetteInput
+  ): Promise<void>;
   setAgentSessionReplayPlayback(
     input: DesktopSetAgentSessionReplayPlaybackInput
   ): Promise<DesktopAgentSessionReplayPlayback>;

@@ -12,6 +12,7 @@ import (
 
 	agentdaemon "github.com/tutti-os/tutti/packages/agent/daemon"
 	agentruntime "github.com/tutti-os/tutti/packages/agent/daemon/runtime"
+	sessionreplay "github.com/tutti-os/tutti/packages/agent/session-replay"
 )
 
 type cassetteWiringTestTransport struct {
@@ -51,6 +52,41 @@ func TestNewAgentProcessTransportUsesLocalTransportByDefault(t *testing.T) {
 	}
 	if got != local {
 		t.Fatal("default transport did not preserve the local transport")
+	}
+}
+
+func TestBuildAgentProcessCompositionDisabledUsesRawTransport(t *testing.T) {
+	t.Setenv(agentCassetteModeEnv, "")
+	t.Setenv(agentCassettePathEnv, "")
+
+	composition, err := buildAgentProcessComposition(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if composition.transport == nil || composition.recorder != nil ||
+		composition.replay != nil || len(composition.replayRegistrations) != 0 {
+		t.Fatalf("disabled composition = %#v, want transport only", composition)
+	}
+	tracking, ok := composition.transport.(agentruntime.ProviderInputUnitTrackingTransport)
+	if ok && tracking.TracksProviderInputUnits() {
+		t.Fatalf("disabled composition transport %T enables provider input tracking", composition.transport)
+	}
+}
+
+func TestBuildAgentProcessCompositionEnabledCreatesRecorder(t *testing.T) {
+	t.Setenv(agentCassetteModeEnv, "")
+	t.Setenv(agentCassettePathEnv, "")
+
+	composition, err := buildAgentProcessComposition(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if composition.recorder == nil || composition.transport != composition.recorder {
+		t.Fatalf("enabled composition = %#v, want recording transport", composition)
+	}
+	tracking, ok := composition.transport.(agentruntime.ProviderInputUnitTrackingTransport)
+	if !ok || !tracking.TracksProviderInputUnits() {
+		t.Fatalf("enabled composition transport %T does not enable provider input tracking", composition.transport)
 	}
 }
 
@@ -158,6 +194,99 @@ func TestReplayAgentProcessTransportRejectsNonSessionProcessLaunch(t *testing.T)
 	defer local.mu.Unlock()
 	if len(local.specs) != 0 {
 		t.Fatalf("local transport received %d replay launches, want none", len(local.specs))
+	}
+}
+
+func TestBuildAgentProcessCompositionCreatesFixedReplayRouter(t *testing.T) {
+	directoryA := t.TempDir()
+	directoryB := t.TempDir()
+	writeCompleteProcessCassette(t, directoryA)
+	writeCompleteProcessCassette(t, directoryB)
+	registrations, err := json.Marshal([]agentdaemon.SessionReplayProcessRegistration{
+		{CassetteID: "cassette-a", RootAgentSessionID: "session-a", CassetteDirectory: directoryA},
+		{CassetteID: "cassette-b", RootAgentSessionID: "session-b", CassetteDirectory: directoryB},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(agentCassetteModeEnv, agentCassetteModeReplay)
+	t.Setenv(agentSessionReplayRegistrationsEnv, string(registrations))
+
+	composition, err := buildAgentProcessComposition(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if composition.replay == nil || composition.recorder != nil ||
+		composition.transport == composition.replay {
+		t.Fatalf("composition = %#v, want replay router only", composition)
+	}
+	tracking, ok := composition.transport.(agentruntime.ProviderInputUnitTrackingTransport)
+	if !ok || !tracking.TracksProviderInputUnits() {
+		t.Fatalf("replay composition transport %T does not enable provider input tracking", composition.transport)
+	}
+	if _, err := composition.replay.ReplayPlaybackState("cassette-a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := composition.replay.ReplayPlaybackState("cassette-b"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReplayProviderHomeTransportInjectsIsolatedCodexHome(t *testing.T) {
+	base := &cassetteWiringTestTransport{}
+	stateDir := t.TempDir()
+	transport := &agentReplayProviderHomeTransport{
+		base: base, stateDir: stateDir,
+	}
+	connection, err := transport.Start(
+		context.Background(),
+		agentruntime.ProcessSpec{
+			Provider:       agentruntime.ProviderCodex,
+			AgentSessionID: "session-1",
+			Env: []string{
+				"HOME=/Users/recording",
+				"CODEX_HOME=/Users/recording/.codex",
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := connection.Close(); err != nil {
+		t.Fatal(err)
+	}
+	base.mu.Lock()
+	defer base.mu.Unlock()
+	if len(base.specs) != 1 {
+		t.Fatalf("spec count = %d, want 1", len(base.specs))
+	}
+	descriptor, found := sessionreplay.FindProviderReplayByProvider(
+		agentruntime.ProviderCodex,
+	)
+	if !found {
+		t.Fatal("Codex replay descriptor is unavailable")
+	}
+	want := descriptor.PortableRuntime.HomeEnvVars[0] + "=" + filepath.Join(
+		stateDir,
+		"agent",
+		"runs",
+		"session-1",
+		descriptor.PortableRuntime.SessionHomeDirectory,
+	)
+	count := 0
+	for _, entry := range base.specs[0].Env {
+		if strings.HasPrefix(
+			entry,
+			descriptor.PortableRuntime.HomeEnvVars[0]+"=",
+		) {
+			count++
+			if entry != want {
+				t.Fatalf("CODEX_HOME = %q, want %q", entry, want)
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("CODEX_HOME count = %d, want 1", count)
 	}
 }
 

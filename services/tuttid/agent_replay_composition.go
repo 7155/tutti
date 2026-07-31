@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
 	agentdaemon "github.com/tutti-os/tutti/packages/agent/daemon"
+	sessionreplay "github.com/tutti-os/tutti/packages/agent/session-replay"
 	tuttiapi "github.com/tutti-os/tutti/services/tuttid/api"
 	accountservice "github.com/tutti-os/tutti/services/tuttid/service/account"
 	agentservice "github.com/tutti-os/tutti/services/tuttid/service/agent"
@@ -21,52 +23,133 @@ import (
 type replayProviderAvailabilityChecker struct{}
 
 type agentReplayTransportVerifier struct {
-	enabled   bool
+	enabled          bool
+	verifyState      func(context.Context, string) error
+	verifyCheckpoint func(
+		context.Context,
+		string,
+		int,
+	) (tuttiapi.AgentSessionReplayCheckpointState, error)
 	transport interface {
 		Finalize() error
-		ReplayPlaybackState() (agentdaemon.ReplayPlaybackState, error)
-		SetReplayPlaybackSpeed(float64) error
-		PauseReplayPlayback() error
-		ResumeReplayPlayback() error
-		SetReplayPlaybackFastForward(bool) error
+		ReplayPlaybackState(string) (agentdaemon.ReplayPlaybackState, error)
+		SetReplayPlaybackSpeed(string, float64) error
+		PauseReplayPlayback(string) error
+		ResumeReplayPlayback(string) error
+		SetReplayPlaybackFastForward(string, bool) error
+		SetReplayProviderCursor(string, []sessionreplay.ProviderUnitPosition) error
+		ClearReplayProviderCursor(string) error
+		ReplayProviderCursor(string) (map[string]sessionreplay.ProviderUnitPosition, error)
+		VerifyComplete(string) error
 	}
 }
 
-func (v agentReplayTransportVerifier) Verify(context.Context) error {
-	if !v.enabled || v.transport == nil {
-		return errors.New("agent session replay transport verification is unavailable")
+func (v agentReplayTransportVerifier) VerifyCheckpoint(
+	ctx context.Context,
+	cassetteID string,
+	checkpointIndex int,
+) (tuttiapi.AgentSessionReplayCheckpointState, error) {
+	if !v.enabled || v.verifyCheckpoint == nil {
+		return tuttiapi.AgentSessionReplayCheckpointState{},
+			errors.New(
+				"agent session replay checkpoint verification is unavailable",
+			)
 	}
-	return v.transport.Finalize()
+	return v.verifyCheckpoint(ctx, cassetteID, checkpointIndex)
 }
 
-func (v agentReplayTransportVerifier) PlaybackState(
-	context.Context,
+func (v agentReplayTransportVerifier) SetProviderCursor(
+	_ context.Context,
+	cassetteID string,
+	targets []sessionreplay.ProviderUnitPosition,
 ) (tuttiapi.AgentSessionReplayPlaybackState, error) {
 	if !v.enabled || v.transport == nil {
 		return tuttiapi.AgentSessionReplayPlaybackState{},
 			errors.New("agent session replay transport playback is unavailable")
 	}
-	state, err := v.transport.ReplayPlaybackState()
-	return replayPlaybackState(state), err
+	if err := v.transport.SetReplayProviderCursor(cassetteID, targets); err != nil {
+		return tuttiapi.AgentSessionReplayPlaybackState{}, err
+	}
+	return v.PlaybackState(context.Background(), cassetteID)
+}
+
+func (v agentReplayTransportVerifier) ClearProviderCursor(
+	_ context.Context,
+	cassetteID string,
+) (tuttiapi.AgentSessionReplayPlaybackState, error) {
+	if !v.enabled || v.transport == nil {
+		return tuttiapi.AgentSessionReplayPlaybackState{},
+			errors.New("agent session replay transport playback is unavailable")
+	}
+	if err := v.transport.ClearReplayProviderCursor(cassetteID); err != nil {
+		return tuttiapi.AgentSessionReplayPlaybackState{}, err
+	}
+	return v.PlaybackState(context.Background(), cassetteID)
+}
+
+func (v agentReplayTransportVerifier) Verify(ctx context.Context, cassetteID string) error {
+	if !v.enabled || v.transport == nil {
+		return errors.New("agent session replay transport verification is unavailable")
+	}
+	if err := v.transport.VerifyComplete(cassetteID); err != nil {
+		return err
+	}
+	if v.verifyState == nil {
+		return errors.New("agent session replay semantic verification is unavailable")
+	}
+	return v.verifyState(ctx, cassetteID)
+}
+
+func (v agentReplayTransportVerifier) PlaybackState(
+	_ context.Context,
+	cassetteID string,
+) (tuttiapi.AgentSessionReplayPlaybackState, error) {
+	if !v.enabled || v.transport == nil {
+		return tuttiapi.AgentSessionReplayPlaybackState{},
+			errors.New("agent session replay transport playback is unavailable")
+	}
+	state, err := v.transport.ReplayPlaybackState(cassetteID)
+	result := replayPlaybackState(state)
+	if err != nil {
+		return result, err
+	}
+	inputPositions, err := v.transport.ReplayProviderCursor(cassetteID)
+	if err != nil {
+		return tuttiapi.AgentSessionReplayPlaybackState{}, err
+	}
+	connectionIDs := make([]string, 0, len(inputPositions))
+	for connectionID := range inputPositions {
+		connectionIDs = append(connectionIDs, connectionID)
+	}
+	sort.Strings(connectionIDs)
+	for _, connectionID := range connectionIDs {
+		result.ProviderConnections = append(
+			result.ProviderConnections,
+			inputPositions[connectionID],
+		)
+	}
+	return result, nil
 }
 
 func (v agentReplayTransportVerifier) SetPlaybackSpeed(
 	_ context.Context,
+	cassetteID string,
 	speed float64,
 ) (tuttiapi.AgentSessionReplayPlaybackState, error) {
 	if !v.enabled || v.transport == nil {
 		return tuttiapi.AgentSessionReplayPlaybackState{},
 			errors.New("agent session replay transport playback is unavailable")
 	}
-	if err := v.transport.SetReplayPlaybackSpeed(speed); err != nil {
+	if err := v.transport.SetReplayPlaybackSpeed(cassetteID, speed); err != nil {
 		return tuttiapi.AgentSessionReplayPlaybackState{}, err
 	}
-	state, err := v.transport.ReplayPlaybackState()
+	state, err := v.transport.ReplayPlaybackState(cassetteID)
 	return replayPlaybackState(state), err
 }
 
 func (v agentReplayTransportVerifier) SetPlaybackPaused(
 	_ context.Context,
+	cassetteID string,
 	paused bool,
 ) (tuttiapi.AgentSessionReplayPlaybackState, error) {
 	if !v.enabled || v.transport == nil {
@@ -75,29 +158,30 @@ func (v agentReplayTransportVerifier) SetPlaybackPaused(
 	}
 	var err error
 	if paused {
-		err = v.transport.PauseReplayPlayback()
+		err = v.transport.PauseReplayPlayback(cassetteID)
 	} else {
-		err = v.transport.ResumeReplayPlayback()
+		err = v.transport.ResumeReplayPlayback(cassetteID)
 	}
 	if err != nil {
 		return tuttiapi.AgentSessionReplayPlaybackState{}, err
 	}
-	state, err := v.transport.ReplayPlaybackState()
+	state, err := v.transport.ReplayPlaybackState(cassetteID)
 	return replayPlaybackState(state), err
 }
 
 func (v agentReplayTransportVerifier) SetPlaybackFastForward(
 	_ context.Context,
+	cassetteID string,
 	enabled bool,
 ) (tuttiapi.AgentSessionReplayPlaybackState, error) {
 	if !v.enabled || v.transport == nil {
 		return tuttiapi.AgentSessionReplayPlaybackState{},
 			errors.New("agent session replay transport playback is unavailable")
 	}
-	if err := v.transport.SetReplayPlaybackFastForward(enabled); err != nil {
+	if err := v.transport.SetReplayPlaybackFastForward(cassetteID, enabled); err != nil {
 		return tuttiapi.AgentSessionReplayPlaybackState{}, err
 	}
-	state, err := v.transport.ReplayPlaybackState()
+	state, err := v.transport.ReplayPlaybackState(cassetteID)
 	return replayPlaybackState(state), err
 }
 

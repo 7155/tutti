@@ -237,6 +237,36 @@ func TestServiceTypedGoalUsesDurableSagaBeforeTurnSubmit(t *testing.T) {
 	}
 }
 
+func TestGoalControlPreservesEngineIdempotency(t *testing.T) {
+	runtime := newFakeRuntime()
+	runtime.sessions["ws-goal-id:session-goal-id"] = ProviderRuntimeSession{
+		ID: "session-goal-id", Provider: "claude-code", ProviderSessionID: "provider-goal-id", Status: "ready",
+	}
+	runtime.goalControlHook = func(_ context.Context, input RuntimeGoalControlInput) (RuntimeGoalControlResult, error) {
+		return RuntimeGoalControlResult{
+			Goal:          map[string]any{"objective": input.Objective, "status": "active"},
+			ProviderPhase: "accepted",
+			Evidence:      map[string]any{"phase": "accepted"},
+		}, nil
+	}
+	store := &recordingGoalStateStore{}
+	service := newIsolatedAgentService(runtime)
+	service.GoalStateStore = store
+
+	if _, err := service.GoalControl(context.Background(), GoalControlInput{
+		WorkspaceID:    "ws-goal-id",
+		AgentSessionID: "session-goal-id",
+		Action:         "set",
+		Objective:      "ship it",
+		ClientSubmitID: "goal-submit-engine-1",
+	}); err != nil {
+		t.Fatalf("goal control with client submit id: %v", err)
+	}
+	if len(store.prepared) != 1 || store.prepared[0].ClientSubmitID != "goal-submit-engine-1" {
+		t.Fatalf("prepared operations=%#v", store.prepared)
+	}
+}
+
 func TestServiceCreateWithTypedGoalCreatesNoInitialTurn(t *testing.T) {
 	runtime := newFakeRuntime()
 	store := &recordingGoalStateStore{}

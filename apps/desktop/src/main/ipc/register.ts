@@ -37,6 +37,10 @@ export interface IpcRegistrationDependencies {
     | "listWorkspaceAppFactoryJobs"
     | "listWorkspaceApps"
     | "listWorkspaces"
+    | "getAgentSessionReplayTransportPlayback"
+    | "importAgentSessionCassettes"
+    | "prepareAgentSessionReplayWorkspace"
+    | "updateAgentSessionReplayTransportPlayback"
   >;
   openWorkspaceAppFolder?: (
     payload: DesktopWorkspaceAppPayload
@@ -56,7 +60,7 @@ export interface IpcRegistrationDependencies {
 
 export async function registerIpcHandlers(
   deps: IpcRegistrationDependencies
-): Promise<readonly { dispose(): void }[]> {
+): Promise<readonly { dispose(): void; shutdown?(): Promise<void> }[]> {
   registerWorkspaceAppContextIpc(deps.daemonEndpoint, deps.preferences, {
     logger: deps.logger,
     sessionID: getDesktopLogSessionID(),
@@ -72,7 +76,13 @@ export async function registerIpcHandlers(
   registerComputerUseIpc();
   registerDockPreviewCacheIpc();
   registerDeveloperIpc(deps.preferences, deps.tuttidClient);
-  const runtime = registerRuntimeIpc(deps.daemonEndpoint, deps.logger);
+  const runtime = registerRuntimeIpc(
+    deps.daemonEndpoint,
+    deps.logger,
+    deps.tuttidClient,
+    deps.fileDialogs,
+    deps.preferences
+  );
   registerUpdateIpc(deps.updateService);
   registerWallpaperIpc();
   registerHostIpc({

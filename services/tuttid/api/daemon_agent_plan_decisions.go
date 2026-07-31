@@ -45,13 +45,17 @@ func (api DaemonAPI) SubmitWorkspaceAgentPlanDecision(
 	if err != nil {
 		return writeSubmitWorkspaceAgentPlanDecisionError(err), nil
 	}
-	api.recordAgentStimulus(ctx, "plan.decision", string(request.WorkspaceID), string(request.AgentSessionID), map[string]any{
-		"turnId":         string(request.TurnID),
-		"requestId":      string(request.RequestID),
-		"promptKind":     request.Body.PromptKind,
-		"action":         request.Body.Action,
-		"idempotencyKey": request.Body.IdempotencyKey,
-	})
+	if !isRendererEngineCommandOrigin(
+		request.Params.XTuttiAgentCommandOrigin,
+	) {
+		api.recordAgentStimulus(ctx, "plan.decision", string(request.WorkspaceID), string(request.AgentSessionID), map[string]any{
+			"turnId":         string(request.TurnID),
+			"requestId":      string(request.RequestID),
+			"promptKind":     request.Body.PromptKind,
+			"action":         request.Body.Action,
+			"idempotencyKey": request.Body.IdempotencyKey,
+		})
+	}
 	return tuttigenerated.SubmitWorkspaceAgentPlanDecision200JSONResponse{
 		Operation: generatedPlanDecisionOperation(operation),
 	}, nil

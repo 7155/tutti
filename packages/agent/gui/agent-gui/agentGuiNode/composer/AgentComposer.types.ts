@@ -119,6 +119,8 @@ export interface AgentComposerProps {
   }) => void;
   onHandoffConversation?: (target: AgentGUIAgentTarget) => void;
   showStopButton: boolean;
+  /** Canonical active Turn; distinct from a cancellable session activation. */
+  activeTurnId?: string | null;
   /** Lets typed input replace an aggregate-work Stop control with Send. */
   draftOverridesStopButton?: boolean;
   stopDisabled: boolean;

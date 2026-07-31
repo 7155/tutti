@@ -591,6 +591,7 @@ func (a *standardACPAdapter) SessionState(session Session) SessionStateSnapshot 
 		return snapshot
 	}
 	state := snapshotACPLiveState(acpSession.acpLiveState)
+	resumeRuntimeContext := clonePayload(acpSession.resumeRuntimeContext)
 	agentInfo := clonePayload(acpSession.agentInfo)
 	promptImage := acpSession.promptImage
 	var prompt *SessionInteractivePrompt
@@ -608,6 +609,12 @@ func (a *standardACPAdapter) SessionState(session Session) SessionStateSnapshot 
 	}
 	a.mu.Unlock()
 
+	for key, value := range resumeRuntimeContext {
+		snapshot.RuntimeContext[key] = value
+	}
+	snapshot.RuntimeContext["cwd"] = session.CWD
+	snapshot.RuntimeContext["title"] = session.Title
+	snapshot.RuntimeContext["permissionModeId"] = session.PermissionModeID
 	if len(agentInfo) > 0 {
 		snapshot.RuntimeContext["agent"] = agentInfo
 	}

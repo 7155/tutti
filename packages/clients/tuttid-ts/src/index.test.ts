@@ -100,6 +100,123 @@ test("shared tuttid client purges deleted Agent conversations", async () => {
   });
 });
 
+test("shared tuttid client reads and updates cassette-scoped replay playback", async () => {
+  const playback = {
+    drained: false,
+    paused: true,
+    playbackElapsedMs: 42,
+    speed: 2 as const,
+    timingMode: "fast-forward" as const
+  };
+  const { client, requests } = captureClient(() => jsonResponse(playback));
+
+  assert.deepEqual(
+    await client.getAgentSessionReplayTransportPlayback(
+      "277377ed-af34-454f-a8b9-1047b4064e74"
+    ),
+    playback
+  );
+  assert.deepEqual(
+    await client.updateAgentSessionReplayTransportPlayback(
+      "277377ed-af34-454f-a8b9-1047b4064e74",
+      { command: "set-speed", speed: 2 }
+    ),
+    playback
+  );
+  assertRequest(requests[0]!, {
+    authorization: null,
+    body: null,
+    method: "GET",
+    path: "/v1/agent-session-replay/cassettes/277377ed-af34-454f-a8b9-1047b4064e74/transport/playback",
+    query: {}
+  });
+  assertRequest(requests[1]!, {
+    authorization: null,
+    body: { command: "set-speed", speed: 2 },
+    method: "POST",
+    path: "/v1/agent-session-replay/cassettes/277377ed-af34-454f-a8b9-1047b4064e74/transport/playback",
+    query: {}
+  });
+});
+
+test("shared tuttid client prepares cassette-only replay workspace launches", async () => {
+  const response = {
+    launches: [
+      {
+        cassetteId: "277377ed-af34-454f-a8b9-1047b4064e74",
+        cassetteDirectory: "/cassette/a",
+        rootAgentSessionId: "session-1"
+      }
+    ]
+  };
+  const { client, requests } = captureClient(jsonResponse(response, 201));
+
+  assert.deepEqual(
+    await client.prepareAgentSessionReplayWorkspace("workspace-1", {
+      cassetteIds: ["277377ed-af34-454f-a8b9-1047b4064e74"]
+    }),
+    response
+  );
+  assertRequest(requests[0]!, {
+    authorization: null,
+    body: {
+      cassetteIds: ["277377ed-af34-454f-a8b9-1047b4064e74"]
+    },
+    method: "POST",
+    path: "/v1/workspaces/workspace-1/agent-session-replay-workspaces",
+    query: {}
+  });
+});
+
+test("shared tuttid client preserves replay workspace conflict details", async () => {
+  const { client } = captureClient(
+    jsonResponse(
+      {
+        error: {
+          code: "agent_session_replay_workspace_conflict",
+          reason: "agent_session_replay_workspace_conflict",
+          developerMessage: "cassette file inventory mismatch"
+        }
+      },
+      409
+    )
+  );
+
+  await assert.rejects(
+    () =>
+      client.prepareAgentSessionReplayWorkspace("workspace-1", {
+        cassetteIds: ["277377ed-af34-454f-a8b9-1047b4064e74"]
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof TuttidProtocolError);
+      assert.equal(error.statusCode, 409);
+      assert.equal(error.message, "cassette file inventory mismatch");
+      return true;
+    }
+  );
+});
+
+test("shared tuttid client reports unavailable replay playback as null", async () => {
+  const { client } = captureClient(
+    jsonResponse(
+      {
+        error: {
+          code: "service_unavailable",
+          developerMessage: "Replay transport is unavailable"
+        }
+      },
+      503
+    )
+  );
+
+  assert.equal(
+    await client.getAgentSessionReplayTransportPlayback(
+      "277377ed-af34-454f-a8b9-1047b4064e74"
+    ),
+    null
+  );
+});
+
 test("shared tuttid client performs Agent quick prompt CRUD", async () => {
   const prompt = {
     id: "prompt-1",
@@ -493,6 +610,7 @@ test("shared tuttid client lists CLI capabilities with discovery options", async
 
 test("shared tuttid client creates workspace agent sessions with bearer auth", async () => {
   let authorizationHeader = "";
+  let agentCommandOriginHeader = "";
   let requestPath = "";
   let requestBody: unknown;
   const capturedRequest: { signal: AbortSignal | null } = { signal: null };
@@ -504,6 +622,8 @@ test("shared tuttid client creates workspace agent sessions with bearer auth", a
       const request =
         input instanceof Request ? input : new Request(input, init);
       authorizationHeader = request.headers.get("authorization") ?? "";
+      agentCommandOriginHeader =
+        request.headers.get("x-tutti-agent-command-origin") ?? "";
       requestPath = new URL(request.url).pathname;
       requestBody = await request.json();
       capturedRequest.signal = request.signal;
@@ -542,10 +662,14 @@ test("shared tuttid client creates workspace agent sessions with bearer auth", a
         source: "agent-gui"
       }
     },
-    { signal: abortController.signal }
+    {
+      agentCommandOrigin: "renderer-engine",
+      signal: abortController.signal
+    }
   );
 
   assert.equal(authorizationHeader, "Bearer desktop-session-token");
+  assert.equal(agentCommandOriginHeader, "renderer-engine");
   assert.equal(requestPath, "/v1/workspaces/ws-1/agent-sessions");
   assert.notEqual(capturedRequest.signal, null);
   abortController.abort();

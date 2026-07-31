@@ -98,6 +98,8 @@ Turn state, loading, cancel, restore, rail projection, event updates, imports, a
 - [Completed agent session stays activating and disables the composer](./agent-session-lifecycle.md#completed-agent-session-stays-activating-and-disables-the-composer)
 - [Shared Agent composer stays disabled after the target connects](./agent-session-lifecycle.md#shared-agent-composer-stays-disabled-after-the-target-connects)
 - [Goal clear stays planning and leaves the session running](./agent-session-lifecycle.md#goal-clear-stays-planning-and-leaves-the-session-running)
+- [Goal loops after pause/resume and never reaches complete](./agent-session-lifecycle.md#goal-loops-after-pause-resume-and-never-reaches-complete)
+- [Goal resume fails with permanently ambiguous generation fingerprint](./agent-session-lifecycle.md#goal-resume-fails-with-permanently-ambiguous-generation-fingerprint)
 - [Cursor session/new is canceled before its 30-second timeout](./agent-session-lifecycle.md#cursor-sessionnew-is-canceled-before-its-30-second-timeout)
 - [Claude Code keeps returning ConnectionRefused after network recovery](./agent-session-lifecycle.md#claude-code-keeps-returning-connectionrefused-after-network-recovery)
 - [Cursor auto-continue invents interrupted work after a network drop](./agent-session-lifecycle.md#cursor-auto-continue-invents-interrupted-work-after-a-network-drop)

@@ -19,11 +19,12 @@ import {
   agentActivityComposerOptionsFromTuttidResult,
   agentActivitySessionFromTuttidSession,
   agentActivityTurnFromTuttidTurn,
-  tuttiAgentSessionComposerSettingsFromActivity
+  tuttiAgentSessionComposerSettingsFromActivity,
+  tuttiCreateWorkspaceAgentSessionRequestFromActivation,
+  tuttiSendWorkspaceAgentSessionInputRequestFromActivity
 } from "@tutti-os/agent-activity-tuttid-adapter";
 import type { TuttidClient } from "@tutti-os/client-tuttid-ts";
 import { mobileLocale } from "../i18n";
-import { toTuttidPromptContent } from "./workspaceActivityCommandSupport";
 
 interface WorkspaceActivityEngineCommandContext {
   client: TuttidClient;
@@ -169,53 +170,7 @@ async function activateSession(
   }
   const session = await context.client.createWorkspaceAgentSession(
     input.workspaceId,
-    {
-      agentSessionId: input.agentSessionId,
-      agentTargetId: input.agentTargetId,
-      ...(input.capabilityRefs?.length
-        ? {
-            capabilityRefs: input.capabilityRefs.map((reference) => ({
-              ...reference
-            }))
-          }
-        : {}),
-      clientSubmitId: input.clientSubmitId,
-      cwd: input.cwd ?? null,
-      initialContent: input.initialGoalControl
-        ? []
-        : toTuttidPromptContent(input.initialContent ?? []),
-      initialDisplayPrompt: input.initialDisplayPrompt ?? null,
-      ...(input.initialGoalControl
-        ? { initialGoalControl: { ...input.initialGoalControl } }
-        : {}),
-      ...(input.initialTuttiModeActivation
-        ? {
-            initialTuttiModeActivation: {
-              ...input.initialTuttiModeActivation
-            }
-          }
-        : {}),
-      ...(input.railPlacement
-        ? { railPlacement: { ...input.railPlacement } }
-        : {}),
-      ...(input.settings?.model ? { model: input.settings.model } : {}),
-      ...(input.settings?.reasoningEffort
-        ? { reasoningEffort: input.settings.reasoningEffort }
-        : {}),
-      ...(input.settings?.speed ? { speed: input.settings.speed } : {}),
-      ...(input.settings?.permissionModeId
-        ? { permissionModeId: input.settings.permissionModeId }
-        : {}),
-      ...(typeof input.settings?.planMode === "boolean"
-        ? { planMode: input.settings.planMode }
-        : {}),
-      ...(typeof input.settings?.browserUse === "boolean"
-        ? { browserUse: input.settings.browserUse }
-        : {}),
-      submitDiagnostics: input.submitDiagnostics,
-      title: input.title ?? null,
-      visible: input.visible ?? true
-    },
+    tuttiCreateWorkspaceAgentSessionRequestFromActivation(input),
     { signal }
   );
   const activitySession = context.mapSession(session);
@@ -360,20 +315,7 @@ async function sendPrompt(
   const result = await context.client.sendWorkspaceAgentSessionInput(
     input.workspaceId,
     input.agentSessionId,
-    {
-      ...(input.capabilityRefs?.length
-        ? {
-            capabilityRefs: input.capabilityRefs.map((reference) => ({
-              ...reference
-            }))
-          }
-        : {}),
-      clientSubmitId: input.clientSubmitId,
-      content: toTuttidPromptContent(input.content),
-      displayPrompt: input.displayPrompt ?? null,
-      guidance: input.guidance ?? false,
-      submitDiagnostics: input.submitDiagnostics
-    },
+    tuttiSendWorkspaceAgentSessionInputRequestFromActivity(input),
     ...requestOptionsArgs(signal)
   );
   if (result.kind === "goalControl") {

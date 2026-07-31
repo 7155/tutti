@@ -686,8 +686,9 @@ disable submission, but must not change editor editability.
 - composer-option reads use `engine.loadComposerOptions`; the Engine owns
   request identity, signature-aware cache reuse, identical in-flight joining,
   supersession, exact settlement, caller abort, and disposal. Desktop and
-  Mobile retain only transport and DTO mapping in their
-  `EngineExtensionCommand` adapters
+  Mobile retain transport execution in their `EngineExtensionCommand`
+  adapters and delegate pure generated-DTO projection to
+  `@tutti-os/agent-activity-tuttid-adapter`
 - an acknowledged home Composer default remains an optimistic draft until a
   later authoritative Composer-options response reports the same effective
   field value. A successful read alone must not retire the draft because a
@@ -702,7 +703,9 @@ disable submission, but must not change editor editability.
 - the Engine alone translates shared activation, prompt send, settings update,
   Goal Control, turn cancel, Interaction response, rename, pin, and
   batch-delete commands into `AgentSessionEffectPort` calls. Desktop and Mobile
-  effect ports retain transport and DTO mapping but must not duplicate a
+  effect ports retain transport, product integration, and host-specific DTO
+  mapping. Their create/send request and Turn response projections delegate to
+  `@tutti-os/agent-activity-tuttid-adapter`; they must not duplicate a
   command-type switch for these shared effects. Host activity facades call
   `engine.activateSession`, `engine.submitPrompt`, `engine.controlGoal`,
   `engine.stopSession`, `engine.updateSessionSettings`, `engine.renameSession`,

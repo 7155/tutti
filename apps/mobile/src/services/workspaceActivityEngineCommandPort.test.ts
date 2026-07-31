@@ -135,7 +135,14 @@ describe("createWorkspaceActivityEffectPort", () => {
       agentSessionId: "session-1",
       capabilityRefs: [{ capability: "tutti", source: "slash_command" }],
       clientSubmitId: "submit-1",
-      content: [{ text: "hello", type: "text" }],
+      content: [
+        {
+          hostPath: "/tmp/local-only.txt",
+          text: "hello",
+          type: "text",
+          uploadStatus: "uploaded"
+        }
+      ],
       displayPrompt: "/computer hello",
       guidance: true,
       submitDiagnostics: {

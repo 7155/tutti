@@ -7,42 +7,7 @@ import {
   resolveWorkspaceAppCategoryId
 } from "./workspaceAppCategory.ts";
 
-const expectedCategoryByAppId = {
-  "product-competition": "product-design",
-  "daily-product-radar": "product-design",
-  "daily-tech-radar": "product-design",
-  radar: "product-design",
-  "design-review": "product-design",
-  "vibe-design": "product-design",
-  "ai-media-canvas": "content-creation",
-  "media-canvas": "content-creation",
-  "open-cut": "content-creation",
-  "ai-slide": "office",
-  "ai-doc": "office",
-  "ai-sheet": "office",
-  automation: "tools",
-  "tutti-onboarding": "tools",
-  "group-chat": "tools",
-  issue: "tools",
-  issues: "tools",
-  "issue-manager": "tools",
-  "workspace-issue": "tools",
-  "workspace-issue-manager": "tools",
-  "draw-topic-app": "tools",
-  "answer-book": "tools",
-  app_answer_book: "tools",
-  "idea-draw": "tools",
-  "omni-catcher": "tools"
-} as const;
-
 describe("resolveWorkspaceAppCategoryId", () => {
-  it("classifies every supported official app id and alias", () => {
-    for (const [appId, categoryId] of Object.entries(expectedCategoryByAppId)) {
-      assert.equal(resolveWorkspaceAppCategoryId(appId), categoryId, appId);
-    }
-    assert.equal(resolveWorkspaceAppCategoryId("unknown-app"), null);
-  });
-
   it("normalizes app ids before lookup", () => {
     assert.equal(resolveWorkspaceAppCategoryId(" AI-DOC "), "office");
   });

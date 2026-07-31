@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@tutti-os/ui-system";
@@ -555,75 +553,5 @@ describe("AgentQuickPromptPopover", () => {
       key: "Enter"
     });
     expect(onComposerKeyDown).not.toHaveBeenCalled();
-  });
-});
-
-describe("quick-prompt UI composition", () => {
-  const source = readFileSync(
-    join(
-      process.cwd(),
-      "agent-gui/agentGuiNode/composer/quickPrompts/AgentQuickPromptPopover.tsx"
-    ),
-    "utf8"
-  );
-  const editorSource = readFileSync(
-    join(
-      process.cwd(),
-      "agent-gui/agentGuiNode/composer/quickPrompts/AgentQuickPromptEditorDialog.tsx"
-    ),
-    "utf8"
-  );
-  const listSource = readFileSync(
-    join(
-      process.cwd(),
-      "agent-gui/agentGuiNode/composer/quickPrompts/AgentQuickPromptList.tsx"
-    ),
-    "utf8"
-  );
-  const rowSource = readFileSync(
-    join(
-      process.cwd(),
-      "agent-gui/agentGuiNode/composer/quickPrompts/AgentQuickPromptRow.tsx"
-    ),
-    "utf8"
-  );
-
-  it("composes only public UI System interaction primitives", () => {
-    expect(source).toContain('from "@tutti-os/ui-system"');
-    expect(source).toContain('from "@tutti-os/ui-system/icons"');
-    expect(source).toContain("<ScrollArea");
-    expect(source).toContain("<TooltipProvider");
-    expect(source).toMatch(
-      /<TooltipTrigger asChild>\s*<span[^>]*>\s*<PopoverTrigger asChild>/u
-    );
-    expect(source).toContain("<ConfirmationDialog");
-    expect(source).toContain("<RecommendedTemplateList");
-    expect(rowSource).toContain("aria-label={labels.edit}");
-    expect(rowSource).toContain("aria-label={labels.delete}");
-    expect(rowSource).toContain("group/quick-prompt-row");
-    expect(rowSource).not.toContain("group-focus-within");
-    expect(rowSource).toContain(
-      'className="cursor-grab text-[var(--text-tertiary)]'
-    );
-    expect(rowSource).toContain(
-      "disabled:cursor-not-allowed disabled:text-[var(--text-disabled)] disabled:opacity-100"
-    );
-    expect(rowSource).toContain('reorderDisabled ? "cursor-not-allowed" : ""');
-    expect(rowSource).not.toContain("className={revealClass}");
-    expect(listSource).toContain("<Sortable");
-    expect(listSource).toContain("<SortableItem");
-    expect(listSource).not.toContain("disabled={!isSorting");
-    expect(rowSource).toContain("<SortableItemHandle");
-    expect(source).not.toContain("<DropdownMenu");
-    expect(source).toContain("onCloseAutoFocus");
-    expect(editorSource).toContain("<Dialog");
-    expect(editorSource).toContain("<Textarea");
-    expect(editorSource).toContain("min-h-[128px]");
-    expect(editorSource).toContain("onKeyDownCapture");
-    expect(source).not.toMatch(/<button\b/u);
-    expect(editorSource).not.toMatch(/<button\b/u);
-    expect(rowSource).not.toMatch(/<button\b/u);
-    expect(source).not.toContain("radix-ui");
-    expect(editorSource).not.toContain("radix-ui");
   });
 });

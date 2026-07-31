@@ -3,15 +3,13 @@ import test from "node:test";
 import type {
   WorkspaceAgentSessionGoalControlResponse,
   WorkspaceAgentSession,
-  WorkspaceAgentSessionMessage,
-  WorkspaceAgentTurn
+  WorkspaceAgentSessionMessage
 } from "@tutti-os/client-tuttid-ts";
 import {
   agentActivityGoalControlResultFromTuttid,
   agentActivityMessageFromTuttidMessage,
   agentActivitySessionFromTuttidSession,
-  agentActivityTuttiModeActivationFromTuttid,
-  agentActivityTurnFromTuttidTurn
+  agentActivityTuttiModeActivationFromTuttid
 } from "./index.ts";
 
 test("goal control mapping preserves operation evidence and explicit clear", () => {
@@ -171,30 +169,6 @@ test("message mapping preserves session-level ownership and trims turn ids", () 
   assert.equal(turnOwned.turnId, "turn-1");
 });
 
-test("turn mapping preserves independent capability references", () => {
-  const source = createTurn();
-  source.capabilityRefs = [{ capability: "tutti", source: "slash_command" }];
-
-  const turn = agentActivityTurnFromTuttidTurn(source);
-
-  assert.deepEqual(turn.capabilityRefs, source.capabilityRefs);
-  assert.notEqual(turn.capabilityRefs, source.capabilityRefs);
-});
-
-test("turn mapping rejects malformed capability references", () => {
-  const malformed = createTurn() as unknown as {
-    capabilityRefs: Array<{ capability: string; source: string }>;
-  };
-  malformed.capabilityRefs = [
-    { capability: "unknown", source: "slash_command" }
-  ];
-
-  assert.throws(
-    () => agentActivityTurnFromTuttidTurn(malformed as WorkspaceAgentTurn),
-    /unsupported workspace agent capability reference/
-  );
-});
-
 function createSession(): WorkspaceAgentSession {
   return {
     activeTurn: null,
@@ -237,23 +211,5 @@ function createSession(): WorkspaceAgentSession {
     updatedAtUnixMs: 2,
     usage: null,
     visible: true
-  };
-}
-
-function createTurn(): WorkspaceAgentTurn {
-  return {
-    agentSessionId: "session-1",
-    completedCommand: null,
-    error: null,
-    fileChanges: null,
-    origin: "user_prompt",
-    outcome: null,
-    phase: "settled",
-    providerForkBindingAvailable: true,
-    providerForkBindingState: "bound",
-    settledAtUnixMs: 3,
-    startedAtUnixMs: 1,
-    turnId: "turn-1",
-    updatedAtUnixMs: 3
   };
 }

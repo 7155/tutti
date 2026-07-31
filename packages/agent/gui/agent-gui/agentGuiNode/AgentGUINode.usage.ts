@@ -149,3 +149,12 @@ export function resolveAgentGUIRailStatusProvider(input: {
   const target = resolveAgentGUIRailStatusTarget(input);
   return target?.provider ?? null;
 }
+
+export function resolveAgentGUIRailConfigProvider(
+  railConfigProvider: AgentGUIProvider | null | undefined,
+  fallbackProvider: AgentGUIProvider
+): AgentGUIProvider | null {
+  return railConfigProvider === undefined
+    ? fallbackProvider
+    : railConfigProvider;
+}

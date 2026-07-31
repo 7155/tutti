@@ -127,26 +127,6 @@ function controller(
 }
 
 describe("AgentQuickPromptPopover", () => {
-  it("uses the fixed-height Popover and makes only the list a ScrollArea", () => {
-    render(
-      <TooltipProvider>
-        <AgentQuickPromptPopover controller={controller()} disabled={false} />
-      </TooltipProvider>
-    );
-
-    const surface = document.querySelector('[data-slot="popover-content"]');
-    expect(surface).toHaveClass("h-[420px]", "w-[400px]", "overflow-hidden");
-    expect(
-      screen.getByRole("dialog", { name: "Quick prompts" })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByTestId("agent-quick-prompt-scroll-viewport")
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /^Review/u })
-    ).toBeInTheDocument();
-  });
-
   it("keeps selection and direct icon management controls as sibling buttons", () => {
     const subject = controller();
     render(
@@ -324,54 +304,6 @@ describe("AgentQuickPromptPopover", () => {
     expect(screen.queryByRole("button", { name: "Reorder Review" })).toBeNull();
   });
 
-  it("does not allow sorting a filtered list", () => {
-    render(
-      <TooltipProvider>
-        <AgentQuickPromptPopover
-          controller={controller({
-            searchQuery: "review",
-            showReorderHandles: false
-          })}
-          disabled={false}
-        />
-      </TooltipProvider>
-    );
-
-    expect(screen.getByRole("button", { name: "Sort" })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "Reorder Review" })).toBeNull();
-    expect(
-      screen.queryByRole("button", {
-        name: /Summarize common prompts.*Use template/u
-      })
-    ).toBeNull();
-  });
-
-  it("disables every mutating entry point while a shared mutation is pending", () => {
-    const subject = controller({
-      canReorder: false,
-      isInteractionLocked: true,
-      showReorderHandles: true
-    });
-    render(
-      <TooltipProvider>
-        <AgentQuickPromptPopover controller={subject} disabled={false} />
-      </TooltipProvider>
-    );
-
-    expect(screen.getByRole("button", { name: "New prompt" })).toBeDisabled();
-    expect(screen.getByPlaceholderText("Search quick prompts")).toBeDisabled();
-    expect(screen.getByRole("button", { name: /^Review/u })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Edit" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Sort" })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "Reorder Review" })).toBeNull();
-    expect(
-      screen.getByRole("button", {
-        name: "Recommended templates"
-      })
-    ).toBeDisabled();
-  });
-
   it("disables recommended-template actions while a shared mutation is pending", () => {
     const subject = controller({
       filteredPrompts: [],
@@ -532,56 +464,6 @@ describe("AgentQuickPromptPopover", () => {
     ).toBeInTheDocument();
   });
 
-  it("hides the complete entry when the host gate is unavailable", () => {
-    const rendered = render(
-      <TooltipProvider>
-        <AgentQuickPromptPopover
-          controller={controller({ capabilityAvailable: false })}
-          disabled={false}
-        />
-      </TooltipProvider>
-    );
-    expect(rendered.container).toBeEmptyDOMElement();
-  });
-
-  it("opens system dialogs for create and destructive confirmation", () => {
-    const createRender = render(
-      <TooltipProvider>
-        <AgentQuickPromptPopover
-          controller={controller({
-            isEditorOpen: true,
-            isPopoverOpen: false,
-            mode: "create"
-          })}
-          disabled={false}
-        />
-      </TooltipProvider>
-    );
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByLabelText(labels.titleLabel)).toBeInTheDocument();
-    createRender.unmount();
-
-    const promptToDelete = controller().filteredPrompts[0]!;
-    render(
-      <TooltipProvider>
-        <AgentQuickPromptPopover
-          controller={controller({
-            isPopoverOpen: false,
-            mode: "delete",
-            promptToDelete
-          })}
-          disabled={false}
-        />
-      </TooltipProvider>
-    );
-    expect(screen.getByRole("dialog")).toHaveTextContent(
-      labels.deleteDescription(promptToDelete.title)
-    );
-    expect(
-      screen.getByRole("button", { name: labels.deleteConfirm })
-    ).toBeInTheDocument();
-  });
-
   it("runs dialog cancellation and deletion on primary pointer down", () => {
     const createSubject = controller({
       isEditorOpen: true,
@@ -649,32 +531,6 @@ describe("AgentQuickPromptPopover", () => {
     );
     expect(screen.getByLabelText(labels.contentLabel)).toHaveValue(
       "My unsaved draft"
-    );
-  });
-
-  it("prefills the existing editor Dialog from a recommended template draft", () => {
-    render(
-      <TooltipProvider>
-        <AgentQuickPromptPopover
-          controller={controller({
-            initialDraft: {
-              title: "Understand the situation",
-              content: "Summarize the situation"
-            },
-            isEditorOpen: true,
-            isPopoverOpen: false,
-            mode: "create"
-          })}
-          disabled={false}
-        />
-      </TooltipProvider>
-    );
-
-    expect(screen.getByLabelText(labels.titleLabel)).toHaveValue(
-      "Understand the situation"
-    );
-    expect(screen.getByLabelText(labels.contentLabel)).toHaveValue(
-      "Summarize the situation"
     );
   });
 

@@ -1,5 +1,12 @@
 import type { FormEvent, ReactElement } from "react";
-import { useEffect, useId, useMemo, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import {
   Badge,
   BareIconButton,
@@ -69,7 +76,10 @@ import {
   filterWorkspaceAppsByCategory
 } from "../core/workspaceAppCategory.ts";
 import {
+  handoffHiddenAppCenterCategoryTab,
+  resolveActiveAppCenterCategoryTab,
   resolveActiveAppCenterTab,
+  resolveVisibleAppCenterCategoryTabs,
   resolveVisibleAppCenterTabs,
   type AppCenterAppTab
 } from "./appCenterTabs.ts";
@@ -537,8 +547,18 @@ export function AppCenterPanel({
     recommendedApps,
     copy
   );
-  const activeRecommendedCategory = recommendedCategoryTabs.find(
-    (tab) => tab.id === activeRecommendedCategoryTab
+  const visibleRecommendedCategoryTabs = resolveVisibleAppCenterCategoryTabs(
+    recommendedCategoryTabs,
+    "all"
+  );
+  const resolvedActiveRecommendedCategoryTab =
+    resolveActiveAppCenterCategoryTab(
+      activeRecommendedCategoryTab,
+      visibleRecommendedCategoryTabs,
+      "all"
+    );
+  const activeRecommendedCategory = visibleRecommendedCategoryTabs.find(
+    (tab) => tab.id === resolvedActiveRecommendedCategoryTab
   );
   const activeRecommendedApps =
     activeRecommendedCategory?.category == null
@@ -1483,7 +1503,7 @@ function AppCardGrid({
   );
 }
 
-interface RecommendedCategoryTab {
+export interface RecommendedCategoryTab {
   readonly category: WorkspaceAppCategoryId | null;
   readonly count: number;
   readonly id: RecommendedCategoryTabID;
@@ -1514,7 +1534,7 @@ function createRecommendedCategoryTabs(
   });
 }
 
-function RecommendedCategoryTabs({
+export function RecommendedCategoryTabs({
   copy,
   tabs,
   value,
@@ -1525,14 +1545,39 @@ function RecommendedCategoryTabs({
   readonly value: RecommendedCategoryTabID;
   readonly onValueChange: (value: RecommendedCategoryTabID) => void;
 }): ReactElement {
+  const visibleTabs = resolveVisibleAppCenterCategoryTabs(tabs, "all");
+  const resolvedValue = resolveActiveAppCenterCategoryTab(
+    value,
+    visibleTabs,
+    "all"
+  );
+  const fallbackTabRef = useRef<HTMLButtonElement>(null);
+  const activeTabRef = useRef<HTMLButtonElement>(null);
+  const visibleTabIds = new Set(visibleTabs.map((tab) => tab.id));
+  const renderedTabs =
+    resolvedValue === value
+      ? visibleTabs
+      : tabs.filter((tab) => visibleTabIds.has(tab.id) || tab.id === value);
+  useLayoutEffect(() => {
+    const activeTabHadFocus =
+      activeTabRef.current != null &&
+      activeTabRef.current.ownerDocument.activeElement === activeTabRef.current;
+    handoffHiddenAppCenterCategoryTab(
+      value,
+      resolvedValue,
+      activeTabHadFocus ? fallbackTabRef.current : null,
+      onValueChange
+    );
+  }, [onValueChange, resolvedValue, value]);
+
   return (
     <div
       aria-label={copy.t("labels.appCategories")}
       className="-mx-1 flex min-h-10 min-w-0 items-center gap-2 overflow-x-auto px-1 py-1"
       role="tablist"
     >
-      {tabs.map((tab) => {
-        const selected = tab.id === value;
+      {renderedTabs.map((tab) => {
+        const selected = tab.id === resolvedValue;
         return (
           <button
             aria-selected={selected}
@@ -1543,6 +1588,13 @@ function RecommendedCategoryTabs({
                 : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
             )}
             key={tab.id}
+            ref={
+              tab.id === "all"
+                ? fallbackTabRef
+                : tab.id === value
+                  ? activeTabRef
+                  : undefined
+            }
             role="tab"
             type="button"
             onClick={() => onValueChange(tab.id)}

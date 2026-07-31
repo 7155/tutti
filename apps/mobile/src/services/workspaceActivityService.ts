@@ -24,6 +24,7 @@ import type { AgentDirectoryService } from "./agentDirectoryService";
 import type { ComposerDraftService } from "./composerDraftService";
 import { createMobileAgentActivityMapping } from "./mobileAgentActivityMapping";
 import { createMobileAgentActivityReconcileExecutor } from "./mobileAgentActivityReconcileExecutor";
+import type { MobileUserProjectDirectoryService } from "./mobileUserProjectDirectoryService";
 import { ObservableService } from "./observableService";
 import {
   dismissPendingSubmission,
@@ -85,6 +86,7 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
     readonly workspace: WorkspaceSummary,
     private readonly client: TuttidClient,
     private readonly directory: AgentDirectoryService,
+    private readonly userProjects: MobileUserProjectDirectoryService,
     private readonly navigation: WorkspaceNavigationService,
     private readonly drafts: ComposerDraftService,
     private readonly clock: ClockPort,
@@ -247,6 +249,21 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
         );
         this.onDependencyChanged();
         this.loadComposerOptions();
+      }),
+      this.userProjects.subscribe(() => {
+        const snapshot = this.userProjects.getSnapshot();
+        const selectedProjectPath = this.drafts.getSelectedProjectPath();
+        if (
+          snapshot.status === "ready" &&
+          !snapshot.errorCode &&
+          selectedProjectPath &&
+          !snapshot.projects.some(
+            (project) => project.path === selectedProjectPath
+          )
+        ) {
+          this.drafts.setSelectedProjectPath(null);
+        }
+        this.onDependencyChanged();
       })
     );
   }
@@ -273,8 +290,12 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
       navigation,
       previousConversation: this.previousConversation,
       rail: railSnapshot,
+      selectedProjectPath: navigation.creating
+        ? this.drafts.getSelectedProjectPath()
+        : null,
       state,
       targets: this.directory.getSnapshot().targets,
+      userProjects: this.userProjects.getSnapshot(),
       workspaceId: this.workspace.id
     });
     this.previousConversation = this.snapshotCache.conversation;
@@ -287,7 +308,8 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
     this.setTransportConnected(this.transportConnected, true);
     this.initializePromise = Promise.all([
       this.directory.load(),
-      this.rail.start()
+      this.rail.start(),
+      this.userProjects.load()
     ])
       .then(() => undefined)
       .finally(() => {
@@ -319,7 +341,39 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
   }
 
   selectTarget(agentTargetId: string): void {
+    const snapshot = this.getSnapshot();
+    if (
+      !snapshot.creating ||
+      snapshot.sending ||
+      snapshot.ambiguousSubmission ||
+      !snapshot.commandsAvailable
+    ) {
+      return;
+    }
     this.navigation.selectTarget(agentTargetId);
+  }
+
+  selectProject(path: string | null): void {
+    const snapshot = this.getSnapshot();
+    if (
+      !snapshot.creating ||
+      snapshot.sending ||
+      snapshot.ambiguousSubmission ||
+      !snapshot.commandsAvailable
+    ) {
+      return;
+    }
+    const normalizedPath = path?.trim() || null;
+    if (
+      normalizedPath &&
+      !this.userProjects
+        .getSnapshot()
+        .projects.some((project) => project.path === normalizedPath)
+    ) {
+      return;
+    }
+    this.drafts.setSelectedProjectPath(normalizedPath);
+    this.loadComposerOptions({ force: true });
   }
 
   updateComposerSettings(settings: AgentActivitySessionSettings): void {
@@ -341,6 +395,10 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
 
   startCreating(): void {
     const targets = this.directory.getSnapshot().targets;
+    if (this.navigation.getSnapshot().creating) {
+      this.navigation.reconcileTargetIds(targets.map((target) => target.id));
+      return;
+    }
     this.navigation.startCreating(targets.length === 1 ? targets[0]!.id : null);
   }
 
@@ -403,6 +461,9 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
     const text = snapshot.draft.trim();
     if (!text || snapshot.sending || !snapshot.commandsAvailable) return;
     if (snapshot.creating && !snapshot.selectedAgentTargetId) return;
+    if (snapshot.creating && snapshot.composerOptionsLoadStatus === "loading") {
+      return;
+    }
     const draftKey = snapshot.creating
       ? "new"
       : (snapshot.selectedAgentSessionId ?? "none");
@@ -437,6 +498,12 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
       submittedAtUnixMs: now
     };
     if (snapshot.creating) {
+      const selectedProject = snapshot.selectedProjectPath
+        ? (snapshot.userProjects.find(
+            (project) => project.path === snapshot.selectedProjectPath
+          ) ?? null)
+        : null;
+      if (snapshot.selectedProjectPath && !selectedProject) return;
       const accepted = this.engine.activateSession({
         agentSessionId: submission.agentSessionId,
         agentTargetId: submission.agentTargetId!,
@@ -445,9 +512,22 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
         ...(goalControl ? { initialGoalControl: goalControl } : {}),
         initialTurnExpected: !goalControl,
         mode: "new",
+        ...(selectedProject ? { cwd: selectedProject.path } : {}),
+        railPlacement: selectedProject
+          ? {
+              kind: "project",
+              projectPath: selectedProject.path,
+              sectionKey: selectedProject.sectionKey,
+              version: 1
+            }
+          : {
+              kind: "conversations",
+              sectionKey: "conversations",
+              version: 1
+            },
         requestId: submission.clientSubmitId,
         runtimeContent: content,
-        settings: snapshot.composerSettings,
+        settings: this.drafts.getSettings(snapshot.selectedAgentTargetId!),
         submitDiagnostics,
         visible: true
       });
@@ -648,6 +728,7 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
   private currentComposerTarget() {
     return resolveWorkspaceComposerTarget({
       activity: this.projectActivity(this.engine.getSnapshot()),
+      getDraftCwd: () => this.drafts.getSelectedProjectPath(),
       getDraftSettings: (agentTargetId) =>
         this.drafts.getSettings(agentTargetId),
       navigation: this.navigation.getSnapshot(),
@@ -737,6 +818,7 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
           this.ambiguousDraftKeys.delete(draftKey);
           this.errorCode = null;
           this.drafts.clear(draftKey);
+          this.drafts.setSelectedProjectPath(null);
           this.navigation.selectSession(submission.agentSessionId);
           continue;
         }

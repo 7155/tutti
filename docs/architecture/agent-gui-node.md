@@ -50,6 +50,26 @@ reorder remain Desktop management actions. DeviceLink permits only exact
 `GET /v1/preferences/desktop` and `GET /v1/agent-quick-prompts` reads for this
 flow; mutation and per-prompt routes remain blocked.
 
+The native Mobile new-conversation Composer presents Agent Target and working
+directory as peer context selectors directly above the input. The Agent Target
+catalog remains the launch authority. The working-directory selector reads the
+daemon-owned registered project catalog through the exact read-only
+`GET /v1/user-projects` DeviceLink route and also offers an explicit no-project
+choice; Mobile does not browse the Desktop filesystem, accept arbitrary paths,
+or mutate the registered project catalog. The authenticated-device scope keeps
+the last loaded project metadata across workspace activity replacement, while
+the selected path remains process-only draft state and disappears after
+activation. Changing either selector reloads Composer options for the exact
+Target and optional cwd; creation waits while those exact options are loading
+and submits only sparse user-selected settings rather than cached effective
+defaults. An outcome-unknown activation locks both context selectors so an
+idempotent retry cannot change its launch identity. Activation with a
+registered project carries both its path as `cwd` and its versioned canonical
+project `railPlacement`; no-project activation omits `cwd` so the daemon
+allocates an isolated Session directory and carries the canonical
+`conversations` placement. Existing Sessions never expose these selectors as
+mutable settings.
+
 Use the closed-surface test when assigning ownership: if state must survive or continue progressing after every Agent GUI surface closes, it belongs to Host/store or the workspace engine. State that should disappear with the surface belongs to UI.
 
 ### 1.2 Semantics before screens

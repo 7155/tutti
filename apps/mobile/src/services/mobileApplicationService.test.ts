@@ -329,6 +329,7 @@ function createHarness(
           preferences: { featureFlags: {} }
         }),
         listAgentTargets: async () => ({ targets: [] }),
+        listUserProjects: async () => ({ projects: [] }),
         listWorkspaceAgentSessionSections: async () => ({
           pinned: { hasMore: false, sessions: [], totalCount: 0 },
           sections: [],

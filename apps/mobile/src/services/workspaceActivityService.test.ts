@@ -15,6 +15,7 @@ import type {
 } from "@tutti-os/client-tuttid-ts";
 import { AgentDirectoryService } from "./agentDirectoryService";
 import { ComposerDraftService } from "./composerDraftService";
+import { MobileUserProjectDirectoryService } from "./mobileUserProjectDirectoryService";
 import type { ClockPort } from "./servicePorts";
 import type { AgentLiveDelivery, DeviceLinkPort } from "./servicePorts";
 import { WorkspaceActivityService } from "./workspaceActivityService";
@@ -420,6 +421,7 @@ describe("WorkspaceActivityService", () => {
     await service.start();
     await flushAsyncWork();
     service.startCreating();
+    await flushAsyncWork();
     service.setDraft("/goal ship it");
 
     await service.send();
@@ -494,6 +496,7 @@ describe("WorkspaceActivityService", () => {
     ).engine;
     const activateSession = jest.spyOn(engine, "activateSession");
     service.startCreating();
+    await flushAsyncWork();
     service.setDraft("start");
     await service.send();
     await flushAsyncWork();
@@ -506,15 +509,14 @@ describe("WorkspaceActivityService", () => {
       initialContent: [{ text: "start", type: "text" }],
       initialTurnExpected: true,
       mode: "new",
+      railPlacement: {
+        kind: "conversations",
+        sectionKey: "conversations",
+        version: 1
+      },
       requestId: expect.any(String),
       runtimeContent: [{ text: "start", type: "text" }],
-      settings: {
-        model: null,
-        permissionModeId: null,
-        planMode: null,
-        reasoningEffort: null,
-        speed: null
-      },
+      settings: {},
       submitDiagnostics: {
         blockCount: 1,
         promptLength: 5,
@@ -532,6 +534,191 @@ describe("WorkspaceActivityService", () => {
     expect(service.getSnapshot().selectedAgentSessionId).not.toBeNull();
     expect(service.getSnapshot().sending).toBe(false);
 
+    service.dispose();
+  });
+
+  test("uses the selected project for composer options and new-session placement", async () => {
+    const composerRequests: Array<Record<string, unknown>> = [];
+    let createInput:
+      | Parameters<TuttidClient["createWorkspaceAgentSession"]>[1]
+      | null = null;
+    const service = createService(
+      createClient({
+        composerOptions: async (_provider, request) => {
+          composerRequests.push(request ?? {});
+          return {
+            behavior: {
+              collapseModelOptionsToLatest: false,
+              modelOptionsAuthoritative: true,
+              planModeExclusiveWithPermissionMode: false,
+              prewarmDraftSession: false,
+              refreshModelOptionsAfterSettings: false
+            },
+            effectiveSettings: {},
+            provider: "codex"
+          };
+        },
+        create: async (_workspaceId, input) => {
+          createInput = input;
+          return {
+            ...createSession(),
+            agentTargetId: "target-1",
+            cwd: "/workspace/tutti",
+            id: input.agentSessionId,
+            railSectionKey: "project:tutti"
+          };
+        },
+        listMessages: emptyMessagePage,
+        projects: [createUserProject()],
+        session: () => null,
+        targets: [createTarget()]
+      })
+    );
+
+    await service.start();
+    await flushAsyncWork();
+    service.startCreating();
+    service.selectProject("/workspace/tutti");
+    await flushAsyncWork();
+    service.setDraft("start in project");
+    await service.send();
+    await flushAsyncWork();
+
+    expect(composerRequests).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ cwd: "/workspace/tutti" })
+      ])
+    );
+    expect(createInput).toMatchObject({
+      cwd: "/workspace/tutti",
+      railPlacement: {
+        kind: "project",
+        projectPath: "/workspace/tutti",
+        sectionKey: "project:tutti",
+        version: 1
+      }
+    });
+    expect(service.getSnapshot().selectedProjectPath).toBeNull();
+    service.dispose();
+  });
+
+  test("waits for the selected directory composer options before creating", async () => {
+    let resolveComposerOptions!: (value: Record<string, unknown>) => void;
+    const composerOptions = new Promise<Record<string, unknown>>((resolve) => {
+      resolveComposerOptions = resolve;
+    });
+    const create = jest.fn(async (_workspaceId, input) => ({
+      ...createSession(),
+      agentTargetId: "target-1",
+      id: input.agentSessionId
+    }));
+    const service = createService(
+      createClient({
+        composerOptions: async () => composerOptions,
+        create,
+        listMessages: emptyMessagePage,
+        projects: [createUserProject()],
+        session: () => null,
+        targets: [createTarget()]
+      })
+    );
+
+    await service.start();
+    service.startCreating();
+    service.selectProject("/workspace/tutti");
+    service.setDraft("start after options");
+    await service.send();
+
+    expect(create).not.toHaveBeenCalled();
+
+    resolveComposerOptions({
+      behavior: {
+        collapseModelOptionsToLatest: false,
+        modelOptionsAuthoritative: true,
+        planModeExclusiveWithPermissionMode: false,
+        prewarmDraftSession: false,
+        refreshModelOptionsAfterSettings: false
+      },
+      effectiveSettings: { model: "directory-default" },
+      provider: "codex"
+    });
+    await flushAsyncWork();
+    await service.send();
+    await flushAsyncWork();
+
+    expect(create).toHaveBeenCalledWith(
+      "workspace-1",
+      expect.objectContaining({
+        cwd: "/workspace/tutti",
+        model: null
+      }),
+      expect.any(Object)
+    );
+    service.dispose();
+  });
+
+  test("locks the creation context while activation delivery is ambiguous", async () => {
+    const clock = new RecordingClock();
+    const firstProject = createUserProject();
+    const secondProject = createUserProject({
+      id: "project-2",
+      label: "other",
+      path: "/workspace/other",
+      sectionKey: "project:other"
+    });
+    const service = createService(
+      createClient({
+        composerOptions: async () => ({
+          behavior: {
+            collapseModelOptionsToLatest: false,
+            modelOptionsAuthoritative: true,
+            planModeExclusiveWithPermissionMode: false,
+            prewarmDraftSession: false,
+            refreshModelOptionsAfterSettings: false
+          },
+          effectiveSettings: {},
+          provider: "codex"
+        }),
+        create: () => new Promise<WorkspaceAgentSession>(() => undefined),
+        listMessages: emptyMessagePage,
+        projects: [firstProject, secondProject],
+        session: () => null,
+        targets: [createTarget()]
+      }),
+      { clock }
+    );
+
+    await service.start();
+    await flushAsyncWork();
+    service.startCreating();
+    service.selectProject(firstProject.path);
+    await flushAsyncWork();
+    service.setDraft("start");
+    await service.send();
+    clock.runNext(90_000);
+    await flushAsyncWork();
+
+    expect(service.getSnapshot().ambiguousSubmission).toBe(true);
+    service.selectProject(secondProject.path);
+    expect(service.getSnapshot().selectedProjectPath).toBe(firstProject.path);
+    service.dispose();
+  });
+
+  test("preserves an explicit Agent when creation is started again", async () => {
+    const service = createService(
+      createClient({
+        listMessages: emptyMessagePage,
+        session: () => null,
+        targets: [createTarget(), createTarget({ id: "target-2" })]
+      })
+    );
+
+    await service.start();
+    service.startCreating();
+    service.selectTarget("target-1");
+    service.startCreating();
+
+    expect(service.getSnapshot().selectedAgentTargetId).toBe("target-1");
     service.dispose();
   });
 
@@ -608,6 +795,7 @@ describe("WorkspaceActivityService", () => {
       }
     ).engine;
     service.startCreating();
+    await flushAsyncWork();
     service.setDraft("start");
 
     await service.send();
@@ -1586,6 +1774,7 @@ function createService(
     workspace,
     client,
     new AgentDirectoryService(client),
+    new MobileUserProjectDirectoryService(client),
     new WorkspaceNavigationService(),
     new ComposerDraftService(),
     clock,
@@ -1637,6 +1826,7 @@ function createClient(options: {
     latestVersion: number;
     messages: WorkspaceAgentSessionMessage[];
   }>;
+  projects?: Awaited<ReturnType<TuttidClient["listUserProjects"]>>["projects"];
   send?(
     workspaceId: string,
     agentSessionId: string,
@@ -1702,6 +1892,7 @@ function createClient(options: {
       };
     },
     listAgentTargets: async () => ({ targets: options.targets ?? [] }),
+    listUserProjects: async () => ({ projects: options.projects ?? [] }),
     listWorkspaceAgentSessionMessages: options.listMessages,
     listWorkspaceAgentPinnedSessionPage: async () => {
       const sessions = railSessions().filter(
@@ -1785,7 +1976,13 @@ function createClient(options: {
   } as unknown as TuttidClient;
 }
 
-function createTarget() {
+function createTarget(
+  overrides: Partial<ReturnType<typeof createTargetBase>> = {}
+) {
+  return { ...createTargetBase(), ...overrides };
+}
+
+function createTargetBase() {
   return {
     availability: { status: "ready" },
     createdAtUnixMs: 1,
@@ -1796,6 +1993,25 @@ function createTarget() {
     provider: "codex",
     sortOrder: 1,
     source: "system" as const,
+    updatedAtUnixMs: 1
+  };
+}
+
+function createUserProject(
+  overrides: Partial<ReturnType<typeof createUserProjectBase>> = {}
+) {
+  return { ...createUserProjectBase(), ...overrides };
+}
+
+function createUserProjectBase() {
+  return {
+    createdAtUnixMs: 1,
+    id: "project-1",
+    label: "tutti",
+    lastUsedAtUnixMs: 1,
+    path: "/workspace/tutti",
+    pinnedAtUnixMs: 0,
+    sectionKey: "project:tutti",
     updatedAtUnixMs: 1
   };
 }

@@ -45,6 +45,7 @@ export function createMandatoryUpdaterLeaseManager<
   ): Promise<void>;
 }): MandatoryUpdaterLeaseManager {
   const mandatoryContext = new AsyncLocalStorage<symbol>();
+  const normalRestoreContext = new AsyncLocalStorage<symbol>();
   let mandatoryOwner: symbol | null = null;
 
   const assertAccess = (): void => {
@@ -58,7 +59,9 @@ export function createMandatoryUpdaterLeaseManager<
   return {
     assertAccess,
     isMandatoryAccess: () =>
-      mandatoryOwner !== null && mandatoryContext.getStore() === mandatoryOwner,
+      mandatoryOwner !== null &&
+      mandatoryContext.getStore() === mandatoryOwner &&
+      normalRestoreContext.getStore() !== mandatoryOwner,
     async acquire(input) {
       if (mandatoryOwner) {
         throw new Error("a mandatory update session is already active");
@@ -151,7 +154,9 @@ export function createMandatoryUpdaterLeaseManager<
                 configurationToRestore
               ) {
                 await mandatoryContext.run(owner, () =>
-                  options.restoreNormalConfiguration(configurationToRestore)
+                  normalRestoreContext.run(owner, () =>
+                    options.restoreNormalConfiguration(configurationToRestore)
+                  )
                 );
               }
             } finally {

@@ -14,6 +14,8 @@ The package owns:
 - startup and foreground check timing
 - the one-prompt-per-process foreground rule
 - exclusive mandatory-updater ownership and minimum-target validation
+- immutable unpackaged development scenarios, policy/updater mocks, and the
+  loopback policy server
 - Electron admission-window lifecycle and restricted IPC handlers
 - the capability-minimal preload API
 - shared React presentation and English and Simplified Chinese defaults
@@ -21,7 +23,7 @@ The package owns:
 Each host owns:
 
 - the policy transport and trusted endpoint
-- the concrete updater, feed resolution, and normal update preferences
+- the production updater, feed resolution, and normal update preferences
 - product download URLs, icon and renderer paths, logging sinks, and the list
   of business windows to isolate
 
@@ -62,3 +64,18 @@ stops normal scheduling, prepares a channel-matched update, validates its
 target, downloads it, validates the downloaded target again, and requests the
 mandatory install. Releasing a cleared policy restores the captured normal
 configuration.
+
+## Development boundary
+
+The package resolves `DESKTOP_UPDATE_ADMISSION_*` once in the Electron main
+process. The resulting runtime injects `checksEnabled`, `currentVersion`, and
+`foregroundCheckIntervalMs` into the controller, while the same immutable
+scenario configures the policy checker and updater driver. Product adapters do
+not read scenario variables or implement their own mock state machines.
+
+Packaged applications ignore the environment family before parsing it. Enabled
+invalid scenarios fail startup. The optional HTTP server binds only to
+`127.0.0.1`; TSH routes it through desktopd's dedicated desktop-version client
+while Tutti Desktop uses its normal outbound policy transport. Simulated
+installation terminates in an explicit development-only state and never invokes
+the production installer or restart path.

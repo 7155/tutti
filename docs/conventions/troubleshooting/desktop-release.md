@@ -360,7 +360,8 @@ information is not available yet`, but `ps` or `lsof` still shows an older
   **正在检查更新** badge. Rapid switches may spam updater checks in
   `tutti-desktop.log` (`Checking for update` next to
   `agent.gui.composer_defaults.remembered`). Local unpackaged dev usually hides
-  this because update checks are unsupported unless `TUTTI_APP_UPDATE_DEV` is set.
+  this because update checks are unsupported unless a shared
+  `DESKTOP_UPDATE_ADMISSION_*` development scenario is enabled.
 - Quick checks:
   Confirm packaged/`supportsUpdates`. Correlate
   `agent.gui.composer_defaults.remembered` with

@@ -10,6 +10,11 @@ import {
   type MandatoryDesktopUpdateSession,
   type MandatoryDesktopUpdateTarget
 } from "@tutti-os/desktop-update-admission/mandatory-updater";
+import {
+  completeDevelopmentUpdateInstallation,
+  createDevelopmentAppUpdateDriver,
+  type DesktopUpdateDevelopmentScenario
+} from "@tutti-os/desktop-update-admission/development";
 import { isSameAppUpdateState } from "../../shared/contracts/appUpdateState.ts";
 import {
   desktopIpcChannels,
@@ -49,7 +54,6 @@ interface AppUpdateDriver {
     autoDownload: boolean;
     autoInstallOnAppQuit: boolean;
     channel: string;
-    forceDevUpdateConfig: boolean;
   }): void;
   downloadUpdate(): Promise<void>;
   onCheckingForUpdate(listener: () => void): DriverDisposer;
@@ -85,6 +89,8 @@ export interface AppUpdateService {
 export type MandatoryAppUpdateSession = MandatoryDesktopUpdateSession;
 
 interface AppUpdateServiceOptions {
+  currentVersion?: string;
+  developmentScenario?: DesktopUpdateDevelopmentScenario | null;
   releaseFeedResolver?: DesktopReleaseFeedResolver | null;
   supportsUpdates?: boolean;
   unsupportedMessage?: string;
@@ -133,7 +139,6 @@ export function createElectronAppUpdateDriver(
       updater.allowPrerelease = options.allowPrerelease;
       updater.channel = options.channel;
       updater.allowDowngrade = false;
-      updater.forceDevUpdateConfig = options.forceDevUpdateConfig;
     },
     downloadUpdate: () => updater.downloadUpdate().then(() => undefined),
     onCheckingForUpdate: (listener) =>
@@ -273,142 +278,31 @@ function formatLogArgument(value: unknown): string {
   return typeof value === "string" ? value : String(value);
 }
 
-function envFlagEnabled(name: string): boolean {
-  const value = process.env[name]?.trim().toLowerCase();
-  return value === "1" || value === "true" || value === "yes" || value === "on";
-}
-
-function resolveCurrentVersion(
-  appVersion: string,
-  isPackaged: boolean
-): string {
-  const override = process.env.TUTTI_APP_UPDATE_CURRENT_VERSION?.trim();
-  if (!isPackaged && override) {
-    return override;
-  }
-
-  return appVersion;
-}
-
-function resolveMockLatestVersion(currentVersion: string): string {
-  return (
-    process.env.TUTTI_APP_UPDATE_LATEST_VERSION?.trim() ||
-    `${currentVersion}-dev-update`
-  );
-}
-
-function createDevelopmentMockAppUpdateDriver(
-  currentVersion: string
-): AppUpdateDriver | null {
-  const mode = process.env.TUTTI_APP_UPDATE_MOCK?.trim().toLowerCase();
-  if (!mode) {
-    return null;
-  }
-
-  const checkingListeners = new Set<() => void>();
-  const progressListeners = new Set<(progress: ProgressInfo) => void>();
-  const errorListeners = new Set<(error: Error) => void>();
-  const availableListeners = new Set<(info: UpdateInfo) => void>();
-  const downloadedListeners = new Set<(info: UpdateDownloadedEvent) => void>();
-  const notAvailableListeners = new Set<(info: UpdateInfo) => void>();
-
-  const latestVersion = resolveMockLatestVersion(currentVersion);
-  const updateInfo = (): UpdateInfo => ({
-    files: [],
-    path: "",
-    releaseDate: new Date().toISOString(),
-    releaseName: latestVersion,
-    sha512: "",
-    version: latestVersion
-  });
-
-  return {
-    checkForUpdates() {
-      for (const listener of checkingListeners) {
-        listener();
-      }
-      if (mode === "error") {
-        for (const listener of errorListeners) {
-          listener(new Error("Mock update check failed."));
-        }
-        return Promise.resolve();
-      }
-      if (mode === "up_to_date" || mode === "not_available") {
-        const info = updateInfo();
-        for (const listener of notAvailableListeners) {
-          listener(info);
-        }
-        return Promise.resolve();
-      }
-
-      const info = updateInfo();
-      for (const listener of availableListeners) {
-        listener(info);
-      }
-      if (mode === "downloaded") {
-        for (const listener of downloadedListeners) {
-          listener(info as UpdateDownloadedEvent);
-        }
-      }
-      return Promise.resolve();
-    },
-    configure() {},
-    downloadUpdate() {
-      const info = updateInfo();
-      for (const listener of progressListeners) {
-        listener({
-          bytesPerSecond: 0,
-          delta: 100,
-          percent: 100,
-          total: 100,
-          transferred: 100
-        });
-      }
-      for (const listener of downloadedListeners) {
-        listener(info as UpdateDownloadedEvent);
-      }
-      return Promise.resolve();
-    },
-    onCheckingForUpdate(listener) {
-      checkingListeners.add(listener);
-      return () => checkingListeners.delete(listener);
-    },
-    onDownloadProgress(listener) {
-      progressListeners.add(listener);
-      return () => progressListeners.delete(listener);
-    },
-    onError(listener) {
-      errorListeners.add(listener);
-      return () => errorListeners.delete(listener);
-    },
-    onUpdateAvailable(listener) {
-      availableListeners.add(listener);
-      return () => availableListeners.delete(listener);
-    },
-    onUpdateDownloaded(listener) {
-      downloadedListeners.add(listener);
-      return () => downloadedListeners.delete(listener);
-    },
-    onUpdateNotAvailable(listener) {
-      notAvailableListeners.add(listener);
-      return () => notAvailableListeners.delete(listener);
-    },
-    quitAndInstall() {},
-    setFeedUrl() {}
-  };
-}
-
 export function createAppUpdateService(
   driver?: AppUpdateDriver,
   options: AppUpdateServiceOptions = {}
 ): AppUpdateService {
   const isPackaged = Boolean(app?.isPackaged);
-  const devUpdatesEnabled = envFlagEnabled("TUTTI_APP_UPDATE_DEV");
-  const appVersion = app?.getVersion?.() ?? "0.0.0";
-  const currentVersion = resolveCurrentVersion(appVersion, isPackaged);
-  const developmentMockDriver = driver
-    ? null
-    : createDevelopmentMockAppUpdateDriver(currentVersion);
+  const developmentScenario = options.developmentScenario ?? null;
+  if (isPackaged && developmentScenario) {
+    throw new Error(
+      "packaged desktop cannot use a development update scenario"
+    );
+  }
+  const currentVersion =
+    options.currentVersion ?? app?.getVersion?.() ?? "0.0.0";
+  if (
+    developmentScenario &&
+    currentVersion !== developmentScenario.currentVersion
+  ) {
+    throw new Error(
+      "development updater currentVersion must match the admission scenario"
+    );
+  }
+  const developmentMockDriver =
+    !driver && developmentScenario
+      ? createDevelopmentAppUpdateDriver(developmentScenario)
+      : null;
   const releaseFeedResolver =
     options.releaseFeedResolver === undefined
       ? driver || developmentMockDriver
@@ -421,7 +315,8 @@ export function createAppUpdateService(
     createElectronAppUpdateDriver(electronUpdater.autoUpdater);
   let supportsUpdates =
     options.supportsUpdates ??
-    ((process.env.NODE_ENV !== "test" && isPackaged) || devUpdatesEnabled);
+    ((process.env.NODE_ENV !== "test" && isPackaged) ||
+      developmentScenario !== null);
   let unsupportedMessage =
     options.unsupportedMessage ??
     (process.env.NODE_ENV === "test"
@@ -703,8 +598,7 @@ export function createAppUpdateService(
         allowPrerelease: state.channel === "rc",
         autoDownload: state.policy === "auto",
         autoInstallOnAppQuit: state.policy === "auto",
-        channel: updaterChannel,
-        forceDevUpdateConfig: devUpdatesEnabled && !isPackaged
+        channel: updaterChannel
       });
       resetConfiguredState("idle");
       if (!mandatoryUpdater.isMandatoryAccess()) {
@@ -767,6 +661,9 @@ export function createAppUpdateService(
       assertUpdaterAccess();
       if (state.status !== "downloaded" || quitAndInstallPending) {
         return;
+      }
+      if (developmentScenario) {
+        completeDevelopmentUpdateInstallation(developmentScenario);
       }
 
       quitAndInstallPending = true;

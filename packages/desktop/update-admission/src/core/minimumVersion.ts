@@ -6,8 +6,6 @@ import type {
   MinimumVersionCheckResponse
 } from "../contracts/index.ts";
 
-const foregroundCheckIntervalMs = 30 * 60 * 1_000;
-
 type ManagedVersion = {
   major: string;
   minor: string;
@@ -101,7 +99,8 @@ export function resolveMinimumVersionRuntimeTarget(
 
 export function shouldCheckMinimumVersionAfterForeground(input: {
   disposed: boolean;
-  packaged: boolean;
+  checksEnabled: boolean;
+  foregroundCheckIntervalMs: number;
   foregroundPrompted: boolean;
   startupBlocked: boolean;
   lastCheckAt: number;
@@ -109,10 +108,10 @@ export function shouldCheckMinimumVersionAfterForeground(input: {
 }): boolean {
   return !(
     input.disposed ||
-    !input.packaged ||
+    !input.checksEnabled ||
     input.foregroundPrompted ||
     input.startupBlocked ||
-    input.now - input.lastCheckAt < foregroundCheckIntervalMs
+    input.now - input.lastCheckAt < input.foregroundCheckIntervalMs
   );
 }
 

@@ -57,15 +57,18 @@ export function MinimumVersionUpgradeApp(props: {
   const checking = state.phase === "checking";
   const downloading = state.phase === "downloading";
   const failed = state.phase === "error";
-  const title = prompt
-    ? t("foregroundTitle")
-    : failed
-      ? t("failedTitle")
-      : downloading
-        ? t("downloadingTitle")
-        : checking
-          ? t("checkingTitle")
-          : t("startupTitle");
+  const simulationComplete = state.phase === "simulationComplete";
+  const title = simulationComplete
+    ? t("simulationCompleteTitle")
+    : prompt
+      ? t("foregroundTitle")
+      : failed
+        ? t("failedTitle")
+        : downloading
+          ? t("downloadingTitle")
+          : checking
+            ? t("checkingTitle")
+            : t("startupTitle");
   const errorKey =
     `errors.${state.message ?? "updateFailed"}` as `errors.${MinimumVersionUpgradeError}`;
 
@@ -74,11 +77,13 @@ export function MinimumVersionUpgradeApp(props: {
       <section className="w-full max-w-[440px] rounded-xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-sm">
         <h1 className="text-lg font-semibold">{title}</h1>
         <p className="mt-2 text-sm leading-5 text-[var(--muted-foreground)]">
-          {prompt
-            ? t("foregroundDetail")
-            : failed
-              ? t(errorKey)
-              : t("startupDetail")}
+          {simulationComplete
+            ? t("simulationCompleteDetail")
+            : prompt
+              ? t("foregroundDetail")
+              : failed
+                ? t(errorKey)
+                : t("startupDetail")}
         </p>
         {failed && state.update.message ? (
           <p className="mt-2 break-words text-xs leading-5 text-[var(--destructive)]">
@@ -119,7 +124,15 @@ export function MinimumVersionUpgradeApp(props: {
           </div>
         ) : null}
         <div className="mt-6 flex flex-wrap justify-end gap-2">
-          {prompt ? (
+          {simulationComplete ? (
+            <Button
+              variant="secondary"
+              disabled={pending}
+              onClick={() => run(() => port.exit())}
+            >
+              {t("exit")}
+            </Button>
+          ) : prompt ? (
             <Button
               variant="secondary"
               disabled={pending}

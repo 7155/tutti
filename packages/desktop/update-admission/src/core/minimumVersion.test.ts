@@ -56,22 +56,24 @@ test("validates a response against the exact request identity", () => {
 test("enforces the foreground interval and one-prompt lifecycle", () => {
   assert.equal(
     shouldCheckMinimumVersionAfterForeground({
+      checksEnabled: true,
       disposed: false,
+      foregroundCheckIntervalMs: 30 * 60 * 1_000,
       foregroundPrompted: false,
       lastCheckAt: 0,
       now: 30 * 60 * 1_000,
-      packaged: true,
       startupBlocked: false
     }),
     true
   );
   assert.equal(
     shouldCheckMinimumVersionAfterForeground({
+      checksEnabled: true,
       disposed: false,
+      foregroundCheckIntervalMs: 30 * 60 * 1_000,
       foregroundPrompted: true,
       lastCheckAt: 0,
       now: 60 * 60 * 1_000,
-      packaged: true,
       startupBlocked: false
     }),
     false

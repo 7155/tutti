@@ -13,6 +13,10 @@ import {
   type DesktopUpdateAdmissionController
 } from "@tutti-os/desktop-update-admission/electron-main";
 import {
+  createDevelopmentMinimumVersionChecker,
+  resolveDesktopUpdateAdmissionDevelopment
+} from "@tutti-os/desktop-update-admission/development";
+import {
   initializeDesktopEnvironment,
   resolveDesktopDevelopmentAppName,
   resolveDesktopLoginCallbackUrl,
@@ -54,7 +58,7 @@ import { createWorkspaceFileIconCacheStore } from "./host/workspaceFileIconCache
 import { registerWorkspaceFileIconProtocol } from "./host/workspaceFileIconProtocol.ts";
 import { applyDesktopElectronPlatformCompatibility } from "./electronPlatformCompatibility.ts";
 import { createAppUpdateService } from "./update/appUpdateService.ts";
-import { checkTuttiMinimumVersion } from "./update/minimumVersionPolicyClient.ts";
+import { createTuttiMinimumVersionChecker } from "./update/minimumVersionPolicyClient.ts";
 
 function envFlagEnabled(value: string | undefined): boolean {
   return /^(1|true|yes|on)$/iu.test(value?.trim() ?? "");
@@ -180,14 +184,30 @@ export async function bootstrapDesktopApp(): Promise<void> {
     return;
   }
 
-  const updateService = createAppUpdateService();
+  const desktopUpdateAdmission = resolveDesktopUpdateAdmissionDevelopment({
+    applicationVersion: app.getVersion(),
+    env: process.env,
+    isPackaged: app.isPackaged
+  });
+  const updateService = createAppUpdateService(undefined, {
+    currentVersion: desktopUpdateAdmission.runtime.currentVersion,
+    developmentScenario: desktopUpdateAdmission.scenario
+  });
+  const minimumVersionChecker =
+    desktopUpdateAdmission.scenario?.transport === "in-process"
+      ? createDevelopmentMinimumVersionChecker(desktopUpdateAdmission.scenario)
+      : createTuttiMinimumVersionChecker(
+          desktopUpdateAdmission.scenario?.mockServerUrl
+            ? `${desktopUpdateAdmission.scenario.mockServerUrl}/api/desktop/v1`
+            : undefined
+        );
   let desktopAppServices: Awaited<
     ReturnType<typeof createDesktopAppServices>
   > | null = null;
   let releaseStartupGate: (() => void) | null = null;
   let minimumVersionController: DesktopUpdateAdmissionController | null =
     createDesktopUpdateAdmissionController({
-      checkMinimumVersion: checkTuttiMinimumVersion,
+      checkMinimumVersion: minimumVersionChecker,
       electron: { app, BrowserWindow, ipcMain, shell },
       listBusinessWindows: () => BrowserWindow.getAllWindows(),
       logger,
@@ -204,6 +224,7 @@ export async function bootstrapDesktopApp(): Promise<void> {
       },
       preloadPath: minimumVersionPreloadPath,
       product: "tutti-desktop",
+      runtime: desktopUpdateAdmission.runtime,
       rendererFilePath: join(currentDir, "../renderer/minimum-version.html"),
       rendererUrl: rendererUrl
         ? `${rendererUrl}/minimum-version.html`

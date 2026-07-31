@@ -13,6 +13,8 @@ export type MinimumVersionAdmissionI18nKey =
   | "checkingTitle"
   | "downloadingTitle"
   | "failedTitle"
+  | "simulationCompleteTitle"
+  | "simulationCompleteDetail"
   | "currentVersion"
   | "minimumVersion"
   | "downloadProgress"
@@ -42,6 +44,9 @@ export const minimumVersionAdmissionEn = {
   checkingTitle: "Checking the required update",
   downloadingTitle: "Downloading the required update",
   failedTitle: "Unable to complete the required update",
+  simulationCompleteTitle: "Development update simulation completed",
+  simulationCompleteDetail:
+    "The update reached the installation step. Development mode will not install or restart {{productName}}.",
   currentVersion: "Current version",
   minimumVersion: "Minimum version",
   downloadProgress: "Download progress",
@@ -73,6 +78,9 @@ export const minimumVersionAdmissionZhCN = {
   checkingTitle: "正在检查必须安装的更新",
   downloadingTitle: "正在下载必须安装的更新",
   failedTitle: "无法完成必须安装的更新",
+  simulationCompleteTitle: "开发更新模拟已完成",
+  simulationCompleteDetail:
+    "更新流程已到达安装阶段，开发模式不会实际安装或重启 {{productName}}",
   currentVersion: "当前版本",
   minimumVersion: "最低版本",
   downloadProgress: "下载进度",

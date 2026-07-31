@@ -79,6 +79,7 @@ export type MinimumVersionUpgradePhase =
   | "ready"
   | "downloading"
   | "downloaded"
+  | "simulationComplete"
   | "error"
   | "released";
 
@@ -118,6 +119,13 @@ export interface MinimumVersionAppUpdateService {
     input: MandatoryDesktopUpdateTarget
   ): Promise<MandatoryDesktopUpdateSession>;
   subscribe(listener: (state: DesktopUpdateState) => void): () => void;
+}
+
+export interface DesktopUpdateAdmissionRuntime {
+  checksEnabled: boolean;
+  currentVersion: string;
+  development: boolean;
+  foregroundCheckIntervalMs: number;
 }
 
 export const desktopUpdateAdmissionIpcChannels = {

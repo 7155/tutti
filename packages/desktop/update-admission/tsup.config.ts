@@ -7,6 +7,8 @@ export default defineConfig({
     index: "src/index.ts",
     "contracts/index": "src/contracts/index.ts",
     "core/index": "src/core/index.ts",
+    "development/index": "src/development/index.ts",
+    "development/mock-server-cli": "src/development/mockServerCli.ts",
     "electron-main/index": "src/electron-main/index.ts",
     "i18n/index": "src/i18n/index.ts",
     "mandatory-updater/index": "src/mandatory-updater/index.ts",

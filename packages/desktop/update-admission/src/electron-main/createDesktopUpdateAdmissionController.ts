@@ -4,6 +4,7 @@ import type {
 } from "electron";
 import {
   desktopUpdateAdmissionIpcChannels,
+  type DesktopUpdateAdmissionRuntime,
   type DesktopProduct,
   type MinimumVersionAppUpdateService,
   type MinimumVersionCheckRequest,
@@ -18,6 +19,7 @@ import {
   shouldCheckMinimumVersionAfterForeground,
   validateMinimumVersionResponse
 } from "../core/index.ts";
+import { DevelopmentInstallSuppressedError } from "../development/updaterDriver.ts";
 import { MandatoryUpdateTargetError } from "../mandatory-updater/index.ts";
 
 const startupCheckTimeoutMs = 3_000;
@@ -45,6 +47,7 @@ export interface DesktopUpdateAdmissionControllerOptions<
   TProduct extends DesktopProduct
 > {
   product: TProduct;
+  runtime: DesktopUpdateAdmissionRuntime;
   electron: DesktopUpdateAdmissionElectronRuntime;
   checkMinimumVersion(
     request: MinimumVersionCheckRequest<TProduct>,
@@ -244,7 +247,7 @@ export function createDesktopUpdateAdmissionController<
     }
     return {
       ...target,
-      currentVersion: app.getVersion(),
+      currentVersion: options.runtime.currentVersion,
       product: options.product
     };
   };
@@ -370,6 +373,14 @@ export function createDesktopUpdateAdmissionController<
       await mandatoryUpdateSession.installUpdate();
     } catch (error) {
       installRequested = false;
+      if (error instanceof DevelopmentInstallSuppressedError) {
+        logMinimumVersionCheck(options.logger, "info", {
+          result: "simulated",
+          stage: "install"
+        });
+        applyState("simulationComplete", options.updateService.getState());
+        return;
+      }
       logMinimumVersionCheck(options.logger, "error", {
         error: error instanceof Error ? error.message : String(error),
         result: "failure",
@@ -534,7 +545,7 @@ export function createDesktopUpdateAdmissionController<
 
   return {
     async runStartupCheck() {
-      if (!app.isPackaged) {
+      if (!options.runtime.checksEnabled) {
         return false;
       }
       const response = await checkPolicy(true);
@@ -553,11 +564,12 @@ export function createDesktopUpdateAdmissionController<
     async checkAfterForegroundRestore() {
       if (
         !shouldCheckMinimumVersionAfterForeground({
+          checksEnabled: options.runtime.checksEnabled,
           disposed,
+          foregroundCheckIntervalMs: options.runtime.foregroundCheckIntervalMs,
           foregroundPrompted,
           lastCheckAt,
           now: now(),
-          packaged: app.isPackaged,
           startupBlocked:
             mode === "startup" &&
             upgradeWindow !== null &&

@@ -24,6 +24,7 @@ interface AgentGUIConfigMenuProps {
   slashStatusUsageAttempted: boolean;
   provider?: string | null;
   providerIconUrl?: string | null;
+  providerMaskIconUrl?: string | null;
   providerLabel?: string | null;
   providerAuthAccountLabel?: string | null;
   onAgentConfigMenuOpen?: () => void;
@@ -51,6 +52,7 @@ export function AgentGUIConfigMenu({
   slashStatusUsageAttempted,
   provider,
   providerIconUrl,
+  providerMaskIconUrl: targetMaskIconUrl,
   providerLabel,
   providerAuthAccountLabel,
   onAgentConfigMenuOpen,
@@ -60,13 +62,18 @@ export function AgentGUIConfigMenu({
   onOpenAgentSettings
 }: AgentGUIConfigMenuProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
-  const providerFlatIconUrl =
-    resolveAgentGuiSessionProviderFlatIconUrl(provider ?? undefined) ??
-    providerIconUrl?.trim() ??
-    null;
-  const accountProviderLabel = providerLabel?.trim() || provider?.trim();
-  const providerDisplayTitle = accountProviderLabel
-    ? labels.slashStatusProviderAccount(accountProviderLabel)
+  const builtInMaskIconUrl = resolveAgentGuiSessionProviderFlatIconUrl(
+    provider ?? undefined
+  );
+  const providerImageIconUrl = builtInMaskIconUrl
+    ? null
+    : (providerIconUrl?.trim() ?? null);
+  const providerMaskIconUrl =
+    builtInMaskIconUrl ??
+    (providerImageIconUrl ? null : (targetMaskIconUrl?.trim() ?? null));
+  const providerDisplayName = providerLabel?.trim() || provider?.trim();
+  const providerDisplayTitle = providerDisplayName
+    ? labels.slashStatusProviderAccount(providerDisplayName)
     : null;
   const accountTitle = providerDisplayTitle ?? labels.slashStatusAccount;
   const accountFallbackSuppressed =
@@ -124,14 +131,21 @@ export function AgentGUIConfigMenu({
             <>
               <div className="flex min-w-0 flex-col gap-2 p-2">
                 <div className="flex min-w-0 items-center gap-2">
-                  {providerFlatIconUrl ? (
+                  {providerMaskIconUrl ? (
                     <span
                       aria-hidden="true"
                       className="size-4 shrink-0 bg-current"
                       style={{
-                        mask: `url("${providerFlatIconUrl}") center / contain no-repeat`,
-                        WebkitMask: `url("${providerFlatIconUrl}") center / contain no-repeat`
+                        mask: `url("${providerMaskIconUrl}") center / contain no-repeat`,
+                        WebkitMask: `url("${providerMaskIconUrl}") center / contain no-repeat`
                       }}
+                    />
+                  ) : providerImageIconUrl ? (
+                    <img
+                      alt=""
+                      aria-hidden="true"
+                      className="size-4 shrink-0 object-contain"
+                      src={providerImageIconUrl}
                     />
                   ) : null}
                   <span className="text-[13px] font-semibold leading-4">

@@ -26,14 +26,37 @@ describe("classifyFailedAgentMessage", () => {
     ).toBe("network_error");
   });
 
-  it("returns null for transient / non-env failures so they stay plain", () => {
-    expect(classifyFailedAgentMessage("rate limit exceeded")).toBeNull();
+  it("returns null for unclassified failures so they stay plain", () => {
     expect(classifyFailedAgentMessage("request timed out")).toBeNull();
     expect(classifyFailedAgentMessage("here is your answer")).toBeNull();
     expect(classifyFailedAgentMessage(null)).toBeNull();
   });
 
-  it("recovers Cursor plan-limit copy into the quota bucket", () => {
+  it("classifies account failures before authentication wrappers", () => {
+    expect(
+      classifyFailedAgentMessage(
+        "Kimi models rejected OAuth credentials: We're unable to verify your membership benefits"
+      )
+    ).toBe("subscription_required");
+    expect(
+      classifyFailedAgentMessage(
+        "Kimi models rejected OAuth credentials: 402 Payment Required"
+      )
+    ).toBe("insufficient_credits");
+    expect(
+      classifyFailedAgentMessage(
+        "Kimi request rejected OAuth credentials: reached your usage limit"
+      )
+    ).toBe("quota_or_rate_limit");
+  });
+
+  it("recovers plan, balance, and rate-limit copy into stable account buckets", () => {
+    expect(classifyFailedAgentMessage("rate limit exceeded")).toBe(
+      "quota_or_rate_limit"
+    );
+    expect(classifyFailedAgentMessage("Key limit exceeded")).toBe(
+      "quota_or_rate_limit"
+    );
     expect(classifyFailedAgentMessage("Upgrade your plan to continue")).toBe(
       "quota_or_rate_limit"
     );
@@ -42,9 +65,9 @@ describe("classifyFailedAgentMessage", () => {
     );
     expect(
       classifyFailedAgentMessage("Membership expired, please renew your plan")
-    ).toBe("quota_or_rate_limit");
+    ).toBe("subscription_required");
     expect(classifyFailedAgentMessage("Account balance is insufficient")).toBe(
-      "quota_or_rate_limit"
+      "insufficient_credits"
     );
   });
 });
@@ -121,7 +144,12 @@ describe("resolveAgentErrorPresentation", () => {
       "provider_config_timeout",
       "provider_stream_disconnected",
       "provider_concurrency_limit",
-      "quota_or_rate_limit"
+      "insufficient_credits",
+      "model_not_allowed",
+      "plugin_unavailable",
+      "quota_or_rate_limit",
+      "session_interrupted",
+      "subscription_required"
     ]) {
       const presentation = resolveAgentErrorPresentation(code);
       expect(presentation, code).not.toBeNull();

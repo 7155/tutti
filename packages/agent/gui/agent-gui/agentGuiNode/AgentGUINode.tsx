@@ -593,7 +593,10 @@ function projectProviderAccountLabel(
   if (!provider || !accountLabel || labels?.[provider]?.trim()) {
     return labels;
   }
-  return { ...labels, [provider]: accountLabel };
+  return {
+    ...labels,
+    [provider]: accountLabel
+  };
 }
 
 function resolveAgentConfigMenuContext(

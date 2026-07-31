@@ -79,13 +79,67 @@ test("desktop status combines an exact canonical session with one host probe rea
     {
       kind: "refreshed",
       value: {
-        agentSessionId: "session-1",
         accountLabel: "API Usage Billing",
+        agentSessionId: "session-1",
         contextState: "available",
         contextWindow: { usedTokens: 120, totalTokens: 1_000 },
         quotas: [{ quotaType: "weekly", percentRemaining: 72 }],
         limitsState: "available",
         limitsCapturedAtUnixMs: 450,
+        limitsStale: false
+      }
+    }
+  ]);
+  assert.deepEqual(observed.errors, []);
+});
+
+test("desktop status treats an unsupported extension usage probe as unavailable", async () => {
+  const kimiAgent = {
+    agentTargetId: "extension:kimi-code",
+    name: "Kimi Code",
+    iconUrl: "kimi-code.svg",
+    availability: { status: "ready" },
+    provider: "acp:kimi-code"
+  } as const;
+  const observed = createObserver();
+  const source = createDesktopAgentStatusSource({
+    agentActivityRuntime: runtimeWithSessions([]),
+    agents: [kimiAgent] as never,
+    workspaceAgentProbes: {
+      list: async () => ({
+        workspaceId: "workspace-1",
+        capturedAtUnixMs: 500,
+        providers: [
+          {
+            provider: "acp:kimi-code",
+            availability: { status: "unknown", detailsVisible: false },
+            lastError: { code: "unsupported" }
+          }
+        ]
+      })
+    } as never,
+    workspaceId: "workspace-1"
+  });
+
+  source.open(
+    {
+      scopeKey: "extension:kimi-code",
+      reason: "agent-info"
+    },
+    observed.observer
+  );
+  await observed.completed;
+
+  assert.deepEqual(observed.frames, [
+    {
+      kind: "refreshed",
+      value: {
+        agentSessionId: null,
+        contextState: "unavailable",
+        contextWindow: null,
+        quotas: [],
+        limitsState: "unavailable",
+        limitsCapturedAtUnixMs: null,
         limitsStale: false
       }
     }
@@ -125,6 +179,7 @@ test("desktop status preserves structured usage probe failures", async () => {
 
   assert.equal(observed.frames[0]?.value.limitsState, "error");
   assert.equal(observed.frames[0]?.value.limitsErrorCode, "auth_required");
+  assert.deepEqual(observed.errors, []);
 });
 
 test("desktop status preserves exhausted usage together with its error code", async () => {
@@ -164,6 +219,7 @@ test("desktop status preserves exhausted usage together with its error code", as
   assert.equal(observed.frames[0]?.value.limitsState, "error");
   assert.equal(observed.frames[0]?.value.limitsErrorCode, "quota_exhausted");
   assert.equal(observed.frames[0]?.value.quotas[0]?.percentRemaining, 0);
+  assert.deepEqual(observed.errors, []);
 });
 
 test("desktop status fails closed before probing a cross-target session", () => {

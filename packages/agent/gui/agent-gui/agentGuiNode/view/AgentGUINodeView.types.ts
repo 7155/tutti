@@ -567,7 +567,9 @@ export interface AgentGUINodeViewProps {
   slashStatusUsageDidFail?: boolean;
   /** Localized account/usage error projected from a stable Host error code. */
   slashStatusUsageErrorMessage?: string | null;
-  /** Whether a usage probe has produced a snapshot or error. */
+  /** True once a usage probe has run for this provider (snapshot or error), so
+   * the config menu shows a "no limits / retry" row rather than hiding the
+   * whole section when there are no meters to display. */
   slashStatusUsageAttempted?: boolean;
   /** Host-rendered account/Commerce chrome for the exact selected target. */
   agentConfigAccountContent?: ReactNode;

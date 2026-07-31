@@ -475,15 +475,23 @@ configure_desktop_dev_version() {
 }
 
 configure_agent_extension_sources() {
-  if [[ -n "${DEV_GUI_KIMI_CODE_PACKAGE_DIR:-}" ]]; then
-    export TUTTI_AGENT_EXTENSION_KIMI_CODE_PACKAGE_DIR="${DEV_GUI_KIMI_CODE_PACKAGE_DIR}"
-    log "using local kimi-code agent extension at ${DEV_GUI_KIMI_CODE_PACKAGE_DIR}"
+  local package_dir="${DEV_GUI_KIMI_CODE_PACKAGE_DIR:-}"
+
+  if [[ -z "${package_dir}" ]]; then
+    # A stale shell or launchd override must not silently shadow the signed
+    # remote release used by the shipped product.
+    unset TUTTI_AGENT_EXTENSION_KIMI_CODE_PACKAGE_DIR
     return
   fi
 
-  # A stale shell or launchd override must not silently shadow the signed
-  # remote release used by the shipped product.
-  unset TUTTI_AGENT_EXTENSION_KIMI_CODE_PACKAGE_DIR
+  [[ -d "${package_dir}" ]] || fail \
+    "local kimi-code agent extension directory does not exist: ${package_dir}"
+  [[ -f "${package_dir}/tutti.agent.json" ]] || fail \
+    "local kimi-code agent extension is not an unpacked package (missing tutti.agent.json): ${package_dir}"
+
+  package_dir="$(cd "${package_dir}" && pwd -P)"
+  export TUTTI_AGENT_EXTENSION_KIMI_CODE_PACKAGE_DIR="${package_dir}"
+  log "using local kimi-code agent extension at ${package_dir}"
 }
 
 resolve_tuttid_binary_name() {

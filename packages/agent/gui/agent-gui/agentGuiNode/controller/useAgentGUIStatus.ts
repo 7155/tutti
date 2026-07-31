@@ -105,6 +105,7 @@ export function useAgentGUIStatus(input: {
       (value.limitsState === "available" || value.quotas.length > 0)
         ? {
             usage: {
+              accountTier: value.accountLabel ?? undefined,
               quotas: [...value.quotas],
               capturedAtUnixMs: value.limitsCapturedAtUnixMs ?? 0
             }
@@ -113,7 +114,7 @@ export function useAgentGUIStatus(input: {
       ...(value?.limitsState === "error"
         ? {
             lastError: {
-              code: value.limitsErrorCode ?? "runtime_unavailable"
+              code: value.limitsErrorCode?.trim() || "runtime_unavailable"
             }
           }
         : {})

@@ -22,10 +22,12 @@ describe("useAgentGUISessionEngineState", () => {
           activeTurnId: null,
           agentSessionId: "session-1",
           agentTargetId: "local:opencode",
+          cwd: "/workspace",
           latestTurnInteractions: [],
           pendingInteractions: [],
           provider: "opencode",
           settings: { permissionModeId: "ask" },
+          title: "Session 1",
           workspaceId: "workspace-1"
         })
       ]
@@ -78,10 +80,12 @@ describe("useAgentGUISessionEngineState", () => {
       normalizeAgentActivitySession({
         activeTurnId: null,
         agentSessionId: "session-1",
+        cwd: "/workspace",
         latestTurnInteractions: [],
         pendingInteractions: [],
         provider: "codex",
         settings,
+        title: "Session 1",
         workspaceId: "workspace-1"
       });
     sessionEngine.dispatch({
@@ -195,9 +199,11 @@ describe("useAgentGUISessionEngineState", () => {
         normalizeAgentActivitySession({
           activeTurnId: null,
           agentSessionId,
+          cwd: "/workspace",
           latestTurnInteractions: [],
           pendingInteractions: [],
           provider: "codex",
+          title: "Session 1",
           workspaceId: "workspace-1"
         })
       )

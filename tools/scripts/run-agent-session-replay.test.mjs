@@ -5,9 +5,10 @@ import { EventEmitter } from "node:events";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { createAgentSessionReplayControlWriter } from "../../apps/desktop/src/main/agentSessionReplayStatus.ts";
 import { recordScenarioDefinitions } from "./agent-session-replay-record-scenarios/definitions.mjs";
 import {
@@ -60,6 +61,7 @@ import {
 
 const replayCassetteAID = "277377ed-af34-454f-a8b9-1047b4064e74";
 const replayCassetteBID = "628c61c4-cbcb-4445-83f7-718bbbd414bd";
+const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 function respondToCheckpointVerification(request, response) {
   const match = request.url?.match(
@@ -2923,20 +2925,11 @@ test("resolves portable recording paths for Engine activation", () => {
     "22222222-2222-4222-8222-222222222222"
   );
   const payload = action.activityEvents[0].payload;
-  assert.equal(payload.cwd.endsWith("tutti-agent-session-replay-mvp"), true);
-  assert.equal(
-    payload.railPlacement.projectPath.endsWith(
-      "tutti-agent-session-replay-mvp/packages/agent"
-    ),
-    true
-  );
+  const agentPackagePath = join(workspaceRoot, "packages", "agent");
+  assert.equal(payload.cwd, workspaceRoot);
+  assert.equal(payload.railPlacement.projectPath, agentPackagePath);
   assert.equal(payload.railPlacement.sectionKey.startsWith("project:"), true);
-  assert.equal(
-    payload.railPlacement.sectionKey.endsWith(
-      "tutti-agent-session-replay-mvp/packages/agent"
-    ),
-    true
-  );
+  assert.equal(payload.railPlacement.sectionKey, `project:${agentPackagePath}`);
   assert.equal(
     payload.railPlacement.sectionKey.includes("${REPLAY_CWD}"),
     false

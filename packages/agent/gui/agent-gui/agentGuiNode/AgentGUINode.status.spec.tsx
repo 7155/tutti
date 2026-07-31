@@ -253,7 +253,7 @@ describe("AgentGUINode status controller integration", () => {
     expect(viewProps.slashStatusOverride?.limits).toEqual([]);
   });
 
-  it("uses the status billing label when the Host has no account label", () => {
+  it("projects structured usage errors as localized config messages", () => {
     mockViewModel = createViewModel({
       conversationFilter: {
         kind: "agentTarget",
@@ -269,10 +269,55 @@ describe("AgentGUINode status controller integration", () => {
         }
       }
     });
-    const props = createProps({
-      runtimeRequests: { agentStatusController: controller }
+    render(
+      <AgentGUINode
+        {...createProps({
+          runtimeRequests: { agentStatusController: controller }
+        })}
+      />
+    );
+
+    act(() => latestViewProps().onAgentConfigMenuOpen?.());
+    act(() => {
+      observer?.onFrame({
+        kind: "refreshed",
+        value: {
+          contextState: "unavailable",
+          limitsErrorCode: "subscription_required",
+          limitsState: "error",
+          quotas: []
+        }
+      });
     });
-    render(<AgentGUINode {...props} />);
+
+    expect(latestViewProps().slashStatusUsageErrorMessage).toBe(
+      "agentHost.agentGui.slashStatusUsageSubscriptionRequired"
+    );
+  });
+
+  it("projects the host billing label into the rail config menu", () => {
+    mockViewModel = createViewModel({
+      conversationFilter: {
+        kind: "agentTarget",
+        agentTargetId: "local:codex"
+      }
+    });
+    let observer: AgentStatusStreamObserver | null = null;
+    const controller = createAgentStatusController({
+      source: {
+        open: (_query, nextObserver) => {
+          observer = nextObserver;
+          return vi.fn();
+        }
+      }
+    });
+    render(
+      <AgentGUINode
+        {...createProps({
+          runtimeRequests: { agentStatusController: controller }
+        })}
+      />
+    );
 
     act(() => latestViewProps().onAgentConfigMenuOpen?.());
     act(() => {
@@ -413,9 +458,10 @@ interface CapturedViewProps {
   agentConfigAccountContent?: React.ReactNode;
   onAgentConfigMenuOpen?: () => void;
   onAgentConfigMenuClose?: () => void;
+  providerAuthAccountLabels?: Partial<Record<string, string>>;
   onSlashStatusOpen?: () => void;
   onSlashStatusClose?: () => void;
-  providerAuthAccountLabels?: Partial<Record<string, string>>;
+  slashStatusUsageErrorMessage?: string | null;
   slashStatusOverride?: {
     contextWindow?: { usedTokens?: number | null } | null;
     limits?: readonly unknown[];

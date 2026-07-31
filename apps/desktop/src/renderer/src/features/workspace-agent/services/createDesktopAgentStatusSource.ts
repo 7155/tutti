@@ -331,21 +331,21 @@ function statusValueFromDesktopProbe(
   snapshotCapturedAtUnixMs: number
 ): AgentStatusValue {
   const usage = probe?.usage;
-  const limitsUnavailable =
-    !probe?.lastError || probe.lastError.code === "unsupported";
   const accountLabel = usage?.accountTier?.trim();
+  const limitsErrorCode =
+    probe?.lastError?.code === "unsupported"
+      ? ""
+      : probe?.lastError?.code?.trim() || "";
   return {
     ...context,
     ...(accountLabel ? { accountLabel } : {}),
     quotas: usage?.quotas ?? [],
-    limitsState: usage
-      ? "available"
-      : limitsUnavailable
-        ? "unavailable"
-        : "error",
-    ...(!usage && !limitsUnavailable && probe?.lastError?.code
-      ? { limitsErrorCode: probe.lastError.code }
-      : {}),
+    limitsState: limitsErrorCode
+      ? "error"
+      : usage
+        ? "available"
+        : "unavailable",
+    ...(limitsErrorCode ? { limitsErrorCode } : {}),
     limitsCapturedAtUnixMs: usage
       ? usage.capturedAtUnixMs || snapshotCapturedAtUnixMs
       : null,

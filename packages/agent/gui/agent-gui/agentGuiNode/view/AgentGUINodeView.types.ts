@@ -384,6 +384,12 @@ export interface AgentGUIViewLabels extends AgentGUIProviderReadinessLabels {
   slashStatusUsageUpdating: string;
   slashStatusUsageRefreshFailed: string;
   slashStatusUsageRefreshAria: string;
+  slashStatusUsageAuthRequired: string;
+  slashStatusUsageSessionExpired: string;
+  slashStatusUsageSubscriptionRequired: string;
+  slashStatusUsageQuotaExhausted: string;
+  slashStatusUsageParseFailed: string;
+  slashStatusUsageError: string;
   usageChipLabel: (input: { percent: number }) => string;
   usageTooltipLabel: string;
   usagePopoverTitle: string;
@@ -527,10 +533,7 @@ export interface AgentGUINodeViewProps {
   renderSidebarFooter?: AgentGUISidebarFooterRenderer;
   /** Renders the provider rail empty state in "exact" mode. See the type doc. */
   renderProviderRailEmpty?: AgentGUIAgentsEmptyRenderer;
-  /**
-   * Renders the main-pane state for a selected host-disabled provider target.
-   * Other readiness gates keep the built-in AgentGUI flows.
-   */
+  /** Renders the selected provider's unavailable state. */
   renderProviderUnavailableState?: AgentGUIProviderUnavailableStateRenderer;
   providerRailAllPresentation?: AgentGUIProviderRailAllPresentation | null;
   onLinkAction?: (action: WorkspaceLinkAction) => void;
@@ -558,13 +561,12 @@ export interface AgentGUINodeViewProps {
   railConfigProvider?: string | null;
   railSlashStatusLimits?: readonly AgentComposerSlashStatusLimit[];
   slashStatusLimitsResolvedEmpty?: boolean;
-  /** Capture time of the usage/limits shown in the rail config menu (for the
-   * freshness indicator). Null when no usage snapshot is available. */
+  /** Usage capture time; null without a snapshot. */
   slashStatusUsageCapturedAtUnixMs?: number | null;
   /** True when the latest usage probe fetch failed (drives the retry state). */
   slashStatusUsageDidFail?: boolean;
-  /** Localized stable error for the latest usage failure. */
-  slashStatusUsageErrorLabel?: string | null;
+  /** Localized account/usage error projected from a stable Host error code. */
+  slashStatusUsageErrorMessage?: string | null;
   /** True once a usage probe has run for this provider (snapshot or error), so
    * the config menu shows a "no limits / retry" row rather than hiding the
    * whole section when there are no meters to display. */
@@ -766,12 +768,7 @@ export type AgentGUISidebarFooterRenderer = (
   ctx: AgentGUISidebarFooterContext
 ) => ReactNode;
 
-/**
- * Renders the provider rail body when the rail is in "exact" mode and the
- * host-provided target list is empty (and not loading). Lets the host fully own
- * the empty state (e.g. a "no shared agents" message or a create-agent prompt)
- * instead of the library falling back to the static local catalog.
- */
+/** Renders the host-owned empty state for an exact provider rail. */
 export type AgentGUIAgentsEmptyRenderer = () => ReactNode;
 
 export interface AgentGUIProviderUnavailableStateContext {

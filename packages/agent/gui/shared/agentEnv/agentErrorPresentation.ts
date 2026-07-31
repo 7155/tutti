@@ -17,6 +17,7 @@ export type AgentRunErrorCode =
   | "request_timed_out"
   | "provider_config_timeout"
   | "provider_stream_disconnected"
+  | "provider_empty_response"
   | "provider_concurrency_limit"
   | "insufficient_credits"
   | "model_not_allowed"
@@ -117,6 +118,11 @@ const PRESENTATIONS: Record<AgentRunErrorCode, AgentErrorPresentation> = {
   provider_stream_disconnected: {
     messageKey: "agentHost.agentGui.visibleErrorStreamDisconnected",
     ...NO_CTA
+  },
+  provider_empty_response: {
+    messageKey: "agentHost.agentGui.visibleErrorEmptyResponse",
+    focus: "detect",
+    actionKey: "agentHost.agentGui.visibleErrorActionDetect"
   },
   provider_concurrency_limit: {
     messageKey: "agentHost.agentGui.visibleErrorConcurrencyLimit",

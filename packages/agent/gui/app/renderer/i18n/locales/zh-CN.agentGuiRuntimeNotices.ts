@@ -23,6 +23,8 @@ export const zhCNAgentGuiRuntimeNotices = {
     "{{provider}} 在请求超时前未能应用会话设置。请稍后重试。",
   visibleErrorStreamDisconnected:
     "{{provider}} 的响应在完成前被中断。请稍后重试。",
+  visibleErrorEmptyResponse:
+    "{{provider}} 没有返回响应，请检查提供商设置或重试",
   visibleErrorConcurrencyLimit:
     "{{provider}} 当前处理的请求过多。请在其他任务完成后再试。",
   visibleErrorInsufficientCreditsUnknown:

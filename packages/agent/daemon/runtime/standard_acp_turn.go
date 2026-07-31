@@ -293,6 +293,26 @@ execLoop:
 			}))
 			emitEvents(terminalEvents)
 		default:
+			if !normalizer.HasObservableOutput() {
+				const emptyResponseError = "provider_empty_response: ACP agent ended the turn without assistant output or tool activity"
+				terminalEvents := normalizer.FinishFailed(session, turnID)
+				terminalEvents = append(terminalEvents, standardACPRootProviderTurnCompletedEvent(session, turnID, activityshared.TurnOutcomeFailed, map[string]any{
+					"error":      emptyResponseError,
+					"stopReason": firstNonEmpty(stopReason, "end_turn"),
+				}))
+				emitEvents(terminalEvents)
+				slog.Warn("agent session ACP turn ended without observable output",
+					"event", "agent_session.acp.exec.empty_response",
+					"provider", a.config.provider,
+					"adapter", a.config.adapterName,
+					"room_id", session.RoomID,
+					"agent_session_id", session.AgentSessionID,
+					"provider_session_id", session.ProviderSessionID,
+					"turn_id", turnID,
+					"stop_reason", firstNonEmpty(stopReason, "end_turn"),
+				)
+				break
+			}
 			terminalEvents := normalizer.FinishCompleted(session, turnID)
 			terminalEvents = append(terminalEvents, standardACPRootProviderTurnCompletedEvent(session, turnID, activityshared.TurnOutcomeCompleted, map[string]any{
 				"stopReason": firstNonEmpty(stopReason, "end_turn"),

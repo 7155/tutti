@@ -30,6 +30,8 @@ export const enAgentGuiRuntimeNotices = {
     "{{provider}} couldn't apply session settings before the request timed out. Try again in a moment.",
   visibleErrorStreamDisconnected:
     "{{provider}}'s response was interrupted before it completed. Try again in a moment.",
+  visibleErrorEmptyResponse:
+    "{{provider}} returned no response. Check the provider settings or try again.",
   visibleErrorConcurrencyLimit:
     "{{provider}} is handling too many requests right now. Try again after another task finishes.",
   visibleErrorInsufficientCreditsUnknown:

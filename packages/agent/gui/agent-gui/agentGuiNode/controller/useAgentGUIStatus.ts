@@ -1,15 +1,13 @@
 import { useCallback, useMemo } from "react";
 import type { TranslateFn } from "../../../i18n/index";
 import { useEngineSelector } from "../../../shared/engine/useEngineSelector";
-import {
-  agentProbeErrorLabel,
-  buildDockAgentProbeTooltipLines
-} from "../../workspaceDesktop/view/desktopDockAgentProbeTooltipModel";
+import { buildDockAgentProbeTooltipLines } from "../../workspaceDesktop/view/desktopDockAgentProbeTooltipModel";
 import type { AgentComposerSlashStatus } from "../AgentComposer";
 import type { AgentGUINodeProps } from "../AgentGUINode.types";
 import {
   resolveAgentGUIRailStatusProvider,
-  slashStatusLimitsFromQuotas
+  slashStatusLimitsFromQuotas,
+  slashStatusUsageErrorMessage
 } from "../AgentGUINode.usage";
 import type { useAgentGUINodeController } from "./useAgentGUINodeController";
 import {
@@ -255,6 +253,10 @@ export function useAgentGUIStatus(input: {
       limitsResolvedEmpty:
         value?.limitsState === "available" && agentStatusLimits.length === 0,
       limitsCapturedAtUnixMs: value?.limitsCapturedAtUnixMs ?? null,
+      limitsErrorMessage: slashStatusUsageErrorMessage(
+        value?.limitsErrorCode ?? activeAgentStatusSnapshot.errorCode,
+        t
+      ),
       refreshFailed:
         activeAgentStatusSnapshot.errorCode !== null ||
         value?.limitsState === "error",
@@ -267,11 +269,13 @@ export function useAgentGUIStatus(input: {
     activeAgentStatusSnapshot.value,
     activeStatusSessionId,
     agentStatusController,
-    agentStatusLimits
+    agentStatusLimits,
+    t
   ]);
   const controllerRailStatus = agentStatusController
     ? {
-        accountLabel: railAgentStatusSnapshot.value?.accountLabel ?? null,
+        accountLabel:
+          railAgentStatusSnapshot.value?.accountLabel?.trim() || null,
         limits: railAgentStatusLimits,
         loading:
           railAgentStatusSnapshot.phase === "loading" &&
@@ -281,13 +285,11 @@ export function useAgentGUIStatus(input: {
         didFail:
           railAgentStatusSnapshot.errorCode !== null ||
           railAgentStatusSnapshot.value?.limitsState === "error",
-        errorLabel:
-          railAgentStatusSnapshot.value?.limitsState === "error"
-            ? agentProbeErrorLabel(
-                railAgentStatusSnapshot.value.limitsErrorCode,
-                t
-              )
-            : null,
+        errorMessage: slashStatusUsageErrorMessage(
+          railAgentStatusSnapshot.value?.limitsErrorCode ??
+            railAgentStatusSnapshot.errorCode,
+          t
+        ),
         attempted:
           railAgentStatusSnapshot.value !== null ||
           railAgentStatusSnapshot.errorCode !== null,

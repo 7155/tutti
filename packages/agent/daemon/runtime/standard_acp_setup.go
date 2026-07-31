@@ -329,19 +329,46 @@ func findStandardACPAuthMethod(methods []StandardACPAuthMethod, methodID string)
 }
 
 // acpSessionHasNoUsableModel reports whether the session/new response carries
-// a models state that advertises zero available models and no current model —
-// the shape Kimi Code returns when its login saved a token but never seeded
-// the model config. A missing models state (providers that do not declare
-// one) and a populated list both pass.
+// a model selector that advertises zero available models and no current model.
+// ACP agents expose that state either through the legacy top-level `models`
+// object or through a model `configOptions` selector. A missing model selector
+// (providers that do not declare one) and a populated selector both pass.
 func acpSessionHasNoUsableModel(raw json.RawMessage) bool {
 	var payload struct {
 		Models *struct {
 			AvailableModels *[]json.RawMessage `json:"availableModels"`
 			CurrentModelID  string             `json:"currentModelId"`
 		} `json:"models"`
+		ConfigOptions []struct {
+			ID           string             `json:"id"`
+			Category     string             `json:"category"`
+			CurrentValue json.RawMessage    `json:"currentValue"`
+			Options      *[]json.RawMessage `json:"options"`
+		} `json:"configOptions"`
 	}
-	if json.Unmarshal(raw, &payload) != nil || payload.Models == nil || payload.Models.AvailableModels == nil {
+	if json.Unmarshal(raw, &payload) != nil {
 		return false
 	}
-	return len(*payload.Models.AvailableModels) == 0 && strings.TrimSpace(payload.Models.CurrentModelID) == ""
+	if payload.Models != nil &&
+		payload.Models.AvailableModels != nil &&
+		len(*payload.Models.AvailableModels) == 0 &&
+		strings.TrimSpace(payload.Models.CurrentModelID) == "" {
+		return true
+	}
+	for _, option := range payload.ConfigOptions {
+		isModelSelector :=
+			strings.EqualFold(strings.TrimSpace(option.ID), "model") ||
+				strings.EqualFold(strings.TrimSpace(option.Category), "model")
+		if !isModelSelector || option.Options == nil || len(*option.Options) != 0 {
+			continue
+		}
+		var currentValue string
+		if len(option.CurrentValue) == 0 ||
+			string(option.CurrentValue) == "null" ||
+			(json.Unmarshal(option.CurrentValue, &currentValue) == nil &&
+				strings.TrimSpace(currentValue) == "") {
+			return true
+		}
+	}
+	return false
 }

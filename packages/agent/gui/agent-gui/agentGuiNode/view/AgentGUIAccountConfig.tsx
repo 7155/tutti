@@ -20,7 +20,7 @@ interface AgentGUIConfigMenuProps {
   slashStatusLimitsResolvedEmpty: boolean;
   slashStatusUsageCapturedAtUnixMs: number | null;
   slashStatusUsageDidFail: boolean;
-  slashStatusUsageErrorLabel?: string | null;
+  slashStatusUsageErrorMessage?: string | null;
   slashStatusUsageAttempted: boolean;
   provider?: string | null;
   providerIconUrl?: string | null;
@@ -48,7 +48,7 @@ export function AgentGUIConfigMenu({
   slashStatusLimitsResolvedEmpty,
   slashStatusUsageCapturedAtUnixMs,
   slashStatusUsageDidFail,
-  slashStatusUsageErrorLabel,
+  slashStatusUsageErrorMessage,
   slashStatusUsageAttempted,
   provider,
   providerIconUrl,
@@ -184,16 +184,15 @@ export function AgentGUIConfigMenu({
                       {labels.slashStatusLimits}
                     </span>
                     {slashStatusLimits.length === 0 &&
-                    !slashStatusLimitsLoading ? (
+                    !slashStatusLimitsLoading &&
+                    !slashStatusUsageErrorMessage ? (
                       <span
                         className="min-w-0 truncate text-[var(--text-tertiary)]"
                         data-testid="agent-gui-config-usage-unavailable"
                       >
-                        {slashStatusUsageDidFail && slashStatusUsageErrorLabel
-                          ? slashStatusUsageErrorLabel
-                          : slashStatusLimitsResolvedEmpty
-                            ? labels.slashStatusEmptyValue
-                            : labels.slashStatusLimitsUnavailable}
+                        {slashStatusLimitsResolvedEmpty
+                          ? labels.slashStatusEmptyValue
+                          : labels.slashStatusLimitsUnavailable}
                       </span>
                     ) : null}
                   </div>
@@ -229,6 +228,15 @@ export function AgentGUIConfigMenu({
                       />
                     ))
                   : null}
+                {slashStatusUsageErrorMessage ? (
+                  <div
+                    className="rounded-[6px] border border-[var(--on-danger-hover)] bg-[var(--on-danger)] px-2 py-1.5 text-[12px] leading-4 text-[var(--state-danger)]"
+                    data-testid="agent-gui-config-usage-error"
+                    role="alert"
+                  >
+                    {slashStatusUsageErrorMessage}
+                  </div>
+                ) : null}
               </div>
               <div className="px-2">
                 <span className="block h-px bg-[var(--border-1)]" />

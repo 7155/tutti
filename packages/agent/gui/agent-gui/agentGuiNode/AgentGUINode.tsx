@@ -490,8 +490,8 @@ export const AgentGUINode = memo(function AgentGUINode({
                 controllerRailStatus?.capturedAtUnixMs ?? null
               }
               slashStatusUsageDidFail={controllerRailStatus?.didFail ?? false}
-              slashStatusUsageErrorLabel={
-                controllerRailStatus?.errorLabel ?? null
+              slashStatusUsageErrorMessage={
+                controllerRailStatus?.errorMessage ?? null
               }
               slashStatusUsageAttempted={
                 controllerRailStatus?.attempted ?? false

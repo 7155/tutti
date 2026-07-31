@@ -50,7 +50,7 @@ describe("classifyFailedAgentMessage", () => {
     ).toBe("quota_or_rate_limit");
   });
 
-  it("recovers plan and rate-limit copy into the quota bucket", () => {
+  it("recovers plan, balance, and rate-limit copy into stable account buckets", () => {
     expect(classifyFailedAgentMessage("rate limit exceeded")).toBe(
       "quota_or_rate_limit"
     );
@@ -62,6 +62,12 @@ describe("classifyFailedAgentMessage", () => {
     );
     expect(classifyFailedAgentMessage("Add a payment method to continue")).toBe(
       "quota_or_rate_limit"
+    );
+    expect(
+      classifyFailedAgentMessage("Membership expired, please renew your plan")
+    ).toBe("subscription_required");
+    expect(classifyFailedAgentMessage("Account balance is insufficient")).toBe(
+      "insufficient_credits"
     );
   });
 });
@@ -115,6 +121,10 @@ describe("resolveAgentErrorPresentation", () => {
         actionKey: "agentHost.agentGui.visibleErrorActionCheckNetwork"
       },
       runtime_unavailable: {
+        focus: "detect",
+        actionKey: "agentHost.agentGui.visibleErrorActionDetect"
+      },
+      provider_empty_response: {
         focus: "detect",
         actionKey: "agentHost.agentGui.visibleErrorActionDetect"
       }

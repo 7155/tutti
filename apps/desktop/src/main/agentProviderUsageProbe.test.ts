@@ -32,6 +32,20 @@ test("listDesktopWorkspaceAgentProbes resolves provider aliases through the cata
   assert.equal(result.providers[0]?.provider, "opencode");
 });
 
+test("listDesktopWorkspaceAgentProbes keeps extension usage provider-neutral", async () => {
+  const result = await listDesktopWorkspaceAgentProbes({
+    includeUsage: true,
+    providers: ["acp:kimi-code"],
+    refresh: true,
+    workspaceId: "workspace-1"
+  });
+
+  assert.equal(result.providers.length, 1);
+  assert.equal(result.providers[0]?.provider, "acp:kimi-code");
+  assert.equal(result.providers[0]?.availability.status, "unknown");
+  assert.equal(result.providers[0]?.lastError?.code, "unsupported");
+});
+
 test("listDesktopWorkspaceAgentProbes maps Codex OAuth usage windows", async () => {
   const previousCodexHome = process.env.CODEX_HOME;
   const directory = await mkdtemp(join(tmpdir(), "tutti-codex-usage-"));

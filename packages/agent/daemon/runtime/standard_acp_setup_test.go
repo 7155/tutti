@@ -268,6 +268,11 @@ func TestACPSessionHasNoUsableModel(t *testing.T) {
 		want bool
 	}{
 		{"empty list and no current model", `{"models":{"availableModels":[],"currentModelId":""}}`, true},
+		{"empty config option model selector", `{"configOptions":[{"id":"model","category":"model","currentValue":"","options":[]}]}`, true},
+		{"empty categorized model selector", `{"configOptions":[{"id":"model_choice","category":"model","currentValue":null,"options":[]}]}`, true},
+		{"populated config option model selector", `{"configOptions":[{"id":"model","currentValue":"m","options":[{"name":"M","value":"m"}]}]}`, false},
+		{"empty options with current config model", `{"configOptions":[{"id":"model","currentValue":"m","options":[]}]}`, false},
+		{"unrelated empty config option", `{"configOptions":[{"id":"sandbox","currentValue":"","options":[]}]}`, false},
 		{"populated list", `{"models":{"availableModels":[{"modelId":"m"}],"currentModelId":"m"}}`, false},
 		{"empty list but current model set", `{"models":{"availableModels":[],"currentModelId":"m"}}`, false},
 		{"models state without list", `{"models":{"currentModelId":"m"}}`, false},

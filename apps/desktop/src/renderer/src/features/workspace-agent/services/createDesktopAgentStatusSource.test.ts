@@ -147,7 +147,7 @@ test("desktop status treats an unsupported extension usage probe as unavailable"
   assert.deepEqual(observed.errors, []);
 });
 
-test("desktop status preserves real usage probe failures", async () => {
+test("desktop status preserves structured usage probe failures", async () => {
   const observed = createObserver();
   const source = createDesktopAgentStatusSource({
     agentActivityRuntime: runtimeWithSessions([]),
@@ -160,7 +160,7 @@ test("desktop status preserves real usage probe failures", async () => {
           {
             provider: "codex",
             availability: { status: "unavailable", detailsVisible: false },
-            lastError: { code: "execution_failed" }
+            lastError: { code: "auth_required" }
           }
         ]
       })
@@ -178,7 +178,47 @@ test("desktop status preserves real usage probe failures", async () => {
   await observed.completed;
 
   assert.equal(observed.frames[0]?.value.limitsState, "error");
-  assert.equal(observed.frames[0]?.value.limitsErrorCode, "execution_failed");
+  assert.equal(observed.frames[0]?.value.limitsErrorCode, "auth_required");
+  assert.deepEqual(observed.errors, []);
+});
+
+test("desktop status preserves exhausted usage together with its error code", async () => {
+  const observed = createObserver();
+  const source = createDesktopAgentStatusSource({
+    agentActivityRuntime: runtimeWithSessions([]),
+    agents: [agent] as never,
+    workspaceAgentProbes: {
+      list: async () => ({
+        workspaceId: "workspace-1",
+        capturedAtUnixMs: 500,
+        providers: [
+          {
+            provider: "codex",
+            availability: { status: "available", detailsVisible: false },
+            lastError: { code: "quota_exhausted" },
+            usage: {
+              capturedAtUnixMs: 450,
+              quotas: [{ quotaType: "weekly", percentRemaining: 0 }]
+            }
+          }
+        ]
+      })
+    } as never,
+    workspaceId: "workspace-1"
+  });
+
+  source.open(
+    {
+      scopeKey: "local:codex",
+      reason: "agent-info"
+    },
+    observed.observer
+  );
+  await observed.completed;
+
+  assert.equal(observed.frames[0]?.value.limitsState, "error");
+  assert.equal(observed.frames[0]?.value.limitsErrorCode, "quota_exhausted");
+  assert.equal(observed.frames[0]?.value.quotas[0]?.percentRemaining, 0);
   assert.deepEqual(observed.errors, []);
 });
 

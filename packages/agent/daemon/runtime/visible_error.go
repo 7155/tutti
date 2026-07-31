@@ -263,6 +263,8 @@ func visibleFailureCode(detail string) string {
 	case structuredCode == "no_biscuit_no_service" &&
 		(strings.Contains(normalized, "codex_apps") || strings.Contains(normalized, "mcp")):
 		return "plugin_unavailable"
+	case strings.Contains(normalized, "provider_empty_response"):
+		return "provider_empty_response"
 	// HTTP 402 is an account payment state even when the provider wraps the
 	// response in text that also mentions credentials. Provider-specific
 	// membership wording is handled above.
@@ -538,6 +540,8 @@ func visibleFailureContent(provider string, phase string, code string) string {
 		return fmt.Sprintf("%s could not apply session settings before the request timed out. Try again in a moment.", name)
 	case "provider_stream_disconnected":
 		return fmt.Sprintf("%s response was interrupted before it completed. Try again in a moment.", name)
+	case "provider_empty_response":
+		return fmt.Sprintf("%s returned no response. Check the provider settings or try again.", name)
 	case "session_interrupted":
 		return fmt.Sprintf("%s stopped unexpectedly before it finished responding. Try again.", name)
 	case "request_timed_out":

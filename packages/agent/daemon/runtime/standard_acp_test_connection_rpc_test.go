@@ -361,6 +361,17 @@ func (c *standardACPConnection) Send(data []byte) error {
 				}
 				return nil
 			}
+			if c.emptyPromptResult {
+				c.sendJSON(map[string]any{
+					"jsonrpc": "2.0",
+					"id":      message.ID,
+					"result":  map[string]any{"stopReason": "end_turn"},
+				})
+				return nil
+			}
+			if c.streamSelectedPromptResult(message.ID) {
+				return nil
+			}
 			c.streamPromptResult(message.ID)
 		default:
 			if (c.promptPermission || c.promptKind != "") && acpRequestID(message.ID) == "permission-1" {

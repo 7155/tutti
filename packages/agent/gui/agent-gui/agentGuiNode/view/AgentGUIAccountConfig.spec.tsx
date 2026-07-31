@@ -93,7 +93,7 @@ describe("AgentGUIConfigMenu", () => {
     expect(screen.getByText("Weekly")).toBeInTheDocument();
   });
 
-  it("uses the Agent Target label in the account heading", () => {
+  it("uses the Agent Target label and original icon for Kimi billing", () => {
     render(
       <AgentGUIConfigMenu
         environmentSetupVisible={false}
@@ -107,9 +107,10 @@ describe("AgentGUIConfigMenu", () => {
         slashStatusLimits={[]}
         slashStatusLimitsLoading={false}
         slashStatusLimitsResolvedEmpty
-        slashStatusUsageCapturedAtUnixMs={100}
+        slashStatusUsageCapturedAtUnixMs={500}
         slashStatusUsageDidFail={false}
         slashStatusUsageAttempted
+        onAgentConfigMenuOpen={vi.fn()}
         onOpenAgentEnvSetup={vi.fn()}
         onOpenAgentSettings={vi.fn()}
       />
@@ -119,6 +120,9 @@ describe("AgentGUIConfigMenu", () => {
 
     expect(screen.getByText("Kimi Code account")).toBeInTheDocument();
     expect(screen.getByText("API Usage Billing")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("agent-gui-config-usage-unavailable")
+    ).toHaveTextContent("--");
     expect(
       document.querySelector('img[src="kimi-code.png"]')
     ).toBeInTheDocument();
@@ -153,6 +157,35 @@ describe("AgentGUIConfigMenu", () => {
     expect(
       document.querySelector('span[style*="custom-mask.png"]')
     ).toBeInTheDocument();
+  });
+
+  it("shows an actionable account error instead of an unavailable placeholder", () => {
+    render(
+      <AgentGUIConfigMenu
+        environmentSetupVisible
+        labels={labels}
+        providerScopedActionsVisible
+        provider="acp:kimi-code"
+        slashStatusLimits={[]}
+        slashStatusLimitsLoading={false}
+        slashStatusLimitsResolvedEmpty={false}
+        slashStatusUsageCapturedAtUnixMs={null}
+        slashStatusUsageDidFail
+        slashStatusUsageErrorMessage="Configure an API key or sign in"
+        slashStatusUsageAttempted
+        onOpenAgentEnvSetup={vi.fn()}
+        onOpenAgentSettings={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Configure an API key or sign in"
+    );
+    expect(
+      screen.queryByTestId("agent-gui-config-usage-unavailable")
+    ).not.toBeInTheDocument();
   });
 
   it.each([false, true, 0, ""])(
@@ -238,7 +271,7 @@ describe("AgentGUIConfigMenu", () => {
         slashStatusLimitsResolvedEmpty={false}
         slashStatusUsageCapturedAtUnixMs={null}
         slashStatusUsageDidFail
-        slashStatusUsageErrorLabel="Coding Plan required"
+        slashStatusUsageErrorMessage="Coding Plan required"
         slashStatusUsageAttempted
         onAgentConfigMenuOpen={vi.fn()}
         onOpenAgentEnvSetup={vi.fn()}

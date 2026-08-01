@@ -249,6 +249,41 @@ dev.tutti.mobile` and inspect a narrow logcat window for the Go fatal message.
 - **References:** `packages/device-link/mobile/link.go`,
   `apps/mobile/android/app/src/main/java/dev/tutti/mobile/DeviceLinkModule.kt`
 
+## Mobile shows output from a completed Session after foreground resume
+
+- **Symptom:** After the App enters the background and is reopened, transcript
+  output from the previously selected Session continues streaming even though
+  that Session already ended on the host.
+- **Quick checks:** Compare App lifecycle events with Native `TuttiDeviceLink`
+  Agent Live logs. Capture the subscription generation on the last delivery
+  before background and the first delivery after foreground. If a delivery from
+  the closed generation reaches the replacement JavaScript listener, the fault
+  is lifecycle fencing rather than canonical Session state or server replay.
+- **Root cause:** DeviceLink intentionally stays open for a short background
+  grace period, but Agent Live used to share that lifetime. A suspended
+  JavaScript runtime could therefore miss or delay its stop call while Native
+  continued reading the old stream. React Native could queue those deliveries
+  and publish them to the newly attached listener after foreground resume. The
+  Native envelope carried workspace identity but no local subscription
+  generation, so the replacement listener could not distinguish queued old
+  output from its new stream.
+- **Fix:** Stop Agent Live immediately at the Android and iOS background
+  boundary while preserving the underlying DeviceLink grace interval. Give
+  every bridge subscription a caller-owned generation, include it in every
+  Native delivery, and reject mismatched generations in both the bridge parser
+  and workspace live lane. Queue canonical workspace and selected-Session
+  reconciliation before opening the replacement stream.
+- **Validation:** Background and foreground a connected workspace, invoke a
+  captured old listener after the replacement subscription exists, and verify
+  it cannot mark transport connected or change projected activity. Verify
+  matching-generation ready and event deliveries still apply, missing or stale
+  generations fail closed, and Android/iOS Native binding checks pass.
+- **References:**
+  `apps/mobile/src/native/createMobileServicePorts.ts`,
+  `apps/mobile/src/services/workspaceAgentLiveLane.ts`,
+  `apps/mobile/android/app/src/main/java/dev/tutti/mobile/DeviceLinkModule.kt`,
+  `apps/mobile/ios/TuttiMobile/DeviceLinkModule.mm`
+
 ## Mobile stays connected after a long lock-screen interval but sends fail
 
 - **Symptom:** After Mobile remains locked or backgrounded for at least the

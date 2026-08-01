@@ -1030,12 +1030,17 @@ those host concerns must not leak back into the shared query controller.
 Mobile DeviceLink recovery is application-scoped rather than screen-scoped.
 `MobileApplicationService` is the single owner of the paired-device connection
 phase (`idle`, `reconnecting`, `synchronizing`, `connected`, or `failed`).
-Native owns the actual background-grace link close; JavaScript records the
-background entry time and uses elapsed time on foreground instead of relying on
-a timer that the runtime may suspend. An unexpected live-lane disconnect first
-allows one bounded stream retry, then rebuilds DeviceLink if the stream remains
-offline. Runtime commands stay blocked until the replacement live lane reports
-ready.
+Native stops Agent Live immediately on background entry while retaining the
+underlying DeviceLink for its background grace interval. Every Native-to-JS
+live delivery carries the caller-owned subscription generation; the bridge and
+workspace live lane reject deliveries from a closed generation before they can
+reach the coordinator. JavaScript records the background entry time and uses
+elapsed time on foreground instead of relying on a timer that the runtime may
+suspend. Foreground resume queues canonical workspace and selected-Session
+reconciliation before opening the replacement live lane. An unexpected
+live-lane disconnect first allows one bounded stream retry, then rebuilds
+DeviceLink if the stream remains offline. Runtime commands stay blocked until
+the replacement live lane reports ready.
 
 Recovery retains the current device, workspace, navigation, and drafts behind a
 global blocking presentation. A replacement workspace scope is started and

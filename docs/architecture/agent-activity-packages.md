@@ -1232,11 +1232,16 @@ publishing `stream_ready`, so events produced during ready-frame delivery are
 already buffered instead of falling through a subscribe gap. The Android
 bridge keeps one long-lived DeviceLink stream and delegates frame decoding and
 continuity checks to the Agent-owned Go mobile Subscriber before emitting
-accepted deliveries to React Native. The Mobile Android host co-links that
-Subscriber and DeviceLink into its own composite AAR; the transport package's
-AAR and Java namespace remain Agent-free. Mobile disables its message and Rail
-pollers after `stream_ready`; those pollers are disconnected-transport fallback
-only.
+accepted deliveries to React Native. Each bridge subscription also carries a
+caller-owned local generation that is independent of the wire epoch and
+sequence cursor. Native stops the live stream immediately when the App enters
+the background, and both the Native-to-JS adapter and workspace live lane reject
+queued deliveries from a closed generation after foreground resume. The
+underlying DeviceLink may remain open for its background grace interval. The
+Mobile Android host co-links that Subscriber and DeviceLink into its own
+composite AAR; the transport package's AAR and Java namespace remain Agent-free.
+Mobile disables its message and Rail pollers after `stream_ready`; those pollers
+are disconnected-transport fallback only.
 
 After either transport is normalized, Desktop and Mobile call the same
 `AgentActivityWorkspaceEventCoordinator`. Its package-internal rules derive

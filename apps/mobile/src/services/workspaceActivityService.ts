@@ -615,7 +615,6 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
     if (!this.paused || this.disposed) return;
     this.paused = false;
     this.rail.resume();
-    this.liveLane.start();
     this.setTransportConnected(!this.requiresLiveTransport, true);
     this.engine.dispatch({
       retry: true,
@@ -633,6 +632,7 @@ export class WorkspaceActivityService extends ObservableService<WorkspaceActivit
         workspaceId: this.workspace.id
       });
     }
+    this.liveLane.start();
     this.scheduleMessagesPoll();
   }
 

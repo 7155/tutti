@@ -63,7 +63,10 @@ interface DeviceLinkNative {
   }>;
   removeListeners(count: number): void;
   runLoopbackProbe(timeoutMillis: number): Promise<string>;
-  startAgentLive(workspaceId: string): Promise<void>;
+  startAgentLive(
+    workspaceId: string,
+    subscriptionGeneration: number
+  ): Promise<void>;
   stopAgentLive(): Promise<void>;
 }
 

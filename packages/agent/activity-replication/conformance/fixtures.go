@@ -336,5 +336,14 @@ func presentSnapshot(mutation activityreplication.Mutation) SnapshotExpectation 
 	if err != nil {
 		panic(err)
 	}
-	return SnapshotExpectation{EntityType: mutation.EntityType, Key: mutation.Key, Present: true, Snapshot: raw}
+	return SnapshotExpectation{
+		EntityType: mutation.EntityType,
+		Key:        mutation.Key,
+		Present:    true,
+		Snapshot: SinkSnapshot{
+			Entity:       raw,
+			TargetScope:  mutation.TargetScope,
+			SessionScope: mutation.SessionScope,
+		},
+	}
 }

@@ -527,6 +527,13 @@ export class SDKMessageRouter {
       void this.emitResultUsage(turnId, contextUsageGeneration, result);
       return;
     }
+    if (succeeded) {
+      // A successful provider result is authoritative that a root
+      // run_in_background invocation launched. Close the launch tool before
+      // the root terminal even when the SDK's task_started notification is
+      // delayed; the detached process itself remains independently stoppable.
+      this.activities.completePendingRootBackgroundLaunches();
+    }
     const pendingBackgroundContinuation =
       succeeded && this.activities.hasPendingBackgroundContinuation();
     const completedSyntheticContinuation =

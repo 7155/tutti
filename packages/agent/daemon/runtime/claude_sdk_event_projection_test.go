@@ -813,6 +813,77 @@ func TestClaudeCodeSDKAdapterKeepsDelegationCompletionOnParentAndUpdatesChildTit
 	}
 }
 
+func TestClaudeCodeSDKAdapterSettlesDetachedProcessLaunchWithoutCreatingChildWork(t *testing.T) {
+	adapter := NewClaudeCodeSDKAdapter(nil)
+	session := standardTestSession(ProviderClaudeCode)
+	adapterSession := &claudeSDKAdapterSession{
+		conn:            &recordingClaudeSDKConnection{},
+		pendingRequests: make(map[string]*pendingInteractiveRequest),
+		liveState:       newClaudeSDKLiveState(),
+	}
+	adapter.storeSession(session.AgentSessionID, adapterSession)
+
+	started, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "turn-bash", claudeSDKSidecarEvent{
+		Type: "tool_started",
+		Payload: map[string]any{
+			"turnId":     "turn-bash",
+			"toolCallId": "toolu-bash",
+			"toolName":   "Bash",
+			"callType":   "tool",
+			"input": map[string]any{
+				"command":           "python3 -m http.server 8000",
+				"run_in_background": true,
+			},
+		},
+	})
+	if err != nil || terminal || len(started) != 1 || started[0].Type != activityshared.EventCallStarted {
+		t.Fatalf("tool_started events=%#v terminal=%v err=%v", started, terminal, err)
+	}
+	if len(adapterSession.childSessions) != 0 {
+		t.Fatalf("detached process created child sessions: %#v", adapterSession.childSessions)
+	}
+
+	completed, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "turn-bash", claudeSDKSidecarEvent{
+		Type: "tool_completed",
+		Payload: map[string]any{
+			"turnId":     "turn-bash",
+			"toolCallId": "toolu-bash",
+			"toolName":   "Bash",
+			"callType":   "tool",
+			"status":     "completed",
+			"input": map[string]any{
+				"command":           "python3 -m http.server 8000",
+				"run_in_background": true,
+			},
+			"metadata": map[string]any{
+				"backgroundProcess": map[string]any{"status": "running"},
+			},
+		},
+	})
+	if err != nil || terminal || len(completed) != 1 || completed[0].Type != activityshared.EventCallCompleted {
+		t.Fatalf("tool_completed events=%#v terminal=%v err=%v", completed, terminal, err)
+	}
+
+	settled, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "turn-bash", claudeSDKSidecarEvent{
+		Type: "turn_completed",
+		Payload: map[string]any{
+			"turnId":         "turn-bash",
+			"providerTurnId": "provider-turn-bash",
+		},
+	})
+	if err != nil || !terminal {
+		t.Fatalf("turn_completed events=%#v terminal=%v err=%v", settled, terminal, err)
+	}
+	for _, event := range settled {
+		if event.Type == activityshared.EventCallFailed {
+			t.Fatalf("detached process launch was left dangling: %#v", settled)
+		}
+	}
+	if len(adapterSession.childSessions) != 0 {
+		t.Fatalf("completed detached process created child sessions: %#v", adapterSession.childSessions)
+	}
+}
+
 func TestClaudeCodeSDKAdapterCreatesNestedChildUnderParentChildTurn(t *testing.T) {
 	adapter := NewClaudeCodeSDKAdapter(nil)
 	session := standardTestSession(ProviderClaudeCode)

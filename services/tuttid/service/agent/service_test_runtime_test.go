@@ -304,7 +304,7 @@ func (f fakeSessionInitializer) InitializeRuntimeSession(
 		RailSectionKind:        "conversations",
 		RailSectionKey:         "conversations",
 		Settings:               settings,
-		Metadata:               agentactivitybiz.SessionMetadata{Visible: session.Visible, Capabilities: []string{}},
+		Metadata:               agentactivitybiz.SessionMetadata{Visible: session.Visible},
 		InternalRuntimeContext: clonePayload(session.RuntimeContext),
 		Title:                  strings.TrimSpace(session.Title),
 		PinnedAtUnixMS:         session.PinnedAtUnixMS,

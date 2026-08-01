@@ -174,23 +174,6 @@ func claudeSDKRuntimeContext(session Session, adapterSession *claudeSDKAdapterSe
 	reasoningEffort := claudeSDKSessionReasoningEffort(session, liveState)
 	speed := claudeSDKSessionSpeed(session, liveState)
 	permissionMode := claudeSDKSessionPermissionMode(session, liveState)
-	capabilities := []string{
-		CapabilityImageInput,
-		CapabilityCompact,
-		CapabilityTokenUsage,
-		CapabilityRateLimits,
-		CapabilityPlanMode,
-		CapabilityInterrupt,
-		CapabilityActiveTurnGuidance,
-		CapabilityPermissionModeChangeDuringTurn,
-		CapabilitySkills,
-		"review",
-		// Goal set/clear/display only — no CapabilityGoalPause: Claude
-		// Code's goal has no paused state to control.
-		"goal",
-	}
-	capabilities = appendBrowserUseCapability(capabilities, session.Env)
-	capabilities = appendComputerUseCapability(capabilities, session.Env)
 	context := map[string]any{
 		"adapter":          claudeSDKSidecarAdapterName,
 		"configOptions":    claudeSDKConfigOptions(liveState, model, reasoningEffort, speed),
@@ -199,7 +182,6 @@ func claudeSDKRuntimeContext(session Session, adapterSession *claudeSDKAdapterSe
 		"planMode":         session.SettingsValue().PlanMode,
 		"reasoningEffort":  reasoningEffort,
 		"speed":            speed,
-		"capabilities":     capabilities,
 	}
 	if providerConfig := providerRuntimeConfig(session, session.Provider); len(providerConfig) > 0 {
 		context["providerConfig"] = providerConfig
@@ -223,6 +205,27 @@ func claudeSDKRuntimeContext(session Session, adapterSession *claudeSDKAdapterSe
 		context["goal"] = clonePayload(liveState.goal)
 	}
 	return context
+}
+
+func claudeSDKCapabilities(session Session) []string {
+	capabilities := []string{
+		CapabilityImageInput,
+		CapabilityCompact,
+		CapabilityTokenUsage,
+		CapabilityRateLimits,
+		CapabilityPlanMode,
+		CapabilityInterrupt,
+		CapabilityActiveTurnGuidance,
+		CapabilityPermissionModeChangeDuringTurn,
+		CapabilitySkills,
+		"review",
+		// Goal set/clear/display only — no CapabilityGoalPause: Claude
+		// Code's goal has no paused state to control.
+		"goal",
+	}
+	capabilities = appendBrowserUseCapability(capabilities, session.Env)
+	capabilities = appendComputerUseCapability(capabilities, session.Env)
+	return capabilities
 }
 
 func (s *claudeSDKAdapterSession) mirrorGoalSlashPrompt(session Session, prompt string) (activityshared.Event, bool) {

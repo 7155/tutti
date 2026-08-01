@@ -4293,7 +4293,7 @@ type AgentProviderComposerConfigOptionValue struct {
 type AgentProviderComposerOptionsResponse struct {
 	Behavior AgentProviderComposerBehavior `json:"behavior"`
 
-	// Capabilities Protocol v2 daemon-issued capability descriptor. Clients branch on these booleans instead of provider identity. Field names mirror the canonical capability keys in packages/agent/daemon/runtime/capabilities.go.
+	// Capabilities Protocol v2 daemon-issued capability descriptor. Clients branch on these booleans instead of provider identity. Field names mirror the canonical capability vocabulary owned by packages/agent/store-sqlite/canonical/provider.go.
 	Capabilities      *WorkspaceAgentCapabilities     `json:"capabilities,omitempty"`
 	CapabilityCatalog []AgentProviderCapabilityOption `json:"capabilityCatalog"`
 
@@ -7302,7 +7302,7 @@ type WorkspaceAgent struct {
 	WorkspaceId string               `json:"workspaceId"`
 }
 
-// WorkspaceAgentCapabilities Protocol v2 daemon-issued capability descriptor. Clients branch on these booleans instead of provider identity. Field names mirror the canonical capability keys in packages/agent/daemon/runtime/capabilities.go.
+// WorkspaceAgentCapabilities Protocol v2 daemon-issued capability descriptor. Clients branch on these booleans instead of provider identity. Field names mirror the canonical capability vocabulary owned by packages/agent/store-sqlite/canonical/provider.go.
 type WorkspaceAgentCapabilities struct {
 	// ActiveTurnGuidance The provider can accept a user prompt as guidance for the currently running turn without canceling it or creating a normal next turn.
 	ActiveTurnGuidance      bool `json:"activeTurnGuidance"`
@@ -7502,7 +7502,7 @@ type WorkspaceAgentSession struct {
 	// AgentTargetId Agent target that authorized this session launch. Historical or imported provider-only sessions may omit it.
 	AgentTargetId *string `json:"agentTargetId"`
 
-	// Capabilities Protocol v2. Daemon-issued capability descriptor; clients must branch on capabilities, never on provider identity.
+	// Capabilities Protocol v2. Authoritative session capability snapshot. Null means no authoritative session snapshot is available, either because the runtime has not reported one yet or because legacy persisted data is ambiguous. A non-null object is complete, so false means explicitly unsupported. Only while this field is null may clients fall back to the authoritative provider composer descriptor; they must never infer capabilities from provider identity.
 	Capabilities *WorkspaceAgentCapabilities `json:"capabilities"`
 
 	// CreatedAtUnixMs Protocol v2. Unix milliseconds replacement for createdAt.

@@ -631,7 +631,7 @@ func reconcileObservedGoalFromSessionTx(ctx context.Context, tx *sql.Tx, session
 	if workspaceID == "" || agentSessionID == "" {
 		return nil
 	}
-	metadata, _, err := splitSessionRuntimeContext(session.RuntimeContext)
+	metadata, _, _, err := splitSessionRuntimeContext(session.RuntimeContext)
 	if err != nil {
 		return err
 	}

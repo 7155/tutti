@@ -353,9 +353,9 @@ func TestOpenCodeAdapterAllowsImagePromptWithoutInitializeCapability(t *testing.
 		t.Fatalf("ValidatePromptContent error = %v, want nil", err)
 	}
 	snapshot := adapter.SessionState(session)
-	capabilities, _ := snapshot.RuntimeContext["capabilities"].([]string)
+	capabilities := capabilitySnapshotValues(snapshot.Capabilities)
 	if !containsString(capabilities, CapabilityImageInput) {
-		t.Fatalf("runtime capabilities = %#v, want imageInput", snapshot.RuntimeContext["capabilities"])
+		t.Fatalf("runtime capabilities = %#v, want imageInput", capabilities)
 	}
 }
 
@@ -382,9 +382,9 @@ func TestCursorAdapterAllowsImagePromptWithoutInitializeCapability(t *testing.T)
 		t.Fatalf("ValidatePromptContent error = %v, want nil", err)
 	}
 	snapshot := adapter.SessionState(session)
-	capabilities, _ := snapshot.RuntimeContext["capabilities"].([]string)
+	capabilities := capabilitySnapshotValues(snapshot.Capabilities)
 	if !containsString(capabilities, CapabilityImageInput) {
-		t.Fatalf("runtime capabilities = %#v, want imageInput", snapshot.RuntimeContext["capabilities"])
+		t.Fatalf("runtime capabilities = %#v, want imageInput", capabilities)
 	}
 }
 
@@ -491,7 +491,7 @@ func TestStandardACPAdapterRejectsImagePromptWithoutCapability(t *testing.T) {
 		t.Fatalf("ValidatePromptContent error = %v, want ErrPromptImageUnsupported", err)
 	}
 	snapshot := adapter.SessionState(session)
-	capabilities, _ := snapshot.RuntimeContext["capabilities"].([]string)
+	capabilities := capabilitySnapshotValues(snapshot.Capabilities)
 	if containsString(capabilities, CapabilityImageInput) {
 		t.Fatalf("runtime promptCapabilities = %#v, want image unsupported", snapshot.RuntimeContext["promptCapabilities"])
 	}

@@ -8,6 +8,7 @@ import (
 
 	activityshared "github.com/tutti-os/tutti/packages/agent/daemon/activity/events"
 	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
+	canonical "github.com/tutti-os/tutti/packages/agent/store-sqlite/canonical"
 )
 
 const (
@@ -408,21 +409,22 @@ type SessionInteractivePrompt struct {
 }
 
 type SessionStateSnapshot struct {
-	RoomID             string                    `json:"roomId"`
-	AgentSessionID     string                    `json:"agentSessionId"`
-	AgentTargetID      string                    `json:"agentTargetId,omitempty"`
-	Provider           string                    `json:"provider"`
-	ProviderSessionID  string                    `json:"providerSessionId,omitempty"`
-	Resumable          bool                      `json:"resumable"`
-	Status             string                    `json:"status"`
-	TurnLifecycle      *TurnLifecycle            `json:"turnLifecycle,omitempty"`
-	SubmitAvailability *SubmitAvailability       `json:"submitAvailability,omitempty"`
-	PermissionModeID   string                    `json:"permissionModeId,omitempty"`
-	Settings           *SessionSettings          `json:"settings,omitempty"`
-	AuthState          string                    `json:"authState,omitempty"`
-	RuntimeContext     map[string]any            `json:"runtimeContext,omitempty"`
-	PendingInteractive *SessionInteractivePrompt `json:"pendingInteractive,omitempty"`
-	UpdatedAtUnixMS    int64                     `json:"updatedAtUnixMs"`
+	RoomID             string                        `json:"roomId"`
+	AgentSessionID     string                        `json:"agentSessionId"`
+	AgentTargetID      string                        `json:"agentTargetId,omitempty"`
+	Provider           string                        `json:"provider"`
+	ProviderSessionID  string                        `json:"providerSessionId,omitempty"`
+	Resumable          bool                          `json:"resumable"`
+	Status             string                        `json:"status"`
+	TurnLifecycle      *TurnLifecycle                `json:"turnLifecycle,omitempty"`
+	SubmitAvailability *SubmitAvailability           `json:"submitAvailability,omitempty"`
+	PermissionModeID   string                        `json:"permissionModeId,omitempty"`
+	Settings           *SessionSettings              `json:"settings,omitempty"`
+	Capabilities       *canonical.CapabilitySnapshot `json:"capabilities,omitempty"`
+	AuthState          string                        `json:"authState,omitempty"`
+	RuntimeContext     map[string]any                `json:"runtimeContext,omitempty"`
+	PendingInteractive *SessionInteractivePrompt     `json:"pendingInteractive,omitempty"`
+	UpdatedAtUnixMS    int64                         `json:"updatedAtUnixMs"`
 }
 
 type AgentSessionCommand struct {

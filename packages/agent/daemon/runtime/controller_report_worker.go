@@ -257,7 +257,11 @@ func enrichReportStatePatchesWithSessionMetadata(
 			continue
 		}
 		report.StatePatches[index].Settings = clonePayload(patch.Settings)
+		if patch.Capabilities != nil {
+			report.StatePatches[index].Capabilities = canonical.CloneCapabilitySnapshot(patch.Capabilities)
+		}
 		report.StatePatches[index].RuntimeContext = clonePayload(patch.RuntimeContext)
+		report.StatePatches[index].RuntimeContextPatch = nil
 		if report.StatePatches[index].Provider == "" {
 			report.StatePatches[index].Provider = patch.Provider
 		}

@@ -454,7 +454,7 @@ func (d *legacyHostConformanceDriver) Reset(_ context.Context, fixture hostconfo
 		Provider: seed.Provider, ProviderSessionID: seed.ProviderSessionID, Cwd: seed.Cwd,
 		RailSectionKind: "conversations",
 		RailSectionKey:  "conversations", Settings: settings,
-		Metadata:               agentactivitybiz.SessionMetadata{Visible: true, Capabilities: []string{}},
+		Metadata:               agentactivitybiz.SessionMetadata{Visible: true},
 		InternalRuntimeContext: runtimeContext,
 		Title:                  seed.Title, ActiveTurnID: seed.ActiveTurnID,
 		PinnedAtUnixMS:  boolUnixMS(seed.Pinned),
@@ -476,7 +476,7 @@ func (d *legacyHostConformanceDriver) Reset(_ context.Context, fixture hostconfo
 			Provider: additional.Provider, Cwd: additional.Cwd,
 			RailSectionKind: "conversations",
 			RailSectionKey:  "conversations",
-			Metadata:        agentactivitybiz.SessionMetadata{Visible: true, Capabilities: []string{}},
+			Metadata:        agentactivitybiz.SessionMetadata{Visible: true},
 			CreatedAtUnixMS: 1, UpdatedAtUnixMS: 2, LastEventUnixMS: 2,
 		}
 		if parentID := strings.TrimSpace(additional.ParentAgentSessionID); parentID != "" {
@@ -794,7 +794,7 @@ func (s *conformanceHistoricalStateStore) RestoreHistoricalSessionGraph(
 				),
 			},
 			Metadata: agentactivitybiz.SessionMetadata{
-				Visible: true, Capabilities: []string{},
+				Visible: true,
 			},
 			CreatedAtUnixMS: 1, UpdatedAtUnixMS: 1, LastEventUnixMS: 1,
 		}

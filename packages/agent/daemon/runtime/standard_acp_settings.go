@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
+	"github.com/tutti-os/tutti/packages/agent/store-sqlite/canonical"
 )
 
 func (a *standardACPAdapter) applyACPMode(ctx context.Context, client *acpClient, session Session, modeID string) error {
@@ -653,9 +654,7 @@ func (a *standardACPAdapter) SessionState(session Session) SessionStateSnapshot 
 	if _, builtInProvider := providerregistry.Find(a.config.provider); !builtInProvider {
 		capabilities = filterDeclaredCapabilities(capabilities, a.config.capabilities)
 	}
-	if len(capabilities) > 0 {
-		snapshot.RuntimeContext["capabilities"] = capabilities
-	}
+	snapshot.Capabilities = canonical.NewCapabilitySnapshot(capabilities)
 	if a.config.restrictConfigOptions {
 		snapshot.Settings = sessionSettingsWithDeclaredACPConfig(
 			session.Settings,

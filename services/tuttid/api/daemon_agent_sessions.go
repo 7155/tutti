@@ -10,6 +10,7 @@ import (
 	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
 	agenthost "github.com/tutti-os/tutti/packages/agent/host"
 	agentactivitybiz "github.com/tutti-os/tutti/packages/agent/store-sqlite"
+	"github.com/tutti-os/tutti/packages/agent/store-sqlite/canonical"
 	tuttigenerated "github.com/tutti-os/tutti/services/tuttid/api/generated"
 	"github.com/tutti-os/tutti/services/tuttid/apierrors"
 	preferencesbiz "github.com/tutti-os/tutti/services/tuttid/biz/preferences"
@@ -562,7 +563,7 @@ func generatedAgentProviderComposerOptions(options agentservice.ComposerOptions)
 			PrewarmDraftSession:                 options.Behavior.PrewarmDraftSession,
 			PlanModeExclusiveWithPermissionMode: options.Behavior.PlanModeExclusiveWithPermissionMode,
 		},
-		Capabilities:      generatedAgentSessionCapabilities(options.Capabilities),
+		Capabilities:      generatedAgentSessionCapabilities(canonical.NewCapabilitySnapshot(options.Capabilities)),
 		CapabilityCatalog: generatedAgentProviderCapabilityOptions(options.CapabilityCatalog),
 		Commands:          generatedAgentProviderComposerCommands(options.Commands),
 		EffectiveSettings: effectiveSettings,
@@ -779,7 +780,7 @@ func generatedAgentSession(session agentservice.Session) (tuttigenerated.Workspa
 		ActiveTurn:             activeTurn,
 		ActiveTurnId:           optionalStringPointer(strings.TrimSpace(session.ActiveTurnID)),
 		AgentTargetId:          optionalStringPointer(strings.TrimSpace(session.AgentTargetID)),
-		Capabilities:           generatedAgentSessionCapabilities(session.Metadata.Capabilities),
+		Capabilities:           generatedAgentSessionCapabilities(session.Capabilities),
 		CreatedAtUnixMs:        session.CreatedAt.UnixMilli(),
 		Cwd:                    stringPointer(strings.TrimSpace(session.Cwd)),
 		EndedAtUnixMs:          endedAtUnixMS,

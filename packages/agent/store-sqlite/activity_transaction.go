@@ -104,7 +104,9 @@ SELECT EXISTS(
 			ProviderSessionID:    input.ProviderSessionID,
 			Model:                input.Model,
 			Settings:             cloneJSONMap(input.Settings),
-			RuntimeContext:       cloneJSONMap(input.RuntimeContext),
+			Capabilities:         agentactivityprojection.CloneCapabilitySnapshot(input.Capabilities),
+			RuntimeContext:       cloneOptionalJSONMap(input.RuntimeContext),
+			RuntimeContextPatch:  agentactivityprojection.CloneRuntimeContextPatch(input.RuntimeContextPatch),
 			CWD:                  input.Cwd,
 			Title:                input.Title,
 			Status:               input.Status,
@@ -117,6 +119,12 @@ SELECT EXISTS(
 		},
 		now,
 	)
+	if projected.InvalidReason != "" {
+		return false, false, 0, Session{}, fmt.Errorf(
+			"workspace agent session state projection is invalid: %s",
+			projected.InvalidReason,
+		)
+	}
 	if !projected.Accepted {
 		existingRail, railErr := getExistingAgentSessionRailSectionTx(
 			ctx,
@@ -147,11 +155,15 @@ SELECT EXISTS(
 	if err != nil {
 		return false, false, 0, Session{}, err
 	}
-	metadata, internalRuntimeContext, err := splitSessionRuntimeContext(session.RuntimeContext)
+	metadata, legacyCapabilities, internalRuntimeContext, err := splitSessionRuntimeContext(session.RuntimeContext)
 	if err != nil {
 		return false, false, 0, Session{}, fmt.Errorf("split workspace agent session runtime context: %w", err)
 	}
-	metadataJSON, err := marshalSessionMetadata(metadata)
+	capabilities := session.Capabilities
+	if capabilities == nil {
+		capabilities = legacyCapabilities
+	}
+	metadataJSON, err := marshalSessionMetadata(metadata, capabilities)
 	if err != nil {
 		return false, false, 0, Session{}, fmt.Errorf("encode workspace agent session metadata: %w", err)
 	}

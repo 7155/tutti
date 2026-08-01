@@ -5,6 +5,7 @@ import (
 	"time"
 
 	activityshared "github.com/tutti-os/tutti/packages/agent/daemon/activity/events"
+	"github.com/tutti-os/tutti/packages/agent/store-sqlite/canonical"
 )
 
 const (
@@ -183,6 +184,7 @@ func (a *ClaudeCodeSDKAdapter) SessionState(session Session) SessionStateSnapsho
 		SubmitAvailability: cloneRuntimeSubmitAvailability(session.SubmitAvailability),
 		PermissionModeID:   session.PermissionModeID,
 		Settings:           cloneOptionalSessionSettings(session.Settings),
+		Capabilities:       canonical.NewCapabilitySnapshot(claudeSDKCapabilities(session)),
 		RuntimeContext:     claudeSDKRuntimeContext(session, adapterSession),
 		PendingInteractive: a.claudeSDKPendingInteractive(adapterSession),
 		UpdatedAtUnixMS:    session.UpdatedAtUnixMS,

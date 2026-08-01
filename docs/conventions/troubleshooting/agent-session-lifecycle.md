@@ -1015,6 +1015,42 @@ Turn state, loading, cancel, restore, file-change undo, rail projection, event u
   [daemon_test.go](../../../services/tuttid/api/daemon_test.go)
   [tuttid.v1.yaml](../../../services/tuttid/api/openapi/tuttid.v1.yaml)
 
+### Goal banner shows Delete but no Restart action
+
+- Symptom:
+  A provider supports goal pause/resume and the action is initially visible,
+  but a paused or blocked Goal later shows only Delete.
+- Quick checks:
+  Compare provider composer capabilities with the selected Session's typed
+  capabilities. `capabilities: null` means no authoritative session snapshot
+  is available because it is not yet reported or legacy-ambiguous; only then
+  may presentation fall back to the provider composer descriptor. A non-null
+  object is complete. Inspect the private persistence compatibility carrier
+  for `capabilitiesReported` before treating an empty legacy list as
+  authoritative.
+- Root cause:
+  Legacy persistence could not distinguish an unknown capability list from an
+  explicitly reported empty snapshot. Partial `RuntimeContext` reports could
+  also replace the full map and erase capability metadata. The API then closed
+  the missing list into `false`, which overrode the provider composer value.
+- Fix:
+  Carry capabilities as a typed optional snapshot outside `RuntimeContext`.
+  Persist explicit report presence, preserve omitted snapshots on partial
+  updates, and use typed `set`/`unset` runtime-context patches. In presentation,
+  fall back to composer capabilities only for a null session snapshot; preserve
+  explicit session `false`. No database schema migration is required because
+  the report-presence marker uses the existing metadata JSON column and legacy
+  rows are normalized when decoded.
+- Validation:
+  Cover legacy empty and non-empty metadata, reported empty snapshots,
+  partial state updates, API null/closed projections, and AgentGUI resolution.
+  Verify a Codex live snapshot contains `goalPause` after goal pause, cancel,
+  and session recovery.
+- References:
+  [provider.go](../../../packages/agent/store-sqlite/canonical/provider.go)
+  [session_metadata.go](../../../packages/agent/store-sqlite/session_metadata.go)
+  [capabilities.ts](../../../packages/agent/activity-core/src/capabilities.ts)
+
 ### AgentGUI rejects a pasted image as unsupported before send
 
 - Symptom:

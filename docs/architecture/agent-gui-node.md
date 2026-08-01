@@ -127,7 +127,7 @@ Never infer identity from titles, timestamps, array positions, provider names, t
 
 ### 1.7 Fail closed
 
-When authoritative identity, capability, Turn, or Interaction is missing, return unsupported/loading/error. Do not choose the first provider, manufacture a Turn, treat an empty array as loaded, or hide contract drift behind a UI fallback.
+When authoritative identity, Turn, or Interaction is missing, return unsupported/loading/error. Capability presence is explicit: a null session capability snapshot means no authoritative session snapshot is available (not yet reported or legacy-ambiguous), while a non-null snapshot is complete and may explicitly contain no supported capabilities. Presentation may fall back from a null session snapshot to the authoritative provider composer descriptor, but an explicit session `false` always wins. Do not choose the first provider, manufacture a Turn, treat an ambiguous legacy empty array as loaded, or hide contract drift behind an ad hoc UI fallback.
 
 Compatibility paths require evidence of existing data or a release window. Keep them isolated from canonical writes.
 
@@ -167,7 +167,36 @@ provider runtime observation
   -> AgentGUI / Message Center / host chrome
 ```
 
-### 2.3 Ownership map
+### 2.3 Session capability snapshots
+
+Provider adapters report canonical session capabilities through a typed,
+complete snapshot. They do not place capability ids in provider-private
+`RuntimeContext`. A missing snapshot means no authoritative session snapshot
+is available because it has not been reported yet or legacy data is ambiguous;
+an empty reported snapshot means no canonical session capabilities are
+supported. Partial state reports omit the snapshot and preserve the last
+reported value.
+
+Persistence uses a private JSON compatibility carrier for capability ids plus
+explicit report presence, then exposes only the typed optional snapshot at the
+store boundary. Legacy non-empty lists are reported snapshots; legacy empty
+lists without presence evidence remain unknown. The daemon API projects
+unknown as `null` and reported snapshots as a closed boolean record.
+This does not require a database schema migration: the presence marker lives
+inside the existing metadata JSON column, and decoding normalizes old rows.
+
+`activity-core` owns the presentation resolution rule: a reported session
+value overrides composer options, while a null session snapshot falls back to
+the authoritative provider composer descriptor. AgentGUI consumes that result
+and does not add provider-specific or control-specific fallback logic. Host and
+runtime operation handlers remain authoritative when an action is submitted.
+
+Runtime context transport also distinguishes a complete snapshot from an
+explicit top-level `set`/`unset` patch. Omission preserves existing context;
+patches may update only provider-private keys and must never replace unrelated
+session metadata.
+
+### 2.4 Ownership map
 
 | Layer                           | Owns                                                                                          | Must not own                                      |
 | ------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------- |
@@ -184,7 +213,7 @@ provider runtime observation
 
 `services/tuttid/api/openapi/tuttid.v1.yaml` is authoritative for HTTP request/response contracts. It projects the canonical domain; it does not replace `store-sqlite/canonical`.
 
-### 2.4 Ephemeral observation gaps
+### 2.5 Ephemeral observation gaps
 
 A Host may expose an ephemeral observation gap for one exact Session and Turn
 when its caller-side projection may be stale. The gap is presentation-only:
@@ -200,7 +229,7 @@ canonical Turn. The Host owns reconnect and catch-up fencing and must remove
 the gap only after the same Turn is authoritative again. When the capability
 is absent, AgentGUI preserves its existing lifecycle presentation.
 
-### 2.5 On-demand status
+### 2.6 On-demand status
 
 AgentGUI owns one provider-neutral `AgentStatusController` for `/status`, Agent
 Info, and Agent Config. These surfaces are explicit bounded reads; mounting an

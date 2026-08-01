@@ -1,5 +1,6 @@
 import type {
   AccountSession,
+  DeviceLinkPathScope,
   DevicePairing,
   DevicePairingPhase,
   UserDevice
@@ -42,6 +43,7 @@ export interface DeviceSnapshot {
   errorCode: DeviceErrorCode;
   pairingState: DevicePairingPhase;
   pairings: readonly DevicePairing[];
+  pathScope: DeviceLinkPathScope | null;
   refreshing: boolean;
 }
 
@@ -61,6 +63,7 @@ export class DeviceService extends ObservableService<DeviceSnapshot> {
     errorCode: null,
     pairingState: "idle",
     pairings: [],
+    pathScope: null,
     refreshing: false
   };
 
@@ -232,15 +235,17 @@ export class DeviceService extends ObservableService<DeviceSnapshot> {
     const generation = ++this.connectionGeneration;
     this.patch({
       connectingPairingId: device.pairingId,
-      errorCode: null
+      errorCode: null,
+      pathScope: null
     });
     try {
-      await this.pairing.connectPairedDevice(
+      const pathScope = await this.pairing.connectPairedDevice(
         this.session.sessionId,
         device.pairingId,
         () => this.isConnectionCurrent(generation)
       );
       if (!this.isConnectionCurrent(generation)) return false;
+      this.patch({ pathScope });
       await this.onConnected(device);
       return this.isConnectionCurrent(generation);
     } catch (cause) {

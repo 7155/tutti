@@ -196,6 +196,32 @@ export class MobileApplicationService extends ObservableService<MobileApplicatio
     return this.recoverDeviceConnection("manual_retry");
   }
 
+  /**
+   * Measures the device-link round-trip latency with a lightweight agent HTTP
+   * probe. Returns null when no usable connection is available.
+   */
+  async measureConnectionLatency(): Promise<number | null> {
+    const current = this.snapshot;
+    if (
+      current.status !== "authenticated" ||
+      current.connection.phase !== "connected"
+    ) {
+      return null;
+    }
+    const started = Date.now();
+    try {
+      await this.ports.deviceLink.requestAgentHTTP(
+        "GET",
+        "/v1/health",
+        "",
+        10_000
+      );
+      return Date.now() - started;
+    } catch {
+      return null;
+    }
+  }
+
   private async selectWorkspace(
     workspace: WorkspaceSummary,
     trigger: MobileConnectionRecoveryTrigger

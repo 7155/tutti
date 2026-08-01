@@ -7,9 +7,10 @@ import (
 	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
 )
 
-// Canonical provider capability keys shared by all adapters and surfaced to
-// the GUI through runtimeContext.capabilities. Keep in sync with the
-// TypeScript side (packages/agent/activity-core/src/capabilities.ts).
+// Provider-runtime aliases for the canonical capability vocabulary owned by
+// packages/agent/store-sqlite/canonical/provider.go. Adapters report these
+// through the typed runtime Capabilities snapshot; generated clients project
+// the same canonical fields for presentation.
 const (
 	CapabilityImageInput                     = providerregistry.CapabilityImageInput
 	CapabilityModelImageInputRequired        = providerregistry.CapabilityModelImageInputRequired

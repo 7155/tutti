@@ -126,11 +126,12 @@ func (p *ActivityProjection) activityStateReport(
 	ctx context.Context,
 	input canonical.ReportSessionStateInput,
 ) (agentactivitybiz.ActivityStateReport, string, error) {
-	canonicalTargetID, runtimeContext := p.canonicalizeAgentTargetID(
+	canonicalTargetID, runtimeContext, runtimeContextPatch := p.canonicalizeAgentTargetState(
 		ctx,
 		input.WorkspaceID,
 		firstNonEmptyString(input.State.AgentTargetID, input.Source.AgentTargetID),
 		input.State.RuntimeContext,
+		input.State.RuntimeContextPatch,
 	)
 	stateReport := agentactivitybiz.SessionStateReport{
 		WorkspaceID:          strings.TrimSpace(input.WorkspaceID),
@@ -148,7 +149,9 @@ func (p *ActivityProjection) activityStateReport(
 		ProviderSessionID:    strings.TrimSpace(firstNonEmptyString(input.State.ProviderSessionID, input.Source.ProviderSessionID)),
 		Model:                strings.TrimSpace(input.State.Model),
 		Settings:             clonePayload(input.State.Settings),
-		RuntimeContext:       clonePayload(runtimeContext),
+		Capabilities:         canonical.CloneCapabilitySnapshot(input.State.Capabilities),
+		RuntimeContext:       cloneOptionalPayload(runtimeContext),
+		RuntimeContextPatch:  canonical.CloneRuntimeContextPatch(runtimeContextPatch),
 		Cwd:                  strings.TrimSpace(input.State.CWD),
 		Title:                strings.TrimSpace(sessionStateTitle(input.State)),
 		Status:               strings.TrimSpace(input.State.LifecycleStatus),

@@ -12,6 +12,7 @@ import (
 
 	agentruntime "github.com/tutti-os/tutti/packages/agent/daemon/runtime"
 	host "github.com/tutti-os/tutti/packages/agent/host"
+	"github.com/tutti-os/tutti/packages/agent/store-sqlite/canonical"
 )
 
 // RuntimeBackend is the daemon controller surface required by Agent Host.
@@ -664,6 +665,7 @@ func (a *RuntimeController) sessionWithState(session agentruntime.Session) host.
 		settings := hostSettings(*state.Settings)
 		result.Settings = &settings
 	}
+	result.Capabilities = canonical.CloneCapabilitySnapshot(state.Capabilities)
 	result.RuntimeContext = cloneMap(state.RuntimeContext)
 	if state.UpdatedAtUnixMS > 0 {
 		result.UpdatedAtUnixMS = state.UpdatedAtUnixMS

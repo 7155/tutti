@@ -110,7 +110,7 @@ func (a *CodexAppServerAdapter) SessionState(session Session) SessionStateSnapsh
 	}
 	codexCapabilities = appendBrowserUseCapability(codexCapabilities, session.Env)
 	codexCapabilities = appendComputerUseCapability(codexCapabilities, session.Env)
-	snapshot.RuntimeContext["capabilities"] = codexCapabilities
+	snapshot.Capabilities = canonical.NewCapabilitySnapshot(codexCapabilities)
 	snapshot.Settings = codexAppServerSessionSettingsWithConfig(
 		session.Settings,
 		session.Provider,

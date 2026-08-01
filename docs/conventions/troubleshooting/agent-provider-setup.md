@@ -1162,14 +1162,14 @@ file or directory`. A failed `codex app-server` probe is diagnostic evidence,
   Keep the sidecar inheriting the user's Claude settings so credentials and base
   URL keep working. Fix provider access by changing the user's Claude settings or
   managed provider model config, not by hard-coding Tutti's static alias list.
-  When an old SDK session predates image-input support, normalize its
-  `runtimeContext.capabilities` before projecting it to AgentGUI so stale
-  persisted state does not disable prompt-image paste.
+  Report a typed `SessionStateSnapshot.Capabilities` value before projecting
+  the session to AgentGUI so stale provider-private runtime context cannot
+  disable prompt-image paste.
 - Validation:
   Confirm the session runtime context shows `adapter: claude-agent-sdk`, the
-  expected `providerConfig.baseUrl`, and an `imageInput` capability. Then run the
-  Claude SDK adapter tests plus the agent service tests covering runtime-context
-  normalization.
+  expected `providerConfig.baseUrl`, and confirm the typed session capability
+  snapshot includes `imageInput`. Then run the Claude SDK adapter tests plus the
+  agent service capability-projection tests.
 - References:
   [claude_sdk_adapter.go](../../../packages/agent/daemon/runtime/claude_sdk_adapter.go)
   [service_helpers.go](../../../services/tuttid/service/agent/service_helpers.go)

@@ -295,6 +295,7 @@ type Session struct {
 	ProviderSessionID      string
 	Model                  string
 	Settings               map[string]any
+	Capabilities           *canonical.CapabilitySnapshot
 	Metadata               SessionMetadata
 	InternalRuntimeContext map[string]any
 	Cwd                    string
@@ -590,7 +591,9 @@ type SessionStateReport struct {
 	ProviderSessionID    string
 	Model                string
 	Settings             map[string]any
+	Capabilities         *canonical.CapabilitySnapshot
 	RuntimeContext       map[string]any
+	RuntimeContextPatch  *canonical.RuntimeContextPatch
 	Cwd                  string
 	// ImportProjectPath is the canonical selected project for a historical
 	// import. The store accepts it only for imported, project-backed sessions.

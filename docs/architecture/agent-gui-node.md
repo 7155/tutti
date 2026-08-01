@@ -734,14 +734,17 @@ Session, never crosses into another conversation, and is never written back to
 the workspace engine.
 
 Runtime command availability is session-scoped whenever one workspace engine
-can contain Sessions backed by different transports. The host projects
-`available`, `transport_reconnecting`, or `transport_unavailable`; the engine
-uses that single fact to gate sends, cancellation, settings, and Interaction or
-plan responses. AgentGUI preserves the composer draft content but disables
-editing and runtime-dependent actions, and keeps an active Stop control visible
-but disabled until the transport recovers. It must not reuse the engine-wide
-connection state for this case, because one remote Session losing its owner must
-not disable Local Agent or another remote Session.
+can contain Sessions backed by different transports or access policies. The
+host projects `available`, transport/capability blocking, or the explicit
+`agent_sharing_revoked` state with the owner display label. The engine uses that
+single fact to gate sends, cancellation, settings, and Interaction or plan
+responses. AgentGUI preserves the composer draft content but disables editing
+and runtime-dependent actions. A revoked shared Session keeps its history and
+renders the package-owned owner-specific notice; it becomes available again
+only when the host projects the sharing relationship as active. It must not
+reuse the engine-wide connection state for this case, because one remote
+Session losing its owner or access must not disable Local Agent or another
+remote Session.
 
 Mobile projects pending Interactions from the root conversation plus its child
 Sessions and reads each exact Engine response record for submitting/failure
@@ -760,6 +763,12 @@ target or the selected Home target. This lets a new-conversation composer show
 and enforce connection state before any Session exists. Session runtime
 availability remains the independent command safety gate for existing
 Sessions; it is not the source of device connection presentation.
+
+Sharing eligibility is a parent gate for device connection. When an owner has
+revoked a Session's shared Agent relationship, the host projects
+`agent_sharing_revoked` and does not manufacture a target transport state for
+that relationship. Device reconnect and automatic retry presentation begins
+only while the sharing relationship is active.
 
 AgentGUI projects a blocked target connection through the chrome above the
 composer and gives it precedence over other recovery, approval, or prompt

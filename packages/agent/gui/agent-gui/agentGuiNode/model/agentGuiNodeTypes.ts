@@ -47,6 +47,7 @@ export interface AgentGUISessionChrome {
           | "activating"
           | "failed"
           | "warning"
+          | "agent-sharing-revoked"
           | "transport-connecting"
           | "transport-unavailable";
         message: string;

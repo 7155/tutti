@@ -148,10 +148,11 @@ export function useAgentGUISessionPresentation(
     input.activeConversationId && input.activeLatestPendingSubmitTurnId
   );
   const activeSubmitBlocked = input.activeEngineAvailability === "blocked";
-  const sessionRuntimeBlockedReason =
+  const sessionRuntimeBlock =
     input.activeEngineRuntimeAvailability?.state === "blocked"
-      ? input.activeEngineRuntimeAvailability.reason
+      ? input.activeEngineRuntimeAvailability
       : null;
+  const sessionRuntimeBlockedReason = sessionRuntimeBlock?.reason ?? null;
   const targetConnection = useAgentGUITargetConnectionState({
     agentTargetId: input.targetConnectionAgentTargetId,
     source: input.targetConnectionSource
@@ -197,6 +198,20 @@ export function useAgentGUISessionPresentation(
     input.activeGoalControlPresentation
   ]);
   const sessionChrome = useMemo<AgentGUISessionChrome>(() => {
+    if (sessionRuntimeBlock?.reason === "agent_sharing_revoked") {
+      return {
+        auth: null,
+        approval: null,
+        recovery: {
+          kind: "agent-sharing-revoked",
+          message: translate("agentHost.agentGui.agentSharingRevoked", {
+            owner: sessionRuntimeBlock.ownerLabel
+          }),
+          canRetry: false
+        },
+        rawState: sessionChromeRawState
+      };
+    }
     if (
       targetConnection.visibleState?.status === "connecting" ||
       targetConnection.visibleState?.status === "unavailable"
@@ -303,6 +318,7 @@ export function useAgentGUISessionPresentation(
     input.activePendingActivation?.mode,
     input.pendingApproval,
     input.ownerDeviceLabel,
+    sessionRuntimeBlock,
     targetConnection.visibleState,
     observationGap,
     sessionChromeRawState

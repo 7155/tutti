@@ -1396,10 +1396,13 @@ The host owns:
 
 When command reachability differs by Session, the host also projects
 `session/runtimeAvailabilityChanged` into the shared engine. This state is
-ephemeral transport coordination, not a canonical Session field. The engine
-gates runtime-dependent commands and AgentGUI presents the same frozen/loading
-interaction for every host; a host must not map one Session's transport loss to
-the workspace-wide engine connection state.
+ephemeral command coordination, not a canonical Session field. In addition to
+transport and capability reasons, a shared host may project
+`agent_sharing_revoked` with the owner display label. The engine gates
+runtime-dependent commands and AgentGUI presents the same blocked interaction
+for every host; history remains canonical and readable. A host must not map one
+Session's transport loss or revoked sharing relationship to the workspace-wide
+engine connection state.
 
 ## Needs Attention Contract
 

@@ -49,6 +49,7 @@ export const enAgentGuiRuntimeNotices = {
   systemNoticeWarning: "Agent warning",
   systemNoticeDefault: "Agent notice",
   sharedDeviceLabel: "shared device",
+  agentSharingRevoked: "{{owner}} stopped sharing this agent",
   runtimeConnecting: "Connecting to {{device}}…",
   runtimeReconnectingAttempt: "Reconnecting to {{device}} · Retry {{attempt}}…",
   runtimeUnavailable:

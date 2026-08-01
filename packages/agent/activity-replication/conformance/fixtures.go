@@ -312,7 +312,7 @@ func messageMutation(mutationID, transactionID string, updatedAt int64) activity
 func sessionScope(deviceID string) *activityreplication.SessionScope {
 	return &activityreplication.SessionScope{
 		InitiatorUserID: "caller-1", ExecutorOwnerUserID: "owner-1", SourceDeviceID: deviceID,
-		LaunchKind: "shared-agent", Visibility: activityreplication.VisibilityMembers,
+		SharedAgentBindingID: "binding-1", LaunchKind: "shared-agent", Visibility: activityreplication.VisibilityMembers,
 	}
 }
 

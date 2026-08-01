@@ -172,8 +172,12 @@ type SessionScope struct {
 	InitiatorUserID     string `json:"initiatorUserId"`
 	ExecutorOwnerUserID string `json:"executorOwnerUserId"`
 	SourceDeviceID      string `json:"sourceDeviceId"`
-	LaunchKind          string `json:"launchKind"`
-	Visibility          string `json:"visibility"`
+	// SharedAgentBindingID is the optional typed provenance that relates an
+	// owner-local canonical session to a product-owned shared-agent binding.
+	// Empty remains valid so older producers can continue replicating sessions.
+	SharedAgentBindingID string `json:"sharedAgentBindingId,omitempty"`
+	LaunchKind           string `json:"launchKind"`
+	Visibility           string `json:"visibility"`
 }
 
 // Mutation is a closed tagged union. Command-state payloads are intentionally

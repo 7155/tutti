@@ -13,7 +13,7 @@ func TestValidateMutationAcceptsEveryProjectionSnapshot(t *testing.T) {
 
 	sessionScope := &activityreplication.SessionScope{
 		ExecutorOwnerUserID: "owner-1", SourceDeviceID: "device-1",
-		Visibility: activityreplication.VisibilityMembers,
+		SharedAgentBindingID: "binding-1", Visibility: activityreplication.VisibilityMembers,
 	}
 	base := func(entityType activityreplication.EntityType, key activityreplication.EntityKey) activityreplication.Mutation {
 		return activityreplication.Mutation{

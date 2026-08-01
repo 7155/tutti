@@ -10,8 +10,14 @@ import {
 } from "electron";
 import {
   createDesktopUpdateAdmissionController,
+  registerDesktopFeatureAvailabilityIpc,
   type DesktopUpdateAdmissionController
 } from "@tutti-os/desktop-update-admission/electron-main";
+import {
+  createDesktopFeatureAvailabilityRuntime,
+  type MutableDesktopFeatureAvailabilityRuntime
+} from "@tutti-os/desktop-update-admission/feature-availability";
+import { resolveMinimumVersionRuntimeTarget } from "@tutti-os/desktop-update-admission/core";
 import {
   createDevelopmentMinimumVersionChecker,
   resolveDesktopUpdateAdmissionDevelopment
@@ -59,6 +65,7 @@ import { registerWorkspaceFileIconProtocol } from "./host/workspaceFileIconProto
 import { applyDesktopElectronPlatformCompatibility } from "./electronPlatformCompatibility.ts";
 import { createAppUpdateService } from "./update/appUpdateService.ts";
 import { createTuttiMinimumVersionChecker } from "./update/minimumVersionPolicyClient.ts";
+import { getWorkspaceWindowKind } from "./windows/workspaceWindow.ts";
 
 function envFlagEnabled(value: string | undefined): boolean {
   return /^(1|true|yes|on)$/iu.test(value?.trim() ?? "");
@@ -170,6 +177,8 @@ export async function bootstrapDesktopApp(): Promise<void> {
     currentDir,
     "../preload/workspace-app.cjs"
   );
+  const isFeatureAvailabilityWindow = (window: BrowserWindow): boolean =>
+    !window.isDestroyed() && getWorkspaceWindowKind(window) !== null;
   const rendererUrl = process.env.ELECTRON_RENDERER_URL;
 
   await app.whenReady();
@@ -189,6 +198,47 @@ export async function bootstrapDesktopApp(): Promise<void> {
     env: process.env,
     isPackaged: app.isPackaged
   });
+  const featureAvailabilityTarget = resolveMinimumVersionRuntimeTarget(
+    process.platform,
+    process.arch
+  );
+  const featureAvailabilityRuntime: MutableDesktopFeatureAvailabilityRuntime<"tutti-desktop"> | null =
+    featureAvailabilityTarget
+      ? await createDesktopFeatureAvailabilityRuntime({
+          cacheFilePath: join(
+            app.getPath("userData"),
+            "desktop-feature-availability-v1.json"
+          ),
+          identity: {
+            ...featureAvailabilityTarget,
+            currentVersion: desktopUpdateAdmission.runtime.currentVersion,
+            product: "tutti-desktop"
+          },
+          logger: {
+            error: (message) => logger.error(message),
+            info: (message) => logger.info(message)
+          }
+        })
+      : null;
+  const featureAvailabilityIpc = featureAvailabilityRuntime
+    ? registerDesktopFeatureAvailabilityIpc({
+        electron: {
+          broadcast: (channel, snapshot) => {
+            for (const window of BrowserWindow.getAllWindows()) {
+              if (isFeatureAvailabilityWindow(window)) {
+                window.webContents.send(channel, snapshot);
+              }
+            }
+          },
+          ipcMain,
+          isTrustedSender: (sender) => {
+            const window = BrowserWindow.fromWebContents(sender);
+            return window !== null && isFeatureAvailabilityWindow(window);
+          }
+        },
+        runtime: featureAvailabilityRuntime
+      })
+    : null;
   const updateService = createAppUpdateService(undefined, {
     currentVersion: desktopUpdateAdmission.runtime.currentVersion,
     developmentScenario: desktopUpdateAdmission.scenario
@@ -215,6 +265,7 @@ export async function bootstrapDesktopApp(): Promise<void> {
     createDesktopUpdateAdmissionController({
       checkMinimumVersion: minimumVersionChecker,
       electron: { app, BrowserWindow, ipcMain, shell },
+      featureAvailability: featureAvailabilityRuntime ?? undefined,
       listBusinessWindows: () => BrowserWindow.getAllWindows(),
       logger,
       manualDownloadUrl: (response) => {
@@ -384,8 +435,17 @@ export async function bootstrapDesktopApp(): Promise<void> {
     tuttid: desktopAppServices.tuttid,
     disposables: [
       ...ipcDisposables,
+      ...(featureAvailabilityIpc ? [featureAvailabilityIpc] : []),
       hostPreferencesEventStream,
       agentPowerSaveBlocker,
+      {
+        async shutdown() {
+          await featureAvailabilityRuntime?.dispose();
+        },
+        dispose() {
+          void featureAvailabilityRuntime?.dispose();
+        }
+      },
       {
         dispose() {
           appUpdateAnalytics.release();

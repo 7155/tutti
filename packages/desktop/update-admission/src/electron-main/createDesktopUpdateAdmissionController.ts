@@ -5,6 +5,7 @@ import type {
 import {
   desktopUpdateAdmissionIpcChannels,
   type DesktopUpdateAdmissionRuntime,
+  type DesktopFeatureAvailabilityRuntime,
   type DesktopProduct,
   type MinimumVersionAppUpdateService,
   type MinimumVersionCheckRequest,
@@ -53,6 +54,12 @@ export interface DesktopUpdateAdmissionControllerOptions<
     request: MinimumVersionCheckRequest<TProduct>,
     signal: AbortSignal
   ): Promise<unknown>;
+  featureAvailability?: Pick<
+    DesktopFeatureAvailabilityRuntime<TProduct>,
+    "getSnapshot"
+  > & {
+    acceptRemoteResponse(response: unknown, policyRevision: string): void;
+  };
   updateService: MinimumVersionAppUpdateService;
   logger: DesktopUpdateAdmissionLogger;
   onPolicyReleased(): void | Promise<void>;
@@ -289,6 +296,20 @@ export function createDesktopUpdateAdmissionController<
         })
       ]);
       const validated = validateMinimumVersionResponse(response, request);
+      if (options.featureAvailability) {
+        try {
+          options.featureAvailability.acceptRemoteResponse(
+            response,
+            validated.policyRevision
+          );
+        } catch (error) {
+          logMinimumVersionCheck(options.logger, "error", {
+            error: error instanceof Error ? error.message : String(error),
+            result: "failure",
+            stage: "feature-availability"
+          });
+        }
+      }
       lastCheckAt = now();
       logMinimumVersionCheck(options.logger, "info", {
         currentVersion: validated.currentVersion,

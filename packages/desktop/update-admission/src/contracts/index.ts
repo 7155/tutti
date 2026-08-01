@@ -71,6 +71,40 @@ export interface MinimumVersionCheckResponse<
     | "meetsMinimum";
   policySource: "" | "defaultMinimum" | "platformOverride";
   policyRevision: string;
+  featureAvailability?: DesktopFeatureAvailability;
+}
+
+export interface DesktopFeatureAvailability {
+  keys: readonly string[];
+}
+
+export type DesktopFeatureAvailabilitySource = "remote" | "cache" | "empty";
+
+export interface DesktopFeatureAvailabilitySnapshot<
+  TProduct extends DesktopProduct = DesktopProduct
+> extends MinimumVersionCheckRequest<TProduct> {
+  policyRevision: string | null;
+  fetchedAt: string | null;
+  source: DesktopFeatureAvailabilitySource;
+  keys: readonly string[];
+}
+
+export interface DesktopFeatureAvailabilityRuntime<
+  TProduct extends DesktopProduct = DesktopProduct
+> {
+  getSnapshot(): DesktopFeatureAvailabilitySnapshot<TProduct>;
+  isSupported(key: string): boolean;
+  subscribe(
+    listener: (snapshot: DesktopFeatureAvailabilitySnapshot<TProduct>) => void
+  ): () => void;
+}
+
+export interface DesktopFeatureAvailabilityApi {
+  getSnapshot(): Promise<DesktopFeatureAvailabilitySnapshot>;
+  isSupported(key: string): Promise<boolean>;
+  onChanged(
+    listener: (snapshot: DesktopFeatureAvailabilitySnapshot) => void
+  ): () => void;
 }
 
 export type MinimumVersionUpgradePhase =
@@ -136,6 +170,12 @@ export const desktopUpdateAdmissionIpcChannels = {
   retry: "desktop-update-admission:retry",
   start: "desktop-update-admission:start",
   state: "desktop-update-admission:state"
+} as const;
+
+export const desktopFeatureAvailabilityIpcChannels = {
+  changed: "desktop-feature-availability:changed",
+  getSnapshot: "desktop-feature-availability:get-snapshot",
+  isSupported: "desktop-feature-availability:is-supported"
 } as const;
 
 export interface DesktopMinimumVersionApi {

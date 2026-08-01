@@ -168,6 +168,7 @@ function rejectLoopbackPolicyEnvironment(
 ): void {
   const names = desktopUpdateAdmissionDevelopmentEnvironment;
   for (const name of [
+    names.featureKeys,
     names.minimumVersion,
     names.policy,
     names.policySequence,

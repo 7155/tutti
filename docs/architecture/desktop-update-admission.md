@@ -17,6 +17,8 @@ The package owns:
 - immutable unpackaged development scenarios, policy/updater mocks, and the
   loopback policy server
 - Electron admission-window lifecycle and restricted IPC handlers
+- feature-key envelope validation, exact-identity persistent cache, immutable
+  snapshots, membership queries, subscriptions, and trusted renderer IPC
 - the capability-minimal preload API
 - shared React presentation and English and Simplified Chinese defaults
 
@@ -43,6 +45,11 @@ admission renderer
   -> @tutti-os/desktop-update-admission React UI
   -> @tutti-os/desktop-update-admission preload API
   -> shared controller IPC
+
+business renderer
+  -> product preload API
+  -> shared feature-availability IPC
+  -> shared feature-availability runtime
 ```
 
 The package must not import product services, product globals, feed URLs,
@@ -53,6 +60,14 @@ backend clients, or product translation dictionaries.
 At startup, a packaged desktop checks policy before business services and
 windows start. A failed or timed-out check is fail-open. An upgrade-required
 response opens the isolated admission window and holds the startup gate.
+
+Before that check, the feature runtime loads only a cache matching the exact
+product, platform, architecture, and current version. A successful v4 response
+updates the snapshot before the business window starts and persists it with an
+atomic file replacement. Missing, malformed, failed, or timed-out feature
+responses retain the snapshot. A valid empty key list explicitly clears it.
+The cache has no time expiry and stores no minimum version or admission
+decision, so it cannot block startup or affect the forced-upgrade state.
 
 After startup, resume and foreground restoration may check again after the
 shared 30-minute interval. Only one foreground prompt is shown per process. The
@@ -76,8 +91,9 @@ mock state machines.
 
 The in-process transport also resolves a local immutable policy scenario. The
 loopback transport instead resolves no client-side policy: the standalone mock
-server exclusively parses policy, minimum-version, sequence, and named-policy
-variables and evaluates them against the `currentVersion` in each HTTP request.
+server exclusively parses policy, minimum-version, feature-key, sequence, and
+named-policy variables and evaluates them against the `currentVersion` in each
+HTTP request.
 The client parser rejects those server-owned variables in loopback mode. This
 keeps Tutti's Electron-to-`outboundFetch` path and TSH's
 Electron-to-desktopd-to-HTTP path as real transport tests with one policy

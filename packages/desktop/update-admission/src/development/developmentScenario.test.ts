@@ -72,6 +72,7 @@ test("loopback client resolves without server policy variables", () => {
 test("loopback client rejects policy variables owned by the mock server", () => {
   for (const serverVariable of [
     "DESKTOP_UPDATE_ADMISSION_MINIMUM_VERSION",
+    "DESKTOP_UPDATE_ADMISSION_FEATURE_KEYS",
     "DESKTOP_UPDATE_ADMISSION_POLICY",
     "DESKTOP_UPDATE_ADMISSION_POLICY_SEQUENCE",
     "DESKTOP_UPDATE_ADMISSION_SCENARIO"
@@ -105,6 +106,30 @@ test("loopback updater can be configured independently from server policy", () =
     download: "success",
     install: "simulated",
     latestVersion: "1.2.0"
+  });
+});
+
+test("development policy returns normalized feature keys", async () => {
+  const policy = resolveDesktopUpdateDevelopmentPolicyScenario({
+    env: {
+      ...inProcessEnvironment,
+      DESKTOP_UPDATE_ADMISSION_FEATURE_KEYS: "workspace.example,agent.preview"
+    }
+  });
+  assert.ok(policy);
+  assert.deepEqual(policy.featureKeys, ["agent.preview", "workspace.example"]);
+
+  const response = await createDevelopmentMinimumVersionChecker(policy)(
+    {
+      architecture: "arm64",
+      currentVersion: "1.0.0",
+      platform: "macos",
+      product: "tutti-desktop"
+    },
+    new AbortController().signal
+  );
+  assert.deepEqual(response.featureAvailability, {
+    keys: ["agent.preview", "workspace.example"]
   });
 });
 
@@ -356,6 +381,7 @@ test("development updater emits a deterministic successful download", async () =
 test("loopback mock server owns policy and returns its minimum version", async () => {
   const policy = resolvePolicy({
     DESKTOP_UPDATE_ADMISSION_DEV: "1",
+    DESKTOP_UPDATE_ADMISSION_FEATURE_KEYS: "workspace.example,agent.preview",
     DESKTOP_UPDATE_ADMISSION_MINIMUM_VERSION: "1.4.0",
     DESKTOP_UPDATE_ADMISSION_POLICY: "upgradeRequired"
   });
@@ -380,6 +406,7 @@ test("loopback mock server owns policy and returns its minimum version", async (
       channel: "stable",
       currentVersion: "1.0.0",
       decision: "upgradeRequired",
+      featureAvailability: { keys: ["agent.preview", "workspace.example"] },
       minimumVersion: "1.4.0",
       platform: "macos",
       policyRevision: "development-policy-1",
@@ -419,6 +446,7 @@ function createScenario(): Extract<
     foregroundCheckIntervalMs: 3_000,
     mockServerUrl: null,
     policy: {
+      featureKeys: [],
       policySteps: [
         {
           minimum: { kind: "configured", version: "1.1.0" },

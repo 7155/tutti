@@ -8,6 +8,7 @@ import {
   parseDevelopmentManagedVersion,
   validateStrictDevelopmentSemVer
 } from "./version.ts";
+import { normalizeDesktopFeatureKeys } from "../feature-availability/core.ts";
 
 export type DesktopUpdateDevelopmentPolicyOutcome =
   | "allowed"
@@ -45,7 +46,21 @@ export type DesktopUpdateDevelopmentPolicyStep =
     };
 
 export interface DesktopUpdateDevelopmentPolicyScenario {
+  featureKeys: readonly string[];
   policySteps: readonly DesktopUpdateDevelopmentPolicyStep[];
+}
+
+function resolveFeatureKeys(
+  env: Readonly<Record<string, string | undefined>>
+): readonly string[] {
+  const raw =
+    env[desktopUpdateAdmissionDevelopmentEnvironment.featureKeys]?.trim();
+  if (!raw) {
+    return Object.freeze([]);
+  }
+  return normalizeDesktopFeatureKeys(
+    raw.split(",").map((value) => value.trim())
+  );
 }
 
 function parseOutcome(value: string): DesktopUpdateDevelopmentPolicyOutcome {
@@ -274,9 +289,11 @@ export function resolveDesktopUpdateDevelopmentPolicyScenario(input: {
     return null;
   }
   const scenario: DesktopUpdateDevelopmentPolicyScenario = {
+    featureKeys: resolveFeatureKeys(input.env),
     policySteps: resolvePolicySteps(input.env)
   };
   return Object.freeze({
+    featureKeys: scenario.featureKeys,
     policySteps: Object.freeze(
       scenario.policySteps.map((step) =>
         Object.freeze(

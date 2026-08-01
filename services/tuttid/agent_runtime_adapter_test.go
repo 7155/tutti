@@ -98,17 +98,17 @@ func (a *providerAcceptanceMappingTestAdapter) ExecWithProviderAcceptance(
 	_ string,
 	_ agentruntime.EventSink,
 	_ agentruntime.CommandSnapshotSink,
-	report agentruntime.ProviderDispatchSink,
+	_ agentruntime.ProviderDispatchSink,
+	acceptProviderTurn agentruntime.ProviderAcceptanceBarrier,
 ) ([]activityshared.Event, error) {
 	a.acceptanceExecCalls++
-	report(agentruntime.ProviderDispatchResult{
-		Disposition: agentruntime.DispatchDispositionApplied,
-		Acceptance: &agentruntime.ProviderAcceptanceReceipt{
-			Source:            agentruntime.AcceptanceSourceTurnStartResponse,
-			ProviderSessionID: "provider-session-1",
-			ProviderTurnID:    "provider-turn-1",
-		},
-	})
+	if err := acceptProviderTurn(agentruntime.ProviderAcceptanceReceipt{
+		Source:            agentruntime.AcceptanceSourceTurnStartResponse,
+		ProviderSessionID: "provider-session-1",
+		ProviderTurnID:    "provider-turn-1",
+	}); err != nil {
+		return nil, err
+	}
 	return nil, nil
 }
 

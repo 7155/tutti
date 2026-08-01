@@ -40,12 +40,8 @@ type remoteHostState struct {
 	mu sync.Mutex
 
 	cancel             context.CancelFunc
-	enabled            bool
 	stopping           bool
 	stopDone           chan struct{}
-	wake               chan struct{}
-	pollCancel         context.CancelFunc
-	pollGeneration     uint64
 	handler            http.Handler
 	liveEvents         AgentLiveEventSource
 	attempts           map[string]activeRemoteAttempt
@@ -85,10 +81,6 @@ func (s *Service) StartRemoteHost(handler http.Handler) {
 		s.remoteHost.managedLinks = make(map[string]remoteManagedLink)
 		s.remoteHost.observedLinkEvents = make(map[string]uint64)
 		s.remoteHost.linkManager = s.newRemoteLinkManager()
-		if !s.remoteHost.enabled {
-			_ = s.remoteHost.linkManager.SetEnabled(false)
-		}
-		s.remoteHost.wake = make(chan struct{}, 1)
 		s.remoteHost.mu.Unlock()
 
 		go func() {
@@ -100,6 +92,10 @@ func (s *Service) StartRemoteHost(handler http.Handler) {
 }
 
 func (s *Service) Close() {
+	s.StopRemoteHost()
+}
+
+func (s *Service) StopRemoteHost() {
 	if s == nil {
 		return
 	}
@@ -139,49 +135,10 @@ func (s *Service) Close() {
 	s.remoteHost.attempts = nil
 	s.remoteHost.managedLinks = nil
 	s.remoteHost.observedLinkEvents = nil
-	s.remoteHost.wake = nil
-	s.remoteHost.pollCancel = nil
 	s.remoteHost.stopping = false
 	s.remoteHost.stopDone = nil
 	close(done)
 	s.remoteHost.mu.Unlock()
-}
-
-// SetRemoteAccessEnabled gates all Desktop owner-side DeviceLink discovery.
-// Disabled hosts keep no pooled links and make no account, pairing, or attempt
-// control-plane requests. Enabling wakes the host immediately instead of
-// waiting for the next periodic interval.
-func (s *Service) SetRemoteAccessEnabled(enabled bool) {
-	if s == nil {
-		return
-	}
-	s.remoteHost.mu.Lock()
-	if s.remoteHost.enabled == enabled {
-		s.remoteHost.mu.Unlock()
-		return
-	}
-	s.remoteHost.enabled = enabled
-	manager := s.remoteHost.linkManager
-	wake := s.remoteHost.wake
-	pollCancel := s.remoteHost.pollCancel
-	s.remoteHost.mu.Unlock()
-
-	if enabled {
-		if manager != nil {
-			_ = manager.SetEnabled(true)
-		}
-	} else {
-		if pollCancel != nil {
-			pollCancel()
-		}
-		s.stopRemoteAttempts(nil)
-	}
-	if wake != nil {
-		select {
-		case wake <- struct{}{}:
-		default:
-		}
-	}
 }
 
 func (s *Service) runRemoteHost(ctx context.Context) {
@@ -189,9 +146,6 @@ func (s *Service) runRemoteHost(ctx context.Context) {
 	if interval <= 0 {
 		interval = defaultRemotePollInterval
 	}
-	s.remoteHost.mu.Lock()
-	wake := s.remoteHost.wake
-	s.remoteHost.mu.Unlock()
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	for {
@@ -199,73 +153,42 @@ func (s *Service) runRemoteHost(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-			if s.remoteAccessEnabled() {
-				s.pollRemoteHost(ctx)
-			}
+			s.pollRemoteHost(ctx)
 			timer.Reset(interval)
-		case <-wake:
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-				default:
-				}
-			}
-			if s.remoteAccessEnabled() {
-				timer.Reset(0)
-			} else {
-				timer.Reset(interval)
-			}
 		}
 	}
 }
 
 func (s *Service) pollRemoteHost(ctx context.Context) {
-	pollCtx, finishPoll, ok := s.beginRemotePoll(ctx)
-	if !ok {
-		return
-	}
-	defer finishPoll()
-	session, identity, err := s.readyIdentity(pollCtx)
+	session, identity, err := s.readyIdentity(ctx)
 	if err != nil {
 		s.stopRemoteAttempts(nil)
 		return
 	}
-	if !s.remoteAccessEnabled() {
-		return
-	}
 	s.setRemoteLinkEnabled(true)
-	registered, err := s.ensureRegisteredDevice(pollCtx, session.SessionID, session.Cookie, identity)
+	registered, err := s.ensureRegisteredDevice(ctx, session.SessionID, session.Cookie, identity)
 	if err != nil {
 		if isControlPlaneUnauthorized(err) {
 			s.stopRemoteAttempts(nil)
 		}
 		return
 	}
-	if !s.remoteAccessEnabled() {
-		return
-	}
-	pairings, err := s.ControlPlane.ListPairings(pollCtx, session.Cookie)
+	pairings, err := s.ControlPlane.ListPairings(ctx, session.Cookie)
 	if err != nil {
 		if isControlPlaneUnauthorized(err) {
 			s.stopRemoteAttempts(nil)
 		}
-		return
-	}
-	if !s.remoteAccessEnabled() {
 		return
 	}
 	validPairings := make(map[string]struct{})
 	for _, pairing := range pairings {
-		if !s.remoteAccessEnabled() {
-			return
-		}
 		if pairing.State != "active" || pairing.TargetUserDeviceID != registered.UserDeviceID {
 			continue
 		}
 		validPairings[pairing.PairingID] = struct{}{}
 		signature := ed25519.Sign(identity.PrivateKey, deviceLinkProof("list", pairing.PairingID, "", ""))
 		attempts, err := s.ControlPlane.ListDeviceLinkAttempts(
-			pollCtx, session.Cookie, pairing.PairingID, identity.DeviceID, signature,
+			ctx, session.Cookie, pairing.PairingID, identity.DeviceID, signature,
 		)
 		if err != nil {
 			if isControlPlaneUnauthorized(err) {
@@ -283,28 +206,6 @@ func (s *Service) pollRemoteHost(ctx context.Context) {
 		}
 	}
 	s.stopRemoteAttempts(validPairings)
-}
-
-func (s *Service) beginRemotePoll(parent context.Context) (context.Context, func(), bool) {
-	s.remoteHost.mu.Lock()
-	if !s.remoteHost.enabled || s.remoteHost.stopping || s.remoteHost.cancel == nil {
-		s.remoteHost.mu.Unlock()
-		return nil, nil, false
-	}
-	pollCtx, cancel := context.WithCancel(parent)
-	s.remoteHost.pollGeneration++
-	generation := s.remoteHost.pollGeneration
-	s.remoteHost.pollCancel = cancel
-	s.remoteHost.mu.Unlock()
-
-	return pollCtx, func() {
-		cancel()
-		s.remoteHost.mu.Lock()
-		if s.remoteHost.pollGeneration == generation {
-			s.remoteHost.pollCancel = nil
-		}
-		s.remoteHost.mu.Unlock()
-	}, true
 }
 
 func (s *Service) ensureRegisteredDevice(
@@ -345,7 +246,7 @@ func (s *Service) startRemoteAttempt(
 	attempt DeviceLinkAttempt,
 ) {
 	s.remoteHost.mu.Lock()
-	if !s.remoteHost.enabled || s.remoteHost.stopping || s.remoteHost.cancel == nil || parent.Err() != nil {
+	if s.remoteHost.stopping || s.remoteHost.cancel == nil || parent.Err() != nil {
 		s.remoteHost.mu.Unlock()
 		return
 	}
@@ -375,15 +276,6 @@ func (s *Service) startRemoteAttempt(
 		}
 		s.serveRemoteAttempt(ctx, handler, liveEvents, cookie, identity, pairingID, attempt)
 	}()
-}
-
-func (s *Service) remoteAccessEnabled() bool {
-	if s == nil {
-		return false
-	}
-	s.remoteHost.mu.Lock()
-	defer s.remoteHost.mu.Unlock()
-	return s.remoteHost.enabled
 }
 
 func (s *Service) finishRemoteAttempt(attemptID string, generation uint64) {
@@ -585,10 +477,6 @@ func (s *Service) stopRemoteAttempts(validPairings map[string]struct{}) {
 
 func (s *Service) setRemoteLinkEnabled(enabled bool) {
 	s.remoteHost.mu.Lock()
-	if enabled && !s.remoteHost.enabled {
-		s.remoteHost.mu.Unlock()
-		return
-	}
 	manager := s.remoteHost.linkManager
 	s.remoteHost.mu.Unlock()
 	if manager != nil {

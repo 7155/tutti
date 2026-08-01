@@ -150,7 +150,6 @@ func TestRemoteHostConnectsAuthenticatedLinkAndServesAgentHTTP(t *testing.T) {
 		RemotePollInterval: 10 * time.Millisecond,
 		includeLoopback:    true,
 	}
-	service.SetRemoteAccessEnabled(true)
 	service.StartRemoteHost(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/v1/workspaces" {
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -215,44 +214,6 @@ func TestRemoteHostConnectsAuthenticatedLinkAndServesAgentHTTP(t *testing.T) {
 	}
 }
 
-func TestRemoteHostDoesNotPollUntilRemoteAccessIsEnabled(t *testing.T) {
-	t.Parallel()
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	registered := make(chan struct{}, 1)
-	service := &Service{
-		Account: &stubAccount{session: &authbridge.Session{
-			SessionID: "account-session", Cookie: "session=cookie",
-		}},
-		Identities: &stubIdentityStore{identity: mobileremotebiz.DeviceIdentity{
-			DeviceID: "desktop-device", PublicKey: publicKey, PrivateKey: privateKey,
-		}},
-		ControlPlane: &remoteHostControlPlane{
-			identityKey: publicKey,
-			registered:  registered,
-			updated:     make(chan DeviceLinkAttempt, 1),
-		},
-		RemotePollInterval: 5 * time.Millisecond,
-	}
-	service.StartRemoteHost(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	defer service.Close()
-
-	select {
-	case <-registered:
-		t.Fatal("disabled remote host contacted the control plane")
-	case <-time.After(30 * time.Millisecond):
-	}
-
-	service.SetRemoteAccessEnabled(true)
-	select {
-	case <-registered:
-	case <-time.After(time.Second):
-		t.Fatal("enabling remote access did not wake the remote host")
-	}
-}
-
 func TestRemoteHostAttemptCleanupDoesNotDeleteNewGeneration(t *testing.T) {
 	t.Parallel()
 	service := &Service{}
@@ -272,7 +233,6 @@ func TestRemoteHostAttemptCleanupDoesNotDeleteNewGeneration(t *testing.T) {
 func TestRemoteHostDisablesSharedAdmissionUntilIdentityRecovers(t *testing.T) {
 	t.Parallel()
 	service := &Service{}
-	service.SetRemoteAccessEnabled(true)
 	service.remoteHost.managedLinks = make(map[string]remoteManagedLink)
 	service.remoteHost.observedLinkEvents = make(map[string]uint64)
 	service.remoteHost.linkManager = service.newRemoteLinkManager()

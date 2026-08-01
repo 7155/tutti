@@ -120,12 +120,12 @@ func buildDaemonAPI(
 		Discovery:         agentSetupDiscovery,
 		Preferences:       preferencesStore,
 	}
-	preferences.AfterPut = func(ctx context.Context, previous, current preferencesbiz.DesktopPreferences) {
+	preferences.RegisterChangeObserver(func(ctx context.Context, previous, current preferencesbiz.DesktopPreferences) {
 		for _, reconcileErr := range agentExtensionManager.ReconcileDesktopPreferencesChange(ctx, previous, current) {
 			payload, _ := json.Marshal(map[string]string{"error": reconcileErr.Error()})
 			slog.Warn("agent_extension.reconcile_failed", "payload", string(payload))
 		}
-	}
+	})
 	agentTargetInstallPlans := agentextensionservice.InstallPlanService{
 		Manager: agentExtensionManager, Workspaces: store, Targets: agentTargetStore,
 	}

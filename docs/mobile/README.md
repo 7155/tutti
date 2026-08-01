@@ -512,10 +512,11 @@ Google Play 账号。以下事项等正式分发前再处理：
 
 ## 10. Personal MVP 真机验收
 
-这一步需要真实 Tutti 账号和 Android 13 或更高版本的手机。GitHub 登录会打开平台
-浏览器认证会话，并通过短时 localhost bridge 将一次性 transfer code 返回 App；GitHub
-凭据和网页 Cookie 不会进入 App。邮箱验证码仍可作为备选。不要在 Issue、PR、聊天
-或日志中粘贴验证码、session cookie、二维码、transfer code 或配对码。
+这一步需要真实 Tutti 账号和 Android 13 或更高版本的手机。App 只提供一个 Tutti
+账号登录入口；它会打开平台浏览器认证会话，由托管登录页提供具体登录方式，并通过
+短时 localhost bridge 将一次性 transfer code 返回 App。App 不再内置邮箱验证码
+表单，账号凭据和网页 Cookie 也不会进入 App。不要在 Issue、PR、聊天或日志中粘贴
+验证码、session cookie、二维码、transfer code 或配对码。
 
 ### 10.1 启动当前分支的 Desktop
 

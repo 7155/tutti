@@ -1,11 +1,7 @@
 import { DeviceEventEmitter, NativeEventEmitter } from "react-native";
 import { createAppLifecyclePort } from "./appLifecyclePort";
 import { appLifecycle, deviceLink, mobileSecurity } from "./mobileNative";
-import {
-  sendEmailCode,
-  signInWithGitHub,
-  verifyEmailCode
-} from "../services/accountClient";
+import { signInWithBrowser } from "../services/accountClient";
 import {
   claimPairing,
   connectPairedDevice,
@@ -26,9 +22,7 @@ export function createMobileServicePorts(): MobileServicePorts {
   let nextAgentLiveSubscriptionGeneration = 0;
   return {
     account: {
-      sendEmailCode,
-      signInWithGitHub,
-      verifyEmailCode
+      signInWithBrowser
     },
     appLifecycle: createAppLifecyclePort(appLifecycle, appLifecycleEvents),
     clock: {

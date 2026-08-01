@@ -43,10 +43,7 @@ describe("MobileApplicationService scopes", () => {
     expect(harness.legacyCookieClearCalls).toBe(1);
 
     const login = service.loginService!;
-    login.setEmail(session.email);
-    await login.submitEmail();
-    login.setCode("123456");
-    await login.submitEmail();
+    await login.submitLogin();
 
     expect(service.getSnapshot()).toMatchObject({
       device: null,
@@ -310,9 +307,7 @@ function createHarness(
   };
   harness.ports = {
     account: {
-      sendEmailCode: async () => undefined,
-      signInWithGitHub: async () => session,
-      verifyEmailCode: async () => session
+      signInWithBrowser: async () => session
     },
     appLifecycle: {
       subscribe(listener) {

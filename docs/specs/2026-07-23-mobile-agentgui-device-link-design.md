@@ -576,8 +576,8 @@ scoped discontinuity，再触发权威 snapshot reconcile。Session/Message poll
 完成条件：登录、配对、选设备、解析唯一 workspace、重连和撤销形成完整非 Agent UI 闭环。
 
 当前进度：bare React Native 0.86 Android 工程、Auth Tab（不支持时降级系统浏览器）
-GitHub 登录、邮箱验证码登录、Keystore
-Ed25519 identity、扫码/粘贴配对码、配对设备列表、Native DeviceLink bridge、移动端 i18n
+统一 Tutti 账号登录入口（具体登录方式由托管登录页提供）、Keystore Ed25519 identity、
+扫码/粘贴配对码、配对设备列表、Native DeviceLink bridge、移动端 i18n
 和 semantic theme mapping 已完成。账号、设备、workspace 和前后台生命周期已迁入
 纯 TypeScript DI service；页面只保留 binding 与 Native presentation。登录、
 设备、会话列表和会话详情使用类型安全的原生导航栈；连接 Device 后会校验并打开

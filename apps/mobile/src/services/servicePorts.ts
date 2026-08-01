@@ -10,9 +10,7 @@ import type {
 import type { PairingQRPayload } from "./pairingProtocol";
 
 export interface AccountPort {
-  sendEmailCode(email: string): Promise<void>;
-  signInWithGitHub(): Promise<AccountSession>;
-  verifyEmailCode(email: string, code: string): Promise<AccountSession>;
+  signInWithBrowser(): Promise<AccountSession>;
 }
 
 export interface SessionStoragePort {

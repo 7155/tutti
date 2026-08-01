@@ -123,7 +123,7 @@ func (*ClaudeCodeSDKAdapter) GoalCapabilities() GoalAdapterCapabilities {
 }
 
 func (a *ClaudeCodeSDKAdapter) FenceGoalGeneration(
-	_ context.Context,
+	ctx context.Context,
 	session Session,
 	input GoalGenerationFenceInput,
 ) error {
@@ -136,15 +136,40 @@ func (a *ClaudeCodeSDKAdapter) FenceGoalGeneration(
 		return errors.New("valid Goal generation fence identity is required")
 	}
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	adapterSession := a.sessions[strings.TrimSpace(session.AgentSessionID)]
 	if adapterSession == nil {
+		a.mu.Unlock()
 		return ErrSessionDisconnected
 	}
 	if adapterSession.fencedGoalIdentities == nil {
 		adapterSession.fencedGoalIdentities = make(map[goalOperationIdentity]struct{})
 	}
 	adapterSession.fencedGoalIdentities[identity] = struct{}{}
+	bindings := make([]claudeSDKGoalTurnBinding, 0, 1)
+	publicationDone := make([]<-chan struct{}, 0, 1)
+	for _, binding := range adapterSession.goalTurnBindings {
+		if binding.identity != identity {
+			continue
+		}
+		markClaudeSDKGoalTurnFencedLocked(adapterSession, binding.published, binding.turnID, binding.providerTurnID)
+		bindings = append(bindings, binding)
+		if binding.published && binding.publicationDone != nil {
+			publicationDone = append(publicationDone, binding.publicationDone)
+		}
+	}
+	a.mu.Unlock()
+	for _, binding := range bindings {
+		a.rememberClaudeSDKRootProviderTurn(adapterSession, binding.turnID)
+		a.rememberClaudeSDKRootProviderTurn(adapterSession, binding.providerTurnID)
+		a.cancelClaudeSDKGoalTurn(adapterSession, session, binding.turnID, identity.revision, identity.repairEpoch)
+	}
+	for _, done := range publicationDone {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	return nil
 }
 
@@ -232,6 +257,211 @@ func (a *ClaudeCodeSDKAdapter) restoreClaudeGoalOperationIdentity(adapterSession
 		return
 	}
 	adapterSession.goalOperationID, adapterSession.goalRevision, adapterSession.goalRepairEpoch = previousOperationID, previousRevision, previousRepairEpoch
+}
+
+type claudeSDKGoalTurnAdmission struct {
+	metadata map[string]any
+	origin   string
+	identity goalOperationIdentity
+	goalTurn bool
+	fenced   bool
+	stale    bool
+}
+
+func (admission claudeSDKGoalTurnAdmission) denied() bool {
+	return admission.fenced || admission.stale
+}
+
+// admitClaudeSDKGoalTurn applies the same exact Goal-generation rule at both
+// provider identity and turn-start barriers. Provenance comes only from the
+// sidecar's immutable RuntimeTurn; mutable session Goal state is never used to
+// guess which durable operation created a Turn.
+func (a *ClaudeCodeSDKAdapter) admitClaudeSDKGoalTurn(
+	adapterSession *claudeSDKAdapterSession,
+	turnID string,
+	providerTurnID string,
+	payload map[string]any,
+) (claudeSDKGoalTurnAdmission, error) {
+	origin := strings.TrimSpace(payloadString(payload, "turnOrigin"))
+	operationID := strings.TrimSpace(payloadString(payload, "sourceGoalOperationId"))
+	revision := payloadInt64(payload, "sourceGoalRevision")
+	repairEpoch := payloadInt64(payload, "sourceGoalRepairEpoch")
+	if origin != "goal_arm" && origin != "goal_continuation" {
+		return claudeSDKGoalTurnAdmission{}, nil
+	}
+	admission := claudeSDKGoalTurnAdmission{
+		metadata: map[string]any{
+			"turnOrigin":            origin,
+			"sourceGoalOperationId": operationID,
+			"sourceGoalRevision":    revision,
+			"sourceGoalRepairEpoch": repairEpoch,
+		},
+		origin: origin,
+		identity: goalOperationIdentity{
+			operationID: operationID,
+			revision:    revision,
+			repairEpoch: repairEpoch,
+		},
+		goalTurn: true,
+	}
+	if !admission.identity.valid() {
+		return claudeSDKGoalTurnAdmission{}, errors.New("claude SDK Goal turn omitted generation identity")
+	}
+	if a == nil || adapterSession == nil {
+		return admission, nil
+	}
+
+	turnID = strings.TrimSpace(turnID)
+	providerTurnID = strings.TrimSpace(providerTurnID)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	_, admission.fenced = adapterSession.fencedGoalIdentities[admission.identity]
+	admission.stale = adapterSession.goalOperationID == admission.identity.operationID &&
+		adapterSession.goalRevision == admission.identity.revision &&
+		adapterSession.goalRepairEpoch > admission.identity.repairEpoch
+	if admission.denied() {
+		markClaudeSDKGoalTurnFencedLocked(adapterSession, false, turnID, providerTurnID)
+		return admission, nil
+	}
+	if turnID == "" {
+		return claudeSDKGoalTurnAdmission{}, errors.New("claude SDK Goal turn omitted identity")
+	}
+	if adapterSession.goalTurnBindings == nil {
+		adapterSession.goalTurnBindings = make(map[string]claudeSDKGoalTurnBinding)
+	}
+	if existing, ok := adapterSession.goalTurnBindings[turnID]; ok {
+		if existing.origin != admission.origin || existing.identity != admission.identity ||
+			(existing.providerTurnID != "" && providerTurnID != "" && existing.providerTurnID != providerTurnID) {
+			return claudeSDKGoalTurnAdmission{}, errors.New("claude SDK Goal turn provenance changed after binding")
+		}
+		if existing.providerTurnID == "" {
+			existing.providerTurnID = providerTurnID
+		}
+		adapterSession.goalTurnBindings[turnID] = existing
+		return admission, nil
+	}
+	adapterSession.goalTurnBindings[turnID] = claudeSDKGoalTurnBinding{
+		turnID: turnID, providerTurnID: providerTurnID,
+		origin: admission.origin, identity: admission.identity,
+	}
+	return admission, nil
+}
+
+func markClaudeSDKGoalTurnFencedLocked(adapterSession *claudeSDKAdapterSession, settle bool, turnIDs ...string) {
+	if adapterSession == nil {
+		return
+	}
+	if adapterSession.fencedGoalTurns == nil {
+		adapterSession.fencedGoalTurns = make(map[string]claudeSDKGoalTurnFenceState)
+	}
+	state := claudeSDKGoalTurnFenceSuppress
+	if settle {
+		state = claudeSDKGoalTurnFenceSettle
+	}
+	for _, turnID := range turnIDs {
+		if turnID = strings.TrimSpace(turnID); turnID != "" {
+			if adapterSession.fencedGoalTurns[turnID] < state {
+				adapterSession.fencedGoalTurns[turnID] = state
+			}
+		}
+	}
+}
+
+// publishClaudeSDKGoalTurn is the in-memory linearization point between
+// provider admission and event publication. A fence that wins first suppresses
+// the start entirely; a fence that wins after this point must preserve the
+// terminal event so the reporter FIFO can settle the already-published start.
+func (a *ClaudeCodeSDKAdapter) publishClaudeSDKGoalTurn(
+	adapterSession *claudeSDKAdapterSession,
+	turnID string,
+) bool {
+	if a == nil || adapterSession == nil {
+		return false
+	}
+	turnID = strings.TrimSpace(turnID)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	binding, ok := adapterSession.goalTurnBindings[turnID]
+	if !ok || adapterSession.fencedGoalTurns[turnID] != 0 {
+		return false
+	}
+	if binding.published {
+		return false
+	}
+	if _, fenced := adapterSession.fencedGoalIdentities[binding.identity]; fenced {
+		markClaudeSDKGoalTurnFencedLocked(adapterSession, false, binding.turnID, binding.providerTurnID)
+		return false
+	}
+	binding.published = true
+	binding.publicationDone = make(chan struct{})
+	adapterSession.goalTurnBindings[turnID] = binding
+	return true
+}
+
+func (a *ClaudeCodeSDKAdapter) finishClaudeSDKGoalTurnPublication(
+	adapterSession *claudeSDKAdapterSession,
+	events []activityshared.Event,
+) {
+	if a == nil || adapterSession == nil || len(events) == 0 {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, event := range events {
+		if event.Type != activityshared.EventRootProviderTurnStarted {
+			continue
+		}
+		origin := strings.TrimSpace(payloadString(event.Payload.Metadata, "turnOrigin"))
+		if origin != "goal_arm" && origin != "goal_continuation" {
+			continue
+		}
+		turnID := strings.TrimSpace(event.Payload.TurnID)
+		binding, ok := adapterSession.goalTurnBindings[turnID]
+		if !ok || !binding.published || binding.publicationDone == nil {
+			continue
+		}
+		close(binding.publicationDone)
+		binding.publicationDone = nil
+		adapterSession.goalTurnBindings[turnID] = binding
+	}
+}
+
+func isClaudeSDKGoalClearHiddenEvent(eventType string) bool {
+	switch eventType {
+	case "provider_turn_identity_resolved", "turn_started", "provider_turn_checkpoint", "assistant_delta", "assistant_completed", "assistant_failed", "thinking_delta", "thinking_completed":
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *ClaudeCodeSDKAdapter) rejectClaudeSDKGoalTurn(
+	adapterSession *claudeSDKAdapterSession,
+	session Session,
+	turnID string,
+	providerTurnID string,
+	admission claudeSDKGoalTurnAdmission,
+) {
+	// Retain both aliases until the provider terminal event so dispatcher
+	// filtering cannot discard the cleanup event before the fence consumes it.
+	a.rememberClaudeSDKRootProviderTurn(adapterSession, turnID)
+	a.rememberClaudeSDKRootProviderTurn(adapterSession, providerTurnID)
+	a.cancelClaudeSDKGoalTurn(
+		adapterSession,
+		session,
+		turnID,
+		admission.identity.revision,
+		admission.identity.repairEpoch,
+	)
+}
+
+func (a *ClaudeCodeSDKAdapter) forgetClaudeSDKGoalTurnBinding(adapterSession *claudeSDKAdapterSession, turnID string) {
+	if a == nil || adapterSession == nil {
+		return
+	}
+	a.mu.Lock()
+	delete(adapterSession.goalTurnBindings, strings.TrimSpace(turnID))
+	a.mu.Unlock()
 }
 
 func (a *ClaudeCodeSDKAdapter) ReconcileGoal(_ context.Context, session Session) (GoalAdapterResult, error) {

@@ -497,12 +497,14 @@ export class SDKMessageRouter {
     );
     if (
       this.turns.consumeTimedOutContinuationResult() ||
-      this.turns.consumePendingOrphan() ||
-      !this.turns.ensureActive("result")
+      this.turns.consumePendingOrphan()
     ) {
       return;
     }
     await this.ensureProviderTurnAcceptance("streaming");
+    if (!this.turns.ensureActive("result")) {
+      return;
+    }
     const turnId = this.turns.activeId;
     const contextUsageGeneration = this.contextUsageGeneration;
     const assistantError = this.activeRootAssistantError;

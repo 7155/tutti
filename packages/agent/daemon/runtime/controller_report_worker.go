@@ -113,6 +113,32 @@ func (c *Controller) reportProviderAcceptanceDurable(
 	}
 }
 
+// flushSessionReports waits until every report enqueued earlier for this
+// Session has crossed the durable reporter. Goal-generation fencing uses this
+// after the adapter's publication handoff, so Host cannot observe an idle
+// Session immediately before an already-published Goal start commits.
+func (c *Controller) flushSessionReports(ctx context.Context, session Session) error {
+	if c == nil || c.reportQueue == nil {
+		return nil
+	}
+	request := reportRequest{
+		ctx: context.WithoutCancel(ctx),
+		report: agentsessionstore.ReportActivityInput{
+			WorkspaceID: session.RoomID,
+			Source:      eventSourceFromSession(session),
+		},
+		barrier: true,
+		done:    make(chan error, 1),
+	}
+	c.reportQueue.enqueue(request)
+	select {
+	case err := <-request.done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func containsDurableProviderAcceptance(events []activityshared.Event) bool {
 	for _, event := range events {
 		if event.Type != activityshared.EventRootProviderTurnStarted {
@@ -371,6 +397,9 @@ func (c *Controller) report(ctx context.Context, request reportRequest) (reportE
 			request.done <- reportErr
 			close(request.done)
 		}()
+	}
+	if request.barrier {
+		return nil
 	}
 	if c.reporter == nil {
 		return errors.New("agent session activity reporter is unavailable")

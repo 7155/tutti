@@ -7,6 +7,15 @@ import (
 	activityshared "github.com/tutti-os/tutti/packages/agent/daemon/activity/events"
 )
 
+func claudeSDKEventRequiresBoundProviderIdentity(eventType string) bool {
+	switch eventType {
+	case "provider_turn_identity_resolved", "provider_turn_checkpoint":
+		return true
+	default:
+		return false
+	}
+}
+
 func (a *ClaudeCodeSDKAdapter) claudeSDKRootProviderTurnStartedEvent(
 	session Session,
 	rootTurnID string,

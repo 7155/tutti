@@ -24,6 +24,21 @@ export type RuntimeTurn = {
 
 type TerminalEvent = "turn_completed" | "turn_canceled" | "turn_failed";
 
+function turnProvenancePayload(
+  turn: RuntimeTurn
+): Record<string, string | number> {
+  return {
+    ...(turn.origin ? { turnOrigin: turn.origin } : {}),
+    ...(turn.goalOperationId
+      ? { sourceGoalOperationId: turn.goalOperationId }
+      : {}),
+    ...(turn.goalRevision ? { sourceGoalRevision: turn.goalRevision } : {}),
+    ...(turn.goalRepairEpoch
+      ? { sourceGoalRepairEpoch: turn.goalRepairEpoch }
+      : {})
+  };
+}
+
 export class TurnLifecycle {
   private readonly turns: RuntimeTurn[] = [];
   private readonly emit: ClaudeSDKSidecarEventEmitter;
@@ -386,16 +401,7 @@ export class TurnLifecycle {
         payload: {
           turnId: turn.turnId,
           ...(turn.synthetic ? { synthetic: true } : {}),
-          ...(turn.origin ? { turnOrigin: turn.origin } : {}),
-          ...(turn.goalOperationId
-            ? { sourceGoalOperationId: turn.goalOperationId }
-            : {}),
-          ...(turn.goalRevision
-            ? { sourceGoalRevision: turn.goalRevision }
-            : {}),
-          ...(turn.goalRepairEpoch
-            ? { sourceGoalRepairEpoch: turn.goalRepairEpoch }
-            : {})
+          ...turnProvenancePayload(turn)
         }
       });
     }
@@ -460,7 +466,8 @@ export class TurnLifecycle {
       type: "provider_turn_identity_resolved",
       payload: {
         turnId: turn.turnId,
-        providerTurnId
+        providerTurnId,
+        ...turnProvenancePayload(turn)
       }
     });
     return true;

@@ -16,6 +16,7 @@ var (
 	_ = (*agenthost.Host).FindTurnByClientSubmitID
 	_ = (*agenthost.Host).ListSessionMessages
 	_ = (*agenthost.Host).GetSessionInteractionSnapshot
+	_ = (*agenthost.Host).GetSessionInteractionTreeSnapshot
 	_ = (*agenthost.Host).CancelTurn
 	_ = (*agenthost.Host).SubmitInteractive
 	_ = (*agenthost.Host).SubmitPlanDecision

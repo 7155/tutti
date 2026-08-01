@@ -8,6 +8,7 @@ import (
 
 type Config struct {
 	CanonicalStore         CanonicalStore
+	InteractionTrees       CanonicalInteractionTreeStore
 	TurnSubmissions        TurnSubmissionStore
 	EffectiveHistory       EffectiveHistoryStore
 	SessionManagement      SessionManagementStore
@@ -61,6 +62,7 @@ type Config struct {
 
 type Host struct {
 	store                  CanonicalStore
+	interactionTrees       CanonicalInteractionTreeStore
 	turnSubmissions        TurnSubmissionStore
 	effectiveHistory       EffectiveHistoryStore
 	sessionManagement      SessionManagementStore
@@ -116,7 +118,8 @@ func New(config Config) *Host {
 		sessionMutationActor = NewSessionActor()
 	}
 	host := &Host{
-		store: config.CanonicalStore, turnSubmissions: config.TurnSubmissions, effectiveHistory: config.EffectiveHistory,
+		store: config.CanonicalStore, interactionTrees: config.InteractionTrees,
+		turnSubmissions: config.TurnSubmissions, effectiveHistory: config.EffectiveHistory,
 		sessionManagement: config.SessionManagement, sessionBatchManagement: config.SessionBatchManagement, sessionDeletionGuard: config.SessionDeletionGuard, sessionPurge: config.SessionPurge,
 		sessionForks: config.SessionForks, sessionForkRuntime: config.SessionForkRuntime,
 		historicalState:    config.HistoricalState,
@@ -137,6 +140,9 @@ func New(config Config) *Host {
 		goalMaxAttempts: config.GoalMaxAttempts, goalDispatchDeadline: config.GoalDispatchDeadline,
 		goalActor: goalActor, sessionMutationActor: sessionMutationActor,
 		editRetryDisabled: config.EditRetryDisabled,
+	}
+	if host.interactionTrees == nil {
+		host.interactionTrees, _ = host.store.(CanonicalInteractionTreeStore)
 	}
 	if host.sessionForkRecovery == nil {
 		host.sessionForkRecovery, _ = host.sessionForks.(SessionForkRecoveryStore)

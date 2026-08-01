@@ -2004,7 +2004,7 @@ INSERT INTO workspace_agent_interactions (
 	})
 	assertParticipantMutationKinds(t, result.CommitDelta,
 		MutationEntitySession, MutationEntityTurn, MutationEntityMessage,
-		MutationEntityInteraction, MutationEntitySessionForkOperation)
+		MutationEntityInteraction, MutationEntityInteractionTree, MutationEntitySessionForkOperation)
 	assertParticipantMutationEntityID(t, result.CommitDelta,
 		MutationEntityInteraction,
 		deterministicSessionForkCanonicalID(result.Operation, "turn", "turn-1")+

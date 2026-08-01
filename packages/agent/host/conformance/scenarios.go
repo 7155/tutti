@@ -146,6 +146,15 @@ func SessionForkScenarios() []SessionForkScenario {
 	}
 }
 
+// InteractionTreeScenarios covers the canonical cross-session interaction
+// read without expanding the base lifecycle Driver contract.
+func InteractionTreeScenarios() []InteractionTreeScenario {
+	return []InteractionTreeScenario{{
+		Name: "root interaction tree includes descendant latest turns",
+		run:  runInteractionTreeSnapshot,
+	}}
+}
+
 // CommitObserverScenarios verify the typed post-commit seam independently of
 // any adapter-specific event transport. They intentionally include a failing
 // observer because observer delivery is advisory after the durable commit.

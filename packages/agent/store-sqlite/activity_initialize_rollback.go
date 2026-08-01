@@ -24,6 +24,10 @@ func (s *Store) RollbackRuntimeSessionInitialization(ctx context.Context, worksp
 			_ = tx.Rollback()
 		}
 	}()
+	mutations, err := sessionDeleteMutationsTx(ctx, tx, workspaceID, []string{agentSessionID}, 0)
+	if err != nil {
+		return false, err
+	}
 	result, err := tx.ExecContext(ctx, `
 DELETE FROM workspace_agent_sessions
 WHERE workspace_id = ? AND agent_session_id = ? AND deleted_at_unix_ms = 0
@@ -58,9 +62,8 @@ WHERE workspace_id = ? AND agent_session_id = ?
 			return false, fmt.Errorf("rollback runtime session history initialization: %w", err)
 		}
 	}
-	mutations := []TransactionMutation{}
-	if removed {
-		mutations = sessionDeleteMutations(workspaceID, []string{agentSessionID}, 0)
+	if !removed {
+		mutations = nil
 	}
 	if _, err := s.commitTransaction(ctx, tx, workspaceID, mutations); err != nil {
 		return false, fmt.Errorf("commit rollback runtime session initialization: %w", err)

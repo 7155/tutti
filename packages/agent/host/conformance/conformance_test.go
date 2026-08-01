@@ -43,6 +43,14 @@ func TestPublishedScenarioCatalogsHaveUniqueNames(t *testing.T) {
 	}
 }
 
+func TestPublishedInteractionTreeScenarioCatalogHasUniqueNames(t *testing.T) {
+	t.Parallel()
+	scenarios := InteractionTreeScenarios()
+	if len(scenarios) != 1 || scenarios[0].Name == "" {
+		t.Fatalf("interaction tree scenarios=%#v", scenarios)
+	}
+}
+
 func TestPublishedEditRetryScenarioCatalogHasUniqueNames(t *testing.T) {
 	t.Parallel()
 	scenarios := EditRetryScenarios()

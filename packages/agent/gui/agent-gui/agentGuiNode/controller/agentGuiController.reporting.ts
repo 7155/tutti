@@ -9,6 +9,7 @@ import { toast } from "@tutti-os/ui-system";
 import { type AgentGUIRuntime } from "../../../agentActivityRuntime";
 import type { AgentHostToastApi } from "../../../host/agentHostApi";
 import type { AgentConversationVM } from "../../../shared/agentConversation/contracts/agentConversationVM";
+import { createAgentClientId } from "../../../shared/agentConversation/agentClientIdentity";
 import type { AgentSessionState } from "../../../shared/agentSessionTypes";
 import type { AgentPromptContentBlock } from "../../../shared/contracts/dto";
 import { agentPromptContentHasImage } from "../model/agentComposerDraft";
@@ -601,11 +602,7 @@ export function agentSubmitTraceDiagnostics(
 }
 
 export function createAgentSubmitTraceId(): string {
-  if (typeof globalThis.crypto?.randomUUID === "function") {
-    return globalThis.crypto.randomUUID();
-  }
-  const fallbackHex = Math.random().toString(16).slice(2).padEnd(12, "0");
-  return `submit-${Date.now().toString(36)}-${fallbackHex.slice(0, 12)}`;
+  return createAgentClientId();
 }
 
 /**

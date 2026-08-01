@@ -192,6 +192,40 @@ describe("AgentSessionChrome", () => {
 
     expect(onContinueInNewConversation).toHaveBeenCalledTimes(1);
   });
+
+  it("renders revoked sharing as a terminal notice without a retry action", () => {
+    render(
+      <AgentSessionChrome
+        chrome={{
+          auth: null,
+          approval: null,
+          recovery: {
+            kind: "agent-sharing-revoked",
+            message: "riceballmama stopped sharing this agent",
+            canRetry: false
+          },
+          rawState: null
+        }}
+        isRespondingApproval={false}
+        onSubmitApprovalOption={vi.fn()}
+        onRetryActivation={vi.fn()}
+        onContinueInNewConversation={vi.fn()}
+        labels={{
+          approvalRequired: "Approval required",
+          authRequired: "Authentication required",
+          activatingSession: "Connecting session...",
+          retryActivation: "Retry",
+          continueInNewConversation: "Continue in new session"
+        }}
+      />
+    );
+
+    expect(
+      screen.getByText("riceballmama stopped sharing this agent")
+    ).toBeTruthy();
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
 });
 
 function chromeState(): AgentGUISessionChrome {

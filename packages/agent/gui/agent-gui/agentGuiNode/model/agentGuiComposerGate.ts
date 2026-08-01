@@ -30,23 +30,31 @@ export function resolveAgentGUIComposerGate(
   input: ResolveAgentGUIComposerGateInput
 ): AgentGUIComposerGate {
   const conversationBusy = input.activeConversationBusy || input.isSubmitting;
-  const runtime: AgentGUIComposerGate["runtime"] = input.targetConnectionBlocked
+  const sharingRevoked =
+    input.sessionRuntimeBlockedReason === "agent_sharing_revoked";
+  const runtime: AgentGUIComposerGate["runtime"] = sharingRevoked
     ? {
         status: "blocked",
-        reason: "target_connection",
-        sessionRuntimeReason: null
+        reason: "session_runtime",
+        sessionRuntimeReason: "agent_sharing_revoked"
       }
-    : input.sessionRuntimeBlockedReason !== null
+    : input.targetConnectionBlocked
       ? {
           status: "blocked",
-          reason: "session_runtime",
-          sessionRuntimeReason: input.sessionRuntimeBlockedReason
-        }
-      : {
-          status: "ready",
-          reason: null,
+          reason: "target_connection",
           sessionRuntimeReason: null
-        };
+        }
+      : input.sessionRuntimeBlockedReason !== null
+        ? {
+            status: "blocked",
+            reason: "session_runtime",
+            sessionRuntimeReason: input.sessionRuntimeBlockedReason
+          }
+        : {
+            status: "ready",
+            reason: null,
+            sessionRuntimeReason: null
+          };
   const canQueue =
     input.activeConversationId !== null &&
     runtime.status === "ready" &&

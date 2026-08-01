@@ -241,4 +241,95 @@ describe("useAgentGUISessionPresentation", () => {
       reason: null
     });
   });
+
+  it("keeps shared history visible while revoked sharing blocks commands with owner copy", () => {
+    const targetConnectionSource = new FakeTargetConnectionSource();
+    targetConnectionSource.set({ status: "unavailable", retryAttempt: 4 });
+    const sessionEngine = createAgentSessionEngine({
+      clock: { nowUnixMs: () => 1 },
+      commandPort: createTestEngineCommandPort({
+        execute: vi.fn(() => new Promise(() => undefined))
+      }),
+      identity: { origin: "test", workspaceId: "workspace-1" },
+      scheduler: { schedule: () => ({ cancel() {} }) }
+    });
+    const input = {
+      activeConversation: null,
+      activeConversationId: "session-1",
+      activeEngineActiveTurn: null,
+      activeEngineAvailability: "available",
+      activeEngineHasPendingInteractions: false,
+      activeEngineLatestTurn: null,
+      activeEngineRuntimeAvailability: {
+        state: "blocked",
+        reason: "agent_sharing_revoked",
+        ownerLabel: "riceballmama"
+      },
+      activeEngineSession: {
+        agentSessionId: "session-1",
+        goal: null,
+        resumable: true
+      },
+      activeGoalControlPresentation: {
+        agentSessionId: "session-1",
+        goal: null,
+        optimistic: false,
+        status: "idle"
+      },
+      activeLatestPendingSubmitTurnId: null,
+      activeLiveState: "active",
+      activeMessages: [],
+      activePendingActivation: null,
+      activeSessionState: null,
+      activeTimelineItems: [{ role: "user" }],
+      activationError: null,
+      activationErrorCode: null,
+      activationState: "active",
+      activityDisplayStatus: null,
+      agentActivityRuntime: {},
+      agentTargetsLoading: false,
+      composerSupport: {
+        model: false,
+        reasoningEffort: false,
+        permissionMode: false,
+        planMode: false,
+        planImplementation: false,
+        plan: false
+      },
+      conversation: null,
+      currentUserId: "user-1",
+      isCreatingConversation: false,
+      isInterrupting: false,
+      isLoadingMessages: false,
+      isRespondingToInteraction: false,
+      isSubmitting: false,
+      lastRenderStateDiagnosticKeyRef: { current: null },
+      pendingApproval: null,
+      planImplementationTurnIdRef: { current: null },
+      providerReadinessGate: null,
+      serverInteractivePrompt: null,
+      sessionEngine,
+      targetConnectionAgentTargetId: "shared-agent:shared-1",
+      targetConnectionSource,
+      workspaceId: "workspace-1"
+    } as unknown as Parameters<typeof useAgentGUISessionPresentation>[0];
+
+    const rendered = renderHook(() => useAgentGUISessionPresentation(input));
+
+    expect(rendered.result.current.sessionChrome.recovery).toEqual({
+      kind: "agent-sharing-revoked",
+      message: "riceballmama stopped sharing this agent",
+      canRetry: false
+    });
+    expect(rendered.result.current.hasSentUserMessage).toBe(true);
+    expect(rendered.result.current.composerGate).toMatchObject({
+      runtime: {
+        status: "blocked",
+        reason: "session_runtime",
+        sessionRuntimeReason: "agent_sharing_revoked"
+      },
+      editor: { status: "blocked", reason: "runtime_blocked" },
+      submission: { status: "blocked", reason: "runtime_blocked" }
+    });
+  });
 });

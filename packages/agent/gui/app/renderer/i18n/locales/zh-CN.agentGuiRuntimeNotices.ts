@@ -41,6 +41,7 @@ export const zhCNAgentGuiRuntimeNotices = {
   systemNoticeWarning: "Agent 警告",
   systemNoticeDefault: "Agent 通知",
   sharedDeviceLabel: "共享设备",
+  agentSharingRevoked: "{{owner}} 已取消共享该智能体",
   runtimeConnecting: "正在连接 {{device}}…",
   runtimeReconnectingAttempt:
     "正在重新连接 {{device}} · 第 {{attempt}} 次重试…",

@@ -38,8 +38,8 @@ export interface SessionOperationState {
 /**
  * Host-projected, session-scoped availability for commands that must reach the
  * session runtime. This is intentionally separate from the canonical Session:
- * transport reachability and exact-target Agent capabilities are ephemeral and
- * may differ between Sessions sharing one workspace engine.
+ * transport reachability, exact-target Agent capabilities, and shared access
+ * are ephemeral and may differ between Sessions sharing one workspace engine.
  */
 export type SessionRuntimeAvailability =
   | { state: "available" }
@@ -50,6 +50,11 @@ export type SessionRuntimeAvailability =
         | "agent_capability_unavailable"
         | "transport_reconnecting"
         | "transport_unavailable";
+    }
+  | {
+      state: "blocked";
+      reason: "agent_sharing_revoked";
+      ownerLabel: string;
     };
 
 export type SessionSettingsUpdateStatus =

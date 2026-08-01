@@ -202,10 +202,11 @@ The engine derives submit availability from canonical Turns and pending
 Interactions. Hosts must not copy deprecated session-level lifecycle or submit
 availability fields into the frontend.
 
-A host whose command transport can differ per Session may dispatch
-`session/runtimeAvailabilityChanged`. This ephemeral, session-scoped fact is
-kept outside the canonical Session and blocks runtime-dependent commands while
-the exact Session transport reconnects or is unavailable. Omitted availability
+A host whose command transport or access policy can differ per Session may
+dispatch `session/runtimeAvailabilityChanged`. This ephemeral, session-scoped
+fact is kept outside the canonical Session and blocks runtime-dependent
+commands while the exact Session transport reconnects, is unavailable, or
+shared access has been revoked. Omitted availability
 defaults to available, so ordinary local runtimes retain their existing
 behavior. A workspace-wide `engine/connectionChanged` event must not be used to
 represent one remote Session's transport because that would also block

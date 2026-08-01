@@ -145,7 +145,7 @@ export function MobileConversationsView({
       >
         <View style={styles.devicePill}>
           <View style={styles.deviceDot} />
-          <MobileComputerGlyph color={theme.color.background} size={18} />
+          <MobileComputerGlyph color={theme.color.background} size={14} />
           <Text numberOfLines={1} style={styles.deviceName}>
             {deviceName || t("desktopFallback")}
           </Text>
@@ -155,7 +155,7 @@ export function MobileConversationsView({
       <View style={styles.projectSection}>
         <Text style={styles.groupTitle}>{t("projects")}</Text>
         <View style={styles.projectRow}>
-          <MobileFolderGlyph color={theme.color.text} size={26} />
+          <MobileFolderGlyph color={theme.color.text} size={18} />
           <Text numberOfLines={1} style={styles.projectName}>
             {workspaceName}
           </Text>
@@ -518,9 +518,9 @@ function createStyles(theme: NativeTheme) {
     },
     backIcon: {
       color: theme.color.text,
-      fontSize: 32,
-      fontWeight: "300",
-      lineHeight: 34
+      fontSize: 22,
+      fontWeight: "400",
+      lineHeight: 26
     },
     bottomDock: {
       alignItems: "center",
@@ -533,16 +533,16 @@ function createStyles(theme: NativeTheme) {
     },
     chatButton: {
       backgroundColor: theme.color.text,
-      borderRadius: 28,
-      height: 56,
+      borderRadius: 22,
+      height: 44,
       width: "100%"
     },
     chatButtonSlot: {
       flexShrink: 0,
-      height: 56,
-      width: 112
+      height: 44,
+      width: 104
     },
-    chatIcon: { color: theme.color.background, fontSize: 22 },
+    chatIcon: { color: theme.color.background, fontSize: 18 },
     deleteDescription: {
       color: theme.color.textSecondary,
       fontSize: 14,
@@ -550,34 +550,34 @@ function createStyles(theme: NativeTheme) {
     },
     deviceDot: {
       backgroundColor: theme.color.success,
-      borderRadius: 5,
-      height: 10,
-      width: 10
+      borderRadius: 4,
+      height: 8,
+      width: 8
     },
     deviceName: {
       color: theme.color.background,
       flexShrink: 1,
-      fontSize: 15,
-      fontWeight: "700"
+      fontSize: 13,
+      fontWeight: "600"
     },
     devicePill: {
       alignItems: "center",
       backgroundColor: theme.color.text,
-      borderRadius: 24,
+      borderRadius: 18,
       flexDirection: "row",
       gap: theme.space.small,
-      height: 48,
-      maxWidth: 340,
-      paddingHorizontal: theme.space.medium
+      height: 36,
+      maxWidth: 280,
+      paddingHorizontal: 12
     },
     deviceRail: {
       alignItems: "center",
-      paddingBottom: theme.space.medium,
-      paddingTop: theme.space.large
+      paddingBottom: theme.space.small,
+      paddingTop: theme.space.small
     },
     deviceScroller: {
       flexGrow: 0,
-      maxHeight: 88
+      maxHeight: 48
     },
     root: {
       backgroundColor: theme.color.background,
@@ -601,16 +601,16 @@ function createStyles(theme: NativeTheme) {
       alignItems: "center",
       backgroundColor: theme.color.panelRaised,
       borderColor: theme.color.border,
-      borderRadius: 28,
+      borderRadius: 20,
       borderWidth: StyleSheet.hairlineWidth,
-      height: 56,
+      height: 40,
       justifyContent: "center",
-      width: 56
+      width: 40
     },
     headerButtonSlot: {
       flexShrink: 0,
-      height: 56,
-      width: 56
+      height: 40,
+      width: 40
     },
     feedback: {
       alignItems: "center",
@@ -630,9 +630,9 @@ function createStyles(theme: NativeTheme) {
     },
     inlineErrorText: { color: theme.color.danger, flex: 1, fontSize: 12 },
     list: {
-      gap: theme.space.large,
+      gap: theme.space.medium,
       paddingBottom: theme.space.medium,
-      paddingTop: theme.space.medium
+      paddingTop: theme.space.small
     },
     loadMoreButton: {
       alignItems: "center",
@@ -658,34 +658,35 @@ function createStyles(theme: NativeTheme) {
     },
     moreIconLarge: {
       color: theme.color.text,
-      fontSize: 30,
+      fontSize: 22,
       fontWeight: "800",
-      lineHeight: 31
+      lineHeight: 24
     },
     pressed: { opacity: 0.7 },
     groupTitle: {
-      color: theme.color.text,
-      fontSize: 18,
-      fontWeight: "700",
-      marginBottom: theme.space.medium
+      color: theme.color.textSecondary,
+      fontSize: 13,
+      fontWeight: "600",
+      letterSpacing: 0.4,
+      marginBottom: theme.space.small
     },
     projectName: {
       color: theme.color.text,
       flexShrink: 1,
-      fontSize: 18,
-      fontWeight: "500",
+      fontSize: 16,
+      fontWeight: "600",
       minWidth: 0
     },
     projectRow: {
       alignItems: "center",
       alignSelf: "stretch",
       flexDirection: "row",
-      gap: theme.space.medium,
-      minHeight: 48,
+      gap: theme.space.small,
+      minHeight: 36,
       width: "100%"
     },
     projectSection: {
-      paddingBottom: theme.space.medium
+      paddingBottom: theme.space.small
     },
     renameInput: {
       backgroundColor: theme.color.panel,
@@ -699,28 +700,28 @@ function createStyles(theme: NativeTheme) {
     },
     searchIcon: {
       color: theme.color.textSecondary,
-      fontSize: 30,
-      lineHeight: 32
+      fontSize: 18,
+      lineHeight: 22
     },
     searchInput: {
       color: theme.color.text,
       flex: 1,
-      fontSize: 16,
+      fontSize: 15,
       minWidth: 0,
-      minHeight: 54,
-      paddingVertical: 12
+      minHeight: 40,
+      paddingVertical: 10
     },
     searchPill: {
       alignItems: "center",
       backgroundColor: theme.color.panelRaised,
       borderColor: theme.color.border,
-      borderRadius: 28,
+      borderRadius: 22,
       borderWidth: StyleSheet.hairlineWidth,
       flex: 1,
       flexDirection: "row",
       gap: theme.space.small,
       minWidth: 0,
-      minHeight: 56,
+      minHeight: 44,
       paddingHorizontal: theme.space.medium
     },
     section: { gap: 2 },
@@ -731,8 +732,8 @@ function createStyles(theme: NativeTheme) {
     },
     sectionChevron: {
       color: theme.color.muted,
-      fontSize: 18,
-      lineHeight: 20
+      fontSize: 16,
+      lineHeight: 18
     },
     sectionHeader: {
       alignItems: "center",
@@ -744,8 +745,8 @@ function createStyles(theme: NativeTheme) {
     sectionTitle: {
       color: theme.color.text,
       flex: 1,
-      fontSize: 17,
-      fontWeight: "700",
+      fontSize: 15,
+      fontWeight: "600",
       letterSpacing: 0.2
     },
     sessionScroller: { flex: 1 },
@@ -759,8 +760,8 @@ function createStyles(theme: NativeTheme) {
     title: {
       color: theme.color.text,
       flex: 1,
-      fontSize: 24,
-      fontWeight: "700",
+      fontSize: 17,
+      fontWeight: "600",
       textAlign: "center"
     }
   });

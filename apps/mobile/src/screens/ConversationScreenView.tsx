@@ -308,21 +308,15 @@ function createStyles(theme: NativeTheme) {
       alignItems: "center",
       flexDirection: "row",
       gap: theme.space.small,
-      minHeight: 82,
       paddingHorizontal: theme.space.medium,
       paddingVertical: theme.space.small
     },
     conversationBody: { flex: 1, minHeight: 0, position: "relative" },
     conversationTitle: {
-      backgroundColor: theme.color.panelRaised,
-      borderColor: theme.color.border,
-      borderRadius: 28,
-      borderWidth: StyleSheet.hairlineWidth,
+      alignItems: "center",
       flex: 1,
       justifyContent: "center",
-      minWidth: 0,
-      minHeight: 56,
-      paddingHorizontal: theme.space.medium
+      minWidth: 0
     },
     emptyText: {
       color: theme.color.textSecondary,
@@ -332,25 +326,25 @@ function createStyles(theme: NativeTheme) {
     },
     backIcon: {
       color: theme.color.text,
-      fontSize: 32,
-      fontWeight: "300",
-      lineHeight: 34
+      fontSize: 22,
+      fontWeight: "400",
+      lineHeight: 26
     },
     headerCircleButton: {
       alignItems: "center",
       backgroundColor: theme.color.panelRaised,
       borderColor: theme.color.border,
-      borderRadius: 28,
+      borderRadius: 20,
       borderWidth: StyleSheet.hairlineWidth,
       flexShrink: 0,
-      height: 56,
+      height: 40,
       justifyContent: "center",
-      width: 56
+      width: 40
     },
     headerButtonSlot: {
       flexShrink: 0,
-      height: 56,
-      width: 56
+      height: 40,
+      width: 40
     },
     inlineError: {
       backgroundColor: theme.color.panel,
@@ -368,27 +362,27 @@ function createStyles(theme: NativeTheme) {
     },
     locationLabel: {
       color: theme.color.textSecondary,
-      flex: 1,
       flexShrink: 1,
       fontSize: 12
     },
     locationItem: {
       alignItems: "center",
-      flex: 1,
       flexDirection: "row",
+      flexShrink: 1,
       gap: 4,
       minWidth: 0
     },
     locationRow: {
       flexDirection: "row",
       gap: theme.space.small,
+      justifyContent: "center",
       marginTop: 3,
       overflow: "hidden"
     },
     messageList: {
-      gap: theme.space.large,
+      gap: theme.space.medium,
       paddingBottom: theme.space.xlarge,
-      paddingHorizontal: theme.space.large,
+      paddingHorizontal: theme.space.medium,
       paddingTop: theme.space.medium
     },
     messageScroller: { flex: 1 },
@@ -409,6 +403,11 @@ function createStyles(theme: NativeTheme) {
       height: 64,
       width: "78%"
     },
-    sessionTitle: { color: theme.color.text, fontSize: 16, fontWeight: "700" }
+    sessionTitle: {
+      color: theme.color.text,
+      fontSize: 16,
+      fontWeight: "700",
+      textAlign: "center"
+    }
   });
 }

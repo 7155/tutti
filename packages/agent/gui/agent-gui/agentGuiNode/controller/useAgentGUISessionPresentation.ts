@@ -6,11 +6,12 @@ import {
   type AgentActivityTurn,
   type CanonicalAgentSession,
   type PendingActivationIntentRecord,
+  type SessionGoalControlPresentation,
   type SessionRuntimeAvailability,
   type AgentSessionEngine
 } from "@tutti-os/agent-activity-core";
 import { useEffect, useMemo } from "react";
-import type { AgentActivityRuntime } from "../../../agentActivityRuntime";
+import type { AgentGUIRuntime } from "../../../agentActivityRuntime";
 import { translate } from "../../../i18n/index";
 import type { AgentConversationVM } from "../../../shared/agentConversation/contracts/agentConversationVM";
 import type { AgentApprovalItemVM } from "../../../shared/agentConversation/contracts/agentApprovalItemVM";
@@ -20,7 +21,10 @@ import {
 } from "../../../shared/agentConversation/planImplementationPresentation";
 import type { AgentSessionState } from "../../../shared/agentSessionTypes";
 import type { AppErrorCode } from "../../../shared/contracts/dto";
-import type { AgentGUITargetConnectionSource } from "../../../types";
+import type {
+  AgentGUIObservationGapSource,
+  AgentGUITargetConnectionSource
+} from "../../../types";
 import { useEngineSelector } from "../../../shared/engine/useEngineSelector";
 import type {
   AgentGUIConversationSummary,
@@ -30,21 +34,18 @@ import {
   isDifferentKnownConversationOwner,
   resolveAgentGUIComposerGate
 } from "../model/agentGuiComposerGate";
-import type {
-  AgentGUIOptimisticGoalControl,
-  AgentGUISessionChrome
-} from "../model/agentGuiNodeTypes";
+import type { AgentGUISessionChrome } from "../model/agentGuiNodeTypes";
 import { composerSettingsSupportFromOptions } from "../model/composerSettingsSupport";
 import {
   agentActivityDisplayStatusBusy,
   conversationBusyStatus
 } from "./agentGuiController.draftMessageHelpers";
-import { unresolvedOptimisticGoalControl } from "./agentGuiOptimisticGoal";
 import { isNonRetryableResumeErrorCode } from "./agentGuiController.errors";
 import { projectAgentGUIMessagesToTimelineItems } from "./agentGuiController.promptHelpers";
 import { promptRequestId } from "./agentGuiController.diagnostics";
 import { reportAgentGUIRenderStateDiagnostic } from "./agentGuiController.reporting";
 import { useAgentGUITargetConnectionState } from "./useAgentGUITargetConnectionState";
+import { useAgentObservationGap } from "../../../shared/agentConversation/AgentObservationGapContext";
 
 interface CurrentValue<T> {
   current: T;
@@ -59,6 +60,7 @@ interface UseAgentGUISessionPresentationInput {
   activeEngineLatestTurn: AgentActivityTurn | null;
   activeEngineRuntimeAvailability: SessionRuntimeAvailability | null;
   activeEngineSession: CanonicalAgentSession | null;
+  activeGoalControlPresentation: SessionGoalControlPresentation;
   activeLatestPendingSubmitTurnId: string | null;
   activeLiveState: "inactive" | "activating" | "active" | "failed";
   activeMessages: readonly AgentActivityMessage[];
@@ -71,7 +73,7 @@ interface UseAgentGUISessionPresentationInput {
   activationErrorCode: AppErrorCode | null;
   activationState: "inactive" | "activating" | "active" | "failed" | null;
   activityDisplayStatus: AgentActivityDisplayStatus | null;
-  agentActivityRuntime: AgentActivityRuntime;
+  agentActivityRuntime: AgentGUIRuntime;
   composerSupport: ReturnType<typeof composerSettingsSupportFromOptions>;
   conversation: AgentConversationVM | null;
   currentUserId?: string | null;
@@ -83,7 +85,6 @@ interface UseAgentGUISessionPresentationInput {
   lastRenderStateDiagnosticKeyRef: CurrentValue<string | null>;
   pendingApproval: AgentApprovalItemVM | null;
   planImplementationTurnIdRef: CurrentValue<string | null>;
-  optimisticGoalControl: AgentGUIOptimisticGoalControl | null;
   providerReadinessGate:
     | import("../../../types").AgentGUIProviderReadinessGate
     | null;
@@ -93,6 +94,7 @@ interface UseAgentGUISessionPresentationInput {
   sessionEngine: AgentSessionEngine;
   targetConnectionAgentTargetId?: string | null;
   targetConnectionSource?: AgentGUITargetConnectionSource | null;
+  observationGapSource?: AgentGUIObservationGapSource | null;
   workspaceId: string;
 }
 
@@ -154,6 +156,11 @@ export function useAgentGUISessionPresentation(
     agentTargetId: input.targetConnectionAgentTargetId,
     source: input.targetConnectionSource
   });
+  const observationGap = useAgentObservationGap(
+    input.activeEngineSession?.agentSessionId ?? input.activeConversationId,
+    input.activeEngineActiveTurn?.turnId,
+    input.observationGapSource
+  );
   const activeConversationBusy = input.activeEngineSession
     ? input.activeEngineAvailability === "blocked"
     : agentActivityDisplayStatusBusy(input.activityDisplayStatus) ||
@@ -171,29 +178,23 @@ export function useAgentGUISessionPresentation(
   const sessionChromeRawState = useMemo<
     AgentGUISessionChrome["rawState"]
   >(() => {
-    const optimisticGoalControl = unresolvedOptimisticGoalControl(
-      input.optimisticGoalControl,
-      input.activeConversationId,
-      input.activeEngineSession
-    );
     const agentSessionId =
       input.activeEngineSession?.agentSessionId ??
-      optimisticGoalControl?.agentSessionId;
+      input.activeGoalControlPresentation.agentSessionId ??
+      input.activeConversationId;
     if (!agentSessionId) {
       return null;
     }
     return {
       agentSessionId,
-      goal: optimisticGoalControl
-        ? optimisticGoalControl.goal
-        : (input.activeEngineSession?.goal ?? null),
-      goalIsOptimistic: optimisticGoalControl !== null
+      goal: input.activeGoalControlPresentation.goal,
+      goalControlStatus: input.activeGoalControlPresentation.status,
+      goalIsOptimistic: input.activeGoalControlPresentation.optimistic
     };
   }, [
     input.activeConversationId,
     input.activeEngineSession?.agentSessionId,
-    input.activeEngineSession?.goal,
-    input.optimisticGoalControl
+    input.activeGoalControlPresentation
   ]);
   const sessionChrome = useMemo<AgentGUISessionChrome>(() => {
     if (
@@ -221,6 +222,18 @@ export function useAgentGUISessionPresentation(
                 : "agentHost.agentGui.runtimeUnavailable",
             { attempt: retryAttempt, device }
           ),
+          canRetry: false
+        },
+        rawState: sessionChromeRawState
+      };
+    }
+    if (observationGap !== null) {
+      return {
+        auth: null,
+        approval: null,
+        recovery: {
+          kind: "transport-connecting",
+          message: translate("agentHost.agentGui.runtimeSynchronizingProgress"),
           canRetry: false
         },
         rawState: sessionChromeRawState
@@ -291,6 +304,7 @@ export function useAgentGUISessionPresentation(
     input.pendingApproval,
     input.ownerDeviceLabel,
     targetConnection.visibleState,
+    observationGap,
     sessionChromeRawState
   ]);
   const hasNonRetryableRecoveryFailure =
@@ -324,7 +338,8 @@ export function useAgentGUISessionPresentation(
         pendingInteractivePrompt: hasPendingInteractivePrompt,
         providerReadinessGate: input.providerReadinessGate,
         sessionRuntimeBlockedReason,
-        targetConnectionBlocked: targetConnection.blocked
+        targetConnectionBlocked:
+          targetConnection.blocked || observationGap !== null
       }),
     [
       activeConversationBusy,
@@ -343,7 +358,8 @@ export function useAgentGUISessionPresentation(
       isCollaboratorConversation,
       pendingApproval,
       sessionRuntimeBlockedReason,
-      targetConnection.blocked
+      targetConnection.blocked,
+      observationGap
     ]
   );
   const canSubmit = composerGate.submission.status === "ready";
@@ -372,6 +388,13 @@ export function useAgentGUISessionPresentation(
       input.pendingApproval?.requestId ?? "",
       promptRequestId(pendingInteractivePrompt) ?? "",
       input.conversation?.activity.status ?? "",
+      input.conversation?.sourceDetail.showProcessingIndicator
+        ? "show-processing"
+        : "hide-processing",
+      input.conversation?.rows
+        .filter((row) => row.kind === "processing")
+        .map((row) => `${row.id}:${row.turnId ?? ""}`)
+        .join(",") ?? "",
       input.isCreatingConversation ? "creating" : "",
       input.isLoadingMessages ? "loading-messages" : "",
       input.isSubmitting ? "submitting" : "",
@@ -389,6 +412,9 @@ export function useAgentGUISessionPresentation(
       activeConversation: input.activeConversation,
       activeConversationBusy,
       activeConversationId: input.activeConversationId,
+      activeEngineActiveTurn: input.activeEngineActiveTurn,
+      activeEngineAvailability: input.activeEngineAvailability,
+      activeEngineLatestTurn: input.activeEngineLatestTurn,
       activeHasPendingSubmittedTurn,
       activeLiveState: input.activeLiveState,
       activeRuntimeSession: input.activeEngineSession,

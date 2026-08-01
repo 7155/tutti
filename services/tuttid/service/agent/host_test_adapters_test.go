@@ -422,6 +422,7 @@ func newApplicationHost(s *Service, worktreeGC agenthost.WorktreeGarbageCollecto
 		store,
 		store,
 		nil,
+		nil,
 		serviceHostRuntime{service: s},
 		serviceHostGoalRuntime{service: s},
 	)

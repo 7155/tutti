@@ -8,8 +8,9 @@ import (
 
 	agentsessionstore "github.com/tutti-os/tutti/packages/agent/daemon/activity"
 	agenthost "github.com/tutti-os/tutti/packages/agent/host"
+	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
+	agentactivitybiz "github.com/tutti-os/tutti/packages/agent/store-sqlite"
 	"github.com/tutti-os/tutti/packages/agent/store-sqlite/canonical"
-	agentactivitybiz "github.com/tutti-os/tutti/services/tuttid/biz/agentactivity"
 )
 
 func (p *ActivityProjection) NormalizeRuntimeSessionInitialization(
@@ -95,7 +96,7 @@ func (p *ActivityProjection) InitializeRuntimeSession(
 			OccurredAtUnixMS:  occurredAtUnixMS,
 			StartedAtUnixMS:   session.CreatedAtUnixMS,
 		},
-	}, !session.Provisional)
+	}, !session.Provisional, replay.ProviderObservationCommitContext{})
 	if err != nil {
 		return PersistedSession{}, err
 	}

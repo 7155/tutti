@@ -577,6 +577,27 @@ func (e AgentSessionCassetteMode) Valid() bool {
 	}
 }
 
+// Defines values for AgentSessionCassetteImportFailureCode.
+const (
+	AgentSessionCassetteImportFailureCodeConflict AgentSessionCassetteImportFailureCode = "conflict"
+	AgentSessionCassetteImportFailureCodeFailed   AgentSessionCassetteImportFailureCode = "failed"
+	AgentSessionCassetteImportFailureCodeInvalid  AgentSessionCassetteImportFailureCode = "invalid"
+)
+
+// Valid indicates whether the value is a known member of the AgentSessionCassetteImportFailureCode enum.
+func (e AgentSessionCassetteImportFailureCode) Valid() bool {
+	switch e {
+	case AgentSessionCassetteImportFailureCodeConflict:
+		return true
+	case AgentSessionCassetteImportFailureCodeFailed:
+		return true
+	case AgentSessionCassetteImportFailureCodeInvalid:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AgentSessionRecordingMode.
 const (
 	AgentSessionRecordingModeContinueSession AgentSessionRecordingMode = "continue-session"
@@ -646,33 +667,6 @@ func (e AgentSessionRecordingActivityEventInputKind) Valid() bool {
 	case Effect:
 		return true
 	case Intent:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for AgentSessionReplayRunStatus.
-const (
-	AgentSessionReplayRunStatusCanceled AgentSessionReplayRunStatus = "canceled"
-	AgentSessionReplayRunStatusComplete AgentSessionReplayRunStatus = "complete"
-	AgentSessionReplayRunStatusFailed   AgentSessionReplayRunStatus = "failed"
-	AgentSessionReplayRunStatusRunning  AgentSessionReplayRunStatus = "running"
-	AgentSessionReplayRunStatusStarting AgentSessionReplayRunStatus = "starting"
-)
-
-// Valid indicates whether the value is a known member of the AgentSessionReplayRunStatus enum.
-func (e AgentSessionReplayRunStatus) Valid() bool {
-	switch e {
-	case AgentSessionReplayRunStatusCanceled:
-		return true
-	case AgentSessionReplayRunStatusComplete:
-		return true
-	case AgentSessionReplayRunStatusFailed:
-		return true
-	case AgentSessionReplayRunStatusRunning:
-		return true
-	case AgentSessionReplayRunStatusStarting:
 		return true
 	default:
 		return false
@@ -957,7 +951,9 @@ const (
 	AgentQuickPromptConflict              ApiErrorDetailsCode = "agent_quick_prompt_conflict"
 	AgentQuickPromptNotFound              ApiErrorDetailsCode = "agent_quick_prompt_not_found"
 	AgentQuickPromptOperationFailed       ApiErrorDetailsCode = "agent_quick_prompt_operation_failed"
+	AgentSessionCassetteNotFound          ApiErrorDetailsCode = "agent_session_cassette_not_found"
 	AgentSessionForkOperationNotFound     ApiErrorDetailsCode = "agent_session_fork_operation_not_found"
+	AgentSessionReplayWorkspaceConflict   ApiErrorDetailsCode = "agent_session_replay_workspace_conflict"
 	AgentTargetNotFound                   ApiErrorDetailsCode = "agent_target_not_found"
 	AutomationRuleNotFound                ApiErrorDetailsCode = "automation_rule_not_found"
 	CollaborationRunNotFound              ApiErrorDetailsCode = "collaboration_run_not_found"
@@ -994,7 +990,11 @@ func (e ApiErrorDetailsCode) Valid() bool {
 		return true
 	case AgentQuickPromptOperationFailed:
 		return true
+	case AgentSessionCassetteNotFound:
+		return true
 	case AgentSessionForkOperationNotFound:
+		return true
+	case AgentSessionReplayWorkspaceConflict:
 		return true
 	case AgentTargetNotFound:
 		return true
@@ -2319,18 +2319,24 @@ func (e TuttiModePlanTaskPriority) Valid() bool {
 
 // Defines values for UpdateAgentSessionReplayTransportPlaybackRequestCommand.
 const (
-	UpdateAgentSessionReplayTransportPlaybackRequestCommandPause         UpdateAgentSessionReplayTransportPlaybackRequestCommand = "pause"
-	UpdateAgentSessionReplayTransportPlaybackRequestCommandResume        UpdateAgentSessionReplayTransportPlaybackRequestCommand = "resume"
-	UpdateAgentSessionReplayTransportPlaybackRequestCommandSetSpeed      UpdateAgentSessionReplayTransportPlaybackRequestCommand = "set-speed"
-	UpdateAgentSessionReplayTransportPlaybackRequestCommandSetTimingMode UpdateAgentSessionReplayTransportPlaybackRequestCommand = "set-timing-mode"
+	UpdateAgentSessionReplayTransportPlaybackRequestCommandClearProviderCursor UpdateAgentSessionReplayTransportPlaybackRequestCommand = "clear-provider-cursor"
+	UpdateAgentSessionReplayTransportPlaybackRequestCommandPause               UpdateAgentSessionReplayTransportPlaybackRequestCommand = "pause"
+	UpdateAgentSessionReplayTransportPlaybackRequestCommandResume              UpdateAgentSessionReplayTransportPlaybackRequestCommand = "resume"
+	UpdateAgentSessionReplayTransportPlaybackRequestCommandSetProviderCursor   UpdateAgentSessionReplayTransportPlaybackRequestCommand = "set-provider-cursor"
+	UpdateAgentSessionReplayTransportPlaybackRequestCommandSetSpeed            UpdateAgentSessionReplayTransportPlaybackRequestCommand = "set-speed"
+	UpdateAgentSessionReplayTransportPlaybackRequestCommandSetTimingMode       UpdateAgentSessionReplayTransportPlaybackRequestCommand = "set-timing-mode"
 )
 
 // Valid indicates whether the value is a known member of the UpdateAgentSessionReplayTransportPlaybackRequestCommand enum.
 func (e UpdateAgentSessionReplayTransportPlaybackRequestCommand) Valid() bool {
 	switch e {
+	case UpdateAgentSessionReplayTransportPlaybackRequestCommandClearProviderCursor:
+		return true
 	case UpdateAgentSessionReplayTransportPlaybackRequestCommandPause:
 		return true
 	case UpdateAgentSessionReplayTransportPlaybackRequestCommandResume:
+		return true
+	case UpdateAgentSessionReplayTransportPlaybackRequestCommandSetProviderCursor:
 		return true
 	case UpdateAgentSessionReplayTransportPlaybackRequestCommandSetSpeed:
 		return true
@@ -2620,6 +2626,30 @@ func (e WorkspaceAgentEditRetryResponseState) Valid() bool {
 	case WorkspaceAgentEditRetryResponseStateResendPending:
 		return true
 	case WorkspaceAgentEditRetryResponseStateRollingBack:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkspaceAgentInitialGoalControlAction.
+const (
+	WorkspaceAgentInitialGoalControlActionClear  WorkspaceAgentInitialGoalControlAction = "clear"
+	WorkspaceAgentInitialGoalControlActionPause  WorkspaceAgentInitialGoalControlAction = "pause"
+	WorkspaceAgentInitialGoalControlActionResume WorkspaceAgentInitialGoalControlAction = "resume"
+	WorkspaceAgentInitialGoalControlActionSet    WorkspaceAgentInitialGoalControlAction = "set"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceAgentInitialGoalControlAction enum.
+func (e WorkspaceAgentInitialGoalControlAction) Valid() bool {
+	switch e {
+	case WorkspaceAgentInitialGoalControlActionClear:
+		return true
+	case WorkspaceAgentInitialGoalControlActionPause:
+		return true
+	case WorkspaceAgentInitialGoalControlActionResume:
+		return true
+	case WorkspaceAgentInitialGoalControlActionSet:
 		return true
 	default:
 		return false
@@ -3793,6 +3823,81 @@ func (e WorkspaceWorkflowTurnLinkRelation) Valid() bool {
 	}
 }
 
+// Defines values for AgentCommandOrigin.
+const (
+	AgentCommandOriginRendererEngine AgentCommandOrigin = "renderer-engine"
+)
+
+// Valid indicates whether the value is a known member of the AgentCommandOrigin enum.
+func (e AgentCommandOrigin) Valid() bool {
+	switch e {
+	case AgentCommandOriginRendererEngine:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreateWorkspaceAgentSessionParamsXTuttiAgentCommandOrigin.
+const (
+	CreateWorkspaceAgentSessionParamsXTuttiAgentCommandOriginRendererEngine CreateWorkspaceAgentSessionParamsXTuttiAgentCommandOrigin = "renderer-engine"
+)
+
+// Valid indicates whether the value is a known member of the CreateWorkspaceAgentSessionParamsXTuttiAgentCommandOrigin enum.
+func (e CreateWorkspaceAgentSessionParamsXTuttiAgentCommandOrigin) Valid() bool {
+	switch e {
+	case CreateWorkspaceAgentSessionParamsXTuttiAgentCommandOriginRendererEngine:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GoalControlWorkspaceAgentSessionParamsXTuttiAgentCommandOrigin.
+const (
+	GoalControlWorkspaceAgentSessionParamsXTuttiAgentCommandOriginRendererEngine GoalControlWorkspaceAgentSessionParamsXTuttiAgentCommandOrigin = "renderer-engine"
+)
+
+// Valid indicates whether the value is a known member of the GoalControlWorkspaceAgentSessionParamsXTuttiAgentCommandOrigin enum.
+func (e GoalControlWorkspaceAgentSessionParamsXTuttiAgentCommandOrigin) Valid() bool {
+	switch e {
+	case GoalControlWorkspaceAgentSessionParamsXTuttiAgentCommandOriginRendererEngine:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SendWorkspaceAgentSessionInputParamsXTuttiAgentCommandOrigin.
+const (
+	SendWorkspaceAgentSessionInputParamsXTuttiAgentCommandOriginRendererEngine SendWorkspaceAgentSessionInputParamsXTuttiAgentCommandOrigin = "renderer-engine"
+)
+
+// Valid indicates whether the value is a known member of the SendWorkspaceAgentSessionInputParamsXTuttiAgentCommandOrigin enum.
+func (e SendWorkspaceAgentSessionInputParamsXTuttiAgentCommandOrigin) Valid() bool {
+	switch e {
+	case SendWorkspaceAgentSessionInputParamsXTuttiAgentCommandOriginRendererEngine:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SubmitWorkspaceAgentInteractiveParamsXTuttiAgentCommandOrigin.
+const (
+	SubmitWorkspaceAgentInteractiveParamsXTuttiAgentCommandOriginRendererEngine SubmitWorkspaceAgentInteractiveParamsXTuttiAgentCommandOrigin = "renderer-engine"
+)
+
+// Valid indicates whether the value is a known member of the SubmitWorkspaceAgentInteractiveParamsXTuttiAgentCommandOrigin enum.
+func (e SubmitWorkspaceAgentInteractiveParamsXTuttiAgentCommandOrigin) Valid() bool {
+	switch e {
+	case SubmitWorkspaceAgentInteractiveParamsXTuttiAgentCommandOriginRendererEngine:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListWorkspaceAgentSessionMessagesParamsOrder.
 const (
 	Asc  ListWorkspaceAgentSessionMessagesParamsOrder = "asc"
@@ -3805,6 +3910,51 @@ func (e ListWorkspaceAgentSessionMessagesParamsOrder) Valid() bool {
 	case Asc:
 		return true
 	case Desc:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UpdateWorkspaceAgentSessionSettingsParamsXTuttiAgentCommandOrigin.
+const (
+	UpdateWorkspaceAgentSessionSettingsParamsXTuttiAgentCommandOriginRendererEngine UpdateWorkspaceAgentSessionSettingsParamsXTuttiAgentCommandOrigin = "renderer-engine"
+)
+
+// Valid indicates whether the value is a known member of the UpdateWorkspaceAgentSessionSettingsParamsXTuttiAgentCommandOrigin enum.
+func (e UpdateWorkspaceAgentSessionSettingsParamsXTuttiAgentCommandOrigin) Valid() bool {
+	switch e {
+	case UpdateWorkspaceAgentSessionSettingsParamsXTuttiAgentCommandOriginRendererEngine:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CancelWorkspaceAgentTurnParamsXTuttiAgentCommandOrigin.
+const (
+	CancelWorkspaceAgentTurnParamsXTuttiAgentCommandOriginRendererEngine CancelWorkspaceAgentTurnParamsXTuttiAgentCommandOrigin = "renderer-engine"
+)
+
+// Valid indicates whether the value is a known member of the CancelWorkspaceAgentTurnParamsXTuttiAgentCommandOrigin enum.
+func (e CancelWorkspaceAgentTurnParamsXTuttiAgentCommandOrigin) Valid() bool {
+	switch e {
+	case CancelWorkspaceAgentTurnParamsXTuttiAgentCommandOriginRendererEngine:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SubmitWorkspaceAgentPlanDecisionParamsXTuttiAgentCommandOrigin.
+const (
+	SubmitWorkspaceAgentPlanDecisionParamsXTuttiAgentCommandOriginRendererEngine SubmitWorkspaceAgentPlanDecisionParamsXTuttiAgentCommandOrigin = "renderer-engine"
+)
+
+// Valid indicates whether the value is a known member of the SubmitWorkspaceAgentPlanDecisionParamsXTuttiAgentCommandOrigin enum.
+func (e SubmitWorkspaceAgentPlanDecisionParamsXTuttiAgentCommandOrigin) Valid() bool {
+	switch e {
+	case SubmitWorkspaceAgentPlanDecisionParamsXTuttiAgentCommandOriginRendererEngine:
 		return true
 	default:
 		return false
@@ -3927,11 +4077,6 @@ type AddIssueManagerContextRefItem struct {
 // AddIssueManagerContextRefsRequest defines model for AddIssueManagerContextRefsRequest.
 type AddIssueManagerContextRefsRequest struct {
 	Refs []AddIssueManagerContextRefItem `json:"refs"`
-}
-
-// AdvanceAgentSessionReplayRunCheckpointRequest defines model for AdvanceAgentSessionReplayRunCheckpointRequest.
-type AdvanceAgentSessionReplayRunCheckpointRequest struct {
-	Checkpoint int64 `json:"checkpoint"`
 }
 
 // AgentActivityMessageSemantics defines model for AgentActivityMessageSemantics.
@@ -4373,11 +4518,19 @@ type AgentSessionCassette struct {
 	RootAgentSessionId string                   `json:"rootAgentSessionId"`
 	SourceRecordingId  openapi_types.UUID       `json:"sourceRecordingId"`
 	TotalBytes         int64                    `json:"totalBytes"`
-	WorkspaceId        string                   `json:"workspaceId"`
 }
 
 // AgentSessionCassetteMode defines model for AgentSessionCassette.Mode.
 type AgentSessionCassetteMode string
+
+// AgentSessionCassetteImportFailure defines model for AgentSessionCassetteImportFailure.
+type AgentSessionCassetteImportFailure struct {
+	Code            AgentSessionCassetteImportFailureCode `json:"code"`
+	SourceDirectory string                                `json:"sourceDirectory"`
+}
+
+// AgentSessionCassetteImportFailureCode defines model for AgentSessionCassetteImportFailure.Code.
+type AgentSessionCassetteImportFailureCode string
 
 // AgentSessionCassetteListResponse defines model for AgentSessionCassetteListResponse.
 type AgentSessionCassetteListResponse struct {
@@ -4450,41 +4603,50 @@ type AgentSessionRecordingListResponse struct {
 	Recordings []AgentSessionRecording `json:"recordings"`
 }
 
-// AgentSessionReplayLaunch defines model for AgentSessionReplayLaunch.
-type AgentSessionReplayLaunch struct {
-	CassetteDirectory string                `json:"cassetteDirectory"`
-	Run               AgentSessionReplayRun `json:"run"`
+// AgentSessionReplayCassetteLaunch defines model for AgentSessionReplayCassetteLaunch.
+type AgentSessionReplayCassetteLaunch struct {
+	CassetteDirectory  string             `json:"cassetteDirectory"`
+	CassetteId         openapi_types.UUID `json:"cassetteId"`
+	RootAgentSessionId string             `json:"rootAgentSessionId"`
 }
 
-// AgentSessionReplayRun defines model for AgentSessionReplayRun.
-type AgentSessionReplayRun struct {
-	CassetteId        openapi_types.UUID          `json:"cassetteId"`
-	Checkpoint        int64                       `json:"checkpoint"`
-	CompletedAtUnixMs *int64                      `json:"completedAtUnixMs,omitempty"`
-	CreatedAtUnixMs   int64                       `json:"createdAtUnixMs"`
-	ErrorCode         *string                     `json:"errorCode,omitempty"`
-	ErrorMessage      *string                     `json:"errorMessage,omitempty"`
-	Id                openapi_types.UUID          `json:"id"`
-	StartedAtUnixMs   *int64                      `json:"startedAtUnixMs,omitempty"`
-	Status            AgentSessionReplayRunStatus `json:"status"`
-	UpdatedAtUnixMs   int64                       `json:"updatedAtUnixMs"`
+// AgentSessionReplayCheckpointVerification defines model for AgentSessionReplayCheckpointVerification.
+type AgentSessionReplayCheckpointVerification struct {
+	CanonicalMessageVersion         int64 `json:"canonicalMessageVersion"`
+	CanonicalSessionUpdatedAtUnixMs int64 `json:"canonicalSessionUpdatedAtUnixMs"`
+	CheckpointIndex                 int   `json:"checkpointIndex"`
+	ReadinessSatisfied              bool  `json:"readinessSatisfied"`
+	TriggerMatched                  bool  `json:"triggerMatched"`
 }
 
-// AgentSessionReplayRunStatus defines model for AgentSessionReplayRun.Status.
-type AgentSessionReplayRunStatus string
+// AgentSessionReplayComposerDefaults defines model for AgentSessionReplayComposerDefaults.
+type AgentSessionReplayComposerDefaults struct {
+	Model            string `json:"model"`
+	PermissionModeId string `json:"permissionModeId"`
+	ReasoningEffort  string `json:"reasoningEffort"`
+	Speed            string `json:"speed"`
+}
 
-// AgentSessionReplayRunListResponse defines model for AgentSessionReplayRunListResponse.
-type AgentSessionReplayRunListResponse struct {
-	Runs []AgentSessionReplayRun `json:"runs"`
+// AgentSessionReplayPrerequisites defines model for AgentSessionReplayPrerequisites.
+type AgentSessionReplayPrerequisites struct {
+	ComposerDefaults AgentSessionReplayComposerDefaults `json:"composerDefaults"`
+}
+
+// AgentSessionReplayProviderCursor defines model for AgentSessionReplayProviderCursor.
+type AgentSessionReplayProviderCursor struct {
+	ChunkSeq     int64  `json:"chunkSeq"`
+	ConnectionId string `json:"connectionId"`
+	UnitIndex    int64  `json:"unitIndex"`
 }
 
 // AgentSessionReplayTransportPlayback defines model for AgentSessionReplayTransportPlayback.
 type AgentSessionReplayTransportPlayback struct {
-	Drained           bool                                          `json:"drained"`
-	Paused            bool                                          `json:"paused"`
-	PlaybackElapsedMs float64                                       `json:"playbackElapsedMs"`
-	Speed             AgentSessionReplayTransportPlaybackSpeed      `json:"speed"`
-	TimingMode        AgentSessionReplayTransportPlaybackTimingMode `json:"timingMode"`
+	Drained             bool                                          `json:"drained"`
+	Paused              bool                                          `json:"paused"`
+	PlaybackElapsedMs   float64                                       `json:"playbackElapsedMs"`
+	ProviderConnections []AgentSessionReplayProviderCursor            `json:"providerConnections"`
+	Speed               AgentSessionReplayTransportPlaybackSpeed      `json:"speed"`
+	TimingMode          AgentSessionReplayTransportPlaybackTimingMode `json:"timingMode"`
 }
 
 // AgentSessionReplayTransportPlaybackSpeed defines model for AgentSessionReplayTransportPlayback.Speed.
@@ -4492,6 +4654,11 @@ type AgentSessionReplayTransportPlaybackSpeed float64
 
 // AgentSessionReplayTransportPlaybackTimingMode defines model for AgentSessionReplayTransportPlayback.TimingMode.
 type AgentSessionReplayTransportPlaybackTimingMode string
+
+// AgentSessionReplayWorkspaceLaunch defines model for AgentSessionReplayWorkspaceLaunch.
+type AgentSessionReplayWorkspaceLaunch struct {
+	Launches []AgentSessionReplayCassetteLaunch `json:"launches"`
+}
 
 // AgentSlashCommandEffect defines model for AgentSlashCommandEffect.
 type AgentSlashCommandEffect string
@@ -5215,6 +5382,9 @@ type CreateWorkspaceAgentSessionRequest struct {
 	// InitialDisplayPrompt Optional display-only text for the first turn (e.g. a folder bundle shown as one chip while initialContent carries the expanded files).
 	InitialDisplayPrompt *string `json:"initialDisplayPrompt,omitempty"`
 
+	// InitialGoalControl Optional typed Goal Control applied after the Session is created without opening an initial Turn. Must not be combined with non-empty initialContent.
+	InitialGoalControl *WorkspaceAgentInitialGoalControl `json:"initialGoalControl,omitempty"`
+
 	// InitialTuttiModeActivation Optional independent Tutti mode activation intent applied before the first turn starts.
 	InitialTuttiModeActivation *TuttiModeActivationIntent `json:"initialTuttiModeActivation,omitempty"`
 	Model                      *string                    `json:"model,omitempty"`
@@ -5664,13 +5834,6 @@ type ExternalAgentImportSession struct {
 	Title               string                 `json:"title"`
 }
 
-// FailAgentSessionReplayRunRequest defines model for FailAgentSessionReplayRunRequest.
-type FailAgentSessionReplayRunRequest struct {
-	Checkpoint   *int64 `json:"checkpoint,omitempty"`
-	ErrorCode    string `json:"errorCode"`
-	ErrorMessage string `json:"errorMessage"`
-}
-
 // FixWorkspaceAppFactoryJobRequest defines model for FixWorkspaceAppFactoryJobRequest.
 type FixWorkspaceAppFactoryJobRequest struct {
 	Prompt string `json:"prompt"`
@@ -5713,6 +5876,18 @@ type HealthStatusResponse struct {
 
 // HealthStatusResponseStatus defines model for HealthStatusResponse.Status.
 type HealthStatusResponseStatus string
+
+// ImportAgentSessionCassettesRequest defines model for ImportAgentSessionCassettesRequest.
+type ImportAgentSessionCassettesRequest struct {
+	// SourceDirectories Absolute local directories containing portable cassette.json manifests.
+	SourceDirectories []string `json:"sourceDirectories"`
+}
+
+// ImportAgentSessionCassettesResponse defines model for ImportAgentSessionCassettesResponse.
+type ImportAgentSessionCassettesResponse struct {
+	Failures   []AgentSessionCassetteImportFailure `json:"failures"`
+	Recordings []AgentSessionRecording             `json:"recordings"`
+}
 
 // ImportExternalAgentSessionsRequest defines model for ImportExternalAgentSessionsRequest.
 type ImportExternalAgentSessionsRequest struct {
@@ -6393,6 +6568,11 @@ type PreflightUploadWorkspaceFilesResponse struct {
 	WorkspaceId         string                        `json:"workspaceId"`
 }
 
+// PrepareAgentSessionReplayWorkspaceRequest defines model for PrepareAgentSessionReplayWorkspaceRequest.
+type PrepareAgentSessionReplayWorkspaceRequest struct {
+	CassetteIds []openapi_types.UUID `json:"cassetteIds"`
+}
+
 // PrepareWorkspaceAppUploadRequest defines model for PrepareWorkspaceAppUploadRequest.
 type PrepareWorkspaceAppUploadRequest struct {
 	MimeType  string                    `json:"mimeType"`
@@ -6526,7 +6706,7 @@ type RollbackWorkspaceAppRequest struct {
 
 // SendWorkspaceAgentSessionInputGoalControlResponse defines model for SendWorkspaceAgentSessionInputGoalControlResponse.
 type SendWorkspaceAgentSessionInputGoalControlResponse struct {
-	Goal      *WorkspaceAgentSessionGoal                            `json:"goal,omitempty"`
+	Goal      *WorkspaceAgentSessionGoal                            `json:"goal"`
 	GoalState *WorkspaceAgentSessionGoalState                       `json:"goalState,omitempty"`
 	Kind      SendWorkspaceAgentSessionInputGoalControlResponseKind `json:"kind"`
 
@@ -6619,8 +6799,9 @@ type SetSystemAgentTargetEnabledRequest struct {
 // StartAgentSessionRecordingRequest defines model for StartAgentSessionRecordingRequest.
 type StartAgentSessionRecordingRequest struct {
 	// AgentSessionId Existing Session selecting continue-session mode. Omit for create-session mode.
-	AgentSessionId *string `json:"agentSessionId,omitempty"`
-	AgentTargetId  string  `json:"agentTargetId"`
+	AgentSessionId      *string                         `json:"agentSessionId,omitempty"`
+	AgentTargetId       string                          `json:"agentTargetId"`
+	ReplayPrerequisites AgentSessionReplayPrerequisites `json:"replayPrerequisites"`
 }
 
 // StartupWorkspaceResponse defines model for StartupWorkspaceResponse.
@@ -6844,9 +7025,10 @@ type UpdateAgentQuickPromptRequest struct {
 
 // UpdateAgentSessionReplayTransportPlaybackRequest defines model for UpdateAgentSessionReplayTransportPlaybackRequest.
 type UpdateAgentSessionReplayTransportPlaybackRequest struct {
-	Command    UpdateAgentSessionReplayTransportPlaybackRequestCommand     `json:"command"`
-	Speed      *UpdateAgentSessionReplayTransportPlaybackRequestSpeed      `json:"speed,omitempty"`
-	TimingMode *UpdateAgentSessionReplayTransportPlaybackRequestTimingMode `json:"timingMode,omitempty"`
+	Command             UpdateAgentSessionReplayTransportPlaybackRequestCommand     `json:"command"`
+	ProviderConnections *[]AgentSessionReplayProviderCursor                         `json:"providerConnections,omitempty"`
+	Speed               *UpdateAgentSessionReplayTransportPlaybackRequestSpeed      `json:"speed,omitempty"`
+	TimingMode          *UpdateAgentSessionReplayTransportPlaybackRequestTimingMode `json:"timingMode,omitempty"`
 }
 
 // UpdateAgentSessionReplayTransportPlaybackRequestCommand defines model for UpdateAgentSessionReplayTransportPlaybackRequest.Command.
@@ -7232,6 +7414,15 @@ type WorkspaceAgentHarness struct {
 	Provider  *AgentTargetProvider `json:"provider,omitempty"`
 }
 
+// WorkspaceAgentInitialGoalControl defines model for WorkspaceAgentInitialGoalControl.
+type WorkspaceAgentInitialGoalControl struct {
+	Action    WorkspaceAgentInitialGoalControlAction `json:"action"`
+	Objective *string                                `json:"objective,omitempty"`
+}
+
+// WorkspaceAgentInitialGoalControlAction defines model for WorkspaceAgentInitialGoalControl.Action.
+type WorkspaceAgentInitialGoalControlAction string
+
 // WorkspaceAgentInteraction Protocol v2 interaction entity. An agent-initiated approval, question, or plan confirmation raised during a turn. Pending means present in a collection with status pending; replaces the tri-state null pendingInteractive protocol.
 type WorkspaceAgentInteraction struct {
 	AgentSessionId  string                          `json:"agentSessionId"`
@@ -7507,8 +7698,11 @@ type WorkspaceAgentSessionGoalStatus string
 
 // WorkspaceAgentSessionGoalControlRequest defines model for WorkspaceAgentSessionGoalControlRequest.
 type WorkspaceAgentSessionGoalControlRequest struct {
-	Action    WorkspaceAgentSessionGoalControlRequestAction `json:"action"`
-	Objective *string                                       `json:"objective,omitempty"`
+	Action WorkspaceAgentSessionGoalControlRequestAction `json:"action"`
+
+	// ClientSubmitId Caller-stable idempotency identity for this Goal Control mutation.
+	ClientSubmitId *string `json:"clientSubmitId,omitempty"`
+	Objective      *string `json:"objective,omitempty"`
 }
 
 // WorkspaceAgentSessionGoalControlRequestAction defines model for WorkspaceAgentSessionGoalControlRequest.Action.
@@ -7516,7 +7710,7 @@ type WorkspaceAgentSessionGoalControlRequestAction string
 
 // WorkspaceAgentSessionGoalControlResponse defines model for WorkspaceAgentSessionGoalControlResponse.
 type WorkspaceAgentSessionGoalControlResponse struct {
-	Goal *WorkspaceAgentSessionGoal `json:"goal,omitempty"`
+	Goal *WorkspaceAgentSessionGoal `json:"goal"`
 
 	// OperationId Durable GoalControlOperation identity; null only for compatibility runtimes without a goal store.
 	OperationId *string                         `json:"operationId,omitempty"`
@@ -8359,6 +8553,9 @@ type WriteWorkspaceFileTextRequest struct {
 	Path    string `json:"path"`
 }
 
+// AgentCommandOrigin defines model for AgentCommandOrigin.
+type AgentCommandOrigin string
+
 // AgentPermissionRequestID defines model for AgentPermissionRequestID.
 type AgentPermissionRequestID = string
 
@@ -8648,11 +8845,47 @@ type ListWorkspaceAgentSessionsParams struct {
 	Limit       *int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// CreateWorkspaceAgentSessionParams defines parameters for CreateWorkspaceAgentSession.
+type CreateWorkspaceAgentSessionParams struct {
+	// XTuttiAgentCommandOrigin Typed caller provenance for Agent command recording. Renderer Engine commands use renderer-engine; absent provenance identifies direct API and CLI commands.
+	XTuttiAgentCommandOrigin *CreateWorkspaceAgentSessionParamsXTuttiAgentCommandOrigin `json:"X-Tutti-Agent-Command-Origin,omitempty"`
+}
+
+// CreateWorkspaceAgentSessionParamsXTuttiAgentCommandOrigin defines parameters for CreateWorkspaceAgentSession.
+type CreateWorkspaceAgentSessionParamsXTuttiAgentCommandOrigin string
+
 // GetWorkspaceAgentSessionParams defines parameters for GetWorkspaceAgentSession.
 type GetWorkspaceAgentSessionParams struct {
 	// Projection Selects the detail projection. messageHydration preserves the session hierarchy and message cursors used by reconciliation discovery without resolving provider-backed lifecycle capabilities.
 	Projection *WorkspaceAgentSessionDetailProjection `form:"projection,omitempty" json:"projection,omitempty"`
 }
+
+// GoalControlWorkspaceAgentSessionParams defines parameters for GoalControlWorkspaceAgentSession.
+type GoalControlWorkspaceAgentSessionParams struct {
+	// XTuttiAgentCommandOrigin Typed caller provenance for Agent command recording. Renderer Engine commands use renderer-engine; absent provenance identifies direct API and CLI commands.
+	XTuttiAgentCommandOrigin *GoalControlWorkspaceAgentSessionParamsXTuttiAgentCommandOrigin `json:"X-Tutti-Agent-Command-Origin,omitempty"`
+}
+
+// GoalControlWorkspaceAgentSessionParamsXTuttiAgentCommandOrigin defines parameters for GoalControlWorkspaceAgentSession.
+type GoalControlWorkspaceAgentSessionParamsXTuttiAgentCommandOrigin string
+
+// SendWorkspaceAgentSessionInputParams defines parameters for SendWorkspaceAgentSessionInput.
+type SendWorkspaceAgentSessionInputParams struct {
+	// XTuttiAgentCommandOrigin Typed caller provenance for Agent command recording. Renderer Engine commands use renderer-engine; absent provenance identifies direct API and CLI commands.
+	XTuttiAgentCommandOrigin *SendWorkspaceAgentSessionInputParamsXTuttiAgentCommandOrigin `json:"X-Tutti-Agent-Command-Origin,omitempty"`
+}
+
+// SendWorkspaceAgentSessionInputParamsXTuttiAgentCommandOrigin defines parameters for SendWorkspaceAgentSessionInput.
+type SendWorkspaceAgentSessionInputParamsXTuttiAgentCommandOrigin string
+
+// SubmitWorkspaceAgentInteractiveParams defines parameters for SubmitWorkspaceAgentInteractive.
+type SubmitWorkspaceAgentInteractiveParams struct {
+	// XTuttiAgentCommandOrigin Typed caller provenance for Agent command recording. Renderer Engine commands use renderer-engine; absent provenance identifies direct API and CLI commands.
+	XTuttiAgentCommandOrigin *SubmitWorkspaceAgentInteractiveParamsXTuttiAgentCommandOrigin `json:"X-Tutti-Agent-Command-Origin,omitempty"`
+}
+
+// SubmitWorkspaceAgentInteractiveParamsXTuttiAgentCommandOrigin defines parameters for SubmitWorkspaceAgentInteractive.
+type SubmitWorkspaceAgentInteractiveParamsXTuttiAgentCommandOrigin string
 
 // ListWorkspaceAgentSessionMessagesParams defines parameters for ListWorkspaceAgentSessionMessages.
 type ListWorkspaceAgentSessionMessagesParams struct {
@@ -8664,6 +8897,33 @@ type ListWorkspaceAgentSessionMessagesParams struct {
 
 // ListWorkspaceAgentSessionMessagesParamsOrder defines parameters for ListWorkspaceAgentSessionMessages.
 type ListWorkspaceAgentSessionMessagesParamsOrder string
+
+// UpdateWorkspaceAgentSessionSettingsParams defines parameters for UpdateWorkspaceAgentSessionSettings.
+type UpdateWorkspaceAgentSessionSettingsParams struct {
+	// XTuttiAgentCommandOrigin Typed caller provenance for Agent command recording. Renderer Engine commands use renderer-engine; absent provenance identifies direct API and CLI commands.
+	XTuttiAgentCommandOrigin *UpdateWorkspaceAgentSessionSettingsParamsXTuttiAgentCommandOrigin `json:"X-Tutti-Agent-Command-Origin,omitempty"`
+}
+
+// UpdateWorkspaceAgentSessionSettingsParamsXTuttiAgentCommandOrigin defines parameters for UpdateWorkspaceAgentSessionSettings.
+type UpdateWorkspaceAgentSessionSettingsParamsXTuttiAgentCommandOrigin string
+
+// CancelWorkspaceAgentTurnParams defines parameters for CancelWorkspaceAgentTurn.
+type CancelWorkspaceAgentTurnParams struct {
+	// XTuttiAgentCommandOrigin Typed caller provenance for Agent command recording. Renderer Engine commands use renderer-engine; absent provenance identifies direct API and CLI commands.
+	XTuttiAgentCommandOrigin *CancelWorkspaceAgentTurnParamsXTuttiAgentCommandOrigin `json:"X-Tutti-Agent-Command-Origin,omitempty"`
+}
+
+// CancelWorkspaceAgentTurnParamsXTuttiAgentCommandOrigin defines parameters for CancelWorkspaceAgentTurn.
+type CancelWorkspaceAgentTurnParamsXTuttiAgentCommandOrigin string
+
+// SubmitWorkspaceAgentPlanDecisionParams defines parameters for SubmitWorkspaceAgentPlanDecision.
+type SubmitWorkspaceAgentPlanDecisionParams struct {
+	// XTuttiAgentCommandOrigin Typed caller provenance for Agent command recording. Renderer Engine commands use renderer-engine; absent provenance identifies direct API and CLI commands.
+	XTuttiAgentCommandOrigin *SubmitWorkspaceAgentPlanDecisionParamsXTuttiAgentCommandOrigin `json:"X-Tutti-Agent-Command-Origin,omitempty"`
+}
+
+// SubmitWorkspaceAgentPlanDecisionParamsXTuttiAgentCommandOrigin defines parameters for SubmitWorkspaceAgentPlanDecision.
+type SubmitWorkspaceAgentPlanDecisionParamsXTuttiAgentCommandOrigin string
 
 // GetWorkspaceAppAgentProviderStatusesParams defines parameters for GetWorkspaceAppAgentProviderStatuses.
 type GetWorkspaceAppAgentProviderStatusesParams struct {
@@ -8834,6 +9094,9 @@ type UpdateWorkspaceJSONRequestBody = UpdateWorkspaceRequest
 // SetAgentModelBindingJSONRequestBody defines body for SetAgentModelBinding for application/json ContentType.
 type SetAgentModelBindingJSONRequestBody = SetAgentModelBindingRequest
 
+// ImportAgentSessionCassettesJSONRequestBody defines body for ImportAgentSessionCassettes for application/json ContentType.
+type ImportAgentSessionCassettesJSONRequestBody = ImportAgentSessionCassettesRequest
+
 // StartAgentSessionRecordingJSONRequestBody defines body for StartAgentSessionRecording for application/json ContentType.
 type StartAgentSessionRecordingJSONRequestBody = StartAgentSessionRecordingRequest
 
@@ -8843,11 +9106,8 @@ type RenameAgentSessionRecordingJSONRequestBody = RenameAgentSessionRecordingReq
 // AppendAgentSessionRecordingActivityEventsJSONRequestBody defines body for AppendAgentSessionRecordingActivityEvents for application/json ContentType.
 type AppendAgentSessionRecordingActivityEventsJSONRequestBody = AppendAgentSessionRecordingActivityEventsRequest
 
-// AdvanceAgentSessionReplayRunCheckpointJSONRequestBody defines body for AdvanceAgentSessionReplayRunCheckpoint for application/json ContentType.
-type AdvanceAgentSessionReplayRunCheckpointJSONRequestBody = AdvanceAgentSessionReplayRunCheckpointRequest
-
-// FailAgentSessionReplayRunJSONRequestBody defines body for FailAgentSessionReplayRun for application/json ContentType.
-type FailAgentSessionReplayRunJSONRequestBody = FailAgentSessionReplayRunRequest
+// PrepareAgentSessionReplayWorkspaceJSONRequestBody defines body for PrepareAgentSessionReplayWorkspace for application/json ContentType.
+type PrepareAgentSessionReplayWorkspaceJSONRequestBody = PrepareAgentSessionReplayWorkspaceRequest
 
 // CreateWorkspaceAgentSessionJSONRequestBody defines body for CreateWorkspaceAgentSession for application/json ContentType.
 type CreateWorkspaceAgentSessionJSONRequestBody = CreateWorkspaceAgentSessionRequest

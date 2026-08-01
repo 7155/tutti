@@ -41,7 +41,9 @@ const [{ RendererApp }, { createWorkspaceWindowContainer }] = await Promise.all(
   ]
 );
 const application = (
-  <RendererApp workspaceWindowContainer={createWorkspaceWindowContainer()} />
+  <RendererApp
+    workspaceWindowContainer={await createWorkspaceWindowContainer()}
+  />
 );
 const rendererApp =
   import.meta.env.DEV && import.meta.env.VITE_TUTTI_REACT_PROFILER === "1"

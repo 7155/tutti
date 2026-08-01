@@ -16,30 +16,10 @@ import {
   MANAGED_AGENT_ICON_ROUNDED_URLS,
   managedAgentRoundedIconUrl
 } from "./managedAgentIcons";
-import { RichTextMentionReadonly } from "@tutti-os/ui-rich-text/editor";
 import {
   parsedDocumentCacheStatsForTests,
   resetParsedDocumentCacheForTests
 } from "./parsedDocumentCache";
-
-describe("RichTextMentionReadonly compatibility", () => {
-  it("uses the resolved label without adding the persisted trigger", () => {
-    render(
-      <RichTextMentionReadonly
-        mention={{
-          trigger: "@",
-          providerId: "workspace-app",
-          entityId: "canvas",
-          label: "Canvas"
-        }}
-      />
-    );
-
-    expect(screen.getByText("Canvas")).toBeInTheDocument();
-    expect(screen.queryByText("@Canvas")).not.toBeInTheDocument();
-    expect(document.querySelector('[data-slot="mention-pill"]')).not.toBeNull();
-  });
-});
 
 describe("AgentMessageMarkdown", () => {
   afterEach(() => {

@@ -1,6 +1,7 @@
 package events
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
@@ -129,6 +130,18 @@ type Event struct {
 	ParentToolCallID     string
 	OccurredAtUnixMS     int64
 	Payload              EventPayload
+	// ProviderInputUnit is capture-only causality. It is never serialized into
+	// canonical state or a portable Cassette.
+	ProviderInputUnit *ProviderInputUnitContext
+}
+
+type ProviderInputUnitContext struct {
+	RecordingID  string
+	ConnectionID string
+	ChunkSeq     uint64
+	UnitIndex    uint64
+	EventIndex   uint64
+	UnitKind     string
 }
 
 // InteractionTransition is the provider-independent runtime statement for an
@@ -146,31 +159,31 @@ type InteractionTransition struct {
 }
 
 type EventPayload struct {
-	PresenceStatus              string
-	LifecycleStatus             string
-	EffectiveStatus             string
-	TurnID                      string
-	TurnPhase                   string
-	TurnOutcome                 string
-	ProviderTurnID              string
-	ProviderCheckpointMessageID string
-	ActivityStatus              string
-	CWD                         string
-	Role                        MessageRole
-	Content                     string
-	CallID                      string
-	CallType                    string
-	Name                        string
-	Status                      string
-	Input                       map[string]any
-	Output                      map[string]any
-	Error                       map[string]any
-	EventKey                    string
-	ActivityKey                 string
-	Metadata                    map[string]any
-	LeaseTTLSeconds             int
-	Title                       string
-	Interaction                 *InteractionTransition
+	PresenceStatus          string
+	LifecycleStatus         string
+	EffectiveStatus         string
+	TurnID                  string
+	TurnPhase               string
+	TurnOutcome             string
+	ProviderTurnID          string
+	ProviderTurnBindingJSON json.RawMessage
+	ActivityStatus          string
+	CWD                     string
+	Role                    MessageRole
+	Content                 string
+	CallID                  string
+	CallType                string
+	Name                    string
+	Status                  string
+	Input                   map[string]any
+	Output                  map[string]any
+	Error                   map[string]any
+	EventKey                string
+	ActivityKey             string
+	Metadata                map[string]any
+	LeaseTTLSeconds         int
+	Title                   string
+	Interaction             *InteractionTransition
 }
 
 type EventContext struct {
@@ -350,13 +363,13 @@ func NewRootProviderTurnCheckpoint(
 	ctx EventContext,
 	rootTurnID string,
 	providerTurnID string,
-	providerCheckpointMessageID string,
+	providerTurnBindingJSON json.RawMessage,
 ) Event {
 	return eventFromContext(ctx, EventRootProviderTurnCheckpoint, EventPayload{
-		TurnID:                      strings.TrimSpace(rootTurnID),
-		ProviderTurnID:              strings.TrimSpace(providerTurnID),
-		ProviderCheckpointMessageID: strings.TrimSpace(providerCheckpointMessageID),
-		CWD:                         strings.TrimSpace(ctx.CWD),
+		TurnID:                  strings.TrimSpace(rootTurnID),
+		ProviderTurnID:          strings.TrimSpace(providerTurnID),
+		ProviderTurnBindingJSON: append(json.RawMessage(nil), providerTurnBindingJSON...),
+		CWD:                     strings.TrimSpace(ctx.CWD),
 	})
 }
 

@@ -14,6 +14,7 @@ type Config struct {
 	SessionBatchManagement SessionBatchManagementStore
 	SessionDeletionGuard   SessionDeletionGuard
 	SessionPurge           SessionPurgeStore
+	HistoricalState        HistoricalSessionStateStore
 	SessionForks           SessionForkStore
 	SessionForkRecovery    SessionForkRecoveryStore
 	SessionForkRuntime     SessionForkRuntime
@@ -48,6 +49,14 @@ type Config struct {
 	GoalDispatchDeadline   time.Duration
 	GoalActor              *SessionActor
 	SessionMutationActor   *SessionActor
+
+	// EditRetryDisabled neutralizes the durable edit-and-retry feature (PR
+	// #1681). When set, new edit-retry operations are refused and any operation
+	// left over from before it was disabled is quarantined during recovery
+	// instead of engaging the saga. The zero value keeps the feature enabled so
+	// its unit/conformance tests still exercise it; production wiring sets this
+	// true. Remove once the saga's resend/recovery gap is fixed.
+	EditRetryDisabled bool
 }
 
 type Host struct {
@@ -58,6 +67,7 @@ type Host struct {
 	sessionBatchManagement SessionBatchManagementStore
 	sessionDeletionGuard   SessionDeletionGuard
 	sessionPurge           SessionPurgeStore
+	historicalState        HistoricalSessionStateStore
 	sessionForks           SessionForkStore
 	sessionForkRecovery    SessionForkRecoveryStore
 	sessionForkRuntime     SessionForkRuntime
@@ -92,6 +102,7 @@ type Host struct {
 	goalDispatchDeadline   time.Duration
 	goalActor              *SessionActor
 	sessionMutationActor   *SessionActor
+	editRetryDisabled      bool
 	goalFencesRestored     sync.Map
 }
 
@@ -108,6 +119,7 @@ func New(config Config) *Host {
 		store: config.CanonicalStore, turnSubmissions: config.TurnSubmissions, effectiveHistory: config.EffectiveHistory,
 		sessionManagement: config.SessionManagement, sessionBatchManagement: config.SessionBatchManagement, sessionDeletionGuard: config.SessionDeletionGuard, sessionPurge: config.SessionPurge,
 		sessionForks: config.SessionForks, sessionForkRuntime: config.SessionForkRuntime,
+		historicalState:    config.HistoricalState,
 		sessionForkContext: config.SessionForkContext, sessionForkState: config.SessionForkState,
 		sessionForkAttachments: config.SessionForkAttachments,
 		runtime:                config.Runtime,
@@ -124,6 +136,7 @@ func New(config Config) *Host {
 		goalAttemptTimeout: config.GoalAttemptTimeout, goalRecoveryBudget: config.GoalRecoveryBudget,
 		goalMaxAttempts: config.GoalMaxAttempts, goalDispatchDeadline: config.GoalDispatchDeadline,
 		goalActor: goalActor, sessionMutationActor: sessionMutationActor,
+		editRetryDisabled: config.EditRetryDisabled,
 	}
 	if host.sessionForkRecovery == nil {
 		host.sessionForkRecovery, _ = host.sessionForks.(SessionForkRecoveryStore)

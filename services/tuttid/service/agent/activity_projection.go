@@ -10,8 +10,9 @@ import (
 
 	agentsessionstore "github.com/tutti-os/tutti/packages/agent/daemon/activity"
 	agenthost "github.com/tutti-os/tutti/packages/agent/host"
+	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
+	agentactivitybiz "github.com/tutti-os/tutti/packages/agent/store-sqlite"
 	"github.com/tutti-os/tutti/packages/agent/store-sqlite/canonical"
-	agentactivitybiz "github.com/tutti-os/tutti/services/tuttid/biz/agentactivity"
 	"github.com/tutti-os/tutti/services/tuttid/biz/agentanalytics"
 	reporterservice "github.com/tutti-os/tutti/services/tuttid/service/reporter"
 	agentnoderesult "github.com/tutti-os/tutti/services/tuttid/service/reporter/events/agent/node_result"
@@ -28,6 +29,8 @@ type ActivityProjection struct {
 	agentTargetResolver          AgentTargetResolver
 	workspaceAgentTargetResolver WorkspaceAgentTargetResolver
 	rootTurnObserver             RootTurnObserver
+	turnForkabilityResolver      TurnForkabilityResolver
+	replayCommitObserver         ReplayCommitObserver
 	// rootTurnSettleStateObserver is the dedicated, opt-in consumer list for
 	// synthesized canonical root-turn settlement states. It is deliberately
 	// separate from sessionStateObserver: the general observers historically
@@ -82,6 +85,21 @@ type SessionMessageObserver interface {
 
 type RootTurnObserver interface {
 	ObserveRootTurnSettled(context.Context, string, string, agentactivitybiz.Turn)
+}
+
+type TurnForkabilityResolver interface {
+	CanForkSessionTurn(
+		context.Context,
+		agenthost.SessionTurnForkabilityInput,
+	) (bool, error)
+}
+
+func (p *ActivityProjection) SetTurnForkabilityResolver(
+	resolver TurnForkabilityResolver,
+) {
+	if p != nil {
+		p.turnForkabilityResolver = resolver
+	}
 }
 
 type GoalReconcileRequiredInput = agenthost.GoalReconcileRequiredInput
@@ -233,13 +251,27 @@ func (p *ActivityProjection) ReportSessionState(
 	ctx context.Context,
 	input canonical.ReportSessionStateInput,
 ) (canonical.ReportSessionStateReply, error) {
-	return p.reportSessionState(ctx, input, true)
+	return p.reportSessionState(ctx, input, true, replay.ProviderObservationCommitContext{})
+}
+
+func (p *ActivityProjection) ReportSessionStateWithCommitContext(
+	ctx context.Context,
+	input canonical.ReportSessionStateInput,
+	replayContext replay.ProviderObservationCommitContext,
+) (canonical.ReportSessionStateReply, error) {
+	if err := replay.ValidateProviderObservationCommitContext(
+		replayContext,
+	); err != nil {
+		return canonical.ReportSessionStateReply{}, err
+	}
+	return p.reportSessionState(ctx, input, true, replayContext)
 }
 
 func (p *ActivityProjection) reportSessionState(
 	ctx context.Context,
 	input canonical.ReportSessionStateInput,
 	notify bool,
+	replayContext replay.ProviderObservationCommitContext,
 ) (canonical.ReportSessionStateReply, error) {
 	if p == nil || p.repo == nil {
 		return canonical.ReportSessionStateReply{}, nil
@@ -310,7 +342,9 @@ func (p *ActivityProjection) reportSessionState(
 		RequestBodyBytes:  result.RequestBodyBytes,
 	}
 	if notify {
-		agenthost.NotifyCommitted(ctx, p, agenthost.ActivityStateDelta(input, reply, activityResult))
+		delta := agenthost.ActivityStateDelta(input, reply, activityResult)
+		agenthost.NotifyCommitted(ctx, p, delta)
+		p.notifyReplayCommitted(ctx, delta, replayContext)
 	}
 	return reply, nil
 }
@@ -417,6 +451,27 @@ func (p *ActivityProjection) ReportSessionMessages(
 	ctx context.Context,
 	input canonical.ReportSessionMessagesInput,
 ) (canonical.ReportSessionMessagesReply, error) {
+	return p.reportSessionMessages(ctx, input, replay.ProviderObservationCommitContext{})
+}
+
+func (p *ActivityProjection) ReportSessionMessagesWithCommitContext(
+	ctx context.Context,
+	input canonical.ReportSessionMessagesInput,
+	replayContext replay.ProviderObservationCommitContext,
+) (canonical.ReportSessionMessagesReply, error) {
+	if err := replay.ValidateProviderObservationCommitContext(
+		replayContext,
+	); err != nil {
+		return canonical.ReportSessionMessagesReply{}, err
+	}
+	return p.reportSessionMessages(ctx, input, replayContext)
+}
+
+func (p *ActivityProjection) reportSessionMessages(
+	ctx context.Context,
+	input canonical.ReportSessionMessagesInput,
+	replayContext replay.ProviderObservationCommitContext,
+) (canonical.ReportSessionMessagesReply, error) {
 	if p == nil || p.repo == nil {
 		return canonical.ReportSessionMessagesReply{}, nil
 	}
@@ -441,7 +496,9 @@ func (p *ActivityProjection) ReportSessionMessages(
 		LatestVersion:    result.LatestVersion,
 		RequestBodyBytes: result.RequestBodyBytes,
 	}
-	agenthost.NotifyCommitted(ctx, p, agenthost.SessionMessagesDelta(input, reply, result))
+	delta := agenthost.SessionMessagesDelta(input, reply, result)
+	agenthost.NotifyCommitted(ctx, p, delta)
+	p.notifyReplayCommitted(ctx, delta, replayContext)
 	return reply, nil
 }
 

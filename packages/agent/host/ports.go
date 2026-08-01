@@ -55,6 +55,8 @@ type EffectiveHistoryStore interface {
 	PrepareEditRetryReplacementRedispatch(context.Context, storesqlite.PrepareEditRetryReplacementRedispatchInput) (storesqlite.RuntimeOperation, bool, error)
 	CompleteEditRetryRuntimeOperation(context.Context, storesqlite.CompleteEditRetryRuntimeOperationInput) (storesqlite.RuntimeOperationCompletion, bool, error)
 	FailEditRetryRecovery(context.Context, storesqlite.FailEditRetryRecoveryInput) (storesqlite.RuntimeOperation, bool, error)
+	QuarantineEditRetryOperation(context.Context, storesqlite.QuarantineEditRetryOperationInput) (storesqlite.RuntimeOperation, bool, error)
+	ClearAbandonedEditRetryFence(context.Context, storesqlite.ClearAbandonedEditRetryFenceInput) (bool, error)
 }
 
 type CanonicalSubmitClaimStore interface {
@@ -121,6 +123,7 @@ type SessionForkRecoveryStore interface {
 // false, so Host never dispatches an emulated provider fork.
 type SessionForkRuntime interface {
 	ResolveSessionFork(context.Context, ProviderRuntimeSession) (SessionForkDriverDescriptor, error)
+	CanForkProviderTurn(context.Context, RuntimeProviderTurnForkabilityInput) (bool, error)
 	ForkSession(context.Context, RuntimeSessionForkInput) (RuntimeSessionForkResult, error)
 }
 
@@ -209,6 +212,22 @@ type SessionDeletionGuard interface {
 // local-file ownership policies remain outside Host.
 type SessionPurgeStore interface {
 	PurgeDeletedSessions(context.Context, storesqlite.PurgeDeletedSessionsInput) (storesqlite.PurgeDeletedSessionsResult, error)
+}
+
+// HistoricalSessionStateStore is the canonical persistence boundary used by
+// Replay before normal Host recovery. The contract contains business entities,
+// not rows, table names, or migration details.
+type HistoricalSessionStateStore interface {
+	CaptureHistoricalSessionGraph(
+		context.Context,
+		string,
+		string,
+	) (HistoricalSessionGraph, error)
+	RestoreHistoricalSessionGraph(
+		context.Context,
+		string,
+		HistoricalSessionGraph,
+	) error
 }
 
 // RuntimeController is the provider-neutral live-runtime surface needed by

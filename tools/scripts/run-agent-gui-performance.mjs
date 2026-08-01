@@ -35,6 +35,7 @@ const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = resolve(scriptDirectory, "..", "..");
 const desktopReadyTimeoutMs = 120_000;
 const scenarioReadyTimeoutMs = 60_000;
+const desktopStartupFailurePrefix = "[tutti-desktop-startup-failed] ";
 const recoverableQueueTables = [
   "workspace_agent_runtime_operation_events",
   "workspace_agent_runtime_operations",
@@ -518,6 +519,14 @@ export async function waitForPageWebSocket(port, child, timeoutMs) {
   let lastError;
   while (Date.now() < deadline) {
     if (child.exitCode !== null || child.signalCode !== null) {
+      const startupFailure = parseDesktopStartupFailure(
+        child.performanceLogTail.read()
+      );
+      if (startupFailure) {
+        throw new Error(startupFailure.message, {
+          ...(startupFailure.cause ? { cause: startupFailure.cause } : {})
+        });
+      }
       throw new Error(
         `Desktop exited before CDP became ready\n${child.performanceLogTail.read()}`
       );
@@ -532,6 +541,40 @@ export async function waitForPageWebSocket(port, child, timeoutMs) {
   throw new Error(
     `timed out waiting for Desktop CDP: ${lastError?.message ?? "unknown error"}\n${child.performanceLogTail.read()}`
   );
+}
+
+export function parseDesktopStartupFailure(log) {
+  const lines = String(log).split(/\r?\n/u);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]?.trim() ?? "";
+    const marker = line.indexOf(desktopStartupFailurePrefix);
+    if (marker < 0) continue;
+    try {
+      const parsed = JSON.parse(
+        line.slice(marker + desktopStartupFailurePrefix.length)
+      );
+      if (typeof parsed?.message !== "string" || !parsed.message.trim()) {
+        continue;
+      }
+      const cause =
+        typeof parsed.cause?.code === "string" &&
+        parsed.cause.code.trim() &&
+        typeof parsed.cause?.message === "string" &&
+        parsed.cause.message.trim()
+          ? {
+              code: parsed.cause.code.trim(),
+              message: parsed.cause.message.trim()
+            }
+          : null;
+      return {
+        ...(cause ? { cause } : {}),
+        message: parsed.message.trim()
+      };
+    } catch {
+      // Ignore malformed protocol lines and retain the ordinary log fallback.
+    }
+  }
+  return null;
 }
 
 async function stopTrace(client, tracePath) {

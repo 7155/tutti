@@ -16,6 +16,7 @@ jobs:
     outputs:
       pack_all: ${{ steps.changed-files.outputs.pack_all }}
       pack_packages: ${{ steps.changed-files.outputs.pack_packages }}
+      run_agent_session_replay: ${{ steps.changed-files.outputs.run_agent_session_replay }}
       run_boundaries: ${{ steps.changed-files.outputs.run_boundaries }}
       run_contracts: ${{ steps.changed-files.outputs.run_contracts }}
       run_generated: ${{ steps.changed-files.outputs.run_generated }}

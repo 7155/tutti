@@ -8,6 +8,7 @@ package storesqlite
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/tutti-os/tutti/packages/agent/store-sqlite/canonical"
 )
@@ -334,16 +335,20 @@ type ActivityStateReport struct {
 }
 
 type ActivityStateReportResult struct {
-	TransactionID     string           `json:"-"`
-	CommitDelta       TransactionDelta `json:"-"`
-	State             StateReportResult
-	Turn              Turn
-	TurnAccepted      bool
-	RootTurn          Turn
-	RootTurnAccepted  bool
-	Interaction       Interaction
-	InteractionResult InteractionTransitionResult
-	Messages          MessageReportResult
+	TransactionID    string           `json:"-"`
+	CommitDelta      TransactionDelta `json:"-"`
+	State            StateReportResult
+	Turn             Turn
+	TurnAccepted     bool
+	RootTurn         Turn
+	RootTurnAccepted bool
+	// RootProviderTurnAccepted reports a durable provider projection update even
+	// when the canonical root turn was already settled. Callers must not use it
+	// to publish a second canonical lifecycle transition.
+	RootProviderTurnAccepted bool
+	Interaction              Interaction
+	InteractionResult        InteractionTransitionResult
+	Messages                 MessageReportResult
 }
 
 // Closed protocol v2 turn phase vocabulary. The storage CHECK constraints
@@ -400,7 +405,8 @@ type Turn struct {
 	SourceGoalRevision                     int64
 	SourceGoalRepairEpoch                  int64
 	RootProviderTurnID                     string
-	ProviderCheckpointMessageID            string
+	ProviderTurnBindingJSON                json.RawMessage
+	ProviderForkBindingAvailable           bool
 	RootProviderTurnPhase                  string
 	RootProviderTurnOutcome                string
 	RootProviderTurnErrorMessage           string
@@ -455,18 +461,18 @@ const (
 )
 
 type RootProviderTurnTransition struct {
-	WorkspaceID                 string
-	RootAgentSessionID          string
-	RootTurnID                  string
-	ProviderTurnID              string
-	ProviderCheckpointMessageID string
-	Phase                       string
-	Outcome                     string
-	ErrorMessage                string
-	ErrorCode                   string
-	CompletedCommandKind        string
-	CompletedCommandStatus      string
-	OccurredAtUnixMS            int64
+	WorkspaceID             string
+	RootAgentSessionID      string
+	RootTurnID              string
+	ProviderTurnID          string
+	ProviderTurnBindingJSON json.RawMessage
+	Phase                   string
+	Outcome                 string
+	ErrorMessage            string
+	ErrorCode               string
+	CompletedCommandKind    string
+	CompletedCommandStatus  string
+	OccurredAtUnixMS        int64
 }
 
 // TurnTransition records one turn phase transition. Transitions are written

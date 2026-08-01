@@ -19,6 +19,8 @@ Use the focused runtime index or open one area directly:
   command/Skill palette hydration failures.
   Also covers uv-managed Extension installs that accidentally select an
   incompatible system Python.
+  Also covers Kimi Code ACP sessions that advertise no model or hide provider
+  failures behind an empty `end_turn`.
   Also covers focus-driven provider CLI scans, repeated Extension Target version
   probes, extension release refresh delaying daemon startup, and CPU spikes.
 - [Agent Sessions And Lifecycle](./agent-session-lifecycle.md): Turn state, activation, planning-mode classification, Tutti workflow response contracts, loading, cancel, goal controls, restore, file-change undo, rail projection, realtime completion provenance, event updates, imports, and performance.
@@ -31,8 +33,9 @@ Use the focused runtime index or open one area directly:
   resume are covered here as well. Includes cassette replay
   startup that fails when concurrent provider input and output are treated as a
   strict scheduling order, false final-state mismatches caused by replay-generated
-  child identities, and canonical completion delayed behind a streaming activity-report
-  backlog. It also covers an active existing-Session Tutti snapshot being
+  child identities, an orphan managed Replay Desktop that crashes with `EPIPE`
+  after its owner exits, and canonical completion delayed behind a streaming
+  activity-report backlog. It also covers an active existing-Session Tutti snapshot being
   misread as provider Default mode, stopped Tutti Mode conversations revived by
   legacy startup wakes, provider-completed submissions reported as delivery
   unknown after canonical message provenance conflicts, completed Claude Code
@@ -50,6 +53,7 @@ Issue dispatch, Run cancellation, Agent settlement, and stop coordination.
 
 - [Managed task deletion is reported as a stale checkpoint](./issue-execution.md#managed-task-deletion-is-reported-as-a-stale-checkpoint)
 - [Reworked task scheduling is reported as a stale checkpoint](./issue-execution.md#reworked-task-scheduling-is-reported-as-a-stale-checkpoint)
+- [Final rework passes review but Tutti never reaches Goal Review](./issue-execution.md#final-rework-passes-review-but-tutti-never-reaches-goal-review)
 - [Settled checkpoint keeps reopening the source Session](./issue-execution.md#settled-checkpoint-keeps-reopening-the-source-session)
 - [Paused Tutti Issue keeps reopening and reports no resume command](./issue-execution.md#paused-tutti-issue-keeps-reopening-and-reports-no-resume-command)
 - [Tutti composer stays busy after every task Turn settles](./issue-execution.md#tutti-composer-stays-busy-after-every-task-turn-settles)
@@ -109,6 +113,7 @@ App Center, workspace-app lifecycle, App Factory, file references, and File Mana
 
 - [App Factory job keeps loading after AgentGUI Stop](./workspace-apps-files.md#app-factory-job-keeps-loading-after-agentgui-stop)
 - [App Center list requests repeatedly log runtime preload](./workspace-apps-files.md#app-center-list-requests-repeatedly-log-runtime-preload)
+- [Workspace app commands fail inside Corepack before pnpm starts](./workspace-apps-files.md#workspace-app-commands-fail-inside-corepack-before-pnpm-starts)
 - [Workspace app uninstall fails on cached manifest validation](./workspace-apps-files.md#workspace-app-uninstall-fails-on-cached-manifest-validation)
 - [Workspace app update reopens the old dock window](./workspace-apps-files.md#workspace-app-update-reopens-the-old-dock-window)
 - [Agent inline app opening leaks into the OS App Center](./workspace-apps-files.md#agent-inline-app-opening-leaks-into-the-os-app-center)
@@ -151,8 +156,12 @@ Android app login, native bridge, secure identity, and mobile transport diagnost
 - [Mobile quick prompts are missing from the plus menu](./mobile.md#mobile-quick-prompts-are-missing-from-the-plus-menu)
 - [Mobile composer model and permission controls are missing](./mobile.md#mobile-composer-model-and-permission-controls-are-missing)
 - [Mobile composer option chips do not open](./mobile.md#mobile-composer-option-chips-do-not-open)
+- [Browser login completes but leaves the browser in front](./mobile.md#browser-login-completes-but-leaves-the-browser-in-front)
 - [Browser login returns to the App but remains signed out](./mobile.md#browser-login-returns-to-the-app-but-remains-signed-out)
 - [Android DeviceLink opens a session and then repeatedly restarts](./mobile.md#android-devicelink-opens-a-session-and-then-repeatedly-restarts)
+- [Mobile shows output from a completed Session after foreground resume](./mobile.md#mobile-shows-output-from-a-completed-session-after-foreground-resume)
+- [Mobile stays connected after a long lock-screen interval but sends fail](./mobile.md#mobile-stays-connected-after-a-long-lock-screen-interval-but-sends-fail)
+- [iOS App crashes after loading the JavaScript bundle](./mobile.md#ios-app-crashes-after-loading-the-javascript-bundle)
 - [iOS pod install intermittently reports pathname contains null byte](./mobile.md#ios-pod-install-intermittently-reports-pathname-contains-null-byte)
 - [Mobile Jest discovers tests inside iOS Pods](./mobile.md#mobile-jest-discovers-tests-inside-ios-pods)
 - [React Native Pressable rows stack their children vertically](./mobile.md#react-native-pressable-rows-stack-their-children-vertically)

@@ -28,8 +28,12 @@ function createTransportClient(
     async appendAgentSessionRecordingActivityEvents() {
       throw new Error("not used");
     },
+    async deleteAgentSessionRecording() {},
     async listAgentSessionRecordings() {
       return [];
+    },
+    async importAgentSessionCassettes() {
+      return { failures: [], recordings: [] };
     },
     async startAgentSessionRecording() {
       throw new Error("not used");
@@ -46,19 +50,13 @@ function createTransportClient(
     async cancelAgentSessionRecording() {
       throw new Error("not used");
     },
-    async prepareAgentSessionReplayRun() {
+    async prepareAgentSessionReplayWorkspace() {
       throw new Error("not used");
     },
-    async listAgentSessionReplayRuns() {
-      return [];
-    },
-    async markAgentSessionReplayRunRunning() {
+    async getAgentSessionReplayTransportPlayback() {
       throw new Error("not used");
     },
-    async completeAgentSessionReplayRun() {
-      throw new Error("not used");
-    },
-    async failAgentSessionReplayRun() {
+    async updateAgentSessionReplayTransportPlayback() {
       throw new Error("not used");
     },
     async createAgentQuickPrompt() {
@@ -582,6 +580,9 @@ function createTransportClient(
       throw new Error("not used");
     },
     async cancelWorkspaceIssueExecution() {
+      throw new Error("not used");
+    },
+    async setCollaborationRunAdoption() {
       throw new Error("not used");
     },
     async cancelTuttiModeExecution() {

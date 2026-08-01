@@ -39,7 +39,6 @@ import {
   initialOperation,
   requestedCancel
 } from "./sessionLifecycle.state.ts";
-
 const NO_COMMANDS: readonly EngineCommand[] = [];
 const TURN_CANCEL_TIMEOUT_MS = 30_000;
 

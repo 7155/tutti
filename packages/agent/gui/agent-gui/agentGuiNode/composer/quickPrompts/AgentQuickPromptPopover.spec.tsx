@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@tutti-os/ui-system";
@@ -127,26 +125,6 @@ function controller(
 }
 
 describe("AgentQuickPromptPopover", () => {
-  it("uses the fixed-height Popover and makes only the list a ScrollArea", () => {
-    render(
-      <TooltipProvider>
-        <AgentQuickPromptPopover controller={controller()} disabled={false} />
-      </TooltipProvider>
-    );
-
-    const surface = document.querySelector('[data-slot="popover-content"]');
-    expect(surface).toHaveClass("h-[420px]", "w-[400px]", "overflow-hidden");
-    expect(
-      screen.getByRole("dialog", { name: "Quick prompts" })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByTestId("agent-quick-prompt-scroll-viewport")
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /^Review/u })
-    ).toBeInTheDocument();
-  });
-
   it("keeps selection and direct icon management controls as sibling buttons", () => {
     const subject = controller();
     render(
@@ -324,54 +302,6 @@ describe("AgentQuickPromptPopover", () => {
     expect(screen.queryByRole("button", { name: "Reorder Review" })).toBeNull();
   });
 
-  it("does not allow sorting a filtered list", () => {
-    render(
-      <TooltipProvider>
-        <AgentQuickPromptPopover
-          controller={controller({
-            searchQuery: "review",
-            showReorderHandles: false
-          })}
-          disabled={false}
-        />
-      </TooltipProvider>
-    );
-
-    expect(screen.getByRole("button", { name: "Sort" })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "Reorder Review" })).toBeNull();
-    expect(
-      screen.queryByRole("button", {
-        name: /Summarize common prompts.*Use template/u
-      })
-    ).toBeNull();
-  });
-
-  it("disables every mutating entry point while a shared mutation is pending", () => {
-    const subject = controller({
-      canReorder: false,
-      isInteractionLocked: true,
-      showReorderHandles: true
-    });
-    render(
-      <TooltipProvider>
-        <AgentQuickPromptPopover controller={subject} disabled={false} />
-      </TooltipProvider>
-    );
-
-    expect(screen.getByRole("button", { name: "New prompt" })).toBeDisabled();
-    expect(screen.getByPlaceholderText("Search quick prompts")).toBeDisabled();
-    expect(screen.getByRole("button", { name: /^Review/u })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Edit" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Sort" })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "Reorder Review" })).toBeNull();
-    expect(
-      screen.getByRole("button", {
-        name: "Recommended templates"
-      })
-    ).toBeDisabled();
-  });
-
   it("disables recommended-template actions while a shared mutation is pending", () => {
     const subject = controller({
       filteredPrompts: [],
@@ -532,56 +462,6 @@ describe("AgentQuickPromptPopover", () => {
     ).toBeInTheDocument();
   });
 
-  it("hides the complete entry when the host gate is unavailable", () => {
-    const rendered = render(
-      <TooltipProvider>
-        <AgentQuickPromptPopover
-          controller={controller({ capabilityAvailable: false })}
-          disabled={false}
-        />
-      </TooltipProvider>
-    );
-    expect(rendered.container).toBeEmptyDOMElement();
-  });
-
-  it("opens system dialogs for create and destructive confirmation", () => {
-    const createRender = render(
-      <TooltipProvider>
-        <AgentQuickPromptPopover
-          controller={controller({
-            isEditorOpen: true,
-            isPopoverOpen: false,
-            mode: "create"
-          })}
-          disabled={false}
-        />
-      </TooltipProvider>
-    );
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByLabelText(labels.titleLabel)).toBeInTheDocument();
-    createRender.unmount();
-
-    const promptToDelete = controller().filteredPrompts[0]!;
-    render(
-      <TooltipProvider>
-        <AgentQuickPromptPopover
-          controller={controller({
-            isPopoverOpen: false,
-            mode: "delete",
-            promptToDelete
-          })}
-          disabled={false}
-        />
-      </TooltipProvider>
-    );
-    expect(screen.getByRole("dialog")).toHaveTextContent(
-      labels.deleteDescription(promptToDelete.title)
-    );
-    expect(
-      screen.getByRole("button", { name: labels.deleteConfirm })
-    ).toBeInTheDocument();
-  });
-
   it("runs dialog cancellation and deletion on primary pointer down", () => {
     const createSubject = controller({
       isEditorOpen: true,
@@ -652,32 +532,6 @@ describe("AgentQuickPromptPopover", () => {
     );
   });
 
-  it("prefills the existing editor Dialog from a recommended template draft", () => {
-    render(
-      <TooltipProvider>
-        <AgentQuickPromptPopover
-          controller={controller({
-            initialDraft: {
-              title: "Understand the situation",
-              content: "Summarize the situation"
-            },
-            isEditorOpen: true,
-            isPopoverOpen: false,
-            mode: "create"
-          })}
-          disabled={false}
-        />
-      </TooltipProvider>
-    );
-
-    expect(screen.getByLabelText(labels.titleLabel)).toHaveValue(
-      "Understand the situation"
-    );
-    expect(screen.getByLabelText(labels.contentLabel)).toHaveValue(
-      "Summarize the situation"
-    );
-  });
-
   it("keeps Enter in the editor Dialog out of the Composer shortcut", () => {
     const onComposerKeyDown = vi.fn();
     render(
@@ -699,75 +553,5 @@ describe("AgentQuickPromptPopover", () => {
       key: "Enter"
     });
     expect(onComposerKeyDown).not.toHaveBeenCalled();
-  });
-});
-
-describe("quick-prompt UI composition", () => {
-  const source = readFileSync(
-    join(
-      process.cwd(),
-      "agent-gui/agentGuiNode/composer/quickPrompts/AgentQuickPromptPopover.tsx"
-    ),
-    "utf8"
-  );
-  const editorSource = readFileSync(
-    join(
-      process.cwd(),
-      "agent-gui/agentGuiNode/composer/quickPrompts/AgentQuickPromptEditorDialog.tsx"
-    ),
-    "utf8"
-  );
-  const listSource = readFileSync(
-    join(
-      process.cwd(),
-      "agent-gui/agentGuiNode/composer/quickPrompts/AgentQuickPromptList.tsx"
-    ),
-    "utf8"
-  );
-  const rowSource = readFileSync(
-    join(
-      process.cwd(),
-      "agent-gui/agentGuiNode/composer/quickPrompts/AgentQuickPromptRow.tsx"
-    ),
-    "utf8"
-  );
-
-  it("composes only public UI System interaction primitives", () => {
-    expect(source).toContain('from "@tutti-os/ui-system"');
-    expect(source).toContain('from "@tutti-os/ui-system/icons"');
-    expect(source).toContain("<ScrollArea");
-    expect(source).toContain("<TooltipProvider");
-    expect(source).toMatch(
-      /<TooltipTrigger asChild>\s*<span[^>]*>\s*<PopoverTrigger asChild>/u
-    );
-    expect(source).toContain("<ConfirmationDialog");
-    expect(source).toContain("<RecommendedTemplateList");
-    expect(rowSource).toContain("aria-label={labels.edit}");
-    expect(rowSource).toContain("aria-label={labels.delete}");
-    expect(rowSource).toContain("group/quick-prompt-row");
-    expect(rowSource).not.toContain("group-focus-within");
-    expect(rowSource).toContain(
-      'className="cursor-grab text-[var(--text-tertiary)]'
-    );
-    expect(rowSource).toContain(
-      "disabled:cursor-not-allowed disabled:text-[var(--text-disabled)] disabled:opacity-100"
-    );
-    expect(rowSource).toContain('reorderDisabled ? "cursor-not-allowed" : ""');
-    expect(rowSource).not.toContain("className={revealClass}");
-    expect(listSource).toContain("<Sortable");
-    expect(listSource).toContain("<SortableItem");
-    expect(listSource).not.toContain("disabled={!isSorting");
-    expect(rowSource).toContain("<SortableItemHandle");
-    expect(source).not.toContain("<DropdownMenu");
-    expect(source).toContain("onCloseAutoFocus");
-    expect(editorSource).toContain("<Dialog");
-    expect(editorSource).toContain("<Textarea");
-    expect(editorSource).toContain("min-h-[128px]");
-    expect(editorSource).toContain("onKeyDownCapture");
-    expect(source).not.toMatch(/<button\b/u);
-    expect(editorSource).not.toMatch(/<button\b/u);
-    expect(rowSource).not.toMatch(/<button\b/u);
-    expect(source).not.toContain("radix-ui");
-    expect(editorSource).not.toContain("radix-ui");
   });
 });

@@ -14,7 +14,7 @@ import {
 } from "./AgentFileMentionPalette";
 import { type AgentFileMentionSuggestionState } from "./agentRichText/agentFileMentionExtension";
 import { formatSlashStatusTokenCount } from "./AgentSlashStatusPanel";
-import { useOptionalAgentActivityRuntime } from "../../agentActivityRuntime";
+import { useOptionalAgentGUIRuntime } from "../../agentActivityRuntime";
 import { useComposerDraftAttachments } from "./composer/useComposerDraftAttachments";
 import { goalDraftObjectiveFromPrompt } from "./composer/composerDraftUtils";
 import {
@@ -114,6 +114,7 @@ export function AgentComposer(props: AgentComposerProps): React.JSX.Element {
     providerSelectReadonly = false,
     onHandoffConversation,
     showStopButton,
+    activeTurnId = null,
     draftOverridesStopButton = false,
     stopDisabled,
     activePrompt,
@@ -176,7 +177,7 @@ export function AgentComposer(props: AgentComposerProps): React.JSX.Element {
     files: draftFiles,
     largeTexts: draftLargeTexts
   } = agentComposerDraftAttachmentProjection(draftContent);
-  const agentActivityRuntime = useOptionalAgentActivityRuntime();
+  const agentActivityRuntime = useOptionalAgentGUIRuntime();
   const promptFilesSupported = Boolean(
     canUploadAttachment && prepareExternalPromptFiles
   );
@@ -641,6 +642,7 @@ export function AgentComposer(props: AgentComposerProps): React.JSX.Element {
     draftContent,
     canQueueWhileBusy,
     showStopButton,
+    activeTurnId,
     draftOverridesStopButton,
     stopDisabled,
     isInterrupting,

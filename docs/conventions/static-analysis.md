@@ -56,6 +56,14 @@ repository policy, contract, generated, and boundary checks. This preserves
 branch-protection compatibility while keeping those checks out of language
 jobs.
 
+Agent Session Replay has an additional changed-file lane,
+`run_agent_session_replay`. Changes to its core, provider transport, daemon
+recording/replay adapters, Desktop replay surfaces, deterministic fixture, or
+runner select this classification output. The PR replay job is currently
+disabled, so the output is advisory and does not execute a blocking gate.
+Keep the classification aligned with the real composition boundary so it can
+be enabled without replacing the closed loop with mock-only package selection.
+
 Validation runners that spawn nested pnpm commands should read the root
 `packageManager` field and invoke that pinned version through Corepack. Do not
 let runner-spawned lanes resolve a bare `pnpm` from `PATH`, because local
@@ -250,7 +258,7 @@ Desktop user-visible copy and locale resources are checked by `pnpm check:i18n`.
 
 `pnpm check:agent-activity-runtime-boundaries` scans Agent GUI and desktop
 renderer production code. Agent activity commands must go through
-`AgentActivityRuntime`; session-engine consumers must use exported selectors
+`AgentGUIRuntime`; session-engine consumers must use exported selectors
 instead of reading `sessionsById`, `turnsById`, `interactionsById`, pending
 intent maps, or prompt-queue records directly. Entity storage keys and reducer
 layout are engine implementation details, not consumer contracts. The check

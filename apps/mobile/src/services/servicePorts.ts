@@ -10,9 +10,7 @@ import type {
 import type { PairingQRPayload } from "./pairingProtocol";
 
 export interface AccountPort {
-  sendEmailCode(email: string): Promise<void>;
-  signInWithGitHub(): Promise<AccountSession>;
-  verifyEmailCode(email: string, code: string): Promise<AccountSession>;
+  signInWithBrowser(): Promise<AccountSession>;
 }
 
 export interface SessionStoragePort {
@@ -137,6 +135,16 @@ export type MobileDiagnosticEvent =
   | {
       name: "application.lifecycle_changed";
       state: AppLifecycleState;
+    }
+  | {
+      name: "device_connection.phase_changed";
+      phase: "connected" | "failed" | "idle" | "reconnecting" | "synchronizing";
+      trigger?:
+        | "background_expired"
+        | "foreground_resume"
+        | "initial_connect"
+        | "manual_retry"
+        | "transport_lost";
     }
   | {
       name: "device_pairing.phase_changed";

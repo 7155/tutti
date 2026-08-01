@@ -214,6 +214,21 @@ transport、Agent live Subscriber 和产品 adapter 的现有所有权，不把 
 `cocoapods_pathname_workaround.rb`；GitHub macOS runner 和本机 pnpm workspace
 都可能在 CocoaPods 生成工程时触发该符号链接解析缺陷。
 
+### 账号浏览器认证边界
+
+Mobile 继续复用 Desktop 使用的托管 Web 登录页、localhost callback bridge 和账号
+服务的一次性 transfer code，不维护独立登录页，也不把 provider 凭据或网页 Cookie
+带入 App。平台原生层只负责展示与回到前台：Android 在默认浏览器支持时使用
+AndroidX Auth Tab，不支持时降级到外部系统浏览器；iOS 使用
+`ASWebAuthenticationSession`。两端都以 `tutti://auth/login` 作为原生认证会话的
+callback，同时仍由 localhost bridge 交付 transfer code，因此展示方式不会成为新的
+账号 session owner。
+
+托管结果页应继续保留手动“打开 App”入口，供 Android 外部浏览器降级路径恢复。
+不要把 provider OAuth callback 改成 Mobile 专属页面，也不要绕过现有 transfer code
+兑换逻辑。后续若启用 verified App/Universal Links，应只替换前台返回地址，不改变
+Web 登录和账号会话边界。
+
 ## 5. 正式 App 的日常开发循环
 
 典型开发循环是：
@@ -261,6 +276,15 @@ screen composition and product-specific interaction.
 - `MobileUIProviders` owns the gesture root, safe-area provider, Bottom Sheet
   modal provider, and RN Primitives portal host. Do not mount duplicate roots
   inside screens.
+- Every screen with editable content uses the app-owned
+  `MobileKeyboardAvoidingView`: iOS applies keyboard padding, Android reduces
+  the available height, and Android keeps Activity `adjustResize` enabled for
+  edge-to-edge compatibility. The wrapper includes the top safe-area inset as
+  its screen-to-content offset; full-screen modal windows override that offset
+  to zero and bound keyboard-editable panels relative to the remaining height
+  instead of a fixed screen height. Scrollable content uses interactive
+  keyboard dismissal on iOS and on-drag dismissal on Android. Do not store
+  keyboard height in a service or add per-screen native keyboard listeners.
 - In a debug build, open the React Native developer menu and choose “Native UI
   gallery” to review the shared Native primitives on the actual renderer.
 - React Native Reusables is a source-copy starting point for a Native primitive;
@@ -270,9 +294,10 @@ screen composition and product-specific interaction.
   and dynamic-height sheets; wrap it behind a UI System Native component when
   it becomes a reusable product pattern. The shared compact `NativeSheet` uses
   React Native's window-level `Modal` instead, so its controlled open state does
-  not pass through `@gorhom/portal`. Callers provide its localized accessible
-  close label and may set one fixed height; multi-snap behavior remains outside
-  the compact primitive.
+  not pass through `@gorhom/portal`. It owns keyboard avoidance inside that
+  separate window; callers provide its localized accessible close label and may
+  set one fixed height. Multi-snap behavior remains outside the compact
+  primitive.
 - Agent message Markdown is rendered natively with
   `react-native-enriched-markdown`; it consumes the existing AgentGUI
   conversation VM and maps every color, radius, and spacing decision back to
@@ -402,7 +427,7 @@ Google Play 账号。以下事项等正式分发前再处理：
 - Personal `tuttid` 已接入设备注册、QR challenge、Desktop confirm、配对列表和撤销；
 - Personal 配对 API 已进入生成的 Go/TypeScript daemon client，账号 cookie 和设备私钥不会返回给 UI。
 - Desktop 设置页已接入二维码创建、配对码复制、轮询确认和撤销；
-- `apps/mobile` 已接入系统浏览器 GitHub 登录和邮箱验证码登录、Android Keystore
+- `apps/mobile` 已接入平台原生浏览器认证 GitHub 登录和邮箱验证码登录、Android Keystore
   设备身份、设备列表、内置 ZXing 二维码扫描或手动粘贴配对码，以及 challenge
   claim/poll；
 - React Native 0.86、Kotlin native module、DeviceLink AAR 和四 ABI debug APK
@@ -487,10 +512,11 @@ Google Play 账号。以下事项等正式分发前再处理：
 
 ## 10. Personal MVP 真机验收
 
-这一步需要真实 Tutti 账号和 Android 13 或更高版本的手机。GitHub 登录会打开系统
-浏览器，并通过短时 localhost bridge 将一次性 transfer code 返回 App；GitHub
-凭据和网页 Cookie 不会进入 App。邮箱验证码仍可作为备选。不要在 Issue、PR、聊天
-或日志中粘贴验证码、session cookie、二维码、transfer code 或配对码。
+这一步需要真实 Tutti 账号和 Android 13 或更高版本的手机。App 只提供一个 Tutti
+账号登录入口；它会打开平台浏览器认证会话，由托管登录页提供具体登录方式，并通过
+短时 localhost bridge 将一次性 transfer code 返回 App。App 不再内置邮箱验证码
+表单，账号凭据和网页 Cookie 也不会进入 App。不要在 Issue、PR、聊天或日志中粘贴
+验证码、session cookie、二维码、transfer code 或配对码。
 
 ### 10.1 启动当前分支的 Desktop
 
@@ -534,7 +560,7 @@ pnpm mobile:android
 ```
 
 App 启动后，使用与 Desktop 相同的账号登录方式。如果 Desktop 使用 GitHub 登录，
-Mobile 也点击“使用 GitHub 登录”并在系统浏览器中完成登录；仅输入 GitHub 展示的
+Mobile 也点击“使用 GitHub 登录”并在平台浏览器认证会话中完成登录；仅输入 GitHub 展示的
 相同邮箱不保证得到同一个账号 identity。Desktop 先在设置的开发者页打开
 “显示手机远程访问设置”，再进入「连接」并点击“配对手机”生成二维码。Mobile
 登录成功后点击配对，优先扫描 Desktop 二维码。首次扫码时允许 App 使用相机；如果

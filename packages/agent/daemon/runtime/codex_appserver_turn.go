@@ -311,6 +311,14 @@ func (a *CodexAppServerAdapter) GuideActiveTurn(
 		return nil, ErrSessionDisconnected
 	}
 	started := activityshared.NewRootProviderTurnStarted(eventContext, turnID, attemptID)
+	if binding, err := a.WriteProviderTurnBinding(
+		ProviderTurnBindingWriteInput{
+			Kind:           ProviderTurnBindingWriteStarted,
+			ProviderTurnID: attemptID,
+		},
+	); err == nil {
+		started.Payload.ProviderTurnBindingJSON = binding
+	}
 	started.Payload.Metadata = map[string]any{"guidanceContinuation": true}
 	continuation := newCodexGuidanceContinuationAdmission(attemptID)
 	if err := a.execAsync(
@@ -380,6 +388,7 @@ func (a *CodexAppServerAdapter) finalizeSettledTurn(agentSessionID string, appTu
 				activityshared.TurnOutcomeCanceled,
 				map[string]any{"error": terminal.err.Error()},
 			))
+			terminalEvents = stampProviderInputUnitFromError(terminal.err, terminalEvents)
 			appTurn.emitTerminal(terminalEvents)
 		} else {
 			terminalEvents := appTurn.normalizer.FinishFailed(session, turnID)
@@ -390,6 +399,7 @@ func (a *CodexAppServerAdapter) finalizeSettledTurn(agentSessionID string, appTu
 				activityshared.TurnOutcomeFailed,
 				acpFailureMetadata(terminal.err),
 			))
+			terminalEvents = stampProviderInputUnitFromError(terminal.err, terminalEvents)
 			appTurn.emitTerminal(terminalEvents)
 		}
 	} else {
@@ -550,6 +560,7 @@ func (a *CodexAppServerAdapter) execBlocking(
 	var events []activityshared.Event
 	turnClosed := false
 	emitLocked := func(next []activityshared.Event) {
+		next = a.inputUnits.stamp(session.AgentSessionID, next)
 		next = a.stampTurnLifecycleSnapshots(session.AgentSessionID, next)
 		events = append(events, next...)
 		if emit != nil {

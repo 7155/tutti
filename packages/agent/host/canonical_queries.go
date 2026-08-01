@@ -2,6 +2,7 @@ package agenthost
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	storesqlite "github.com/tutti-os/tutti/packages/agent/store-sqlite"
@@ -102,4 +103,48 @@ func (h *Host) GetSessionInteractionSnapshot(ctx context.Context, ref SessionRef
 		}
 	}
 	return SessionInteractionSnapshot{Interactions: interactions, PendingInteractions: pending}, nil
+}
+
+// GetInteraction reads one exact canonical Interaction by its complete identity.
+// It does not derive actionability or mutate lifecycle.
+func (h *Host) GetInteraction(
+	ctx context.Context,
+	ref SessionRef,
+	turnID, requestID string,
+) (storesqlite.Interaction, bool, error) {
+	ref = normalizedSessionRef(ref)
+	turnID = strings.TrimSpace(turnID)
+	requestID = strings.TrimSpace(requestID)
+	if h == nil || h.store == nil ||
+		ref.WorkspaceID == "" || ref.AgentSessionID == "" ||
+		turnID == "" || requestID == "" {
+		return storesqlite.Interaction{}, false, ErrInvalidArgument
+	}
+	interactions, err := h.store.ListSessionInteractions(
+		ctx,
+		storesqlite.ListSessionInteractionsInput{
+			WorkspaceID:    ref.WorkspaceID,
+			AgentSessionID: ref.AgentSessionID,
+			TurnID:         turnID,
+			RequestID:      requestID,
+		},
+	)
+	if err != nil {
+		return storesqlite.Interaction{}, false, err
+	}
+	switch len(interactions) {
+	case 0:
+		return storesqlite.Interaction{}, false, nil
+	case 1:
+		return interactions[0], true, nil
+	default:
+		return storesqlite.Interaction{}, false, fmt.Errorf(
+			"canonical interaction invariant: identity (%q, %q, %q, %q) returned %d rows",
+			ref.WorkspaceID,
+			ref.AgentSessionID,
+			turnID,
+			requestID,
+			len(interactions),
+		)
+	}
 }

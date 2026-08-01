@@ -38,6 +38,7 @@ export interface DesktopAppLifecycleDependencies {
 
 export interface DesktopAppLifecycleDisposable {
   dispose(): void;
+  shutdown?(): Promise<void>;
 }
 
 export interface DesktopAppLifecycleHandlers {
@@ -126,6 +127,15 @@ export function createDesktopAppLifecycleHandlers(
           : "desktop app before quit"
       );
       void (async () => {
+        for (const disposable of deps.disposables ?? []) {
+          try {
+            await disposable.shutdown?.();
+          } catch (error: unknown) {
+            deps.logger.error("failed to stop desktop service during quit", {
+              error: error instanceof Error ? error.message : String(error)
+            });
+          }
+        }
         try {
           await deps.tuttid.stop();
         } catch (error: unknown) {

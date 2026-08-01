@@ -116,6 +116,25 @@ func (a *CodexAppServerAdapter) ApplyGoal(
 	if method == appServerMethodThreadGoalClear {
 		a.applyGoalClear(session.AgentSessionID)
 		goalUpdateType = "thread_goal_cleared"
+	} else if action == GoalControlPause || action == GoalControlResume {
+		// Pause/resume are status-only durable controls. They must not re-bind
+		// the provider generation fingerprint to the new operation id: the
+		// set/adoption that created the generation already owns that ledger
+		// row, and a second bind marks the fingerprint permanently ambiguous.
+		goal = appServerGoalFromResult(result)
+		if len(goal) == 0 {
+			goal = clonePayload(a.sessionGoal(session.AgentSessionID))
+			if len(goal) > 0 {
+				if action == GoalControlPause {
+					goal["status"] = "paused"
+				} else {
+					goal["status"] = "active"
+				}
+			}
+		}
+		if len(goal) > 0 {
+			a.applyGoalUpdate(session.AgentSessionID, goal)
+		}
 	} else {
 		goal = appServerGoalFromResult(result)
 		if len(goal) > 0 {
@@ -127,18 +146,6 @@ func (a *CodexAppServerAdapter) ApplyGoal(
 			err := errors.New("provider returned no Goal generation for durable Goal set")
 			a.failGoalProvenanceSession(session, err)
 			return GoalAdapterResult{}, err
-		} else if action == GoalControlPause || action == GoalControlResume {
-			// Status-only set may return an empty goal payload; mirror the
-			// change locally so the banner and the reducer's paused-goal
-			// defense stay correct.
-			if goal = a.sessionGoal(session.AgentSessionID); len(goal) > 0 {
-				if action == GoalControlPause {
-					goal["status"] = "paused"
-				} else {
-					goal["status"] = "active"
-				}
-				a.applyGoalUpdate(session.AgentSessionID, goal)
-			}
 		}
 	}
 	if (action == GoalControlSet || action == GoalControlResume) && len(goal) > 0 {
@@ -148,9 +155,12 @@ func (a *CodexAppServerAdapter) ApplyGoal(
 	if event, ok := normalizedGoalUpdatedEvent(session, goalUpdateType); ok {
 		events = append(events, event)
 	}
-	if action == GoalControlResume || action == GoalControlSet {
-		// Codex normally starts the next goal turn itself after the goal
-		// becomes active again; the nudge covers the case where it does not.
+	if action == GoalControlSet {
+		// Codex normally starts the next goal turn itself after set; the nudge
+		// covers the case where it does not. Resume must not schedule this
+		// delayed poke: the grace window spans the remaining Goal work, so a
+		// status=active set at the end races the provider's natural complete
+		// and can restart the Goal into an unbounded continuation loop.
 		a.scheduleGoalContinuationNudge(session)
 	}
 	observation := a.sessionGoal(session.AgentSessionID)
@@ -686,12 +696,13 @@ func (a *CodexAppServerAdapter) scheduleGoalContinuationNudge(session Session) {
 		if strings.TrimSpace(asString(goal["status"])) != "active" {
 			return
 		}
+		// Status-only: never re-send objective. Re-asserting the objective
+		// after pause/resume can restart Codex Goal work and prevent the
+		// provider from settling status=complete. Generation ownership stays
+		// with the durable set/adoption that created the Goal.
 		params := map[string]any{
 			"threadId": threadID,
 			"status":   "active",
-		}
-		if objective := strings.TrimSpace(asStringRaw(goal["objective"])); objective != "" {
-			params["objective"] = objective
 		}
 		slog.Info("agent session app-server goal continuation nudge",
 			"event", "agent_session.app_server.goal.continuation_nudge",
@@ -713,14 +724,6 @@ func (a *CodexAppServerAdapter) scheduleGoalContinuationNudge(session Session) {
 			return
 		}
 		if nextGoal := appServerGoalFromResult(result); len(nextGoal) > 0 {
-			if bindErr := a.bindGoalGeneration(nudgeCtx, session, nextGoal, expectedIdentity); bindErr != nil {
-				slog.Error("agent session app-server goal continuation provenance persistence failed",
-					"event", "agent_session.app_server.goal.continuation_provenance_failed",
-					"agent_session_id", agentSessionID,
-					"error", bindErr.Error(),
-				)
-				return
-			}
 			// The RPC may be slow; a newer durable command cannot acquire this
 			// provider lock until it returns, but retain the result fence for
 			// session teardown/replacement and future lock implementations.

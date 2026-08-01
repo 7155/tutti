@@ -535,6 +535,10 @@ export const enAgentGui = {
   turnProcessedSeconds: "Processed for {{seconds}}s",
   turnProcessedMinutes: "Processed for {{minutes}}m",
   turnProcessedMinutesSeconds: "Processed for {{minutes}}m {{seconds}}s",
+  turnPeerDeviceOfflinePendingSync:
+    "Other device offline · Progress pending sync",
+  turnPeerDeviceProgressSynchronizing:
+    "Synchronizing progress from other device…",
   turnTotalSeconds: "Total {{seconds}}s",
   turnTotalMinutes: "Total {{minutes}}m",
   turnTotalMinutesSeconds: "Total {{minutes}}m {{seconds}}s",
@@ -543,6 +547,7 @@ export const enAgentGui = {
   agentTargetRequired:
     "Select an available agent target before starting a session.",
   sessionActivationFailed: "The agent session could not be started.",
+  goalControlFailed: "The goal change could not be applied.",
   sessionNoLongerAvailable:
     "The previous agent session is no longer available.",
   promptImagesUnsupported:

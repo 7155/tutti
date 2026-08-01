@@ -17,7 +17,6 @@ import type { WorkspaceLinkAction } from "../../../actions/workspaceLinkActions"
 import type {
   AgentGUIProvider,
   AgentGUIProviderRailAllPresentation,
-  AgentGUIAgentTarget,
   AgentGUIAgentTargetInfoRenderer
 } from "../../../types";
 import type { AgentMessageMarkdownWorkspaceAppIcon } from "../../../shared/AgentMessageMarkdown";
@@ -533,8 +532,6 @@ export interface AgentGUINodeViewProps {
   renderSidebarFooter?: AgentGUISidebarFooterRenderer;
   /** Renders the provider rail empty state in "exact" mode. See the type doc. */
   renderProviderRailEmpty?: AgentGUIAgentsEmptyRenderer;
-  /** Renders the selected provider's unavailable state. */
-  renderProviderUnavailableState?: AgentGUIProviderUnavailableStateRenderer;
   providerRailAllPresentation?: AgentGUIProviderRailAllPresentation | null;
   onLinkAction?: (action: WorkspaceLinkAction) => void;
   onHandoffConversation?: (input: {
@@ -755,7 +752,6 @@ export interface AgentGUIDetailPaneProps {
   onRequestGitBranches?: AgentComposerGitBranchLoader | null;
   onRequestComposerFocus: () => void;
   workspaceAppIcons?: readonly AgentMessageMarkdownWorkspaceAppIcon[];
-  renderProviderUnavailableState?: AgentGUIProviderUnavailableStateRenderer;
   renderComposerFooterAccessory?: AgentGUIComposerFooterAccessoryRenderer;
 }
 
@@ -770,20 +766,3 @@ export type AgentGUISidebarFooterRenderer = (
 
 /** Renders the host-owned empty state for an exact provider rail. */
 export type AgentGUIAgentsEmptyRenderer = () => ReactNode;
-
-export interface AgentGUIProviderUnavailableStateContext {
-  provider: AgentGUIProvider;
-  providerLabel: string;
-  target: AgentGUIAgentTarget;
-  iconUrl: string;
-  unavailableReason: string | null;
-}
-
-/**
- * Renders the main-pane unavailable state for a selected provider target that
- * the host explicitly marks as disabled. This does not replace install,
- * login, checking, or retry readiness gates.
- */
-export type AgentGUIProviderUnavailableStateRenderer = (
-  ctx: AgentGUIProviderUnavailableStateContext
-) => ReactNode;

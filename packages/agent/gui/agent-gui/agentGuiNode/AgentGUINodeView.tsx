@@ -62,8 +62,6 @@ export type {
   AgentGUINodeViewProps,
   AgentGUIAgentsEmptyRenderer,
   AgentGUIConversationRailLayout,
-  AgentGUIProviderUnavailableStateContext,
-  AgentGUIProviderUnavailableStateRenderer,
   AgentGUISidebarFooterContext,
   AgentGUISidebarFooterRenderer,
   AgentGUIViewLabels,
@@ -95,7 +93,6 @@ export function AgentGUINodeView({
   renderProjectDirectoryPickerHeaderActions,
   renderSidebarFooter,
   renderProviderRailEmpty,
-  renderProviderUnavailableState,
   providerRailAllPresentation,
   onLinkAction,
   onHandoffConversation,
@@ -737,7 +734,6 @@ export function AgentGUINodeView({
                 onRequestComposerFocus={requestComposerFocus}
                 workspaceAppIcons={effectiveWorkspaceAppIcons}
                 workspaceUserProjectI18n={workspaceUserProjectI18n}
-                renderProviderUnavailableState={renderProviderUnavailableState}
                 renderComposerFooterAccessory={renderComposerFooterAccessory}
               />
             </AgentConversationClockProvider>

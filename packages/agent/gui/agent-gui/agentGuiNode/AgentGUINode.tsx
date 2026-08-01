@@ -151,7 +151,6 @@ export const AgentGUINode = memo(function AgentGUINode({
     projectDirectoryPickerHeaderActions:
       renderProjectDirectoryPickerHeaderActions,
     providerRailEmpty: renderProviderRailEmpty,
-    providerUnavailableState: renderProviderUnavailableState,
     sidebarFooter: renderSidebarFooter
   } = renderSlots;
   const { i18n, locale, t } = useTranslation();
@@ -472,7 +471,6 @@ export const AgentGUINode = memo(function AgentGUINode({
               renderAgentTargetInfo={renderAgentTargetInfo}
               renderSidebarFooter={renderSidebarFooter}
               renderProviderRailEmpty={renderProviderRailEmpty}
-              renderProviderUnavailableState={renderProviderUnavailableState}
               providerRailAllPresentation={providerRailAllPresentation}
               actions={viewActions}
               isActive={isActive}

@@ -8,7 +8,10 @@ import type {
   AgentGUITargetConnectionSource,
   AgentGUITargetConnectionState
 } from "../../../types";
-import { useAgentGUISessionPresentation } from "./useAgentGUISessionPresentation";
+import {
+  resolveAgentGUISharingRevokedRecovery,
+  useAgentGUISessionPresentation
+} from "./useAgentGUISessionPresentation";
 
 class FakeTargetConnectionSource implements AgentGUITargetConnectionSource {
   private readonly listeners = new Set<() => void>();
@@ -54,6 +57,22 @@ class FakeObservationGapSource implements AgentGUIObservationGapSource {
 }
 
 describe("useAgentGUISessionPresentation", () => {
+  it("projects a revoked selected Home target into the shared status chrome", () => {
+    expect(
+      resolveAgentGUISharingRevokedRecovery({
+        activeConversationId: null,
+        selectedAgentTargetOwnerLabel: "Jackson",
+        selectedAgentTargetUnavailable: true,
+        selectedAgentTargetUnavailableReason: "agent_sharing_revoked",
+        sessionRuntimeBlock: null
+      })
+    ).toEqual({
+      kind: "agent-sharing-revoked",
+      message: "Jackson stopped sharing this agent",
+      canRetry: false
+    });
+  });
+
   it("makes a shared Agent composer editable in the same snapshot that its target connects", () => {
     const targetConnectionSource = new FakeTargetConnectionSource();
     const sessionEngine = createAgentSessionEngine({
@@ -110,6 +129,9 @@ describe("useAgentGUISessionPresentation", () => {
       pendingApproval: null,
       planImplementationTurnIdRef: { current: null },
       providerReadinessGate: null,
+      selectedAgentTargetOwnerLabel: null,
+      selectedAgentTargetUnavailable: false,
+      selectedAgentTargetUnavailableReason: null,
       serverInteractivePrompt: null,
       sessionEngine,
       targetConnectionAgentTargetId: "shared-agent:shared-1",
@@ -216,6 +238,9 @@ describe("useAgentGUISessionPresentation", () => {
       pendingApproval: null,
       planImplementationTurnIdRef: { current: null },
       providerReadinessGate: null,
+      selectedAgentTargetOwnerLabel: null,
+      selectedAgentTargetUnavailable: false,
+      selectedAgentTargetUnavailableReason: null,
       serverInteractivePrompt: null,
       sessionEngine,
       targetConnectionAgentTargetId: "shared-agent:shared-1",
@@ -307,6 +332,9 @@ describe("useAgentGUISessionPresentation", () => {
       pendingApproval: null,
       planImplementationTurnIdRef: { current: null },
       providerReadinessGate: null,
+      selectedAgentTargetOwnerLabel: null,
+      selectedAgentTargetUnavailable: false,
+      selectedAgentTargetUnavailableReason: null,
       serverInteractivePrompt: null,
       sessionEngine,
       targetConnectionAgentTargetId: "shared-agent:shared-1",

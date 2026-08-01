@@ -51,6 +51,40 @@ interface CurrentValue<T> {
   current: T;
 }
 
+export function resolveAgentGUISharingRevokedRecovery(input: {
+  activeConversationId: string | null;
+  selectedAgentTargetOwnerLabel: string | null;
+  selectedAgentTargetUnavailable: boolean;
+  selectedAgentTargetUnavailableReason: string | null;
+  sessionRuntimeBlock: Extract<
+    SessionRuntimeAvailability,
+    { state: "blocked" }
+  > | null;
+}): AgentGUISessionChrome["recovery"] {
+  const selectedTargetSharingRevoked =
+    input.activeConversationId === null &&
+    input.selectedAgentTargetUnavailable &&
+    input.selectedAgentTargetUnavailableReason === "agent_sharing_revoked";
+  if (
+    input.sessionRuntimeBlock?.reason !== "agent_sharing_revoked" &&
+    !selectedTargetSharingRevoked
+  ) {
+    return null;
+  }
+  return {
+    kind: "agent-sharing-revoked",
+    message: translate("agentHost.agentGui.agentSharingRevoked", {
+      owner:
+        (input.sessionRuntimeBlock?.reason === "agent_sharing_revoked"
+          ? input.sessionRuntimeBlock.ownerLabel
+          : null) ??
+        input.selectedAgentTargetOwnerLabel ??
+        translate("agentHost.agentGui.sharedDeviceLabel")
+    }),
+    canRetry: false
+  };
+}
+
 interface UseAgentGUISessionPresentationInput {
   activeConversation: AgentGUIConversationSummary | null;
   activeConversationId: string | null;
@@ -88,6 +122,9 @@ interface UseAgentGUISessionPresentationInput {
   providerReadinessGate:
     | import("../../../types").AgentGUIProviderReadinessGate
     | null;
+  selectedAgentTargetUnavailable: boolean;
+  selectedAgentTargetUnavailableReason: string | null;
+  selectedAgentTargetOwnerLabel: string | null;
   agentTargetsLoading: boolean;
   ownerDeviceLabel?: string | null;
   serverInteractivePrompt: AgentGUIInteractivePrompt | null;
@@ -198,17 +235,19 @@ export function useAgentGUISessionPresentation(
     input.activeGoalControlPresentation
   ]);
   const sessionChrome = useMemo<AgentGUISessionChrome>(() => {
-    if (sessionRuntimeBlock?.reason === "agent_sharing_revoked") {
+    const sharingRevokedRecovery = resolveAgentGUISharingRevokedRecovery({
+      activeConversationId: input.activeConversationId,
+      selectedAgentTargetOwnerLabel: input.selectedAgentTargetOwnerLabel,
+      selectedAgentTargetUnavailable: input.selectedAgentTargetUnavailable,
+      selectedAgentTargetUnavailableReason:
+        input.selectedAgentTargetUnavailableReason,
+      sessionRuntimeBlock
+    });
+    if (sharingRevokedRecovery) {
       return {
         auth: null,
         approval: null,
-        recovery: {
-          kind: "agent-sharing-revoked",
-          message: translate("agentHost.agentGui.agentSharingRevoked", {
-            owner: sessionRuntimeBlock.ownerLabel
-          }),
-          canRetry: false
-        },
+        recovery: sharingRevokedRecovery,
         rawState: sessionChromeRawState
       };
     }
@@ -318,6 +357,9 @@ export function useAgentGUISessionPresentation(
     input.activePendingActivation?.mode,
     input.pendingApproval,
     input.ownerDeviceLabel,
+    input.selectedAgentTargetOwnerLabel,
+    input.selectedAgentTargetUnavailable,
+    input.selectedAgentTargetUnavailableReason,
     sessionRuntimeBlock,
     targetConnection.visibleState,
     observationGap,
@@ -353,6 +395,7 @@ export function useAgentGUISessionPresentation(
         pendingApproval,
         pendingInteractivePrompt: hasPendingInteractivePrompt,
         providerReadinessGate: input.providerReadinessGate,
+        selectedAgentTargetUnavailable: input.selectedAgentTargetUnavailable,
         sessionRuntimeBlockedReason,
         targetConnectionBlocked:
           targetConnection.blocked || observationGap !== null
@@ -371,6 +414,7 @@ export function useAgentGUISessionPresentation(
       input.isInterrupting,
       input.isSubmitting,
       input.providerReadinessGate,
+      input.selectedAgentTargetUnavailable,
       isCollaboratorConversation,
       pendingApproval,
       sessionRuntimeBlockedReason,

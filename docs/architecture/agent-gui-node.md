@@ -1808,6 +1808,13 @@ while the Tooltip content is mounted. Conversation rows resolve the target by
 canonical `agentTargetId` from the current Host directory and fail closed when
 it is absent. They do not copy owner, device, availability, or other target
 metadata into Session state.
+
+Unavailable Agent targets retain the standard empty-home identity. AgentGUI
+projects offline transport and revoked-sharing states through the same Home
+status chrome used by other runtime failures, immediately above the composer;
+it does not expose a second Host-owned availability container. The canonical
+composer gate blocks both editing and submission until the selected target is
+available.
 Host chrome that aligns to AgentGUI's internal layout must consume explicit
 package signals such as `hostActions.onConversationRailLayoutChange`; it must
 not observe package DOM, CSS variables, or class names with

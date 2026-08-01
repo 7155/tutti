@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { resolveDesktopUpdateDevelopmentScenario } from "./scenario.ts";
+import { resolveDesktopUpdateDevelopmentPolicyScenario } from "./policyScenario.ts";
 import { startDesktopUpdateDevelopmentMockServer } from "./mockServer.ts";
 
 function log(level: "info" | "error", details: Record<string, unknown>): void {
@@ -13,11 +13,10 @@ function log(level: "info" | "error", details: Record<string, unknown>): void {
 }
 
 async function main(): Promise<void> {
-  const scenario = resolveDesktopUpdateDevelopmentScenario({
-    env: process.env,
-    isPackaged: false
+  const policy = resolveDesktopUpdateDevelopmentPolicyScenario({
+    env: process.env
   });
-  if (!scenario) {
+  if (!policy) {
     throw new Error(
       "DESKTOP_UPDATE_ADMISSION_DEV=1 is required to start the mock server"
     );
@@ -26,7 +25,7 @@ async function main(): Promise<void> {
   const port = rawPort ? Number(rawPort) : undefined;
   const server = await startDesktopUpdateDevelopmentMockServer({
     port,
-    scenario
+    policy
   });
   log("info", {
     baseUrl: server.baseUrl,

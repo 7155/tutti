@@ -8,7 +8,7 @@ import type {
   MinimumVersionCheckRequest
 } from "../contracts/index.ts";
 import { createDevelopmentMinimumVersionChecker } from "./policyChecker.ts";
-import type { DesktopUpdateDevelopmentScenario } from "./scenario.ts";
+import type { DesktopUpdateDevelopmentPolicyScenario } from "./policyScenario.ts";
 
 const maximumRequestBodyBytes = 64 * 1_024;
 const minimumVersionPath = "/api/desktop/v1/public/desktop-version/check";
@@ -99,9 +99,9 @@ function normalizeRequest(
 
 export async function startDesktopUpdateDevelopmentMockServer(input: {
   port?: number;
-  scenario: DesktopUpdateDevelopmentScenario;
+  policy: DesktopUpdateDevelopmentPolicyScenario;
 }): Promise<DesktopUpdateDevelopmentMockServer> {
-  const checker = createDevelopmentMinimumVersionChecker(input.scenario);
+  const checker = createDevelopmentMinimumVersionChecker(input.policy);
   const server = createServer(async (request, response) => {
     if (request.url === "/healthz") {
       if (request.method !== "GET") {

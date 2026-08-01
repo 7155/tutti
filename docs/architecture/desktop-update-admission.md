@@ -67,11 +67,21 @@ configuration.
 
 ## Development boundary
 
-The package resolves `DESKTOP_UPDATE_ADMISSION_*` once in the Electron main
-process. The resulting runtime injects `checksEnabled`, `currentVersion`, and
-`foregroundCheckIntervalMs` into the controller, while the same immutable
-scenario configures the policy checker and updater driver. Product adapters do
-not read scenario variables or implement their own mock state machines.
+The package resolves client-owned `DESKTOP_UPDATE_ADMISSION_*` variables once
+in the Electron main process. The resulting runtime injects `checksEnabled`,
+`currentVersion`, and `foregroundCheckIntervalMs` into the controller, and the
+same `currentVersion` configures both admission requests and the updater
+driver. Product adapters do not read scenario variables or implement their own
+mock state machines.
+
+The in-process transport also resolves a local immutable policy scenario. The
+loopback transport instead resolves no client-side policy: the standalone mock
+server exclusively parses policy, minimum-version, sequence, and named-policy
+variables and evaluates them against the `currentVersion` in each HTTP request.
+The client parser rejects those server-owned variables in loopback mode. This
+keeps Tutti's Electron-to-`outboundFetch` path and TSH's
+Electron-to-desktopd-to-HTTP path as real transport tests with one policy
+authority.
 
 Packaged applications ignore the environment family before parsing it. Enabled
 invalid scenarios fail startup. The optional HTTP server binds only to

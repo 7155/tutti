@@ -645,13 +645,15 @@ function createDevelopmentScenario(): DesktopUpdateDevelopmentScenario {
     currentVersion: "0.2.0-rc.0",
     foregroundCheckIntervalMs: 3_000,
     mockServerUrl: null,
-    policySteps: [
-      {
-        minimumVersion: "0.2.0-rc.1",
-        outcome: "upgradeRequired",
-        policySource: "defaultMinimum"
-      }
-    ],
+    policy: {
+      policySteps: [
+        {
+          minimum: { kind: "configured", version: "0.2.0-rc.1" },
+          outcome: "upgradeRequired",
+          policySource: "defaultMinimum"
+        }
+      ]
+    },
     transport: "in-process",
     updater: {
       check: "available",

@@ -9,15 +9,20 @@ export {
 } from "./updaterDriver.ts";
 export { createDevelopmentMinimumVersionChecker } from "./policyChecker.ts";
 export {
+  resolveDesktopUpdateDevelopmentPolicyScenario,
+  type DesktopUpdateDevelopmentPolicyMinimum,
+  type DesktopUpdateDevelopmentPolicyOutcome,
+  type DesktopUpdateDevelopmentPolicyScenario,
+  type DesktopUpdateDevelopmentPolicyStep
+} from "./policyScenario.ts";
+export {
   startDesktopUpdateDevelopmentMockServer,
   type DesktopUpdateDevelopmentMockServer
 } from "./mockServer.ts";
+export { desktopUpdateAdmissionDevelopmentEnvironment } from "./environment.ts";
 export {
-  desktopUpdateAdmissionDevelopmentEnvironment,
   resolveDesktopUpdateAdmissionDevelopment,
   resolveDesktopUpdateDevelopmentScenario,
-  type DesktopUpdateDevelopmentPolicyOutcome,
-  type DesktopUpdateDevelopmentPolicyStep,
   type DesktopUpdateDevelopmentResolution,
   type DesktopUpdateDevelopmentScenario,
   type DesktopUpdateDevelopmentUpdaterScenario

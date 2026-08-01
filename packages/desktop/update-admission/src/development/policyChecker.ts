@@ -5,9 +5,11 @@ import type {
 } from "../contracts/index.ts";
 import { validateMinimumVersionResponse } from "../core/index.ts";
 import type {
-  DesktopUpdateDevelopmentPolicyStep,
-  DesktopUpdateDevelopmentScenario
-} from "./scenario.ts";
+  DesktopUpdateDevelopmentPolicyMinimum,
+  DesktopUpdateDevelopmentPolicyScenario,
+  DesktopUpdateDevelopmentPolicyStep
+} from "./policyScenario.ts";
+import { validateDevelopmentPolicyScenarioForCurrentVersion } from "./policyScenario.ts";
 
 function developmentChannel(
   currentVersion: string
@@ -59,6 +61,10 @@ function responseForStep<TProduct extends DesktopProduct>(
     policyRevision: `development-policy-${revision}`,
     policySource: ""
   } as const;
+  const minimumVersion = (
+    minimum: DesktopUpdateDevelopmentPolicyMinimum
+  ): string =>
+    minimum.kind === "configured" ? minimum.version : request.currentVersion;
   switch (step.outcome) {
     case "allowed":
       return validateMinimumVersionResponse(
@@ -66,7 +72,7 @@ function responseForStep<TProduct extends DesktopProduct>(
           ...base,
           channel,
           decision: "allowed",
-          minimumVersion: step.minimumVersion,
+          minimumVersion: minimumVersion(step.minimum),
           policySource: step.policySource,
           reason: "meetsMinimum"
         },
@@ -78,7 +84,7 @@ function responseForStep<TProduct extends DesktopProduct>(
           ...base,
           channel,
           decision: "upgradeRequired",
-          minimumVersion: step.minimumVersion,
+          minimumVersion: minimumVersion(step.minimum),
           policySource: step.policySource,
           reason: "belowMinimum"
         },
@@ -119,7 +125,10 @@ function responseForStep<TProduct extends DesktopProduct>(
 }
 
 export function createDevelopmentMinimumVersionChecker(
-  scenario: DesktopUpdateDevelopmentScenario
+  policy: DesktopUpdateDevelopmentPolicyScenario,
+  options: {
+    expectedCurrentVersion?: string;
+  } = {}
 ): <TProduct extends DesktopProduct>(
   request: MinimumVersionCheckRequest<TProduct>,
   signal: AbortSignal
@@ -129,9 +138,12 @@ export function createDevelopmentMinimumVersionChecker(
     request: MinimumVersionCheckRequest<TProduct>,
     signal: AbortSignal
   ): Promise<MinimumVersionCheckResponse<TProduct>> => {
-    if (request.currentVersion !== scenario.currentVersion) {
+    if (
+      options.expectedCurrentVersion &&
+      request.currentVersion !== options.expectedCurrentVersion
+    ) {
       throw new Error(
-        `development policy expected currentVersion ${scenario.currentVersion}, received ${request.currentVersion}`
+        `development policy expected currentVersion ${options.expectedCurrentVersion}, received ${request.currentVersion}`
       );
     }
     const requestIdentity = [
@@ -140,8 +152,8 @@ export function createDevelopmentMinimumVersionChecker(
       request.architecture
     ].join(":");
     const checkIndex = checkIndexes.get(requestIdentity) ?? 0;
-    const stepIndex = Math.min(checkIndex, scenario.policySteps.length - 1);
-    const step = scenario.policySteps[stepIndex]!;
+    const stepIndex = Math.min(checkIndex, policy.policySteps.length - 1);
+    const step = policy.policySteps[stepIndex]!;
     checkIndexes.set(requestIdentity, checkIndex + 1);
     if (step.outcome === "timeout") {
       return await waitForAbort(signal);
@@ -149,6 +161,10 @@ export function createDevelopmentMinimumVersionChecker(
     if (step.outcome === "error") {
       throw new Error(step.message);
     }
+    validateDevelopmentPolicyScenarioForCurrentVersion(
+      { policySteps: [step] },
+      request.currentVersion
+    );
     return responseForStep(request, step, stepIndex + 1);
   };
 }

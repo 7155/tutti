@@ -195,7 +195,13 @@ export async function bootstrapDesktopApp(): Promise<void> {
   });
   const minimumVersionChecker =
     desktopUpdateAdmission.scenario?.transport === "in-process"
-      ? createDevelopmentMinimumVersionChecker(desktopUpdateAdmission.scenario)
+      ? createDevelopmentMinimumVersionChecker(
+          desktopUpdateAdmission.scenario.policy,
+          {
+            expectedCurrentVersion:
+              desktopUpdateAdmission.scenario.currentVersion
+          }
+        )
       : createTuttiMinimumVersionChecker(
           desktopUpdateAdmission.scenario?.mockServerUrl
             ? `${desktopUpdateAdmission.scenario.mockServerUrl}/api/desktop/v1`

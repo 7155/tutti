@@ -1,25 +1,36 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  completeDevelopmentUpdateInstallation,
-  createDevelopmentAppUpdateDriver,
-  DevelopmentInstallSuppressedError
-} from "./updaterDriver.ts";
+import { startDesktopUpdateDevelopmentMockServer } from "./mockServer.ts";
 import { createDevelopmentMinimumVersionChecker } from "./policyChecker.ts";
+import {
+  resolveDesktopUpdateDevelopmentPolicyScenario,
+  type DesktopUpdateDevelopmentPolicyScenario
+} from "./policyScenario.ts";
 import {
   resolveDesktopUpdateAdmissionDevelopment,
   resolveDesktopUpdateDevelopmentScenario,
   type DesktopUpdateDevelopmentScenario
 } from "./scenario.ts";
-import { startDesktopUpdateDevelopmentMockServer } from "./mockServer.ts";
+import {
+  completeDevelopmentUpdateInstallation,
+  createDevelopmentAppUpdateDriver,
+  DevelopmentInstallSuppressedError
+} from "./updaterDriver.ts";
 
-const baseEnvironment = {
+const inProcessEnvironment = {
   DESKTOP_UPDATE_ADMISSION_CURRENT_VERSION: "1.0.0",
   DESKTOP_UPDATE_ADMISSION_DEV: "1",
   DESKTOP_UPDATE_ADMISSION_LATEST_VERSION: "1.2.0",
   DESKTOP_UPDATE_ADMISSION_MINIMUM_VERSION: "1.1.0",
   DESKTOP_UPDATE_ADMISSION_POLICY: "upgradeRequired",
   DESKTOP_UPDATE_ADMISSION_UPDATER: "available"
+} as const;
+
+const loopbackClientEnvironment = {
+  DESKTOP_UPDATE_ADMISSION_CURRENT_VERSION: "1.0.0",
+  DESKTOP_UPDATE_ADMISSION_DEV: "1",
+  DESKTOP_UPDATE_ADMISSION_MOCK_SERVER_URL: "http://127.0.0.1:43210",
+  DESKTOP_UPDATE_ADMISSION_TRANSPORT: "loopback"
 } as const;
 
 test("packaged resolution ignores invalid development variables", () => {
@@ -42,12 +53,95 @@ test("packaged resolution ignores invalid development variables", () => {
   });
 });
 
-test("development resolution rejects contradictory version outcomes", () => {
+test("loopback client resolves without server policy variables", () => {
+  const scenario = resolveDesktopUpdateDevelopmentScenario({
+    env: loopbackClientEnvironment,
+    isPackaged: false
+  });
+
+  assert.deepEqual(scenario, {
+    currentVersion: "1.0.0",
+    foregroundCheckIntervalMs: 30 * 60 * 1_000,
+    mockServerUrl: "http://127.0.0.1:43210",
+    policy: null,
+    transport: "loopback",
+    updater: { check: "unavailable" }
+  });
+});
+
+test("loopback client rejects policy variables owned by the mock server", () => {
+  for (const serverVariable of [
+    "DESKTOP_UPDATE_ADMISSION_MINIMUM_VERSION",
+    "DESKTOP_UPDATE_ADMISSION_POLICY",
+    "DESKTOP_UPDATE_ADMISSION_POLICY_SEQUENCE",
+    "DESKTOP_UPDATE_ADMISSION_SCENARIO"
+  ]) {
+    assert.throws(
+      () =>
+        resolveDesktopUpdateDevelopmentScenario({
+          env: {
+            ...loopbackClientEnvironment,
+            [serverVariable]: "upgradeRequired"
+          },
+          isPackaged: false
+        }),
+      new RegExp(`${serverVariable} belongs to the loopback mock server`)
+    );
+  }
+});
+
+test("loopback updater can be configured independently from server policy", () => {
+  const scenario = resolveDesktopUpdateDevelopmentScenario({
+    env: {
+      ...loopbackClientEnvironment,
+      DESKTOP_UPDATE_ADMISSION_LATEST_VERSION: "1.2.0",
+      DESKTOP_UPDATE_ADMISSION_UPDATER: "available"
+    },
+    isPackaged: false
+  });
+
+  assert.deepEqual(scenario?.updater, {
+    check: "available",
+    download: "success",
+    install: "simulated",
+    latestVersion: "1.2.0"
+  });
+});
+
+test("in-process client still requires local policy configuration", () => {
   assert.throws(
     () =>
       resolveDesktopUpdateDevelopmentScenario({
         env: {
-          ...baseEnvironment,
+          DESKTOP_UPDATE_ADMISSION_CURRENT_VERSION: "1.0.0",
+          DESKTOP_UPDATE_ADMISSION_DEV: "1",
+          DESKTOP_UPDATE_ADMISSION_UPDATER: "unavailable"
+        },
+        isPackaged: false
+      }),
+    /DESKTOP_UPDATE_ADMISSION_POLICY or DESKTOP_UPDATE_ADMISSION_POLICY_SEQUENCE is required/
+  );
+  assert.throws(
+    () =>
+      resolveDesktopUpdateDevelopmentScenario({
+        env: {
+          DESKTOP_UPDATE_ADMISSION_CURRENT_VERSION: "1.0.0",
+          DESKTOP_UPDATE_ADMISSION_DEV: "1",
+          DESKTOP_UPDATE_ADMISSION_POLICY: "upgradeRequired",
+          DESKTOP_UPDATE_ADMISSION_UPDATER: "unavailable"
+        },
+        isPackaged: false
+      }),
+    /DESKTOP_UPDATE_ADMISSION_MINIMUM_VERSION must be valid SemVer/
+  );
+});
+
+test("in-process resolution rejects contradictory version outcomes", () => {
+  assert.throws(
+    () =>
+      resolveDesktopUpdateDevelopmentScenario({
+        env: {
+          ...inProcessEnvironment,
           DESKTOP_UPDATE_ADMISSION_MINIMUM_VERSION: "0.9.0"
         },
         isPackaged: false
@@ -56,12 +150,12 @@ test("development resolution rejects contradictory version outcomes", () => {
   );
 });
 
-test("development resolution rejects invalid SemVer and non-loopback transport", () => {
+test("client resolution rejects invalid SemVer and non-loopback URL", () => {
   assert.throws(
     () =>
       resolveDesktopUpdateDevelopmentScenario({
         env: {
-          ...baseEnvironment,
+          ...loopbackClientEnvironment,
           DESKTOP_UPDATE_ADMISSION_CURRENT_VERSION: "01.0.0"
         },
         isPackaged: false
@@ -72,9 +166,8 @@ test("development resolution rejects invalid SemVer and non-loopback transport",
     () =>
       resolveDesktopUpdateDevelopmentScenario({
         env: {
-          ...baseEnvironment,
-          DESKTOP_UPDATE_ADMISSION_MOCK_SERVER_URL: "http://localhost:43210",
-          DESKTOP_UPDATE_ADMISSION_TRANSPORT: "loopback"
+          ...loopbackClientEnvironment,
+          DESKTOP_UPDATE_ADMISSION_MOCK_SERVER_URL: "http://localhost:43210"
         },
         isPackaged: false
       }),
@@ -85,7 +178,7 @@ test("development resolution rejects invalid SemVer and non-loopback transport",
 test("target-below-minimum scenario keeps updater and policy versions coherent", () => {
   const scenario = resolveDesktopUpdateDevelopmentScenario({
     env: {
-      ...baseEnvironment,
+      ...inProcessEnvironment,
       DESKTOP_UPDATE_ADMISSION_LATEST_VERSION: "1.1.0",
       DESKTOP_UPDATE_ADMISSION_MINIMUM_VERSION: "1.2.0",
       DESKTOP_UPDATE_ADMISSION_POLICY: undefined,
@@ -103,7 +196,7 @@ test("named scenarios reject individually configured outcomes", () => {
     () =>
       resolveDesktopUpdateDevelopmentScenario({
         env: {
-          ...baseEnvironment,
+          ...inProcessEnvironment,
           DESKTOP_UPDATE_ADMISSION_SCENARIO: "startup-force-success"
         },
         isPackaged: false
@@ -113,15 +206,13 @@ test("named scenarios reject individually configured outcomes", () => {
 });
 
 test("policy sequences advance and keep their final response", async () => {
-  const scenario = resolveDesktopUpdateDevelopmentScenario({
-    env: {
-      ...baseEnvironment,
-      DESKTOP_UPDATE_ADMISSION_POLICY: undefined,
-      DESKTOP_UPDATE_ADMISSION_POLICY_SEQUENCE: "upgradeRequired@1.1.0,disabled"
-    },
-    isPackaged: false
-  })!;
-  const checker = createDevelopmentMinimumVersionChecker(scenario);
+  const policy = resolvePolicy({
+    DESKTOP_UPDATE_ADMISSION_DEV: "1",
+    DESKTOP_UPDATE_ADMISSION_POLICY_SEQUENCE: "upgradeRequired@1.1.0,disabled"
+  });
+  const checker = createDevelopmentMinimumVersionChecker(policy, {
+    expectedCurrentVersion: "1.0.0"
+  });
   const request = {
     architecture: "arm64",
     currentVersion: "1.0.0",
@@ -144,15 +235,11 @@ test("policy sequences advance and keep their final response", async () => {
 });
 
 test("policy sequences advance independently for each desktop product", async () => {
-  const scenario = resolveDesktopUpdateDevelopmentScenario({
-    env: {
-      ...baseEnvironment,
-      DESKTOP_UPDATE_ADMISSION_POLICY: undefined,
-      DESKTOP_UPDATE_ADMISSION_POLICY_SEQUENCE: "upgradeRequired@1.1.0,disabled"
-    },
-    isPackaged: false
-  })!;
-  const checker = createDevelopmentMinimumVersionChecker(scenario);
+  const policy = resolvePolicy({
+    DESKTOP_UPDATE_ADMISSION_DEV: "1",
+    DESKTOP_UPDATE_ADMISSION_POLICY_SEQUENCE: "upgradeRequired@1.1.0,disabled"
+  });
+  const checker = createDevelopmentMinimumVersionChecker(policy);
   const request = {
     architecture: "arm64",
     currentVersion: "1.0.0",
@@ -180,14 +267,12 @@ test("policy sequences advance independently for each desktop product", async ()
 });
 
 test("timeout policy remains pending until the caller aborts", async () => {
-  const scenario = resolveDesktopUpdateDevelopmentScenario({
-    env: {
-      ...baseEnvironment,
+  const checker = createDevelopmentMinimumVersionChecker(
+    resolvePolicy({
+      DESKTOP_UPDATE_ADMISSION_DEV: "1",
       DESKTOP_UPDATE_ADMISSION_POLICY: "timeout"
-    },
-    isPackaged: false
-  })!;
-  const checker = createDevelopmentMinimumVersionChecker(scenario);
+    })
+  );
   const controller = new AbortController();
   const pending = checker(
     {
@@ -202,6 +287,42 @@ test("timeout policy remains pending until the caller aborts", async () => {
   controller.abort();
 
   await assert.rejects(pending, { name: "AbortError" });
+});
+
+test("retry-policy-released exposes retry after updater failure", async () => {
+  const scenario = resolveDesktopUpdateDevelopmentScenario({
+    env: {
+      DESKTOP_UPDATE_ADMISSION_CURRENT_VERSION: "1.0.0",
+      DESKTOP_UPDATE_ADMISSION_DEV: "1",
+      DESKTOP_UPDATE_ADMISSION_LATEST_VERSION: "1.2.0",
+      DESKTOP_UPDATE_ADMISSION_MINIMUM_VERSION: "1.1.0",
+      DESKTOP_UPDATE_ADMISSION_SCENARIO: "retry-policy-released"
+    },
+    isPackaged: false
+  });
+  assert.ok(scenario?.transport === "in-process");
+  const checker = createDevelopmentMinimumVersionChecker(scenario.policy, {
+    expectedCurrentVersion: scenario.currentVersion
+  });
+  const request = {
+    architecture: "arm64",
+    currentVersion: scenario.currentVersion,
+    platform: "macos",
+    product: "tutti-desktop"
+  } as const;
+
+  assert.equal(
+    (await checker(request, new AbortController().signal)).decision,
+    "upgradeRequired"
+  );
+  await assert.rejects(
+    createDevelopmentAppUpdateDriver(scenario).checkForUpdates(),
+    /Development update check failed/
+  );
+  assert.equal(
+    (await checker(request, new AbortController().signal)).reason,
+    "productDisabled"
+  );
 });
 
 test("development updater emits a deterministic successful download", async () => {
@@ -232,10 +353,13 @@ test("development updater emits a deterministic successful download", async () =
   );
 });
 
-test("loopback mock server serves the public desktop-version contract", async () => {
-  const server = await startDesktopUpdateDevelopmentMockServer({
-    scenario: createScenario()
+test("loopback mock server owns policy and returns its minimum version", async () => {
+  const policy = resolvePolicy({
+    DESKTOP_UPDATE_ADMISSION_DEV: "1",
+    DESKTOP_UPDATE_ADMISSION_MINIMUM_VERSION: "1.4.0",
+    DESKTOP_UPDATE_ADMISSION_POLICY: "upgradeRequired"
   });
+  const server = await startDesktopUpdateDevelopmentMockServer({ policy });
   try {
     const response = await fetch(
       `${server.baseUrl}/api/desktop/v1/public/desktop-version/check`,
@@ -251,10 +375,18 @@ test("loopback mock server serves the public desktop-version contract", async ()
       }
     );
     assert.equal(response.status, 200);
-    assert.equal(
-      ((await response.json()) as { decision: string }).decision,
-      "upgradeRequired"
-    );
+    assert.deepEqual(await response.json(), {
+      architecture: "arm64",
+      channel: "stable",
+      currentVersion: "1.0.0",
+      decision: "upgradeRequired",
+      minimumVersion: "1.4.0",
+      platform: "macos",
+      policyRevision: "development-policy-1",
+      policySource: "defaultMinimum",
+      product: "tsh-desktop",
+      reason: "belowMinimum"
+    });
     const invalidResponse = await fetch(
       `${server.baseUrl}/api/desktop/v1/public/desktop-version/check`,
       {
@@ -270,18 +402,31 @@ test("loopback mock server serves the public desktop-version contract", async ()
   }
 });
 
-function createScenario(): DesktopUpdateDevelopmentScenario {
+function resolvePolicy(
+  env: Readonly<Record<string, string | undefined>>
+): DesktopUpdateDevelopmentPolicyScenario {
+  const policy = resolveDesktopUpdateDevelopmentPolicyScenario({ env });
+  assert.ok(policy);
+  return policy;
+}
+
+function createScenario(): Extract<
+  DesktopUpdateDevelopmentScenario,
+  { transport: "in-process" }
+> {
   return {
     currentVersion: "1.0.0",
     foregroundCheckIntervalMs: 3_000,
     mockServerUrl: null,
-    policySteps: [
-      {
-        minimumVersion: "1.1.0",
-        outcome: "upgradeRequired",
-        policySource: "defaultMinimum"
-      }
-    ],
+    policy: {
+      policySteps: [
+        {
+          minimum: { kind: "configured", version: "1.1.0" },
+          outcome: "upgradeRequired",
+          policySource: "defaultMinimum"
+        }
+      ]
+    },
     transport: "in-process",
     updater: {
       check: "available",

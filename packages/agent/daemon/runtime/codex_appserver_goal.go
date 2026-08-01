@@ -340,6 +340,8 @@ func (a *CodexAppServerAdapter) execSlashCommand(
 	emitTerminal func([]activityshared.Event),
 	emitCommands CommandSnapshotSink,
 	reportDispatch ProviderDispatchSink,
+	admitProviderTurn func(string) error,
+	admitWithoutProviderTurn func(),
 ) (bool, error) {
 	command, args := splitSlashCommand(displayPrompt)
 	switch command {
@@ -368,7 +370,7 @@ func (a *CodexAppServerAdapter) execSlashCommand(
 			))
 			return true, nil
 		}
-		reportCodexAppliedWithoutProviderTurn(reportDispatch)
+		admitWithoutProviderTurn()
 		// Block until the App Server signals turn/completed. The session-level
 		// handler keeps activeTurn alive during this wait, so the
 		// contextCompaction item/completed notification fires appServerItemEvents
@@ -440,13 +442,11 @@ func (a *CodexAppServerAdapter) execSlashCommand(
 		}
 		if goalDrivesTurn {
 			initialTurn := appServerTurnFromResult(result)
-			reportCodexProviderTurnAccepted(
-				reportDispatch,
-				appSession.threadID,
-				asString(initialTurn["id"]),
-			)
+			if err := admitProviderTurn(asString(initialTurn["id"])); err != nil {
+				return true, err
+			}
 		} else {
-			reportCodexAppliedWithoutProviderTurn(reportDispatch)
+			admitWithoutProviderTurn()
 		}
 		if method == appServerMethodThreadGoalClear {
 			a.applyGoalClear(session.AgentSessionID)
@@ -522,7 +522,20 @@ func (a *CodexAppServerAdapter) execSlashCommand(
 		emitTerminal(terminalEvents)
 		return true, nil
 	case appServerSlashReview:
-		return a.execReviewSlashCommand(ctx, appSession, session, args, turnID, appTurn, normalizer, emitEvents, emitTerminal, emitCommands, reportDispatch)
+		return a.execReviewSlashCommand(
+			ctx,
+			appSession,
+			session,
+			args,
+			turnID,
+			appTurn,
+			normalizer,
+			emitEvents,
+			emitTerminal,
+			emitCommands,
+			reportDispatch,
+			admitProviderTurn,
+		)
 	case appServerSlashUndo:
 		_, err := appSession.client.ThreadRollback(ctx, map[string]any{
 			"threadId": appSession.threadID,
@@ -533,7 +546,7 @@ func (a *CodexAppServerAdapter) execSlashCommand(
 			emitTerminal([]activityshared.Event{newTurnActivityEvent(session, EventTurnFailed, turnID, SessionStatusFailed, "", "", acpFailureMetadata(err))})
 			return true, nil
 		}
-		reportCodexAppliedWithoutProviderTurn(reportDispatch)
+		admitWithoutProviderTurn()
 		emitTerminal([]activityshared.Event{
 			appServerSystemNoticeEvent(session, turnID, "system_notice", "Removed the last turn from the conversation. Local file changes are not reverted.", ""),
 			newTurnActivityEvent(session, EventTurnCompleted, turnID, SessionStatusReady, "", "", map[string]any{

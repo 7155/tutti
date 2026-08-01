@@ -23,6 +23,12 @@ import type { CompactionTracker } from "./compaction.ts";
 import type { MessageProjection } from "./messageProjection.ts";
 import type { ToolActivityProjector } from "./toolActivity.ts";
 import type { TurnLifecycle } from "./turnLifecycle.ts";
+import type { ProviderTurnPhase } from "./providerTurnAcceptance.ts";
+
+type ObservableProviderTurnPhase = Extract<
+  ProviderTurnPhase,
+  "streaming" | "running_tool"
+>;
 
 export class SDKMessageRouter {
   private readonly getProviderSessionId: () => string;
@@ -38,6 +44,14 @@ export class SDKMessageRouter {
   private readonly projection: MessageProjection;
   private readonly compaction: CompactionTracker;
   private readonly emit: ClaudeSDKSidecarEventEmitter;
+  private readonly emitProviderCheckpointEvent: (
+    turnId: string,
+    providerTurnId: string,
+    providerCheckpointMessageId: string
+  ) => void;
+  private readonly ensureProviderTurnAcceptance: (
+    phase: ObservableProviderTurnPhase
+  ) => Promise<void>;
   private contextUsageGeneration = 0;
   private activeRootAssistantError = "";
   private activeRootConnectionRetry = false;
@@ -56,6 +70,14 @@ export class SDKMessageRouter {
     projection: MessageProjection;
     compaction: CompactionTracker;
     emit: ClaudeSDKSidecarEventEmitter;
+    emitProviderCheckpoint: (
+      turnId: string,
+      providerTurnId: string,
+      providerCheckpointMessageId: string
+    ) => void;
+    ensureProviderTurnAcceptance: (
+      phase: ObservableProviderTurnPhase
+    ) => Promise<void>;
   }) {
     this.getProviderSessionId = options.getProviderSessionId;
     this.setProviderSessionId = options.setProviderSessionId;
@@ -70,6 +92,8 @@ export class SDKMessageRouter {
     this.projection = options.projection;
     this.compaction = options.compaction;
     this.emit = options.emit;
+    this.emitProviderCheckpointEvent = options.emitProviderCheckpoint;
+    this.ensureProviderTurnAcceptance = options.ensureProviderTurnAcceptance;
   }
 
   async handle(message: SDKMessage): Promise<void> {
@@ -132,11 +156,17 @@ export class SDKMessageRouter {
     }
 
     if (message.type === "stream_event") {
+      if (!parentToolUseID) {
+        await this.ensureProviderTurnAcceptance("streaming");
+      }
       this.handleStreamEvent(message, parentToolUseID);
       return;
     }
 
     if (message.type === "assistant") {
+      if (!parentToolUseID) {
+        await this.ensureProviderTurnAcceptance("streaming");
+      }
       this.handleAssistant(message, parentToolUseID);
       this.emitProviderCheckpoint(message, parentToolUseID);
       return;
@@ -152,6 +182,9 @@ export class SDKMessageRouter {
     }
 
     if (message.type === "tool_progress") {
+      if (!parentToolUseID) {
+        await this.ensureProviderTurnAcceptance("running_tool");
+      }
       if (!this.turns.ensureActive("tool_progress")) {
         return;
       }
@@ -393,14 +426,11 @@ export class SDKMessageRouter {
     if (!checkpointMessageId || !turnId || !providerTurnId) {
       return;
     }
-    this.emit({
-      type: "provider_turn_checkpoint",
-      payload: {
-        turnId,
-        providerTurnId,
-        providerCheckpointMessageId: checkpointMessageId
-      }
-    });
+    this.emitProviderCheckpointEvent(
+      turnId,
+      providerTurnId,
+      checkpointMessageId
+    );
   }
 
   private handleUser(message: SDKMessage, parentToolUseID: string): void {
@@ -472,6 +502,7 @@ export class SDKMessageRouter {
     ) {
       return;
     }
+    await this.ensureProviderTurnAcceptance("streaming");
     const turnId = this.turns.activeId;
     const contextUsageGeneration = this.contextUsageGeneration;
     const assistantError = this.activeRootAssistantError;
@@ -495,6 +526,13 @@ export class SDKMessageRouter {
       this.activities.markTaskNotificationContinuation();
       void this.emitResultUsage(turnId, contextUsageGeneration, result);
       return;
+    }
+    if (succeeded) {
+      // A successful provider result is authoritative that a root
+      // run_in_background invocation launched. Close the launch tool before
+      // the root terminal even when the SDK's task_started notification is
+      // delayed; the detached process itself remains independently stoppable.
+      this.activities.completePendingRootBackgroundLaunches();
     }
     const pendingBackgroundContinuation =
       succeeded && this.activities.hasPendingBackgroundContinuation();

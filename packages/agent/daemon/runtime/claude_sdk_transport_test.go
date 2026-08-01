@@ -208,8 +208,19 @@ func TestClaudeCodeSDKAdapterReaderKeepsDrainingAfterTurnTerminal(t *testing.T) 
 	}()
 	waitForClaudeSDKSentRequest(t, conn, "exec")
 	conn.pushEvent(claudeSDKSidecarEvent{
-		Type:    "turn_completed",
-		Payload: map[string]any{"turnId": "turn-background", "stopReason": "end_turn"},
+		Type: "provider_turn_identity_resolved",
+		Payload: map[string]any{
+			"turnId":         "turn-background",
+			"providerTurnId": "provider-turn-background",
+		},
+	})
+	conn.pushEvent(claudeSDKSidecarEvent{
+		Type: "turn_completed",
+		Payload: map[string]any{
+			"turnId":         "turn-background",
+			"providerTurnId": "provider-turn-background",
+			"stopReason":     "end_turn",
+		},
 	})
 	select {
 	case err := <-done:
@@ -278,8 +289,19 @@ func TestClaudeCodeSDKAdapterDropsUntrackedTurnTerminalEvent(t *testing.T) {
 	}()
 	waitForClaudeSDKSentRequest(t, conn, "exec")
 	conn.pushEvent(claudeSDKSidecarEvent{
-		Type:    "turn_completed",
-		Payload: map[string]any{"turnId": "turn-real", "stopReason": "end_turn"},
+		Type: "provider_turn_identity_resolved",
+		Payload: map[string]any{
+			"turnId":         "turn-real",
+			"providerTurnId": "provider-turn-real",
+		},
+	})
+	conn.pushEvent(claudeSDKSidecarEvent{
+		Type: "turn_completed",
+		Payload: map[string]any{
+			"turnId":         "turn-real",
+			"providerTurnId": "provider-turn-real",
+			"stopReason":     "end_turn",
+		},
 	})
 	select {
 	case err := <-done:
@@ -363,8 +385,9 @@ func TestClaudeCodeSDKAdapterClosesSyntheticTurnLifecycleWithoutExecWaiter(t *te
 	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
 		Type: "turn_completed",
 		Payload: map[string]any{
-			"turnId":     "synthetic-continuation-1",
-			"stopReason": "end_turn",
+			"turnId":         "synthetic-continuation-1",
+			"providerTurnId": "synthetic-continuation-1",
+			"stopReason":     "end_turn",
 		},
 	})
 
@@ -419,8 +442,19 @@ func TestClaudeCodeSDKAdapterRoundTripUsesReaderDispatcherAfterExec(t *testing.T
 	}()
 	waitForClaudeSDKSentRequest(t, conn, "exec")
 	conn.pushEvent(claudeSDKSidecarEvent{
-		Type:    "turn_completed",
-		Payload: map[string]any{"turnId": "turn-settings", "stopReason": "end_turn"},
+		Type: "provider_turn_identity_resolved",
+		Payload: map[string]any{
+			"turnId":         "turn-settings",
+			"providerTurnId": "provider-turn-settings",
+		},
+	})
+	conn.pushEvent(claudeSDKSidecarEvent{
+		Type: "turn_completed",
+		Payload: map[string]any{
+			"turnId":         "turn-settings",
+			"providerTurnId": "provider-turn-settings",
+			"stopReason":     "end_turn",
+		},
 	})
 	select {
 	case err := <-done:

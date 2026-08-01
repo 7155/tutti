@@ -158,7 +158,8 @@ func TestClaudeSDKForkedChildCanResumeAndStartTurn(t *testing.T) {
 			},
 			{
 				Stdout: []byte(
-					`{"type":"turn_completed","payload":{"turnId":"canonical-child-turn","stopReason":"end_turn"}}` + "\n",
+					`{"type":"provider_turn_identity_resolved","payload":{"turnId":"canonical-child-turn","providerTurnId":"child-provider-turn"}}` + "\n" +
+						`{"type":"turn_completed","payload":{"turnId":"canonical-child-turn","providerTurnId":"child-provider-turn","stopReason":"end_turn"}}` + "\n",
 				),
 			},
 		},

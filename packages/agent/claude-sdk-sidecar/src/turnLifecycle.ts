@@ -1,4 +1,5 @@
 import type { ClaudeSDKSidecarEventEmitter } from "./protocol.ts";
+import type { ProviderTurnIdentityBindingDisposition } from "./providerTurnAcceptance.ts";
 
 export type RuntimeTurn = {
   readonly turnId: string;
@@ -27,7 +28,7 @@ export class TurnLifecycle {
   private readonly turns: RuntimeTurn[] = [];
   private readonly emit: ClaudeSDKSidecarEventEmitter;
   private readonly onActivate: () => void;
-  private readonly onSettled: () => void;
+  private readonly onSettled: (turnId: string) => void;
   private readonly onContinuationStartTimeout: () => void;
   private readonly continuationStartTimeoutMs: number;
   private active: RuntimeTurn | undefined;
@@ -43,7 +44,7 @@ export class TurnLifecycle {
   constructor(options: {
     emit: ClaudeSDKSidecarEventEmitter;
     onActivate: () => void;
-    onSettled: () => void;
+    onSettled: (turnId: string) => void;
     onContinuationStartTimeout?: () => void;
     continuationStartTimeoutMs?: number;
   }) {
@@ -147,6 +148,29 @@ export class TurnLifecycle {
       return;
     }
     this.ensureActive("user");
+  }
+
+  bindProviderTurnIdentity(
+    turnId: string,
+    providerTurnId: string
+  ): ProviderTurnIdentityBindingDisposition {
+    const normalizedTurnId = turnId.trim();
+    const turn = this.turns.find(
+      (candidate) => !candidate.settled && candidate.turnId === normalizedTurnId
+    );
+    if (!turn) {
+      return "missing";
+    }
+    const normalizedProviderTurnId = providerTurnId.trim();
+    const existingProviderTurnId = turn.providerTurnId?.trim() ?? "";
+    if (existingProviderTurnId) {
+      return existingProviderTurnId === normalizedProviderTurnId
+        ? "already_bound"
+        : "conflict";
+    }
+    return this.bindProviderTurnId(turn, normalizedProviderTurnId)
+      ? "bound"
+      : "conflict";
   }
 
   ensureActive(messageType: string): RuntimeTurn | undefined {
@@ -257,7 +281,7 @@ export class TurnLifecycle {
     this.active = undefined;
     this.activeIdValue = "";
     this.compactQueue();
-    this.onSettled();
+    this.onSettled(turn.turnId);
   }
 
   failLiveTurns(error: string): void {
@@ -414,14 +438,17 @@ export class TurnLifecycle {
     });
   }
 
-  private bindProviderTurnId(turn: RuntimeTurn, providerTurnId: string): void {
+  private bindProviderTurnId(
+    turn: RuntimeTurn,
+    providerTurnId: string
+  ): boolean {
     if (
       turn.synthetic ||
       !providerTurnId ||
       turn.providerTurnId?.trim() ||
       turn.providerTurnStarted
     ) {
-      return;
+      return false;
     }
     turn.providerTurnId = providerTurnId;
     if (turn === this.active || turn.turnId === this.lastTurnIdValue) {
@@ -430,16 +457,17 @@ export class TurnLifecycle {
     turn.awaitingProviderTurnIdentity = false;
     turn.providerTurnStarted = true;
     this.emit({
-      type: "provider_turn_started",
+      type: "provider_turn_identity_resolved",
       payload: {
         turnId: turn.turnId,
         providerTurnId
       }
     });
+    return true;
   }
 
   private providerTurnId(turn: RuntimeTurn): string {
-    return turn.providerTurnId?.trim() || turn.promptUuid.trim();
+    return turn.providerTurnId?.trim() || "";
   }
 
   private compactQueue(): void {

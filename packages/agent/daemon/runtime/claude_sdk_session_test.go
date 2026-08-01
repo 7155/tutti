@@ -573,7 +573,7 @@ func TestClaudeCodeSDKAdapterAcceptsImagePromptContent(t *testing.T) {
 func TestClaudeCodeSDKAdapterExecSendsStructuredPromptContent(t *testing.T) {
 	conn := &scriptedClaudeSDKConnection{
 		frames: []ProcessFrame{{
-			Stdout: []byte(`{"type":"turn_completed","payload":{"turnId":"turn-image","stopReason":"end_turn"}}` + "\n"),
+			Stdout: []byte(`{"type":"provider_turn_identity_resolved","payload":{"turnId":"turn-image","providerTurnId":"provider-turn-image"}}` + "\n" + `{"type":"turn_completed","payload":{"turnId":"turn-image","providerTurnId":"provider-turn-image","stopReason":"end_turn"}}` + "\n"),
 		}},
 	}
 	adapter := NewClaudeCodeSDKAdapter(nil)

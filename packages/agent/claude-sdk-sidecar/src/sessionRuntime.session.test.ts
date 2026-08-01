@@ -70,7 +70,7 @@ test("Claude-persisted user UUID becomes the provider Turn identity", async () =
     await waitForEvent(events, "turn_completed");
 
     const providerStarted = events.find(
-      (event) => event.type === "provider_turn_started"
+      (event) => event.type === "provider_turn_identity_resolved"
     );
     const providerCheckpoint = events.find(
       (event) => event.type === "provider_turn_checkpoint"
@@ -93,6 +93,407 @@ test("Claude-persisted user UUID becomes the provider Turn identity", async () =
     restoreSink();
   }
 });
+
+test("successful result recovers provider Turn identity when SDK omits the root user echo", async () => {
+  const events: Array<{ type: string; payload?: Record<string, unknown> }> = [];
+  const recoveryInputs: Array<Record<string, string>> = [];
+  const restoreSink = withSidecarEventSinkForTest((event) =>
+    events.push(event)
+  );
+  try {
+    const session = new SessionRuntime(
+      "provider-session-recovered",
+      "/repo",
+      {},
+      false,
+      false,
+      {
+        model: "",
+        permissionModeId: "default",
+        planMode: false,
+        effort: "",
+        speed: ""
+      },
+      sidecarClaudeOptionsFromPayload({}),
+      undefined,
+      ({ prompt }) => ({
+        async *[Symbol.asyncIterator]() {
+          await prompt[Symbol.asyncIterator]().next();
+          yield {
+            type: "assistant",
+            uuid: "persisted-assistant-uuid",
+            parent_tool_use_id: null,
+            session_id: "provider-session-recovered",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "hello" }]
+            }
+          } as never;
+          yield { type: "result", subtype: "success" } as never;
+        },
+        close() {}
+      }),
+      30_000,
+      async (input) => {
+        recoveryInputs.push(input);
+        return {
+          providerSessionId: input.sessionId,
+          providerTurnId: "persisted-user-uuid",
+          providerCheckpointMessageId: "persisted-assistant-uuid"
+        };
+      }
+    );
+
+    await session.start();
+    session.exec(
+      "turn-recovered",
+      "hello",
+      undefined,
+      undefined,
+      undefined,
+      "",
+      "outbound-correlation-id"
+    );
+    await waitForEvent(events, "turn_completed");
+
+    assert.deepEqual(recoveryInputs, [
+      {
+        sessionId: "provider-session-recovered",
+        cwd: "/repo",
+        recoveryToken: "outbound-correlation-id"
+      }
+    ]);
+    assert.deepEqual(
+      events
+        .filter((event) =>
+          [
+            "provider_turn_identity_resolved",
+            "provider_turn_checkpoint",
+            "turn_completed"
+          ].includes(event.type)
+        )
+        .map(({ type, payload }) => ({ type, payload })),
+      [
+        {
+          type: "provider_turn_identity_resolved",
+          payload: {
+            turnId: "turn-recovered",
+            providerTurnId: "persisted-user-uuid"
+          }
+        },
+        {
+          type: "provider_turn_checkpoint",
+          payload: {
+            turnId: "turn-recovered",
+            providerTurnId: "persisted-user-uuid",
+            providerCheckpointMessageId: "persisted-assistant-uuid"
+          }
+        },
+        {
+          type: "turn_completed",
+          payload: {
+            stopReason: "end_turn",
+            turnId: "turn-recovered",
+            providerTurnId: "persisted-user-uuid"
+          }
+        }
+      ]
+    );
+  } finally {
+    restoreSink();
+  }
+});
+
+test("interactive request recovers provider Turn identity before waiting when SDK omits the root user echo", async () => {
+  const events: Array<{ type: string; payload?: Record<string, unknown> }> = [];
+  const recoveryInputs: Array<Record<string, string>> = [];
+  const restoreSink = withSidecarEventSinkForTest((event) =>
+    events.push(event)
+  );
+  let permissionResult: unknown;
+  try {
+    const session = new SessionRuntime(
+      "provider-session-interactive-recovered",
+      "/repo",
+      {},
+      false,
+      false,
+      {
+        model: "",
+        permissionModeId: "default",
+        planMode: false,
+        effort: "",
+        speed: ""
+      },
+      sidecarClaudeOptionsFromPayload({}),
+      undefined,
+      ({ prompt, options }) => ({
+        async *[Symbol.asyncIterator]() {
+          await prompt[Symbol.asyncIterator]().next();
+          yield {
+            type: "assistant",
+            uuid: "persisted-tool-assistant-uuid",
+            parent_tool_use_id: null,
+            session_id: "provider-session-interactive-recovered",
+            message: {
+              role: "assistant",
+              content: [
+                {
+                  type: "tool_use",
+                  id: "toolu-write",
+                  name: "Write",
+                  input: { file_path: "/repo/tetris.html" }
+                }
+              ]
+            }
+          } as never;
+          permissionResult = await options.canUseTool?.(
+            "Write",
+            { file_path: "/repo/tetris.html" },
+            testCanUseToolOptions({
+              requestId: "request-write",
+              toolUseID: "toolu-write"
+            })
+          );
+          yield { type: "result", subtype: "success" } as never;
+        },
+        close() {}
+      }),
+      30_000,
+      async (input) => {
+        recoveryInputs.push(input);
+        return {
+          providerSessionId: input.sessionId,
+          providerTurnId: "persisted-tool-user-uuid",
+          providerCheckpointMessageId: "persisted-tool-assistant-uuid"
+        };
+      }
+    );
+
+    await session.start();
+    session.exec(
+      "turn-interactive-recovered",
+      "write a file",
+      undefined,
+      undefined,
+      undefined,
+      "",
+      "outbound-interactive-correlation-id"
+    );
+    await waitForEvent(events, "approval_requested");
+
+    assert.deepEqual(recoveryInputs, [
+      {
+        sessionId: "provider-session-interactive-recovered",
+        cwd: "/repo",
+        recoveryToken: "outbound-interactive-correlation-id"
+      }
+    ]);
+    assert.deepEqual(
+      events
+        .filter((event) =>
+          [
+            "provider_turn_identity_resolved",
+            "provider_turn_checkpoint",
+            "approval_requested"
+          ].includes(event.type)
+        )
+        .map(({ type, payload }) => ({ type, payload })),
+      [
+        {
+          type: "provider_turn_identity_resolved",
+          payload: {
+            turnId: "turn-interactive-recovered",
+            providerTurnId: "persisted-tool-user-uuid"
+          }
+        },
+        {
+          type: "provider_turn_checkpoint",
+          payload: {
+            turnId: "turn-interactive-recovered",
+            providerTurnId: "persisted-tool-user-uuid",
+            providerCheckpointMessageId: "persisted-tool-assistant-uuid"
+          }
+        },
+        {
+          type: "approval_requested",
+          payload: events.find((event) => event.type === "approval_requested")
+            ?.payload
+        }
+      ]
+    );
+
+    const request = events.find((event) => event.type === "approval_requested");
+    session.submitInteractive(
+      "turn-interactive-recovered",
+      String(request?.payload?.requestId ?? ""),
+      "submit",
+      "allow",
+      {}
+    );
+    await waitForEvent(events, "turn_completed");
+
+    assert.deepEqual(permissionResult, {
+      behavior: "allow",
+      updatedInput: { file_path: "/repo/tetris.html" }
+    });
+    assert.equal(
+      events.filter((event) => event.type === "provider_turn_identity_resolved")
+        .length,
+      1
+    );
+  } finally {
+    restoreSink();
+  }
+});
+
+test("AskUserQuestion and ExitPlanMode share one accepted identity without root user echo", async () => {
+  const events: Array<{ type: string; payload?: Record<string, unknown> }> = [];
+  const restoreSink = withSidecarEventSinkForTest((event) =>
+    events.push(event)
+  );
+  let recoveryCalls = 0;
+  try {
+    const session = new SessionRuntime(
+      "provider-session-multi-interaction",
+      "/repo",
+      {},
+      false,
+      false,
+      {
+        model: "",
+        permissionModeId: "default",
+        planMode: false,
+        effort: "",
+        speed: ""
+      },
+      sidecarClaudeOptionsFromPayload({}),
+      undefined,
+      ({ prompt, options }) => ({
+        async *[Symbol.asyncIterator]() {
+          await prompt[Symbol.asyncIterator]().next();
+          yield {
+            type: "assistant",
+            uuid: "assistant-before-interactions",
+            parent_tool_use_id: null,
+            session_id: "provider-session-multi-interaction",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "I need two answers." }]
+            }
+          } as never;
+          await options.canUseTool?.(
+            "AskUserQuestion",
+            {
+              questions: [
+                {
+                  header: "Choice",
+                  question: "Pick one",
+                  options: [{ label: "A", description: "Alpha" }]
+                }
+              ]
+            },
+            testCanUseToolOptions({
+              requestId: "request-ask",
+              toolUseID: "toolu-ask"
+            })
+          );
+          await options.canUseTool?.(
+            "ExitPlanMode",
+            { plan: "Implement the selected option." },
+            testCanUseToolOptions({
+              requestId: "request-exit-plan",
+              toolUseID: "toolu-exit-plan"
+            })
+          );
+          yield { type: "result", subtype: "success" } as never;
+        },
+        close() {}
+      }),
+      30_000,
+      async (input) => {
+        recoveryCalls += 1;
+        return {
+          providerSessionId: input.sessionId,
+          providerTurnId: "provider-turn-multi-interaction",
+          providerCheckpointMessageId: "assistant-before-interactions"
+        };
+      }
+    );
+
+    await session.start();
+    session.exec(
+      "turn-multi-interaction",
+      "ask then exit plan",
+      undefined,
+      undefined,
+      undefined,
+      "",
+      "correlation-multi-interaction"
+    );
+    await waitForEventCount(events, "user_input_requested", 1);
+    const ask = events.find((event) => event.type === "user_input_requested");
+    session.submitInteractive(
+      "turn-multi-interaction",
+      String(ask?.payload?.requestId ?? ""),
+      "submit",
+      "",
+      { answers: { "Pick one": "A" } }
+    );
+    await waitForEventCount(events, "user_input_requested", 2);
+    const exitPlan = events.filter(
+      (event) => event.type === "user_input_requested"
+    )[1];
+    session.submitInteractive(
+      "turn-multi-interaction",
+      String(exitPlan?.payload?.requestId ?? ""),
+      "submit",
+      "default",
+      {}
+    );
+    await waitForEvent(events, "turn_completed");
+
+    const ordered = events.filter((event) =>
+      [
+        "provider_turn_identity_resolved",
+        "user_input_requested",
+        "turn_completed"
+      ].includes(event.type)
+    );
+    assert.equal(ordered[0]?.type, "provider_turn_identity_resolved");
+    assert.equal(
+      ordered.filter(
+        (event) => event.type === "provider_turn_identity_resolved"
+      ).length,
+      1
+    );
+    assert.equal(
+      ordered.filter((event) => event.type === "user_input_requested").length,
+      2
+    );
+    assert.equal(recoveryCalls, 1);
+    assert.equal(
+      ordered.at(-1)?.payload?.providerTurnId,
+      "provider-turn-multi-interaction"
+    );
+  } finally {
+    restoreSink();
+  }
+});
+
+async function waitForEventCount(
+  events: Array<{ type: string }>,
+  type: string,
+  count: number
+): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (events.filter((event) => event.type === type).length >= count) {
+      return;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 5));
+  }
+  assert.fail(`timed out waiting for ${count} ${type} events`);
+}
 
 test("ephemeral Claude session state UUID does not replace the durable checkpoint", async () => {
   const events: Array<{ type: string; payload?: Record<string, unknown> }> = [];

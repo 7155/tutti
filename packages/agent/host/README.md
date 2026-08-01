@@ -46,6 +46,17 @@ Session and operation; an in-progress or failed operation returns its existing
 state instead of starting another provider Session. This preflight is durable
 across Host process restarts and does not depend on the runtime's in-memory
 Session registry.
+
+Provider Turn acceptance is a cross-process barrier, not a generic lifecycle
+notification. The runtime may move through `queued`, `dispatched`,
+`provider_observed`, and `resolving_identity`, but it must not expose provider
+output or interaction until the exact provider identity has been resolved. The
+adapter then blocks its provider event path while the Host atomically persists
+`canonicalTurnId + providerSessionId + providerTurnId`; only that commit moves
+the Turn to `durably_accepted`. Streaming, waiting for approval/input, running
+tools, checkpoints, and terminal events all follow the barrier and retain the
+same authoritative provider Turn ID. Correlation IDs are never provider IDs.
+
 Adapters must carry the structured action/objective instead of reconstructing
 it from presentation text. `ParseTypedGoalControl` remains the compatibility
 path for callers that still send `/goal ...` as initial content. Resume

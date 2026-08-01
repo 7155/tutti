@@ -53,6 +53,11 @@ func TestClaudeSDKAdapterKeepsCanonicalLifecycleLiveAtProviderCompletion(t *test
 	waiter := adapter.registerClaudeSDKTurn(adapterSession, "turn-1", func(events []activityshared.Event) {
 		emitted = append(emitted, events...)
 	})
+	adapter.beginClaudeSDKRootTurn(
+		adapterSession,
+		"turn-1",
+		"provider-turn-1",
+	)
 
 	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
 		Type: "approval_requested",
@@ -88,8 +93,12 @@ func TestClaudeSDKAdapterKeepsCanonicalLifecycleLiveAtProviderCompletion(t *test
 
 	emitted = nil
 	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
-		Type:    "turn_completed",
-		Payload: map[string]any{"turnId": "turn-1", "stopReason": "end_turn"},
+		Type: "turn_completed",
+		Payload: map[string]any{
+			"turnId":         "turn-1",
+			"providerTurnId": "turn-1",
+			"stopReason":     "end_turn",
+		},
 	})
 	providerCompleted := activityEventsWithType(emitted, activityshared.EventRootProviderTurnCompleted)
 	if len(providerCompleted) != 1 || providerCompleted[0].Payload.TurnID != "turn-1" ||
@@ -519,8 +528,11 @@ func TestClaudeSDKGoalCompletesWhenTurnSettles(t *testing.T) {
 	adapter.applyLocalGoal(adapterSession, map[string]any{"objective": "ship it", "status": "active"})
 
 	events, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "turn-goal", claudeSDKSidecarEvent{
-		Type:    "turn_completed",
-		Payload: map[string]any{"turnId": "turn-goal"},
+		Type: "turn_completed",
+		Payload: map[string]any{
+			"turnId":         "turn-goal",
+			"providerTurnId": "turn-goal",
+		},
 	})
 	if err != nil || !terminal {
 		t.Fatalf("turn_completed terminal=%v err=%v", terminal, err)
@@ -601,8 +613,11 @@ func TestClaudeSDKGoalArmTurnGatesCompletion(t *testing.T) {
 
 	// An earlier turn settling must not complete the not-yet-started goal.
 	if _, _, err := adapter.sidecarTurnEvents(adapterSession, session, "turn-earlier", claudeSDKSidecarEvent{
-		Type:    "turn_completed",
-		Payload: map[string]any{"turnId": "turn-earlier"},
+		Type: "turn_completed",
+		Payload: map[string]any{
+			"turnId":         "turn-earlier",
+			"providerTurnId": "turn-earlier",
+		},
 	}); err != nil {
 		t.Fatalf("earlier turn_completed: %v", err)
 	}
@@ -612,8 +627,11 @@ func TestClaudeSDKGoalArmTurnGatesCompletion(t *testing.T) {
 
 	// The arm turn's own completion is the achievement signal.
 	events, _, err := adapter.sidecarTurnEvents(adapterSession, session, armTurnID, claudeSDKSidecarEvent{
-		Type:    "turn_completed",
-		Payload: map[string]any{"turnId": armTurnID},
+		Type: "turn_completed",
+		Payload: map[string]any{
+			"turnId":         armTurnID,
+			"providerTurnId": armTurnID,
+		},
 	})
 	if err != nil {
 		t.Fatalf("arm turn_completed: %v", err)
@@ -762,8 +780,11 @@ func TestClaudeSDKGoalArmTurnCanceledClearsMirror(t *testing.T) {
 	armTurnID := payloadString(setRequest.Payload, "turnId")
 
 	events, _, err := adapter.sidecarTurnEvents(adapterSession, session, armTurnID, claudeSDKSidecarEvent{
-		Type:    "turn_canceled",
-		Payload: map[string]any{"turnId": armTurnID},
+		Type: "turn_canceled",
+		Payload: map[string]any{
+			"turnId":         armTurnID,
+			"providerTurnId": armTurnID,
+		},
 	})
 	if err != nil {
 		t.Fatalf("arm turn_canceled: %v", err)

@@ -2,7 +2,9 @@ package agentruntime
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"sync"
 
 	activityshared "github.com/tutti-os/tutti/packages/agent/daemon/activity/events"
 )
@@ -143,6 +145,7 @@ func (a *ClaudeCodeSDKAdapter) ExecWithProviderAcceptance(
 	emit EventSink,
 	emitCommands CommandSnapshotSink,
 	reportDispatch ProviderDispatchSink,
+	acceptProviderTurn ProviderAcceptanceBarrier,
 ) ([]activityshared.Event, error) {
 	adapterSession := a.getSession(session.AgentSessionID)
 	if adapterSession == nil {
@@ -153,7 +156,17 @@ func (a *ClaudeCodeSDKAdapter) ExecWithProviderAcceptance(
 		}
 		return nil, ErrSessionDisconnected
 	}
+	acceptanceCtx, cancelAcceptance := context.WithCancel(ctx)
+	defer cancelAcceptance()
+	var acceptanceOnce sync.Once
+	var acceptanceErr error
+	accepted := false
+	acceptedProviderTurnID := ""
 	wrappedEmit := func(events []activityshared.Event) {
+		if acceptanceErr != nil {
+			return
+		}
+		observedAcceptance := false
 		for _, event := range events {
 			if event.Type != activityshared.EventRootProviderTurnStarted ||
 				strings.TrimSpace(event.Payload.TurnID) != strings.TrimSpace(turnID) {
@@ -163,23 +176,59 @@ func (a *ClaudeCodeSDKAdapter) ExecWithProviderAcceptance(
 			if providerTurnID == "" {
 				continue
 			}
+			if accepted &&
+				acceptedProviderTurnID != "" &&
+				providerTurnID != acceptedProviderTurnID {
+				acceptanceErr = errors.New(
+					"claude SDK changed provider Turn identity after acceptance",
+				)
+				cancelAcceptance()
+				return
+			}
+			observedAcceptance = true
+			receipt := ProviderAcceptanceReceipt{
+				Source:            AcceptanceSourceTurnStartResponse,
+				ProviderSessionID: strings.TrimSpace(adapterSession.providerSessionID),
+				ProviderTurnID:    providerTurnID,
+			}
+			acceptanceOnce.Do(func() {
+				if acceptProviderTurn == nil {
+					acceptanceErr = errors.New(
+						"provider acceptance barrier is unavailable",
+					)
+					return
+				}
+				acceptanceErr = acceptProviderTurn(receipt)
+				accepted = acceptanceErr == nil
+				if accepted {
+					acceptedProviderTurnID = providerTurnID
+				}
+			})
+			if acceptanceErr != nil {
+				cancelAcceptance()
+				return
+			}
+		}
+		if !accepted &&
+			!observedAcceptance &&
+			!claudeSDKEventsMayPrecedeProviderAcceptance(events) {
+			acceptanceErr = errors.New(
+				"claude SDK published provider output before durable acceptance",
+			)
 			if reportDispatch != nil {
 				reportDispatch(ProviderDispatchResult{
-					Disposition: DispatchDispositionApplied,
-					Acceptance: &ProviderAcceptanceReceipt{
-						Source:            AcceptanceSourceTurnStartResponse,
-						ProviderSessionID: strings.TrimSpace(adapterSession.providerSessionID),
-						ProviderTurnID:    providerTurnID,
-					},
+					Disposition: DispatchDispositionOutcomeUnknown,
 				})
 			}
+			cancelAcceptance()
+			return
 		}
 		if emit != nil {
 			emit(events)
 		}
 	}
 	return a.exec(
-		ctx,
+		acceptanceCtx,
 		session,
 		content,
 		displayPrompt,
@@ -188,6 +237,28 @@ func (a *ClaudeCodeSDKAdapter) ExecWithProviderAcceptance(
 		emitCommands,
 		reportDispatch,
 	)
+}
+
+func claudeSDKEventsMayPrecedeProviderAcceptance(
+	events []activityshared.Event,
+) bool {
+	if len(events) == 0 {
+		return true
+	}
+	for _, event := range events {
+		if event.Type == EventTurnStarted {
+			continue
+		}
+		if event.Type == activityshared.EventMessageAppended &&
+			strings.EqualFold(
+				strings.TrimSpace(string(event.Payload.Role)),
+				"user",
+			) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 var _ ProviderAcceptanceExecAdapter = (*ClaudeCodeSDKAdapter)(nil)

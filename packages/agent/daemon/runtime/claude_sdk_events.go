@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"sort"
 	"strings"
 
 	activityshared "github.com/tutti-os/tutti/packages/agent/daemon/activity/events"
@@ -690,6 +691,32 @@ func (a *ClaudeCodeSDKAdapter) failClaudeSDKReader(agentSessionID string, adapte
 		delete(adapterSession.pendingResponses, id)
 	}
 	a.mu.Unlock()
+	// Converge every provider-owned lifecycle through the session sink before
+	// releasing Exec/round-trip waiters. Those waiters can return stale local
+	// lifecycle snapshots; if they win this race, the controller can reject
+	// their whole batch and lose the only provider terminal event.
+	//
+	// Any interactive/permission request still awaiting a human decision must
+	// also be resolved explicitly. Otherwise the pending approval bookkeeping
+	// is discarded silently with the session and the GUI is left without a
+	// terminal explanation.
+	session := a.claudeSDKSessionSnapshot(adapterSession)
+	if strings.TrimSpace(session.AgentSessionID) == "" {
+		session.AgentSessionID = agentSessionID
+	}
+	pendingFailureEvents := a.claudeSDKPendingRequestFailureEvents(adapterSession, session, "", err)
+	pendingFailureEvents = append(pendingFailureEvents, a.finishAllClaudeSDKTurnLifecycles(
+		adapterSession,
+		session,
+		claudeSDKTurnFinishFailed,
+		err.Error(),
+	)...)
+	pendingFailureEvents = append(
+		pendingFailureEvents,
+		a.failAllClaudeSDKRootProviderTurns(adapterSession, session, err)...,
+	)
+	a.removeSession(agentSessionID, adapterSession)
+	a.emitClaudeSDKSessionEvents(agentSessionID, pendingFailureEvents)
 	for _, waiter := range turns {
 		waiter.mu.Lock()
 		if waiter.completed {
@@ -707,26 +734,46 @@ func (a *ClaudeCodeSDKAdapter) failClaudeSDKReader(agentSessionID string, adapte
 	for _, response := range responses {
 		response <- claudeSDKSidecarEvent{Type: "error", Payload: map[string]any{"error": err.Error(), "transport": true}}
 	}
-	// Any interactive/permission request still awaiting a human decision when
-	// the sidecar connection is lost must be resolved explicitly. Without
-	// this, the pending approval bookkeeping is discarded silently along
-	// with the session (below), leaving the GUI's permission dialog with no
-	// terminal event: on the next reconnect/resume it simply vanishes with
-	// no explanation while the turn itself fails, giving the appearance that
-	// the request was answered (or bypassed) when it never was.
-	session := a.claudeSDKSessionSnapshot(adapterSession)
-	if strings.TrimSpace(session.AgentSessionID) == "" {
-		session.AgentSessionID = agentSessionID
+}
+
+func (a *ClaudeCodeSDKAdapter) failAllClaudeSDKRootProviderTurns(
+	adapterSession *claudeSDKAdapterSession,
+	session Session,
+	err error,
+) []activityshared.Event {
+	if a == nil || adapterSession == nil {
+		return nil
 	}
-	pendingFailureEvents := a.claudeSDKPendingRequestFailureEvents(adapterSession, session, "", err)
-	pendingFailureEvents = append(pendingFailureEvents, a.finishAllClaudeSDKTurnLifecycles(
-		adapterSession,
-		session,
-		claudeSDKTurnFinishFailed,
-		err.Error(),
-	)...)
-	a.removeSession(agentSessionID, adapterSession)
-	a.emitClaudeSDKSessionEvents(agentSessionID, pendingFailureEvents)
+	a.mu.Lock()
+	rootTurnID := strings.TrimSpace(adapterSession.rootTurnID)
+	providerTurnIDs := make([]string, 0, len(adapterSession.rootProviderTurns))
+	for providerTurnID := range adapterSession.rootProviderTurns {
+		providerTurnID = strings.TrimSpace(providerTurnID)
+		if providerTurnID != "" {
+			providerTurnIDs = append(providerTurnIDs, providerTurnID)
+		}
+	}
+	adapterSession.rootProviderTurns = make(map[string]struct{})
+	a.mu.Unlock()
+	if rootTurnID == "" || len(providerTurnIDs) == 0 {
+		return nil
+	}
+	sort.Strings(providerTurnIDs)
+	metadata := map[string]any{"adapter": claudeSDKSidecarAdapterName}
+	if err != nil {
+		metadata["error"] = err.Error()
+	}
+	events := make([]activityshared.Event, 0, len(providerTurnIDs))
+	for _, providerTurnID := range providerTurnIDs {
+		events = append(events, claudeSDKRootProviderTurnCompletedEvent(
+			session,
+			rootTurnID,
+			providerTurnID,
+			activityshared.TurnOutcomeFailed,
+			metadata,
+		))
+	}
+	return events
 }
 
 func (a *ClaudeCodeSDKAdapter) takeClaudeSDKResponseWaiter(adapterSession *claudeSDKAdapterSession, event claudeSDKSidecarEvent) chan claudeSDKSidecarEvent {

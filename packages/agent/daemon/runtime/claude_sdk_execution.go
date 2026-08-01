@@ -286,6 +286,18 @@ func claudeSDKExecPayload(
 
 func (a *ClaudeCodeSDKAdapter) claudeSDKRootProviderFailureEvents(adapterSession *claudeSDKAdapterSession, session Session, turnID string, providerTurnID string, err error) []activityshared.Event {
 	events := a.finishClaudeSDKTurnLifecycle(adapterSession, session, turnID, claudeSDKTurnFinishFailed, "provider_transport_failed")
+	activeProviderTurnID := a.activeClaudeSDKRootProviderTurnID(adapterSession)
+	if activeProviderTurnID != "" {
+		providerTurnID = activeProviderTurnID
+	}
+	if !a.consumeClaudeSDKRootProviderTurn(adapterSession, providerTurnID) {
+		a.mu.Lock()
+		readerFailed := adapterSession != nil && adapterSession.invalid
+		a.mu.Unlock()
+		if readerFailed {
+			return events
+		}
+	}
 	metadata := map[string]any{"adapter": claudeSDKSidecarAdapterName}
 	if err != nil {
 		metadata["error"] = err.Error()
@@ -297,7 +309,6 @@ func (a *ClaudeCodeSDKAdapter) claudeSDKRootProviderFailureEvents(adapterSession
 		activityshared.TurnOutcomeFailed,
 		metadata,
 	))
-	a.consumeClaudeSDKRootProviderTurn(adapterSession, providerTurnID)
 	return events
 }
 

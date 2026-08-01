@@ -47,6 +47,17 @@ test("turn lifecycle announces a goal arm before its first output", () => {
   lifecycle.activateForUserMessage("prompt-goal");
 
   assert.deepEqual(
+    events.find((event) => event.type === "provider_turn_identity_resolved"),
+    {
+      type: "provider_turn_identity_resolved",
+      payload: {
+        turnId: "goal-arm-1",
+        providerTurnId: "prompt-goal",
+        turnOrigin: "goal_arm"
+      }
+    }
+  );
+  assert.deepEqual(
     events.find((event) => event.type === "turn_started"),
     {
       type: "turn_started",
@@ -126,6 +137,13 @@ test("goal activation carries its immutable command identity", () => {
   assert.equal(applied?.payload?.operationId, "goal-op-1");
   assert.equal(applied?.payload?.revision, 1);
   assert.equal(applied?.payload?.repairEpoch, 7);
+  const identity = events.find(
+    (event) => event.type === "provider_turn_identity_resolved"
+  );
+  assert.equal(identity?.payload?.turnOrigin, "goal_arm");
+  assert.equal(identity?.payload?.sourceGoalOperationId, "goal-op-1");
+  assert.equal(identity?.payload?.sourceGoalRevision, 1);
+  assert.equal(identity?.payload?.sourceGoalRepairEpoch, 7);
   const started = events.find((event) => event.type === "turn_started");
   assert.equal(started?.payload?.sourceGoalOperationId, "goal-op-1");
   assert.equal(started?.payload?.sourceGoalRevision, 1);

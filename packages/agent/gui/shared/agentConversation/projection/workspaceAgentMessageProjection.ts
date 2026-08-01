@@ -272,24 +272,29 @@ export function projectWorkspaceAgentMessagesToTimelineItems(
       });
     }
 
+    const visibleError =
+      kind === "error" ||
+      normalizeToken(stringValue(payload.kind)) === "agent_visible_error";
     const statusTurnId =
-      turnId ?? `session-status:${kind === "error" ? "error" : "notice"}`;
+      turnId ?? `session-status:${visibleError ? "error" : "notice"}`;
     const statusMessage: AgentActivityMessage = {
       ...message,
-      payload:
-        kind === "error"
-          ? {
-              ...payload,
-              detail: messageText(message),
-              kind: "agent_visible_error"
-            }
-          : {
-              ...payload,
-              detail: messageText(message),
-              kind: "agent_system_notice",
-              noticeKind: kind,
-              severity: "info"
-            }
+      payload: visibleError
+        ? {
+            ...payload,
+            detail: firstNonEmptyString(
+              stringValue(payload.detail),
+              messageText(message)
+            ),
+            kind: "agent_visible_error"
+          }
+        : {
+            ...payload,
+            detail: messageText(message),
+            kind: "agent_system_notice",
+            noticeKind: kind,
+            severity: "info"
+          }
     };
     return messageTimelineItem({
       message: statusMessage,

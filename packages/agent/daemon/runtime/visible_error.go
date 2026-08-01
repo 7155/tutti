@@ -67,19 +67,19 @@ var (
 	}
 )
 
-func visibleFailureTimelineItem(
-	roomID string,
-	source canonical.EventSource,
-	event activityshared.Event,
-	sessionID string,
-	timestamp int64,
-) (agentsessionstore.WorkspaceAgentTimelineItem, bool) {
+type visibleFailureProjection struct {
+	eventID string
+	content string
+	payload map[string]any
+}
+
+func projectVisibleFailure(source canonical.EventSource, event activityshared.Event) (visibleFailureProjection, bool) {
 	if event.Type != activityshared.EventSessionFailed && event.Type != activityshared.EventTurnFailed {
-		return agentsessionstore.WorkspaceAgentTimelineItem{}, false
+		return visibleFailureProjection{}, false
 	}
 	eventID := strings.TrimSpace(event.EventID)
-	if strings.TrimSpace(sessionID) == "" || eventID == "" {
-		return agentsessionstore.WorkspaceAgentTimelineItem{}, false
+	if eventID == "" {
+		return visibleFailureProjection{}, false
 	}
 	phase := "turn"
 	if event.Type == activityshared.EventSessionFailed {
@@ -103,21 +103,7 @@ func visibleFailureTimelineItem(
 	if detail != "" {
 		payload["detail"] = detail
 	}
-	return agentsessionstore.WorkspaceAgentTimelineItem{
-		RoomID:           strings.TrimSpace(roomID),
-		AgentSessionID:   strings.TrimSpace(sessionID),
-		TurnID:           strings.TrimSpace(event.Payload.TurnID),
-		EventSource:      "runtime",
-		EventID:          "visible-error:" + eventID,
-		ActorType:        "agent",
-		ActorID:          provider,
-		OccurredAtUnixMS: timestamp,
-		CreatedAtUnixMS:  timestamp,
-		Role:             string(activityshared.MessageRoleAssistant),
-		ItemType:         "message.assistant",
-		Status:           messageStreamStateFailed,
-		Payload:          payload,
-	}, true
+	return visibleFailureProjection{eventID: eventID, content: content, payload: payload}, true
 }
 
 func visibleFailureMessageUpdate(
@@ -126,44 +112,42 @@ func visibleFailureMessageUpdate(
 	sessionID string,
 	timestamp int64,
 ) (agentsessionstore.WorkspaceAgentMessageUpdate, bool) {
-	if event.Type != activityshared.EventSessionFailed && event.Type != activityshared.EventTurnFailed {
+	turnID := strings.TrimSpace(event.Payload.TurnID)
+	projection, ok := projectVisibleFailure(source, event)
+	if strings.TrimSpace(sessionID) == "" || turnID == "" || !ok {
 		return agentsessionstore.WorkspaceAgentMessageUpdate{}, false
 	}
-	eventID := strings.TrimSpace(event.EventID)
-	if strings.TrimSpace(sessionID) == "" || eventID == "" {
-		return agentsessionstore.WorkspaceAgentMessageUpdate{}, false
-	}
-	phase := "turn"
-	if event.Type == activityshared.EventSessionFailed {
-		phase = "start"
-	}
-	detail := visibleFailureDetail(event)
-	code := visibleFailureCode(detail)
-	provider := firstNonEmptyString(string(event.Provider), source.Provider)
-	content := visibleFailureContent(provider, phase, code)
-	payload := map[string]any{
-		"kind":          visibleErrorKind,
-		"severity":      visibleErrorSeverity,
-		"phase":         phase,
-		"code":          code,
-		"provider":      provider,
-		"sourceEventId": eventID,
-		"retryable":     visibleFailureRetryable(code, detail),
-		"content":       content,
-		"text":          content,
-		"source":        "runtime",
-	}
-	if detail != "" {
-		payload["detail"] = detail
-	}
+	payload := clonePayload(projection.payload)
+	payload["source"] = "runtime"
 	return agentsessionstore.WorkspaceAgentMessageUpdate{
 		AgentSessionID:   strings.TrimSpace(sessionID),
-		MessageID:        "visible-error:" + eventID,
+		MessageID:        "visible-error:" + projection.eventID,
 		Seq:              uint64(timestamp),
-		TurnID:           strings.TrimSpace(event.Payload.TurnID),
+		TurnID:           turnID,
 		Role:             string(activityshared.MessageRoleAssistant),
 		Kind:             "text",
 		Status:           messageStreamStateFailed,
+		Payload:          payload,
+		OccurredAtUnixMS: timestamp,
+	}, true
+}
+
+func visibleFailureSessionAuditUpdate(
+	source canonical.EventSource,
+	event activityshared.Event,
+	sessionID string,
+	timestamp int64,
+) (agentsessionstore.WorkspaceAgentSessionAuditUpdate, bool) {
+	projection, ok := projectVisibleFailure(source, event)
+	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(event.Payload.TurnID) != "" || !ok {
+		return agentsessionstore.WorkspaceAgentSessionAuditUpdate{}, false
+	}
+	payload := clonePayload(projection.payload)
+	payload["source"] = "runtime"
+	return agentsessionstore.WorkspaceAgentSessionAuditUpdate{
+		AuditID:          "visible-error:" + projection.eventID,
+		Role:             string(activityshared.MessageRoleAssistant),
+		Content:          projection.content,
 		Payload:          payload,
 		OccurredAtUnixMS: timestamp,
 	}, true

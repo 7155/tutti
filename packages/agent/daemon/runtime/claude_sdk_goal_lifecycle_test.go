@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	agentsessionstore "github.com/tutti-os/tutti/packages/agent/daemon/activity"
 	activityshared "github.com/tutti-os/tutti/packages/agent/daemon/activity/events"
 )
 
@@ -38,6 +40,41 @@ func claudeSDKSnapshotForEvent(t *testing.T, events []activityshared.Event, even
 	}
 	t.Fatalf("no %s event in %#v", eventType, events)
 	return activityshared.TurnLifecycleSnapshot{}
+}
+
+type blockingFirstClaudeGoalReporter struct {
+	mu      sync.Mutex
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+	reports []agentsessionstore.ReportActivityInput
+}
+
+func (r *blockingFirstClaudeGoalReporter) Report(ctx context.Context, report agentsessionstore.ReportActivityInput) error {
+	r.once.Do(func() {
+		close(r.entered)
+		select {
+		case <-r.release:
+		case <-ctx.Done():
+		}
+	})
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	r.reports = append(r.reports, report)
+	r.mu.Unlock()
+	return nil
+}
+
+func (r *blockingFirstClaudeGoalReporter) ReportSubmitProvenance(ctx context.Context, report agentsessionstore.ReportActivityInput) error {
+	return r.Report(ctx, report)
+}
+
+func (r *blockingFirstClaudeGoalReporter) snapshot() []agentsessionstore.ReportActivityInput {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]agentsessionstore.ReportActivityInput(nil), r.reports...)
 }
 
 // Interaction transitions still carry adapter snapshots, while SDK provider
@@ -650,6 +687,7 @@ func TestClaudeSDKGoalArmTurnCarriesDurableGoalIdentity(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 	session, adapterSession := newClaudeSDKLifecycleTestSession(t, adapter, conn)
 	adapter.beginClaudeSDKRootTurn(adapterSession, "preceding-user-turn", "preceding-provider-turn")
+	adapter.consumeClaudeSDKRootProviderTurn(adapterSession, "preceding-provider-turn")
 
 	done := make(chan error, 1)
 	go func() {
@@ -671,21 +709,70 @@ func TestClaudeSDKGoalArmTurnCarriesDurableGoalIdentity(t *testing.T) {
 	if payloadString(setRequest.Payload, "goalOperationId") != "goal-op-7" || payloadInt64(setRequest.Payload, "goalRevision") != 7 {
 		t.Fatalf("goal exec payload = %#v", setRequest.Payload)
 	}
+	identityEvents, _, err := adapter.sidecarTurnEvents(adapterSession, session, turnID, claudeSDKSidecarEvent{
+		Type: "provider_turn_identity_resolved",
+		Payload: map[string]any{
+			"turnId": turnID, "providerTurnId": "provider-turn-7", "turnOrigin": "goal_arm",
+			"sourceGoalOperationId": "goal-op-7", "sourceGoalRevision": float64(7), "sourceGoalRepairEpoch": float64(2),
+		},
+	})
+	if err != nil || len(identityEvents) != 1 {
+		t.Fatalf("provider identity events=%#v error=%v", identityEvents, err)
+	}
+	identityMetadata := identityEvents[0].Payload.Metadata
+	if identityMetadata["turnOrigin"] != "goal_arm" || identityMetadata["sourceGoalOperationId"] != "goal-op-7" ||
+		identityMetadata["sourceGoalRevision"] != int64(7) || identityMetadata["sourceGoalRepairEpoch"] != int64(2) {
+		t.Fatalf("goal provider identity metadata = %#v", identityMetadata)
+	}
+	identityPatch, ok := statePatchFromSessionEvent(reportTestSource(), identityEvents[0], session.AgentSessionID, 100)
+	if !ok || identityPatch.Turn == nil || identityPatch.RootProviderTurn == nil {
+		t.Fatalf("goal provider identity patch = %#v, want atomic turn and provider transition", identityPatch)
+	}
+	if identityPatch.Turn.TurnID != turnID || identityPatch.Turn.Origin != "goal_arm" ||
+		identityPatch.RootProviderTurn.ProviderTurnID != "provider-turn-7" {
+		t.Fatalf("goal provider identity patch = %#v", identityPatch)
+	}
+	adapter.finishClaudeSDKGoalTurnPublication(adapterSession, identityEvents)
 	events, _, err := adapter.sidecarTurnEvents(adapterSession, session, turnID, claudeSDKSidecarEvent{
 		Type: "turn_started", Payload: map[string]any{
 			"turnId": turnID, "turnOrigin": "goal_arm",
 			"sourceGoalOperationId": "goal-op-7", "sourceGoalRevision": float64(7), "sourceGoalRepairEpoch": float64(2),
 		},
 	})
-	if err != nil || len(events) != 1 {
-		t.Fatalf("turn_started events=%#v error=%v", events, err)
+	if err != nil || len(events) != 0 {
+		t.Fatalf("duplicate turn_started events=%#v error=%v", events, err)
 	}
-	metadata := events[0].Payload.Metadata
-	if metadata["turnOrigin"] != "goal_arm" || metadata["sourceGoalOperationId"] != "goal-op-7" || metadata["sourceGoalRevision"] != int64(7) || metadata["sourceGoalRepairEpoch"] != int64(2) {
-		t.Fatalf("goal arm metadata = %#v", metadata)
+	if adapter.claudeSDKRootTurnID(adapterSession, "") != turnID {
+		t.Fatalf("goal arm root mapping = %q, want %q", adapter.claudeSDKRootTurnID(adapterSession, ""), turnID)
 	}
-	if events[0].Payload.TurnID != turnID || adapter.claudeSDKRootTurnID(adapterSession, "") != turnID {
-		t.Fatalf("goal arm root mapping = event:%q adapter:%q, want %q", events[0].Payload.TurnID, adapter.claudeSDKRootTurnID(adapterSession, ""), turnID)
+	completedEvents, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, turnID, claudeSDKSidecarEvent{
+		Type: "turn_completed",
+		Payload: map[string]any{
+			"turnId": turnID, "providerTurnId": "provider-turn-7", "stopReason": "end_turn",
+		},
+	})
+	if err != nil || !terminal {
+		t.Fatalf("goal arm completion events=%#v terminal=%v error=%v", completedEvents, terminal, err)
+	}
+	providerCompleted := activityEventsWithType(completedEvents, activityshared.EventRootProviderTurnCompleted)
+	if len(providerCompleted) != 1 {
+		t.Fatalf("goal arm provider completion events=%#v", completedEvents)
+	}
+	completedPatch, ok := statePatchFromSessionEvent(reportTestSource(), providerCompleted[0], session.AgentSessionID, 200)
+	if !ok || completedPatch.Turn != nil || completedPatch.RootProviderTurn == nil ||
+		completedPatch.RootProviderTurn.RootTurnID != turnID ||
+		completedPatch.RootProviderTurn.ProviderTurnID != "provider-turn-7" ||
+		completedPatch.RootProviderTurn.Phase != agentsessionstore.RootProviderTurnPhaseCompleted {
+		t.Fatalf("goal arm provider completion patch=%#v", completedPatch)
+	}
+	if goal := adapter.localGoal(adapterSession); goal["status"] != "complete" {
+		t.Fatalf("goal arm completion mirror=%#v", goal)
+	}
+	adapter.mu.Lock()
+	_, bindingRetained := adapterSession.goalTurnBindings[turnID]
+	adapter.mu.Unlock()
+	if bindingRetained {
+		t.Fatalf("settled goal arm retained provenance binding for %q", turnID)
 	}
 }
 
@@ -727,6 +814,21 @@ func TestClaudeSDKGoalSetAckThenImmediateClearPreservesDelayedArmUntilTerminal(t
 	}
 
 	setTurnID := payloadString(setRequest.Payload, "turnId")
+	identityEvents, _, err := adapter.sidecarTurnEvents(adapterSession, session, setTurnID, claudeSDKSidecarEvent{
+		Type: "provider_turn_identity_resolved",
+		Payload: map[string]any{
+			"turnId": setTurnID, "providerTurnId": "provider-goal-set", "turnOrigin": "goal_arm",
+			"sourceGoalOperationId": "goal-op-set", "sourceGoalRevision": float64(1),
+		},
+	})
+	if err != nil || len(identityEvents) != 1 {
+		t.Fatalf("delayed arm identity events=%#v error=%v", identityEvents, err)
+	}
+	identityMetadata := identityEvents[0].Payload.Metadata
+	if identityMetadata["sourceGoalOperationId"] != "goal-op-set" || identityMetadata["sourceGoalRevision"] != int64(1) {
+		t.Fatalf("delayed arm identity provenance=%#v", identityMetadata)
+	}
+	adapter.finishClaudeSDKGoalTurnPublication(adapterSession, identityEvents)
 	events, _, err := adapter.sidecarTurnEvents(adapterSession, session, setTurnID, claudeSDKSidecarEvent{
 		Type: "turn_started",
 		Payload: map[string]any{
@@ -734,19 +836,16 @@ func TestClaudeSDKGoalSetAckThenImmediateClearPreservesDelayedArmUntilTerminal(t
 			"sourceGoalOperationId": "goal-op-set", "sourceGoalRevision": float64(1),
 		},
 	})
-	if err != nil || len(events) != 1 {
-		t.Fatalf("delayed arm events=%#v error=%v", events, err)
-	}
-	metadata := events[0].Payload.Metadata
-	if metadata["sourceGoalOperationId"] != "goal-op-set" || metadata["sourceGoalRevision"] != int64(1) {
-		t.Fatalf("delayed arm provenance=%#v", metadata)
+	if err != nil || len(events) != 0 {
+		t.Fatalf("delayed arm duplicate events=%#v error=%v", events, err)
 	}
 	assertClaudeSDKNoCancelForGoalExec(t, conn.sentRequests(), "/goal clear")
+	clearTurnID := payloadString(clearRequest.Payload, "turnId")
 
-	clearEvents, _, err := adapter.sidecarTurnEvents(adapterSession, session, payloadString(clearRequest.Payload, "turnId"), claudeSDKSidecarEvent{
+	clearEvents, _, err := adapter.sidecarTurnEvents(adapterSession, session, clearTurnID, claudeSDKSidecarEvent{
 		Type: "goal_command_started",
 		Payload: map[string]any{
-			"turnId":      payloadString(clearRequest.Payload, "turnId"),
+			"turnId":      clearTurnID,
 			"operationId": "goal-op-clear", "revision": float64(2), "repairEpoch": float64(7), "action": "clear",
 		},
 	})
@@ -756,6 +855,41 @@ func TestClaudeSDKGoalSetAckThenImmediateClearPreservesDelayedArmUntilTerminal(t
 	evidence := payloadObject(clearEvents[0].Payload.Metadata["goalControlEvidence"])
 	if evidence["phase"] != "applied" || evidence["operationId"] != "goal-op-clear" || evidence["revision"] != int64(2) || evidence["repairEpoch"] != int64(7) {
 		t.Fatalf("clear applied evidence=%#v", evidence)
+	}
+}
+
+func TestClaudeSDKGoalClearProviderIdentityStaysTurnless(t *testing.T) {
+	t.Parallel()
+	adapter := NewClaudeCodeSDKAdapter(nil)
+	conn := newBlockingClaudeSDKConnection()
+	defer func() { _ = conn.Close() }()
+	session, adapterSession := newClaudeSDKLifecycleTestSession(t, adapter, conn)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := adapter.ApplyGoal(context.Background(), session, GoalApplyInput{
+			Action: GoalControlClear, OperationID: "goal-op-clear", Revision: 2, RepairEpoch: 7,
+		})
+		done <- err
+	}()
+	request := waitForClaudeSDKSentRequestMatching(t, conn, "exec", "/goal clear")
+	conn.pushEvent(claudeSDKSidecarEvent{ID: request.ID, Type: "ok"})
+	if err := <-done; err != nil {
+		t.Fatalf("clear ack: %v", err)
+	}
+	turnID := payloadString(request.Payload, "turnId")
+	events, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, turnID, claudeSDKSidecarEvent{
+		Type: "provider_turn_identity_resolved",
+		Payload: map[string]any{
+			"turnId": turnID, "providerTurnId": "provider-goal-clear",
+			"sourceGoalOperationId": "goal-op-clear", "sourceGoalRevision": float64(2), "sourceGoalRepairEpoch": float64(7),
+		},
+	})
+	if err != nil || terminal || len(events) != 0 {
+		t.Fatalf("goal clear identity events=%#v terminal=%v error=%v", events, terminal, err)
+	}
+	if rootTurnID := adapter.claudeSDKRootTurnID(adapterSession, ""); rootTurnID != "" {
+		t.Fatalf("goal clear created root turn %q", rootTurnID)
 	}
 }
 
@@ -807,9 +941,9 @@ func TestClaudeSDKDelayedOlderRepairEpochIsPreciselyCanceled(t *testing.T) {
 	adapterSession.goalRepairEpoch = 2
 	adapter.mu.Unlock()
 	_, _, err := adapter.sidecarTurnEvents(adapterSession, session, "goal-turn-old", claudeSDKSidecarEvent{
-		Type: "turn_started",
+		Type: "provider_turn_identity_resolved",
 		Payload: map[string]any{
-			"turnId": "goal-turn-old", "turnOrigin": "goal_continuation",
+			"turnId": "goal-turn-old", "providerTurnId": "provider-goal-turn-old", "turnOrigin": "goal_continuation",
 			"sourceGoalOperationId": "goal-op", "sourceGoalRevision": float64(7), "sourceGoalRepairEpoch": float64(1),
 		},
 	})
@@ -834,9 +968,9 @@ func TestClaudeSDKFencedGoalGenerationNeverBecomesCanonical(t *testing.T) {
 		t.Fatal(err)
 	}
 	events, _, err := adapter.sidecarTurnEvents(adapterSession, session, "goal-turn-fenced", claudeSDKSidecarEvent{
-		Type: "turn_started",
+		Type: "provider_turn_identity_resolved",
 		Payload: map[string]any{
-			"turnId": "goal-turn-fenced", "turnOrigin": "goal_continuation",
+			"turnId": "goal-turn-fenced", "providerTurnId": "provider-goal-turn-fenced", "turnOrigin": "goal_continuation",
 			"sourceGoalOperationId": "goal-fenced", "sourceGoalRevision": float64(7), "sourceGoalRepairEpoch": float64(2),
 		},
 	})
@@ -849,10 +983,360 @@ func TestClaudeSDKFencedGoalGenerationNeverBecomesCanonical(t *testing.T) {
 		t.Fatalf("fenced turn cancellation=%#v", sent)
 	}
 	events, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "goal-turn-fenced", claudeSDKSidecarEvent{
-		Type: "turn_canceled", Payload: map[string]any{"turnId": "goal-turn-fenced"},
+		Type: "turn_started", Payload: map[string]any{
+			"turnId": "goal-turn-fenced", "turnOrigin": "goal_continuation",
+			"sourceGoalOperationId": "goal-fenced", "sourceGoalRevision": float64(7), "sourceGoalRepairEpoch": float64(2),
+		},
+	})
+	if err != nil || terminal || len(events) != 0 {
+		t.Fatalf("fenced turn_started events=%#v terminal=%v error=%v", events, terminal, err)
+	}
+	events, terminal, err = adapter.sidecarTurnEvents(adapterSession, session, "goal-turn-fenced", claudeSDKSidecarEvent{
+		Type: "turn_canceled", Payload: map[string]any{"turnId": "goal-turn-fenced", "providerTurnId": "provider-goal-turn-fenced"},
 	})
 	if err != nil || !terminal || len(events) != 0 {
 		t.Fatalf("fenced terminal events=%#v terminal=%v error=%v", events, terminal, err)
+	}
+}
+
+func TestClaudeSDKFenceQuiescesAlreadyAdmittedGoalGeneration(t *testing.T) {
+	t.Parallel()
+	adapter := NewClaudeCodeSDKAdapter(nil)
+	conn := newBlockingClaudeSDKConnection()
+	defer func() { _ = conn.Close() }()
+	session, adapterSession := newClaudeSDKLifecycleTestSession(t, adapter, conn)
+	identityPayload := map[string]any{
+		"turnId": "goal-turn-admitted", "providerTurnId": "provider-goal-turn-admitted", "turnOrigin": "goal_continuation",
+		"sourceGoalOperationId": "goal-admitted", "sourceGoalRevision": float64(8), "sourceGoalRepairEpoch": float64(3),
+	}
+	events, _, err := adapter.sidecarTurnEvents(adapterSession, session, "goal-turn-admitted", claudeSDKSidecarEvent{
+		Type: "provider_turn_identity_resolved", Payload: identityPayload,
+	})
+	if err != nil || len(events) != 1 {
+		t.Fatalf("admitted identity events=%#v error=%v", events, err)
+	}
+	adapter.finishClaudeSDKGoalTurnPublication(adapterSession, events)
+	startReport := reportActivityInput(session, events)
+	if len(startReport.StatePatches) != 1 || startReport.StatePatches[0].Turn == nil ||
+		startReport.StatePatches[0].RootProviderTurn == nil {
+		t.Fatalf("admitted identity report=%#v", startReport)
+	}
+	if err := adapter.FenceGoalGeneration(context.Background(), session, GoalGenerationFenceInput{
+		OperationID: "goal-admitted", Revision: 8, RepairEpoch: 3, Reason: "binding_revoked",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sent := conn.sentRequests()
+	if len(sent) != 1 || sent[0].Type != "cancel" || payloadString(sent[0].Payload, "turnId") != "goal-turn-admitted" {
+		t.Fatalf("admitted goal cancellation=%#v", sent)
+	}
+	events, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "goal-turn-admitted", claudeSDKSidecarEvent{
+		Type: "turn_started", Payload: map[string]any{
+			"turnId": "goal-turn-admitted", "turnOrigin": "goal_continuation",
+			"sourceGoalOperationId": "goal-admitted", "sourceGoalRevision": float64(8), "sourceGoalRepairEpoch": float64(3),
+		},
+	})
+	if err != nil || terminal || len(events) != 0 {
+		t.Fatalf("fenced admitted turn_started events=%#v terminal=%v error=%v", events, terminal, err)
+	}
+	events, terminal, err = adapter.sidecarTurnEvents(adapterSession, session, "goal-turn-admitted", claudeSDKSidecarEvent{
+		Type: "turn_canceled", Payload: map[string]any{
+			"turnId": "goal-turn-admitted", "providerTurnId": "provider-goal-turn-admitted",
+		},
+	})
+	if err != nil || !terminal {
+		t.Fatalf("fenced admitted terminal events=%#v terminal=%v error=%v", events, terminal, err)
+	}
+	completed := activityEventsWithType(events, activityshared.EventRootProviderTurnCompleted)
+	if len(completed) != 1 || completed[0].Payload.TurnID != "goal-turn-admitted" {
+		t.Fatalf("fenced admitted completion events=%#v", events)
+	}
+	terminalReport := reportActivityInput(session, events)
+	settlementFound := false
+	for _, patch := range terminalReport.StatePatches {
+		if patch.RootProviderTurn != nil && patch.RootProviderTurn.Phase == agentsessionstore.RootProviderTurnPhaseCompleted {
+			settlementFound = true
+			break
+		}
+	}
+	if !settlementFound {
+		t.Fatalf("fenced admitted terminal report=%#v", terminalReport)
+	}
+}
+
+func TestClaudeSDKFenceWinsBetweenGoalAdmissionAndPublication(t *testing.T) {
+	t.Parallel()
+	adapter := NewClaudeCodeSDKAdapter(nil)
+	conn := newBlockingClaudeSDKConnection()
+	defer func() { _ = conn.Close() }()
+	session, adapterSession := newClaudeSDKLifecycleTestSession(t, adapter, conn)
+	payload := map[string]any{
+		"turnId": "goal-turn-racing", "providerTurnId": "provider-goal-turn-racing", "turnOrigin": "goal_continuation",
+		"sourceGoalOperationId": "goal-racing", "sourceGoalRevision": float64(9), "sourceGoalRepairEpoch": float64(4),
+	}
+	admission, err := adapter.admitClaudeSDKGoalTurn(
+		adapterSession,
+		"goal-turn-racing",
+		"provider-goal-turn-racing",
+		payload,
+	)
+	if err != nil || admission.denied() || !admission.goalTurn {
+		t.Fatalf("initial admission=%#v error=%v", admission, err)
+	}
+	if err := adapter.FenceGoalGeneration(context.Background(), session, GoalGenerationFenceInput{
+		OperationID: "goal-racing", Revision: 9, RepairEpoch: 4, Reason: "binding_revoked",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if adapter.publishClaudeSDKGoalTurn(adapterSession, "goal-turn-racing") {
+		t.Fatal("fence that won before publication allowed Goal start")
+	}
+	events, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "goal-turn-racing", claudeSDKSidecarEvent{
+		Type: "provider_turn_identity_resolved", Payload: payload,
+	})
+	if err != nil || terminal || len(events) != 0 {
+		t.Fatalf("raced identity events=%#v terminal=%v error=%v", events, terminal, err)
+	}
+	events, terminal, err = adapter.sidecarTurnEvents(adapterSession, session, "goal-turn-racing", claudeSDKSidecarEvent{
+		Type: "turn_canceled", Payload: map[string]any{
+			"turnId": "goal-turn-racing", "providerTurnId": "provider-goal-turn-racing",
+		},
+	})
+	if err != nil || !terminal || len(events) != 0 {
+		t.Fatalf("raced terminal events=%#v terminal=%v error=%v", events, terminal, err)
+	}
+}
+
+func TestClaudeSDKFenceBetweenRepeatedAdmissionAndPublicationSettlesPublishedTurn(t *testing.T) {
+	t.Parallel()
+	adapter := NewClaudeCodeSDKAdapter(nil)
+	conn := newBlockingClaudeSDKConnection()
+	defer func() { _ = conn.Close() }()
+	session, adapterSession := newClaudeSDKLifecycleTestSession(t, adapter, conn)
+	payload := map[string]any{
+		"turnId": "goal-turn-repeated", "providerTurnId": "provider-goal-turn-repeated", "turnOrigin": "goal_continuation",
+		"sourceGoalOperationId": "goal-repeated", "sourceGoalRevision": float64(10), "sourceGoalRepairEpoch": float64(4),
+	}
+	events, _, err := adapter.sidecarTurnEvents(adapterSession, session, "goal-turn-repeated", claudeSDKSidecarEvent{
+		Type: "provider_turn_identity_resolved", Payload: payload,
+	})
+	if err != nil || len(events) != 1 {
+		t.Fatalf("identity events=%#v error=%v", events, err)
+	}
+	adapter.finishClaudeSDKGoalTurnPublication(adapterSession, events)
+
+	// The sidecar emits turn_started after identity resolution. A fence may
+	// arrive after this second admission but before its duplicate start fact is
+	// published; the first start is already durable and must still be settled.
+	admission, err := adapter.admitClaudeSDKGoalTurn(
+		adapterSession,
+		"goal-turn-repeated",
+		"provider-goal-turn-repeated",
+		payload,
+	)
+	if err != nil || admission.denied() {
+		t.Fatalf("repeated admission=%#v error=%v", admission, err)
+	}
+	if err := adapter.FenceGoalGeneration(context.Background(), session, GoalGenerationFenceInput{
+		OperationID: "goal-repeated", Revision: 10, RepairEpoch: 4, Reason: "binding_revoked",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	events, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "goal-turn-repeated", claudeSDKSidecarEvent{
+		Type: "turn_canceled", Payload: map[string]any{
+			"turnId": "goal-turn-repeated", "providerTurnId": "provider-goal-turn-repeated",
+		},
+	})
+	if err != nil || !terminal || len(activityEventsWithType(events, activityshared.EventRootProviderTurnCompleted)) != 1 {
+		t.Fatalf("published turn settlement events=%#v terminal=%v error=%v", events, terminal, err)
+	}
+}
+
+func TestClaudeSDKGoalLateProviderIdentityPublishesOnceAndSettles(t *testing.T) {
+	t.Parallel()
+	adapter := NewClaudeCodeSDKAdapter(nil)
+	conn := newBlockingClaudeSDKConnection()
+	defer func() { _ = conn.Close() }()
+	session, adapterSession := newClaudeSDKLifecycleTestSession(t, adapter, conn)
+	var emitted []activityshared.Event
+	adapter.SetSessionEventSink(func(_ string, events []activityshared.Event) {
+		emitted = append(emitted, events...)
+	})
+	provenance := map[string]any{
+		"turnId": "goal-turn-late-identity", "turnOrigin": "goal_arm",
+		"sourceGoalOperationId": "goal-late-identity", "sourceGoalRevision": float64(11), "sourceGoalRepairEpoch": float64(2),
+	}
+
+	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+		Type: "turn_started", Payload: provenance,
+	})
+	if len(emitted) != 0 {
+		t.Fatalf("unbound Goal start published canonical events=%#v", emitted)
+	}
+	identityPayload := clonePayload(provenance)
+	identityPayload["providerTurnId"] = "provider-goal-late-identity"
+	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+		Type: "provider_turn_identity_resolved", Payload: identityPayload,
+	})
+	started := activityEventsWithType(emitted, activityshared.EventRootProviderTurnStarted)
+	if len(started) != 1 || started[0].Payload.TurnID != "goal-turn-late-identity" ||
+		started[0].Payload.ProviderTurnID != "provider-goal-late-identity" {
+		t.Fatalf("late identity start events=%#v", emitted)
+	}
+
+	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+		Type: "turn_completed",
+		Payload: map[string]any{
+			"turnId": "goal-turn-late-identity", "providerTurnId": "provider-goal-late-identity", "stopReason": "end_turn",
+		},
+	})
+	completed := activityEventsWithType(emitted, activityshared.EventRootProviderTurnCompleted)
+	if len(completed) != 1 || completed[0].Payload.TurnID != "goal-turn-late-identity" ||
+		completed[0].Payload.ProviderTurnID != "provider-goal-late-identity" {
+		t.Fatalf("late identity settlement events=%#v", emitted)
+	}
+	if failures := activityEventsWithType(emitted, activityshared.EventSessionFailed); len(failures) != 0 {
+		t.Fatalf("late identity emitted session failure=%#v", failures)
+	}
+}
+
+func TestClaudeSDKFencedUnboundGoalLateIdentityCleansAliases(t *testing.T) {
+	t.Parallel()
+	adapter := NewClaudeCodeSDKAdapter(nil)
+	conn := newBlockingClaudeSDKConnection()
+	defer func() { _ = conn.Close() }()
+	session, adapterSession := newClaudeSDKLifecycleTestSession(t, adapter, conn)
+	var emitted []activityshared.Event
+	adapter.SetSessionEventSink(func(_ string, events []activityshared.Event) {
+		emitted = append(emitted, events...)
+	})
+	provenance := map[string]any{
+		"turnId": "goal-turn-fenced-unbound", "turnOrigin": "goal_continuation",
+		"sourceGoalOperationId": "goal-fenced-unbound", "sourceGoalRevision": float64(12), "sourceGoalRepairEpoch": float64(3),
+	}
+	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+		Type: "turn_started", Payload: provenance,
+	})
+	if err := adapter.FenceGoalGeneration(context.Background(), session, GoalGenerationFenceInput{
+		OperationID: "goal-fenced-unbound", Revision: 12, RepairEpoch: 3, Reason: "binding_revoked",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	identityPayload := clonePayload(provenance)
+	identityPayload["providerTurnId"] = "provider-goal-fenced-unbound"
+	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+		Type: "provider_turn_identity_resolved", Payload: identityPayload,
+	})
+	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+		Type: "turn_canceled",
+		Payload: map[string]any{
+			"turnId": "goal-turn-fenced-unbound", "providerTurnId": "provider-goal-fenced-unbound",
+		},
+	})
+	adapter.mu.Lock()
+	fencedTurns := len(adapterSession.fencedGoalTurns)
+	bindings := len(adapterSession.goalTurnBindings)
+	providerAliases := len(adapterSession.rootProviderTurns)
+	adapter.mu.Unlock()
+	if fencedTurns != 0 || bindings != 0 || providerAliases != 0 {
+		t.Fatalf("fenced late identity cleanup: fences=%d bindings=%d providerAliases=%d", fencedTurns, bindings, providerAliases)
+	}
+	if failures := activityEventsWithType(emitted, activityshared.EventSessionFailed); len(failures) != 0 {
+		t.Fatalf("fenced late identity emitted session failure=%#v", failures)
+	}
+
+	nextIdentity := map[string]any{
+		"turnId": "goal-turn-next", "providerTurnId": "provider-goal-next", "turnOrigin": "goal_continuation",
+		"sourceGoalOperationId": "goal-next", "sourceGoalRevision": float64(13), "sourceGoalRepairEpoch": float64(0),
+	}
+	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+		Type: "provider_turn_identity_resolved", Payload: nextIdentity,
+	})
+	started := activityEventsWithType(emitted, activityshared.EventRootProviderTurnStarted)
+	if len(started) != 1 || started[0].Payload.TurnID != "goal-turn-next" ||
+		started[0].Payload.ProviderTurnID != "provider-goal-next" {
+		t.Fatalf("next Goal identity after cleanup events=%#v", emitted)
+	}
+}
+
+func TestClaudeSDKGoalFenceFlushesPublishedStartBeforeReturning(t *testing.T) {
+	adapter := NewClaudeCodeSDKAdapter(nil)
+	reporter := &blockingFirstClaudeGoalReporter{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	controller := NewController([]Adapter{adapter}, reporter)
+	conn := newBlockingClaudeSDKConnection()
+	defer func() { _ = conn.Close() }()
+	session, adapterSession := newClaudeSDKLifecycleTestSession(t, adapter, conn)
+	controller.store(session)
+
+	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+		Type: "provider_turn_identity_resolved",
+		Payload: map[string]any{
+			"turnId": "goal-turn-flush", "providerTurnId": "provider-goal-turn-flush", "turnOrigin": "goal_continuation",
+			"sourceGoalOperationId": "goal-flush", "sourceGoalRevision": float64(10), "sourceGoalRepairEpoch": float64(5),
+		},
+	})
+	select {
+	case <-reporter.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Goal start did not reach the durable reporter")
+	}
+
+	fenceDone := make(chan error, 1)
+	go func() {
+		fenceDone <- controller.FenceGoalGeneration(context.Background(), GoalGenerationFenceRequest{
+			RoomID: session.RoomID, AgentSessionID: session.AgentSessionID,
+			OperationID: "goal-flush", Revision: 10, RepairEpoch: 5,
+			Reason: "binding_revoked", RequireLive: true,
+		})
+	}()
+	select {
+	case err := <-fenceDone:
+		t.Fatalf("Fence returned before the published start was durable: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(reporter.release)
+	select {
+	case err := <-fenceDone:
+		if err != nil {
+			t.Fatalf("FenceGoalGeneration: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Fence did not return after the start report became durable")
+	}
+
+	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+		Type: "turn_canceled",
+		Payload: map[string]any{
+			"turnId": "goal-turn-flush", "providerTurnId": "provider-goal-turn-flush",
+		},
+	})
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		reports := reporter.snapshot()
+		if len(reports) >= 2 {
+			if len(reports[0].StatePatches) != 1 || reports[0].StatePatches[0].Turn == nil ||
+				reports[0].StatePatches[0].RootProviderTurn == nil {
+				t.Fatalf("durable Goal start report=%#v", reports[0])
+			}
+			settlementFound := false
+			for _, patch := range reports[1].StatePatches {
+				if patch.RootProviderTurn != nil && patch.RootProviderTurn.Phase == agentsessionstore.RootProviderTurnPhaseCompleted {
+					settlementFound = true
+					break
+				}
+			}
+			if !settlementFound {
+				t.Fatalf("durable Goal terminal report=%#v", reports[1])
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for terminal report; reports=%#v", reports)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

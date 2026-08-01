@@ -247,7 +247,9 @@ func reportActivityInput(session Session, events []activityshared.Event) agentse
 			input.GoalReconcileRequests = append(input.GoalReconcileRequests, request)
 		}
 		if shouldAppendVisibleFailure(events, event) {
-			if update, ok := visibleFailureMessageUpdate(source, event, sessionID, timestamp); ok {
+			if audit, ok := visibleFailureSessionAuditUpdate(source, event, sessionID, timestamp); ok {
+				input.SessionAudits = append(input.SessionAudits, audit)
+			} else if update, ok := visibleFailureMessageUpdate(source, event, sessionID, timestamp); ok {
 				input.MessageUpdates = append(input.MessageUpdates, update)
 			}
 		}

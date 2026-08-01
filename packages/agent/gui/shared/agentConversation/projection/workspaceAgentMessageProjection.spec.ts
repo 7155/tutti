@@ -582,6 +582,49 @@ describe("projectWorkspaceAgentMessagesToConversationVM", () => {
     );
   });
 
+  it("preserves a turnless runtime failure audit as a visible error", () => {
+    const conversation = projectWorkspaceAgentMessagesToConversationVM({
+      activity: activity(),
+      session: session({ effectiveStatus: "failed", turnPhase: "failed" }),
+      messages: [
+        message({
+          messageId: "visible-error:session-failed-1",
+          version: 1,
+          turnId: undefined,
+          role: "assistant",
+          kind: "session_audit",
+          status: "failed",
+          payload: {
+            kind: "agent_visible_error",
+            severity: "error",
+            phase: "start",
+            code: "provider_stream_disconnected",
+            provider: "claude-code",
+            retryable: true,
+            content: "Claude Code connection was interrupted.",
+            text: "Claude Code connection was interrupted.",
+            detail: "sidecar stream disconnected"
+          },
+          occurredAtUnixMs: 100
+        })
+      ]
+    });
+
+    const assistantRow = conversation.rows.find(
+      (row) => row.kind === "message" && row.speaker === "assistant"
+    );
+    const item =
+      assistantRow?.kind === "message" ? assistantRow.messages[0] : null;
+    expect(item?.visibleError).toEqual({
+      code: "provider_stream_disconnected",
+      phase: "start",
+      provider: "claude-code",
+      detail: "sidecar stream disconnected",
+      retryable: true
+    });
+    expect(item?.systemNotice ?? null).toBeNull();
+  });
+
   it("keeps turnless session audits in chronological conversation order", () => {
     const conversation = projectWorkspaceAgentMessagesToConversationVM({
       activity: activity(),

@@ -204,6 +204,87 @@ test("successful result recovers provider Turn identity when SDK omits the root 
   }
 });
 
+test("goal result-only recovery binds provider identity before activation", async () => {
+  const events: Array<{ type: string; payload?: Record<string, unknown> }> = [];
+  const restoreSink = withSidecarEventSinkForTest((event) =>
+    events.push(event)
+  );
+  try {
+    const session = new SessionRuntime(
+      "provider-session-goal-result-only",
+      "/repo",
+      {},
+      false,
+      false,
+      {
+        model: "",
+        permissionModeId: "default",
+        planMode: false,
+        effort: "",
+        speed: ""
+      },
+      sidecarClaudeOptionsFromPayload({}),
+      undefined,
+      ({ prompt }) => ({
+        async *[Symbol.asyncIterator]() {
+          await prompt[Symbol.asyncIterator]().next();
+          yield { type: "result", subtype: "success" } as never;
+        },
+        close() {}
+      }),
+      30_000,
+      async (input) => ({
+        providerSessionId: input.sessionId,
+        providerTurnId: "persisted-goal-user-uuid",
+        providerCheckpointMessageId: "persisted-goal-result-uuid"
+      })
+    );
+
+    await session.start();
+    session.exec(
+      "goal-result-only",
+      "/goal ship it",
+      undefined,
+      "goal_arm",
+      {
+        operationId: "goal-op-result",
+        revision: 3,
+        repairEpoch: 2,
+        action: "set"
+      },
+      "",
+      "goal-result-correlation-id"
+    );
+    await waitForEvent(events, "turn_completed");
+
+    const identityIndex = events.findIndex(
+      (event) => event.type === "provider_turn_identity_resolved"
+    );
+    const startedIndex = events.findIndex(
+      (event) => event.type === "turn_started"
+    );
+    const completedIndex = events.findIndex(
+      (event) => event.type === "turn_completed"
+    );
+    assert.ok(identityIndex >= 0 && identityIndex < startedIndex);
+    assert.ok(startedIndex < completedIndex);
+    assert.deepEqual(events[identityIndex]?.payload, {
+      turnId: "goal-result-only",
+      providerTurnId: "persisted-goal-user-uuid",
+      turnOrigin: "goal_arm",
+      sourceGoalOperationId: "goal-op-result",
+      sourceGoalRevision: 3,
+      sourceGoalRepairEpoch: 2
+    });
+    assert.equal(
+      events[completedIndex]?.payload?.providerTurnId,
+      "persisted-goal-user-uuid"
+    );
+  } finally {
+    restoreSink();
+  }
+});
+
 test("interactive request recovers provider Turn identity before waiting when SDK omits the root user echo", async () => {
   const events: Array<{ type: string; payload?: Record<string, unknown> }> = [];
   const recoveryInputs: Array<Record<string, string>> = [];

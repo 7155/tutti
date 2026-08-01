@@ -93,7 +93,24 @@ type claudeSDKAdapterSession struct {
 	goalRevision         int64
 	goalRepairEpoch      int64
 	fencedGoalIdentities map[goalOperationIdentity]struct{}
-	fencedGoalTurns      map[string]struct{}
+	fencedGoalTurns      map[string]claudeSDKGoalTurnFenceState
+	goalTurnBindings     map[string]claudeSDKGoalTurnBinding
+}
+
+type claudeSDKGoalTurnFenceState uint8
+
+const (
+	claudeSDKGoalTurnFenceSuppress claudeSDKGoalTurnFenceState = iota + 1
+	claudeSDKGoalTurnFenceSettle
+)
+
+type claudeSDKGoalTurnBinding struct {
+	turnID          string
+	providerTurnID  string
+	origin          string
+	identity        goalOperationIdentity
+	published       bool
+	publicationDone chan struct{}
 }
 
 type claudeSDKCompactMessage struct {

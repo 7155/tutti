@@ -340,24 +340,6 @@ func TestVisibleFailureRetryableForNetworkButNotMissingCli(t *testing.T) {
 	}
 }
 
-func TestVisibleFailureTimelineItemCarriesTimeoutCodeForTurnFailures(t *testing.T) {
-	session := reportTestSession()
-	event := newTurnActivityEvent(session, EventTurnFailed, "turn-1", SessionStatusFailed, "", "", map[string]any{
-		"error": "context deadline exceeded",
-	})
-
-	item, ok := visibleFailureTimelineItem("room-1", reportTestSource(), event, session.AgentSessionID, 123)
-	if !ok {
-		t.Fatal("visibleFailureTimelineItem() returned ok=false")
-	}
-	if got := item.Payload["code"]; got != "request_timed_out" {
-		t.Fatalf("visible failure code = %#v, want request_timed_out", got)
-	}
-	if got := item.Payload["phase"]; got != "turn" {
-		t.Fatalf("visible failure phase = %#v, want turn", got)
-	}
-}
-
 func reportTestSource() canonical.EventSource {
 	return canonical.EventSource{Provider: ProviderClaudeCode}
 }

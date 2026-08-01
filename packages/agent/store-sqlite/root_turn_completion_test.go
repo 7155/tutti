@@ -261,6 +261,23 @@ func TestReportActivityStateAtomicallyCreatesGoalTurnAndProviderBinding(t *testi
 	if err != nil || messageResult.AcceptedCount != 1 {
 		t.Fatalf("persist first goal assistant message = %#v err=%v", messageResult, err)
 	}
+	completed, err := store.ReportActivityState(ctx, ActivityStateReport{
+		Session: SessionStateReport{
+			WorkspaceID: "ws-1", AgentSessionID: "root", OccurredAtUnixMS: 30,
+		},
+		RootProviderTurn: &RootProviderTurnTransition{
+			WorkspaceID: "ws-1", RootAgentSessionID: "root", RootTurnID: "goal-turn",
+			ProviderTurnID: "provider-turn", Phase: RootProviderTurnPhaseCompleted,
+			Outcome: TurnOutcomeCompleted, OccurredAtUnixMS: 30,
+		},
+	})
+	if err != nil || !completed.RootTurnAccepted || completed.RootTurn.Phase != TurnPhaseSettled {
+		t.Fatalf("settle compound goal turn = %#v err=%v", completed, err)
+	}
+	settledSession, found, err := store.GetSession(ctx, "ws-1", "root")
+	if err != nil || !found || settledSession.ActiveTurnID != "" {
+		t.Fatalf("settled compound goal session = %#v found=%v err=%v", settledSession, found, err)
+	}
 }
 
 func TestReportActivityStateRollsBackGoalTurnWhenProviderBindingFails(t *testing.T) {

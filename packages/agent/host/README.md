@@ -199,6 +199,13 @@ message. Host passes it to both runtime execution and durable submit-provenance
 reporting; adapters must derive the same message sequence from that occurrence
 regardless of which report reaches storage first. `ClientSubmitID` identifies
 the submission but is not itself an ordering value.
+Accepted runtime Session reports reconcile their Goal snapshot through the
+canonical bottom-up observation path without overwriting a newer desired
+intent. When that changes the public Goal projection, the same transaction
+emits a `goal_state` mutation; timestamp- or evidence-only refreshes remain
+silent. A matching applied observation may also complete the pending Goal
+operation in that transaction. Consumers use these post-commit facts only as
+wake hints and reread canonical Goal state.
 For a user Turn, runtime acceptance is not complete until the provider returns
 its exact Turn identity and the activity reporter durably installs
 `canonicalTurnId -> providerSessionId + providerTurnId`. The direct acceptance

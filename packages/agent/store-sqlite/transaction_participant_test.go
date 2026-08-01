@@ -78,6 +78,47 @@ func TestTransactionParticipantCommitsWithSessionTurnAndInteraction(t *testing.T
 	}
 }
 
+func TestRuntimeGoalProjectionParticipatesOnlyOnSemanticChange(t *testing.T) {
+	t.Parallel()
+	participant := &testTransactionParticipant{}
+	store := openParticipantTestStore(t, participant)
+	ctx := context.Background()
+
+	reportGoal := func(occurredAt int64, status string) TransactionDelta {
+		t.Helper()
+		result, err := store.ReportActivityState(ctx, ActivityStateReport{Session: SessionStateReport{
+			WorkspaceID: "ws-goal", AgentSessionID: "session-goal", Origin: "runtime",
+			Provider: "codex", OccurredAtUnixMS: occurredAt,
+			RuntimeContext: map[string]any{
+				"goal": map[string]any{"objective": "ship it", "status": status},
+			},
+		}})
+		if err != nil {
+			t.Fatalf("report Goal %q: %v", status, err)
+		}
+		return result.CommitDelta
+	}
+
+	active := reportGoal(100, "active")
+	assertParticipantMutationKinds(t, active, MutationEntitySession, MutationEntityGoalState)
+	completed := reportGoal(200, "complete")
+	assertParticipantMutationKinds(t, completed, MutationEntitySession, MutationEntityGoalState)
+	replayed := reportGoal(300, "complete")
+	assertParticipantMutationKinds(t, replayed, MutationEntitySession)
+	stale := reportGoal(250, "active")
+	assertParticipantMutationKinds(t, stale, MutationEntitySession)
+
+	metadataOnly, err := store.ReportActivityState(ctx, ActivityStateReport{Session: SessionStateReport{
+		WorkspaceID: "ws-goal", AgentSessionID: "session-without-goal", Origin: "runtime",
+		Provider: "codex", OccurredAtUnixMS: 100,
+		RuntimeContext: map[string]any{"providerResumeCheckpoint": "checkpoint"},
+	}})
+	if err != nil {
+		t.Fatalf("report metadata-only Session: %v", err)
+	}
+	assertParticipantMutationKinds(t, metadataOnly.CommitDelta, MutationEntitySession)
+}
+
 func TestTransactionParticipantFailureRollsBackCanonicalAndMarkerFacts(t *testing.T) {
 	t.Parallel()
 	participant := &testTransactionParticipant{fail: true}

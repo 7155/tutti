@@ -79,6 +79,10 @@ func (s *Store) ReportActivityState(
 	if input.Session.OccurredAtUnixMS <= 0 {
 		input.Session.OccurredAtUnixMS = now
 	}
+	goalBefore, err := readSessionGoalProjectionTx(ctx, tx, input.Session)
+	if err != nil {
+		return ActivityStateReportResult{}, err
+	}
 	accepted, stateApplied, lastEventUnixMS, session, err := s.upsertAgentSessionTx(ctx, tx, input.Session, now)
 	if err != nil {
 		return ActivityStateReportResult{}, err
@@ -165,6 +169,11 @@ func (s *Store) ReportActivityState(
 		}
 	}
 	mutations := activityStateMutations(result)
+	goalMutations, err := sessionGoalMutationsTx(ctx, tx, input.Session, goalBefore)
+	if err != nil {
+		return ActivityStateReportResult{}, err
+	}
+	mutations = append(mutations, goalMutations...)
 	delta, err := s.commitTransaction(ctx, tx, workspaceID, mutations)
 	if err != nil {
 		return ActivityStateReportResult{}, fmt.Errorf("commit workspace agent activity state report: %w", err)

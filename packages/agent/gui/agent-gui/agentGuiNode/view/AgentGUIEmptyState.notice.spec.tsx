@@ -69,4 +69,54 @@ describe("AgentGUIEmptyHeroPane notices", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/unknown/i)).not.toBeInTheDocument();
   });
+
+  it("reuses the Home status chrome for revoked sharing above the disabled composer", () => {
+    render(
+      <AgentGUIEmptyHomePane
+        isActive
+        isVisible
+        provider="codex"
+        providerReadinessGate={null}
+        showAllProviders={false}
+        agentTargets={[]}
+        selectedAgentTarget={null}
+        labels={
+          {
+            empty: "What can Agent help with?",
+            emptyForProvider: () => "What can Agent help with?",
+            emptyProvider: "Agent",
+            emptyProviderForProvider: () => "Agent",
+            providerSwitchLabel: "Select Agent",
+            sharedAgentOwnerSeparator: "'s"
+          } as unknown as AgentGUIViewLabels
+        }
+        noticeChrome={{
+          auth: null,
+          approval: null,
+          recovery: {
+            kind: "agent-sharing-revoked",
+            message: "Jackson stopped sharing this agent",
+            canRetry: false
+          },
+          rawState: null
+        }}
+        isRespondingApproval={false}
+        onSubmitApprovalOption={vi.fn()}
+        onRetryActivation={vi.fn()}
+        onContinueInNewConversation={vi.fn()}
+        chromeLabels={{} as never}
+        composerProps={{} as AgentComposerProps}
+        suggestions={[]}
+        onSelectSuggestion={vi.fn()}
+      />
+    );
+
+    const status = screen.getByRole("alert");
+    const composer = screen.getByTestId("agent-composer");
+    expect(status).toHaveTextContent("Jackson stopped sharing this agent");
+    expect(
+      status.compareDocumentPosition(composer) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
 });

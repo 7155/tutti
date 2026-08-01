@@ -155,8 +155,6 @@ export type {
 export type {
   AgentGUIAgentsEmptyRenderer,
   AgentGUIConversationRailLayout,
-  AgentGUIProviderUnavailableStateContext,
-  AgentGUIProviderUnavailableStateRenderer,
   AgentGUISidebarFooterContext,
   AgentGUISidebarFooterRenderer
 } from "./agent-gui/agentGuiNode/AgentGUINodeView";

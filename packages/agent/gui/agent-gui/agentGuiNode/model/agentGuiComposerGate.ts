@@ -22,6 +22,7 @@ export interface ResolveAgentGUIComposerGateInput {
   pendingApproval: boolean;
   pendingInteractivePrompt: boolean;
   providerReadinessGate: AgentGUIProviderReadinessGate | null;
+  selectedAgentTargetUnavailable: boolean;
   sessionRuntimeBlockedReason: AgentGUIRuntimeBlockedReason | null;
   targetConnectionBlocked: boolean;
 }
@@ -62,6 +63,7 @@ export function resolveAgentGUIComposerGate(
   const canSubmit =
     !input.agentTargetsLoading &&
     input.providerReadinessGate === null &&
+    !input.selectedAgentTargetUnavailable &&
     runtime.status === "ready" &&
     input.activeLiveState !== "activating" &&
     input.activeLiveState !== "failed" &&
@@ -133,7 +135,7 @@ function resolveEditorGate(
   input: ResolveAgentGUIComposerGateInput
 ): AgentGUIComposerGate["editor"] {
   const reason: AgentGUIComposerEditorBlockedReason | null =
-    input.providerReadinessGate !== null
+    input.providerReadinessGate !== null || input.selectedAgentTargetUnavailable
       ? "provider_readiness"
       : input.pendingApproval
         ? "pending_approval"
@@ -155,7 +157,12 @@ function resolveSubmissionBlockReason(
   input: ResolveAgentGUIComposerGateInput
 ): AgentGUIComposerSubmissionBlockedReason {
   if (input.agentTargetsLoading) return "agent_targets_loading";
-  if (input.providerReadinessGate !== null) return "provider_readiness";
+  if (
+    input.providerReadinessGate !== null ||
+    input.selectedAgentTargetUnavailable
+  ) {
+    return "provider_readiness";
+  }
   if (input.activeLiveState === "activating") return "activation_pending";
   if (input.activeLiveState === "failed") return "activation_failed";
   if (input.activeConversationResumeUnavailable) return "resume_unavailable";

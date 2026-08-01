@@ -69,6 +69,11 @@ defaults still use semantic tokens. Initial fallback content appears only when
 both the delivered image and its original fallback are unavailable, never
 while a valid image URL is still loading.
 
+`NativeAvatar` is the React Native counterpart for the same identity-image
+contract. It uses Native semantic tokens and finite control-backed sizes, keeps
+the image decorative, shows loading feedback while a valid source is pending,
+and falls back to the caller's stable label when the source is absent or fails.
+
 ## Current Package Role
 
 `@tutti-os/ui-system` is the single source of truth for:

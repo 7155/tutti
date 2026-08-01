@@ -9,7 +9,11 @@ import {
   TextInput,
   View
 } from "react-native";
-import { type NativeTheme, useNativeTheme } from "@tutti-os/ui-system/native";
+import {
+  NativeAvatar,
+  type NativeTheme,
+  useNativeTheme
+} from "@tutti-os/ui-system/native";
 import {
   MobileKeyboardAvoidingView,
   mobileKeyboardDismissMode
@@ -20,6 +24,7 @@ import type { DeviceSnapshot } from "../services/deviceService";
 import type { DevicePairing, UserDevice } from "../services/mobileDomain";
 
 export interface DeviceScreenViewProps {
+  accountAvatarURL: string;
   accountName: string;
   manualPairingCode: string;
   manualPairingOpen: boolean;
@@ -28,12 +33,13 @@ export interface DeviceScreenViewProps {
   onManualPairingCodeChange(value: string): void;
   onManualPairingOpen(): void;
   onManualPairingSubmit(): void;
+  onOpenSettings(): void;
   onRefresh(): void;
   onScanPairingCode(): void;
-  onSignOut(): void;
 }
 
 export function DeviceScreenView({
+  accountAvatarURL,
   accountName,
   manualPairingCode,
   manualPairingOpen,
@@ -42,9 +48,9 @@ export function DeviceScreenView({
   onManualPairingCodeChange,
   onManualPairingOpen,
   onManualPairingSubmit,
+  onOpenSettings,
   onRefresh,
-  onScanPairingCode,
-  onSignOut
+  onScanPairingCode
 }: DeviceScreenViewProps) {
   const theme = useNativeTheme();
   const styles = createStyles(theme);
@@ -80,12 +86,21 @@ export function DeviceScreenView({
           <Text style={styles.eyebrow}>{accountName || t("welcome")}</Text>
           <Text style={styles.title}>{t("devices")}</Text>
         </View>
-        <PrimaryButton
-          label={t("logout")}
-          onPress={onSignOut}
-          secondary
-          size="compact"
-        />
+        <Pressable
+          accessibilityLabel={t("openSettings")}
+          accessibilityRole="button"
+          onPress={onOpenSettings}
+          style={({ pressed }) => [
+            styles.avatarButton,
+            pressed ? styles.pressed : undefined
+          ]}
+        >
+          <NativeAvatar
+            label={accountName || t("appName")}
+            size="compact"
+            src={accountAvatarURL}
+          />
+        </Pressable>
       </View>
       <ScrollView
         contentContainerStyle={styles.content}
@@ -206,6 +221,12 @@ export function DeviceScreenView({
 
 function createStyles(theme: NativeTheme) {
   return StyleSheet.create({
+    avatarButton: {
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: theme.control.regular,
+      minWidth: theme.control.regular
+    },
     card: {
       alignItems: "center",
       backgroundColor: theme.color.panel,

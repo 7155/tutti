@@ -36,6 +36,7 @@ describe("signInWithBrowser", () => {
       .mockResolvedValueOnce(accountResponse({ session_id: "session-1" }))
       .mockResolvedValueOnce(
         accountResponse({
+          avatar: "https://example.com/alice.png",
           email: "alice@example.com",
           name: "Alice",
           user_id: "user-1"
@@ -44,6 +45,7 @@ describe("signInWithBrowser", () => {
     globalThis.fetch = fetchMock;
 
     await expect(signInWithBrowser()).resolves.toEqual({
+      avatarURL: "https://example.com/alice.png",
       email: "alice@example.com",
       name: "Alice",
       sessionId: "session-1",

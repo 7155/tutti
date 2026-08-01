@@ -60,6 +60,7 @@ async function accountSession(sessionId: string): Promise<AccountSession> {
     throw new Error("account user is missing");
   }
   return {
+    avatarURL: String(user.avatar ?? "").trim(),
     email: String(
       user.email ?? user.emailAddress ?? user.email_address ?? ""
     ).trim(),

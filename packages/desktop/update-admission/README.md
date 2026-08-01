@@ -5,8 +5,9 @@ shared by Tutti Desktop and TSH Desktop.
 
 The package owns the client contract, response validation, startup and
 foreground admission lifecycle, mandatory updater lease, Electron upgrade
-window binding, preload API factory, shared React presentation, and default
-i18n resources.
+window binding, feature-availability validation and persistent cache, trusted
+main IPC registration, preload API factories, shared React presentation, and
+default i18n resources.
 
 Consumers still own:
 
@@ -50,6 +51,7 @@ standalone loopback server, never by both:
 | `DESKTOP_UPDATE_ADMISSION_POLICY`           | Selects one policy outcome.                                                                     |
 | `DESKTOP_UPDATE_ADMISSION_POLICY_SEQUENCE`  | Selects a comma-separated per-client outcome sequence such as `upgradeRequired@1.1.0,disabled`. |
 | `DESKTOP_UPDATE_ADMISSION_SCENARIO`         | Selects one named policy scenario instead of individual policy fields.                          |
+| `DESKTOP_UPDATE_ADMISSION_FEATURE_KEYS`     | Supplies a comma-separated feature key list returned by the policy mock.                        |
 | `DESKTOP_UPDATE_ADMISSION_MOCK_SERVER_PORT` | Selects the loopback CLI port; omit it for an ephemeral port.                                   |
 
 The shortest startup-blocking scenario is:
@@ -110,3 +112,34 @@ accidentally gain a second policy source.
 The server binds only to `127.0.0.1`. Simulated installation never invokes a
 real installer or application restart and is rendered as a distinct
 development-only completion state.
+
+## Feature availability
+
+The optional `featureAvailability.keys` response envelope is independent from
+the minimum-version decision. A valid envelope replaces the current in-memory
+snapshot and the exact-identity cache. A missing or invalid envelope retains
+the previous snapshot and cannot change admission behavior.
+
+Desktop hosts create one runtime with the same product, platform,
+architecture, and current version used by the admission request. The cache is
+stored at `<userData>/desktop-feature-availability-v1.json`, uses atomic
+replacement, has no time expiry, and is accepted only when all identity fields
+match. It stores no minimum version or admission decision. With no matching
+cache every feature query returns `false`.
+
+Main and renderer consumers use the shared runtime and preload API:
+
+```ts
+const snapshot = await desktopApi.featureAvailability.getSnapshot();
+const enabled = await desktopApi.featureAvailability.isSupported(
+  "workspace.exampleFeature"
+);
+const unsubscribe = desktopApi.featureAvailability.onChanged((next) => {
+  console.log(next.keys);
+});
+```
+
+Hosts must register the shared IPC handlers with a sender check that admits
+only their trusted business-window preload. Product code should consume keys
+explicitly; the runtime does not merge remote keys into user preferences or
+existing feature-flag systems.

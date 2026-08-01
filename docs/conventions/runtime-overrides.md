@@ -76,9 +76,9 @@ Packaged applications ignore the entire environment family before parsing it.
 Enabled invalid development scenarios terminate startup with an explicit
 configuration error. In loopback mode the desktop client owns current-version
 and updater variables, while the mock-server process exclusively owns policy,
-minimum-version, policy-sequence, and named-policy variables. A loopback client
-rejects server-owned policy variables instead of creating a second policy
-source.
+minimum-version, feature-key, policy-sequence, and named-policy variables. A
+loopback client rejects server-owned policy variables instead of creating a
+second policy source.
 
 ## Analytics
 

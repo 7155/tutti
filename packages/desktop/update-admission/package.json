@@ -13,6 +13,7 @@
     "./core": "./src/core/index.ts",
     "./development": "./src/development/index.ts",
     "./electron-main": "./src/electron-main/index.ts",
+    "./feature-availability": "./src/feature-availability/index.ts",
     "./i18n": "./src/i18n/index.ts",
     "./mandatory-updater": "./src/mandatory-updater/index.ts",
     "./preload": "./src/preload/index.ts",
@@ -87,6 +88,10 @@
       "./electron-main": {
         "types": "./dist/electron-main/index.d.ts",
         "import": "./dist/electron-main/index.js"
+      },
+      "./feature-availability": {
+        "types": "./dist/feature-availability/index.d.ts",
+        "import": "./dist/feature-availability/index.js"
       },
       "./i18n": {
         "types": "./dist/i18n/index.d.ts",

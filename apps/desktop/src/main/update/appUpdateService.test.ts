@@ -646,6 +646,7 @@ function createDevelopmentScenario(): DesktopUpdateDevelopmentScenario {
     foregroundCheckIntervalMs: 3_000,
     mockServerUrl: null,
     policy: {
+      featureKeys: [],
       policySteps: [
         {
           minimum: { kind: "configured", version: "0.2.0-rc.1" },

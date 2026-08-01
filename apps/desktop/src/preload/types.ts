@@ -2,7 +2,10 @@ import type {
   AgentProviderProbeListInput,
   AgentProviderProbeListResult
 } from "@tutti-os/agent-gui";
-import type { DesktopMinimumVersionApi } from "@tutti-os/desktop-update-admission/contracts";
+import type {
+  DesktopFeatureAvailabilityApi,
+  DesktopMinimumVersionApi
+} from "@tutti-os/desktop-update-admission/contracts";
 import type {
   DesktopBackendConfig,
   DesktopComputerUseActionResult,
@@ -350,6 +353,7 @@ export interface DesktopApi {
   computerUse: DesktopComputerUseApi;
   developer: DesktopDeveloperApi;
   dockPreviewCache: DesktopDockPreviewCacheApi;
+  featureAvailability?: DesktopFeatureAvailabilityApi;
   platform: DesktopPlatformApi;
   host: DesktopHostApi;
   runtime: DesktopRuntimeApi;

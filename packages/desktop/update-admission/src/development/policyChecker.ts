@@ -51,12 +51,16 @@ function waitForAbort(signal: AbortSignal): Promise<never> {
 function responseForStep<TProduct extends DesktopProduct>(
   request: MinimumVersionCheckRequest<TProduct>,
   step: DesktopUpdateDevelopmentPolicyStep,
-  revision: number
+  revision: number,
+  featureKeys: readonly string[]
 ): MinimumVersionCheckResponse<TProduct> {
   const channel = developmentChannel(request.currentVersion);
   const base = {
     ...request,
     channel,
+    featureAvailability: {
+      keys: featureKeys
+    },
     minimumVersion: "",
     policyRevision: `development-policy-${revision}`,
     policySource: ""
@@ -134,6 +138,7 @@ export function createDevelopmentMinimumVersionChecker(
   signal: AbortSignal
 ) => Promise<MinimumVersionCheckResponse<TProduct>> {
   const checkIndexes = new Map<string, number>();
+  const policyFeatureKeys = policy.featureKeys;
   return async <TProduct extends DesktopProduct>(
     request: MinimumVersionCheckRequest<TProduct>,
     signal: AbortSignal
@@ -162,9 +167,9 @@ export function createDevelopmentMinimumVersionChecker(
       throw new Error(step.message);
     }
     validateDevelopmentPolicyScenarioForCurrentVersion(
-      { policySteps: [step] },
+      { featureKeys: policyFeatureKeys, policySteps: [step] },
       request.currentVersion
     );
-    return responseForStep(request, step, stepIndex + 1);
+    return responseForStep(request, step, stepIndex + 1, policyFeatureKeys);
   };
 }

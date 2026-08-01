@@ -10,6 +10,7 @@ export default defineConfig({
     "development/index": "src/development/index.ts",
     "development/mock-server-cli": "src/development/mockServerCli.ts",
     "electron-main/index": "src/electron-main/index.ts",
+    "feature-availability/index": "src/feature-availability/index.ts",
     "i18n/index": "src/i18n/index.ts",
     "mandatory-updater/index": "src/mandatory-updater/index.ts",
     "preload/index": "src/preload/index.ts",

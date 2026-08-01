@@ -24,6 +24,10 @@ func (s *Store) upsertAgentSession(
 			_ = tx.Rollback()
 		}
 	}()
+	goalBefore, err := readSessionGoalProjectionTx(ctx, tx, input)
+	if err != nil {
+		return false, false, 0, Session{}, err
+	}
 	accepted, stateApplied, lastEventUnixMS, session, err := s.upsertAgentSessionTx(ctx, tx, input, now)
 	if err != nil {
 		return false, false, 0, Session{}, err
@@ -32,6 +36,11 @@ func (s *Store) upsertAgentSession(
 	if accepted {
 		mutations = append(mutations, transactionMutation(input.WorkspaceID, input.AgentSessionID, MutationEntitySession, input.AgentSessionID, "upsert", session.UpdatedAtUnixMS))
 	}
+	goalMutations, err := sessionGoalMutationsTx(ctx, tx, input, goalBefore)
+	if err != nil {
+		return false, false, 0, Session{}, err
+	}
+	mutations = append(mutations, goalMutations...)
 	delta, err := s.commitTransaction(ctx, tx, input.WorkspaceID, mutations)
 	if err != nil {
 		return false, false, 0, Session{}, fmt.Errorf("commit workspace agent session state report: %w", err)

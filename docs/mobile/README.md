@@ -449,6 +449,8 @@ Google Play 账号。以下事项等正式分发前再处理：
 - Personal `tuttid` 已接入设备注册、QR challenge、Desktop confirm、配对列表和撤销；
 - Personal 配对 API 已进入生成的 Go/TypeScript daemon client，账号 cookie 和设备私钥不会返回给 UI。
 - Desktop 设置页已接入二维码创建、配对码复制、轮询确认和撤销；
+- Desktop owner host 仅在持久化的 `mobile.remoteAccessSettings` 能力开关开启时
+  轮询配对和 DeviceLink attempt 控制面；关闭会停止 discovery 并断开已有远程链路；
 - `apps/mobile` 已接入平台原生浏览器认证 GitHub 登录和邮箱验证码登录、Android Keystore
   设备身份、设备列表、内置 ZXing 二维码扫描或手动粘贴配对码，以及 challenge
   claim/poll；
@@ -584,7 +586,7 @@ pnpm mobile:android
 App 启动后，使用与 Desktop 相同的账号登录方式。如果 Desktop 使用 GitHub 登录，
 Mobile 也点击“使用 GitHub 登录”并在平台浏览器认证会话中完成登录；仅输入 GitHub 展示的
 相同邮箱不保证得到同一个账号 identity。Desktop 先在设置的开发者页打开
-“显示手机远程访问设置”，再进入「连接」并点击“配对手机”生成二维码。Mobile
+“启用手机远程访问”，再进入「连接」并点击“配对手机”生成二维码。Mobile
 登录成功后点击配对，优先扫描 Desktop 二维码。首次扫码时允许 App 使用相机；如果
 当前环境无法使用相机，就在 Desktop 点击“复制配对码”，再在 Mobile 展开手动配对
 入口并粘贴。

@@ -413,9 +413,8 @@ test("WorkspaceSettingsService reports a mobile remote access settings save fail
 
   assert.equal(notifications.items.length, 1);
   assert.ok(
-    notifications.items[0] ===
-      "We couldn't update mobile remote access visibility." ||
-      notifications.items[0] === "暂时无法更新手机远程访问显示设置"
+    notifications.items[0] === "We couldn't update mobile remote access." ||
+      notifications.items[0] === "暂时无法更新手机远程访问设置"
   );
 });
 

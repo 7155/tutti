@@ -1249,10 +1249,10 @@ export const en = {
         logsSummary: "{{count}} files, {{size}} total",
         logsTitle: "Logs",
         mobileRemoteAccessSettingsDescription:
-          "Show Connection settings with phone pairing and remote access controls.",
-        mobileRemoteAccessSettingsLabel: "Show mobile remote access settings",
+          "Allow paired phones to connect to this computer and show the related Connection settings.",
+        mobileRemoteAccessSettingsLabel: "Enable mobile remote access",
         mobileRemoteAccessSettingsSaveFailed:
-          "We couldn't update mobile remote access visibility.",
+          "We couldn't update mobile remote access.",
         openDaemonLog: "Open daemon log",
         openDesktopLog: "Open desktop log",
         openLogsDirectory: "Open logs folder",

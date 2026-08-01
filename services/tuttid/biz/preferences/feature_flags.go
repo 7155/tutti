@@ -1,9 +1,13 @@
 package preferences
 
-const FeatureFlagAgentSessionRecording = "agent.sessionRecording"
+const (
+	FeatureFlagAgentSessionRecording = "agent.sessionRecording"
+	FeatureFlagMobileRemoteAccess    = "mobile.remoteAccessSettings"
+)
 
 var capabilityFlagDefaults = map[string]bool{
 	FeatureFlagAgentSessionRecording: false,
+	FeatureFlagMobileRemoteAccess:    false,
 }
 
 // IsCapabilityFlagEnabled resolves daemon-enforced feature behavior. Stored

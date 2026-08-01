@@ -128,7 +128,7 @@ func buildTuttiServer() (*http.Server, net.Listener, *tuttiWiring, error) {
 	wiring.startAgentCLIUpdateScheduler()
 
 	routes := wiring.routes()
-	wiring.mobileRemoteService.StartRemoteHost(tuttiserver.NewMux(routes))
+	wiring.startMobileRemoteHost(tuttiserver.NewMux(routes))
 	return tuttiserver.NewHTTPServer(listenerSpec, routes), listener, wiring, nil
 }
 
@@ -196,6 +196,17 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 		}
 		if previous.AgentCLIUpdateCheckEnabled != current.AgentCLIUpdateCheckEnabled {
 			w.agentCLIUpdateScheduler.SetEnabled(current.AgentCLIUpdateCheckEnabled)
+		}
+		previousMobileRemoteEnabled := preferencesbiz.IsCapabilityFlagEnabled(
+			previous.FeatureFlags,
+			preferencesbiz.FeatureFlagMobileRemoteAccess,
+		)
+		currentMobileRemoteEnabled := preferencesbiz.IsCapabilityFlagEnabled(
+			current.FeatureFlags,
+			preferencesbiz.FeatureFlagMobileRemoteAccess,
+		)
+		if previousMobileRemoteEnabled != currentMobileRemoteEnabled {
+			w.mobileRemoteService.SetRemoteAccessEnabled(currentMobileRemoteEnabled)
 		}
 	}
 
@@ -303,6 +314,28 @@ func (w *tuttiWiring) startAgentCLIUpdateScheduler() {
 		return
 	}
 	w.agentCLIUpdateScheduler.Start(preferences.AgentCLIUpdateCheckEnabled)
+}
+
+func (w *tuttiWiring) startMobileRemoteHost(handler http.Handler) {
+	if w == nil || w.mobileRemoteService == nil || w.api.PreferencesService == nil {
+		return
+	}
+	enabled := false
+	preferences, err := w.api.PreferencesService.Get(context.Background())
+	if err != nil {
+		slog.Warn(
+			"failed to read mobile remote access preference",
+			"event", "tutti.mobile_remote.preference_read_failed",
+			"error", err,
+		)
+	} else {
+		enabled = preferencesbiz.IsCapabilityFlagEnabled(
+			preferences.FeatureFlags,
+			preferencesbiz.FeatureFlagMobileRemoteAccess,
+		)
+	}
+	w.mobileRemoteService.SetRemoteAccessEnabled(enabled)
+	w.mobileRemoteService.StartRemoteHost(handler)
 }
 
 func resolveAnalyticsDebugPublisher(analyticsConfig tuttitypes.AnalyticsConfig, service analyticsDebugEventStream) reporterservice.DebugPublisher {

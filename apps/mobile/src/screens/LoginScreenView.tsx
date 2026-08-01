@@ -164,7 +164,7 @@ function createStyles(theme: NativeTheme) {
       borderWidth: 1,
       color: theme.color.text,
       fontSize: 16,
-      height: 54,
+      height: 50,
       marginBottom: 4,
       paddingHorizontal: theme.space.medium
     },
@@ -200,10 +200,10 @@ function createStyles(theme: NativeTheme) {
     },
     title: {
       color: theme.color.text,
-      fontSize: 34,
+      fontSize: 30,
       fontWeight: "700",
-      letterSpacing: -1,
-      lineHeight: 41,
+      letterSpacing: -0.5,
+      lineHeight: 37,
       marginTop: 8
     }
   });

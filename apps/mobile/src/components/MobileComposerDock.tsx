@@ -479,10 +479,10 @@ function createStyles(theme: NativeTheme) {
     actionButton: {
       alignItems: "center",
       backgroundColor: theme.color.text,
-      borderRadius: 22,
-      height: 44,
+      borderRadius: 18,
+      height: 36,
       justifyContent: "center",
-      width: 44
+      width: 36
     },
     actionIcon: {
       color: theme.color.background,
@@ -495,18 +495,18 @@ function createStyles(theme: NativeTheme) {
     },
     chevron: {
       color: theme.color.muted,
-      fontSize: 25,
-      lineHeight: 27
+      fontSize: 20,
+      lineHeight: 22
     },
     addButton: {
       alignItems: "center",
       backgroundColor: theme.color.panelRaised,
       borderColor: theme.color.border,
-      borderRadius: 28,
+      borderRadius: 20,
       borderWidth: StyleSheet.hairlineWidth,
-      height: 56,
+      height: 40,
       justifyContent: "center",
-      width: 56
+      width: 40
     },
     dock: {
       gap: theme.space.small,
@@ -529,24 +529,24 @@ function createStyles(theme: NativeTheme) {
     input: {
       color: theme.color.text,
       flex: 1,
-      fontSize: 17,
+      fontSize: 16,
       lineHeight: 22,
-      maxHeight: 132,
-      minHeight: 54,
-      paddingLeft: theme.space.medium,
-      paddingVertical: 15
+      maxHeight: 120,
+      minHeight: 40,
+      paddingLeft: 14,
+      paddingVertical: 9
     },
     inputPill: {
       alignItems: "center",
       backgroundColor: theme.color.panelRaised,
       borderColor: theme.color.border,
-      borderRadius: 28,
+      borderRadius: 22,
       borderWidth: StyleSheet.hairlineWidth,
       flex: 1,
       flexDirection: "row",
       gap: theme.space.small,
-      minHeight: 56,
-      paddingRight: 6
+      minHeight: 44,
+      paddingRight: 4
     },
     inputRow: {
       alignItems: "flex-end",
@@ -556,20 +556,20 @@ function createStyles(theme: NativeTheme) {
     loading: { marginVertical: theme.space.medium },
     plus: {
       color: theme.color.text,
-      fontSize: 31,
+      fontSize: 24,
       fontWeight: "300",
-      lineHeight: 34
+      lineHeight: 26
     },
     sendIcon: {
       color: theme.color.background,
-      fontSize: 25,
+      fontSize: 18,
       fontWeight: "700",
-      lineHeight: 27
+      lineHeight: 20
     },
     menu: {
       backgroundColor: theme.color.panelRaised,
       borderColor: theme.color.border,
-      borderRadius: 24,
+      borderRadius: theme.radius.large,
       borderWidth: StyleSheet.hairlineWidth,
       marginHorizontal: theme.space.medium,
       maxHeight: "70%",
@@ -587,7 +587,7 @@ function createStyles(theme: NativeTheme) {
     },
     menuBackIcon: {
       color: theme.color.text,
-      fontSize: 24
+      fontSize: 20
     },
     menuHeader: {
       alignItems: "center",

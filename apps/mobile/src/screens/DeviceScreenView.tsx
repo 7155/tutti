@@ -252,7 +252,8 @@ function createStyles(theme: NativeTheme) {
       borderBottomWidth: StyleSheet.hairlineWidth,
       flexDirection: "row",
       justifyContent: "space-between",
-      padding: theme.space.large
+      paddingHorizontal: theme.space.large,
+      paddingVertical: theme.space.medium
     },
     manualInput: {
       borderColor: theme.color.border,
@@ -290,9 +291,9 @@ function createStyles(theme: NativeTheme) {
     statusText: { color: theme.color.textSecondary, flex: 1, fontSize: 14 },
     title: {
       color: theme.color.text,
-      fontSize: 28,
+      fontSize: 24,
       fontWeight: "700",
-      marginTop: 4
+      marginTop: 2
     }
   });
 }

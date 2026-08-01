@@ -21,6 +21,7 @@
 		A10000000000000000000008 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000002 /* InfoPlist.strings */; };
 		A10000000000000000000009 /* AppLifecycleModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* AppLifecycleModule.swift */; };
 		A10000000000000000000010 /* MobileWebAuthenticationSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* MobileWebAuthenticationSession.swift */; };
+		A10000000000000000000011 /* MobilePreferencesModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* MobilePreferencesModule.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -44,6 +45,7 @@
 		A20000000000000000000009 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "TuttiMobile/zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		A20000000000000000000010 /* AppLifecycleModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppLifecycleModule.swift; path = TuttiMobile/AppLifecycleModule.swift; sourceTree = "<group>"; };
 		A20000000000000000000011 /* MobileWebAuthenticationSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MobileWebAuthenticationSession.swift; path = TuttiMobile/MobileWebAuthenticationSession.swift; sourceTree = "<group>"; };
+		A20000000000000000000012 /* MobilePreferencesModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MobilePreferencesModule.swift; path = TuttiMobile/MobilePreferencesModule.swift; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -68,6 +70,7 @@
 				A20000000000000000000005 /* DeviceLinkModule.mm */,
 				A20000000000000000000002 /* MobileBrowserAuthBridge.swift */,
 				A20000000000000000000011 /* MobileWebAuthenticationSession.swift */,
+				A20000000000000000000012 /* MobilePreferencesModule.swift */,
 				A20000000000000000000004 /* MobileNativeModules.m */,
 				A20000000000000000000001 /* MobileSecurityModule.swift */,
 				A20000000000000000000003 /* QRCodeScannerViewController.swift */,
@@ -278,6 +281,7 @@
 				A10000000000000000000001 /* MobileSecurityModule.swift in Sources */,
 				A10000000000000000000002 /* MobileBrowserAuthBridge.swift in Sources */,
 				A10000000000000000000010 /* MobileWebAuthenticationSession.swift in Sources */,
+				A10000000000000000000011 /* MobilePreferencesModule.swift in Sources */,
 				A10000000000000000000003 /* QRCodeScannerViewController.swift in Sources */,
 				A10000000000000000000004 /* MobileNativeModules.m in Sources */,
 				A10000000000000000000009 /* AppLifecycleModule.swift in Sources */,

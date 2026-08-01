@@ -11,7 +11,13 @@ if (!process.argv[2]) {
 
 const repoRoot = await resolveRepoRoot();
 const activityContract = await readJSON(
-  join(repoRoot, "packages", "agent", "session-replay", "activity-contract.json")
+  join(
+    repoRoot,
+    "packages",
+    "agent",
+    "session-replay",
+    "activity-contract.json"
+  )
 );
 if (activityContract.schemaVersion !== 1) {
   throw new Error(
@@ -162,9 +168,7 @@ async function resolveRepoRoot() {
 function auditActivityCausality(activities, contract) {
   const violations = [];
   const intents = contract.intents ?? {};
-  const eventsById = new Map(
-    activities.map((event) => [event.eventId, event])
-  );
+  const eventsById = new Map(activities.map((event) => [event.eventId, event]));
   const referencedIntentIds = new Set();
 
   for (const event of activities) {

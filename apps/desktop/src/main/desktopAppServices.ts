@@ -34,6 +34,7 @@ export interface CreateDesktopAppServicesOptions {
   preloadPath: string;
   rendererUrl?: string;
   startupFailureQueuePath?: string;
+  updateService?: AppUpdateService;
   workspaceAppPreloadPath?: string;
 }
 
@@ -53,7 +54,8 @@ export async function createDesktopAppServices(
   factories?: Partial<DesktopAppServiceFactories>
 ): Promise<DesktopAppServices> {
   const daemonRuntime = await resolveDaemonRuntime(factories);
-  const updateService = await resolveUpdateService(factories);
+  const updateService =
+    options.updateService ?? (await resolveUpdateService(factories));
 
   try {
     await daemonRuntime.tuttid.start();

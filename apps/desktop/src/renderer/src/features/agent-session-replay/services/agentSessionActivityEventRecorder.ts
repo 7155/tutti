@@ -144,7 +144,9 @@ export class AgentSessionActivityEventRecorder {
       return;
     const commandId = command.commandId.trim();
     if (!commandId) return;
-    if (isEngineInternalAgentSessionReplayEffectCommand(command.type, commandId))
+    if (
+      isEngineInternalAgentSessionReplayEffectCommand(command.type, commandId)
+    )
       return;
     const correlationId = commandCorrelationId(command);
     const causedByEventId =

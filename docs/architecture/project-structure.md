@@ -170,6 +170,21 @@ Desktop summary:
 
 The authoritative desktop directory shape and ownership rules live in [docs/conventions/desktop-layering.md](../conventions/desktop-layering.md). Keep this repository-level document as a summary, not a second full desktop structure spec.
 
+### `packages/desktop/*`
+
+Desktop packages own product-neutral lifecycle and native-host integration
+mechanics shared by more than one desktop product.
+
+Current packages:
+
+- `packages/desktop/update-admission`: minimum-version policy contracts,
+  validation, mandatory updater ownership, Electron admission lifecycle,
+  capability-minimal preload API, shared React presentation, and default i18n
+
+Product policy transport, normal update preferences, release feeds, download
+URLs, window assets, logging sinks, and business-window enumeration remain in
+the consuming desktop app.
+
 ### `services/tuttid`
 
 `services/tuttid` is the primary business core.

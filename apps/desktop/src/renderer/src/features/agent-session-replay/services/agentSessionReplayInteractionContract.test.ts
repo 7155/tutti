@@ -37,7 +37,10 @@ test("registry mirrors the portable activity contract exactly", () => {
 
   for (const [type, contract] of registryEntries) {
     const portable = portableContract.intents[type];
-    assert.ok(portable, `intent ${type} is missing from activity-contract.json`);
+    assert.ok(
+      portable,
+      `intent ${type} is missing from activity-contract.json`
+    );
     assert.deepEqual(
       [...contract.effects].sort(),
       [...portable.effects].sort(),

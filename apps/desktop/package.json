@@ -112,6 +112,7 @@
     "@tutti-os/client-tuttid-ts": "workspace:*",
     "@tutti-os/commerce": "workspace:*",
     "@tutti-os/config-tsconfig": "workspace:*",
+    "@tutti-os/desktop-update-admission": "workspace:*",
     "@tutti-os/ui-i18n-runtime": "workspace:*",
     "@tutti-os/ui-notifications": "workspace:*",
     "@tutti-os/ui-rich-text": "workspace:*",

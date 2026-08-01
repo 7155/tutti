@@ -12,9 +12,9 @@ export function promptVisibleInQueueAdmission(
 ): boolean {
   return Boolean(
     record?.prompts.length ||
-      record?.inFlight ||
-      record?.uncertainDelivery ||
-      record?.deliveryBarrierTurnId ||
-      availabilityState !== "available"
+    record?.inFlight ||
+    record?.uncertainDelivery ||
+    record?.deliveryBarrierTurnId ||
+    availabilityState !== "available"
   );
 }

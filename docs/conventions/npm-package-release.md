@@ -39,6 +39,7 @@ The current fixed release group is:
 @tutti-os/workbench-surface
 @tutti-os/app-release-tools
 @tutti-os/auth-bridge
+@tutti-os/desktop-update-admission
 @tutti-os/ui-i18n-runtime
 @tutti-os/ui-notifications
 @tutti-os/ui-rich-text
@@ -169,6 +170,7 @@ pnpm add @tutti-os/workbench-electron@beta
 pnpm add @tutti-os/workbench-host@beta
 pnpm add @tutti-os/workbench-surface@beta
 pnpm add @tutti-os/workbench-snapshot@beta
+pnpm add @tutti-os/desktop-update-admission@beta
 pnpm add @tutti-os/ui-i18n-runtime@beta
 pnpm add @tutti-os/ui-notifications@beta
 pnpm add @tutti-os/ui-rich-text@beta

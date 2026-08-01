@@ -1,6 +1,21 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, protocol } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  powerMonitor,
+  protocol,
+  shell
+} from "electron";
+import {
+  createDesktopUpdateAdmissionController,
+  type DesktopUpdateAdmissionController
+} from "@tutti-os/desktop-update-admission/electron-main";
+import {
+  createDevelopmentMinimumVersionChecker,
+  resolveDesktopUpdateAdmissionDevelopment
+} from "@tutti-os/desktop-update-admission/development";
 import {
   initializeDesktopEnvironment,
   resolveDesktopDevelopmentAppName,
@@ -42,6 +57,8 @@ import { desktopCustomProtocolSchemes } from "./host/desktopCustomProtocolScheme
 import { createWorkspaceFileIconCacheStore } from "./host/workspaceFileIconCacheStore.ts";
 import { registerWorkspaceFileIconProtocol } from "./host/workspaceFileIconProtocol.ts";
 import { applyDesktopElectronPlatformCompatibility } from "./electronPlatformCompatibility.ts";
+import { createAppUpdateService } from "./update/appUpdateService.ts";
+import { createTuttiMinimumVersionChecker } from "./update/minimumVersionPolicyClient.ts";
 
 function envFlagEnabled(value: string | undefined): boolean {
   return /^(1|true|yes|on)$/iu.test(value?.trim() ?? "");
@@ -141,6 +158,10 @@ export async function bootstrapDesktopApp(): Promise<void> {
 
   const currentDir = dirname(fileURLToPath(import.meta.url));
   const preloadPath = join(currentDir, "../preload/index.cjs");
+  const minimumVersionPreloadPath = join(
+    currentDir,
+    "../preload/minimum-version.cjs"
+  );
   const browserNodeGuestPreloadPath = join(
     currentDir,
     "../preload/browser-node-guest.cjs"
@@ -163,12 +184,78 @@ export async function bootstrapDesktopApp(): Promise<void> {
     return;
   }
 
+  const desktopUpdateAdmission = resolveDesktopUpdateAdmissionDevelopment({
+    applicationVersion: app.getVersion(),
+    env: process.env,
+    isPackaged: app.isPackaged
+  });
+  const updateService = createAppUpdateService(undefined, {
+    currentVersion: desktopUpdateAdmission.runtime.currentVersion,
+    developmentScenario: desktopUpdateAdmission.scenario
+  });
+  const minimumVersionChecker =
+    desktopUpdateAdmission.scenario?.transport === "in-process"
+      ? createDevelopmentMinimumVersionChecker(
+          desktopUpdateAdmission.scenario.policy,
+          {
+            expectedCurrentVersion:
+              desktopUpdateAdmission.scenario.currentVersion
+          }
+        )
+      : createTuttiMinimumVersionChecker(
+          desktopUpdateAdmission.scenario?.mockServerUrl
+            ? `${desktopUpdateAdmission.scenario.mockServerUrl}/api/desktop/v1`
+            : undefined
+        );
+  let desktopAppServices: Awaited<
+    ReturnType<typeof createDesktopAppServices>
+  > | null = null;
+  let releaseStartupGate: (() => void) | null = null;
+  let minimumVersionController: DesktopUpdateAdmissionController | null =
+    createDesktopUpdateAdmissionController({
+      checkMinimumVersion: minimumVersionChecker,
+      electron: { app, BrowserWindow, ipcMain, shell },
+      listBusinessWindows: () => BrowserWindow.getAllWindows(),
+      logger,
+      manualDownloadUrl: (response) => {
+        const channel = response.channel === "rc" ? "preview" : "stable";
+        return `https://tutti.sh/desktop/download?channel=${channel}&platform=macos&arch=universal&format=dmg`;
+      },
+      onPolicyReleased: () => {
+        if (releaseStartupGate) {
+          const release = releaseStartupGate;
+          releaseStartupGate = null;
+          release();
+        }
+      },
+      preloadPath: minimumVersionPreloadPath,
+      product: "tutti-desktop",
+      runtime: desktopUpdateAdmission.runtime,
+      rendererFilePath: join(currentDir, "../renderer/minimum-version.html"),
+      rendererUrl: rendererUrl
+        ? `${rendererUrl}/minimum-version.html`
+        : undefined,
+      updateService: {
+        acquireMandatorySession: (input) =>
+          updateService.acquireMandatorySession(input),
+        getState: () => updateService.getState(),
+        subscribe: (listener) =>
+          updateService.onStateChanged((state) => listener(state))
+      }
+    });
+  const startupBlocked = await minimumVersionController.runStartupCheck();
+  if (startupBlocked) {
+    await new Promise<void>((resolve) => {
+      releaseStartupGate = resolve;
+    });
+  }
+
   const workspaceFileIconCache = createWorkspaceFileIconCacheStore({
     directory: join(app.getPath("userData"), "workspace-file-icons")
   });
   registerTuttiAssetProtocol();
   registerWorkspaceFileIconProtocol(workspaceFileIconCache);
-  const desktopAppServices = await createDesktopAppServices({
+  desktopAppServices = await createDesktopAppServices({
     appVersion: app.getVersion(),
     enableDevelopmentReloadShortcut: Boolean(rendererUrl) && !app.isPackaged,
     fallbackLocale: systemLocale,
@@ -177,6 +264,7 @@ export async function bootstrapDesktopApp(): Promise<void> {
     logger,
     preloadPath,
     rendererUrl,
+    updateService,
     workspaceAppPreloadPath
   });
   const theme = applyDesktopThemeSource(
@@ -273,14 +361,25 @@ export async function bootstrapDesktopApp(): Promise<void> {
     updateService: desktopAppServices.updateService
   });
 
-  void desktopAppServices.updateService.configure({
-    channel: desktopAppServices.preferences.getUpdateChannel(),
-    policy: desktopAppServices.preferences.getUpdatePolicy()
-  });
-
-  await desktopAppServices.workspaceLaunch.openStartupWindow();
+  let businessWindowAllowed = false;
+  let businessWindowOpened = false;
+  const openBusinessWindow = async () => {
+    businessWindowAllowed = true;
+    if (!businessWindowOpened) {
+      businessWindowOpened = true;
+      await desktopAppServices.workspaceLaunch.openStartupWindow();
+    } else {
+      focusPrimaryDesktopWindow();
+    }
+  };
+  const checkMinimumVersionAfterRestore = () => {
+    void minimumVersionController?.checkAfterForegroundRestore();
+  };
+  powerMonitor.on("resume", checkMinimumVersionAfterRestore);
+  app.on("browser-window-focus", checkMinimumVersionAfterRestore);
 
   registerDesktopAppLifecycle({
+    canOpenBusinessWindow: () => businessWindowAllowed,
     logger,
     tuttid: desktopAppServices.tuttid,
     disposables: [
@@ -291,9 +390,29 @@ export async function bootstrapDesktopApp(): Promise<void> {
         dispose() {
           appUpdateAnalytics.release();
         }
+      },
+      {
+        dispose() {
+          powerMonitor.removeListener(
+            "resume",
+            checkMinimumVersionAfterRestore
+          );
+          app.removeListener(
+            "browser-window-focus",
+            checkMinimumVersionAfterRestore
+          );
+          minimumVersionController?.dispose();
+          minimumVersionController = null;
+        }
       }
     ],
     updateService: desktopAppServices.updateService,
     workspaceLaunch: desktopAppServices.workspaceLaunch
   });
+
+  await updateService.configure({
+    channel: desktopAppServices.preferences.getUpdateChannel(),
+    policy: desktopAppServices.preferences.getUpdatePolicy()
+  });
+  await openBusinessWindow();
 }

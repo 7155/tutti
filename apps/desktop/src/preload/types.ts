@@ -2,6 +2,7 @@ import type {
   AgentProviderProbeListInput,
   AgentProviderProbeListResult
 } from "@tutti-os/agent-gui";
+import type { DesktopMinimumVersionApi } from "@tutti-os/desktop-update-admission/contracts";
 import type {
   DesktopBackendConfig,
   DesktopComputerUseActionResult,
@@ -320,6 +321,8 @@ export interface DesktopUpdateApi {
   installUpdate(): Promise<void>;
   onState(listener: (state: AppUpdateState) => void): () => void;
 }
+
+export type { DesktopMinimumVersionApi };
 
 export interface DesktopWallpaperApi {
   clearCustom(): Promise<void>;

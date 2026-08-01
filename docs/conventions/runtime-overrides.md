@@ -63,6 +63,23 @@ Use the owner documents linked below for detailed behavior. This file exists to 
 | `TUTTI_MOBILE_CONTROL_PLANE_BASE_URL` | [Mobile AgentGUI And DeviceLink Design](../specs/2026-07-23-mobile-agentgui-device-link-design.md) | Overrides the tsh-server desktop control-plane base URL used by Personal device pairing.          |
 | `TUTTI_WEB_BASE_URL`                  | [Agent Account And Commerce](../architecture/agent-account-and-commerce.md)                        | Overrides the Tutti web origin used by tuttid when returning account profile links to desktop UI. |
 
+## Desktop Update Admission Development
+
+`@tutti-os/desktop-update-admission` owns the shared, unpackaged-only
+`DESKTOP_UPDATE_ADMISSION_*` environment contract used by Tutti Desktop and
+TSH Desktop. See the package
+[README](../../packages/desktop/update-admission/README.md) for scenario
+variables, policy sequences, named scenarios, updater outcomes, foreground
+interval overrides, and the loopback mock-server transport.
+
+Packaged applications ignore the entire environment family before parsing it.
+Enabled invalid development scenarios terminate startup with an explicit
+configuration error. In loopback mode the desktop client owns current-version
+and updater variables, while the mock-server process exclusively owns policy,
+minimum-version, policy-sequence, and named-policy variables. A loopback client
+rejects server-owned policy variables instead of creating a second policy
+source.
+
 ## Analytics
 
 | Variable                         | Owner document                                                                                                   | Purpose                                                                                               |

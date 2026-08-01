@@ -533,6 +533,23 @@ type Interaction struct {
 	UpdatedAtUnixMS int64
 }
 
+// SessionInteractionTreeQuery selects the interaction projection rooted at
+// one root Session. An empty RootTurnID resolves the root Session's latest
+// non-retracted Turn inside the same read transaction as the projection.
+type SessionInteractionTreeQuery struct {
+	WorkspaceID        string
+	RootAgentSessionID string
+	RootTurnID         string
+}
+
+// SessionInteractionTreeSnapshot is one transactionally consistent view of
+// the root Turn and every descendant Session's latest Turn.
+type SessionInteractionTreeSnapshot struct {
+	RootTurnID          string
+	Interactions        []Interaction
+	PendingInteractions []Interaction
+}
+
 type InteractionUpsert struct {
 	WorkspaceID      string
 	AgentSessionID   string

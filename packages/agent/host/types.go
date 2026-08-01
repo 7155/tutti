@@ -32,6 +32,20 @@ type SessionInteractionSnapshot struct {
 	PendingInteractions []storesqlite.Interaction
 }
 
+// SessionInteractionTreeQuery selects one root Turn. Empty means the latest
+// non-retracted root Turn resolved atomically with the tree snapshot.
+type SessionInteractionTreeQuery struct {
+	RootTurnID string
+}
+
+// SessionInteractionTreeSnapshot contains the root Turn's interactions and
+// every descendant Session's latest-Turn interactions.
+type SessionInteractionTreeSnapshot struct {
+	RootTurnID          string
+	Interactions        []storesqlite.Interaction
+	PendingInteractions []storesqlite.Interaction
+}
+
 // SessionMessageQuery selects one page of canonical message snapshots. Session
 // identity comes from SessionRef so transport adapters cannot accidentally
 // query a different session through duplicated identity fields.

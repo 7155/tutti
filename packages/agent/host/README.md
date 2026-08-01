@@ -185,13 +185,26 @@ remains rejected.
 observation without starting a provider. `GetTurn`, `GetInteraction`,
 `ListSessionTurns`, `ListSessionMessages`, `FindTurnByClientSubmitID`, and
 `GetSessionInteractionSnapshot` expose canonical queries without leaking an
-adapter's concrete store. Turn pages are newest-first, bounded metadata reads
-with stable cursors. Message pages use per-session version cursors and may be
-narrowed to one turn. `GetInteraction` requires the complete
+adapter's concrete store. `GetSessionInteractionTreeSnapshot` is the
+execution-tree read boundary: it accepts only a root Session, resolves an
+optional latest root Turn in the same read transaction, and returns that root
+Turn plus every descendant Session's latest-Turn interactions. Deleted
+Sessions and retracted latest Turns are excluded, and the full result is
+ordered by Session, Turn, and request identity. Turn pages are newest-first,
+bounded metadata reads with stable cursors. Message pages use per-session
+version cursors and may be narrowed to one turn. `GetInteraction` requires the complete
 `(workspaceId, agentSessionId, turnId, requestId)` identity. The interaction
 snapshot contains every interaction on the latest turn and derives its pending
 subset from that same read; older-turn pending rows can never become current
-actionable state. `CreateSessionInput.ClientSubmitID` and
+actionable state. Canonical transaction participation derives one deduplicated
+`interaction_tree/dirty` fact for every affected execution tree. Interaction
+changes, Turn creation/settlement/retraction, and Session deletion are all
+covered; the fact carries the immutable root Session and root Turn identity so
+consumers wake and reread one tree without reconstructing lineage. A root
+Session deletion uses an empty root Turn as an explicit all-turns wake. These
+facts are invalidation hints, not partial row updates. Consumers publish the
+reread result as one complete `interaction_snapshot`; an empty interactions
+array is an authoritative clear. `CreateSessionInput.ClientSubmitID` and
 `SendInput.ClientSubmitID` are the typed idempotency identities and override
 the legacy metadata value when both are present. The matching durable submit
 claim's immutable `CreatedAtUnixMS` is the canonical occurrence of that user

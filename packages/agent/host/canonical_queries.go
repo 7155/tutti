@@ -2,6 +2,7 @@ package agenthost
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -103,6 +104,41 @@ func (h *Host) GetSessionInteractionSnapshot(ctx context.Context, ref SessionRef
 		}
 	}
 	return SessionInteractionSnapshot{Interactions: interactions, PendingInteractions: pending}, nil
+}
+
+// GetSessionInteractionTreeSnapshot returns the canonical interaction state
+// for one root Turn and every descendant Session's latest Turn. It does not
+// start or resume a provider runtime.
+func (h *Host) GetSessionInteractionTreeSnapshot(
+	ctx context.Context,
+	root SessionRef,
+	query SessionInteractionTreeQuery,
+) (SessionInteractionTreeSnapshot, error) {
+	root = normalizedSessionRef(root)
+	query.RootTurnID = strings.TrimSpace(query.RootTurnID)
+	if h == nil || h.interactionTrees == nil || root.WorkspaceID == "" || root.AgentSessionID == "" {
+		return SessionInteractionTreeSnapshot{}, ErrInvalidArgument
+	}
+	snapshot, found, err := h.interactionTrees.GetSessionInteractionTreeSnapshot(ctx, storesqlite.SessionInteractionTreeQuery{
+		WorkspaceID: root.WorkspaceID, RootAgentSessionID: root.AgentSessionID, RootTurnID: query.RootTurnID,
+	})
+	if errors.Is(err, storesqlite.ErrInteractionTreeRootRequired) {
+		return SessionInteractionTreeSnapshot{}, ErrInvalidArgument
+	}
+	if errors.Is(err, storesqlite.ErrInteractionTreeRootTurnNotFound) {
+		return SessionInteractionTreeSnapshot{}, ErrTurnNotFound
+	}
+	if err != nil {
+		return SessionInteractionTreeSnapshot{}, err
+	}
+	if !found {
+		return SessionInteractionTreeSnapshot{}, ErrSessionNotFound
+	}
+	return SessionInteractionTreeSnapshot{
+		RootTurnID:          snapshot.RootTurnID,
+		Interactions:        snapshot.Interactions,
+		PendingInteractions: snapshot.PendingInteractions,
+	}, nil
 }
 
 // GetInteraction reads one exact canonical Interaction by its complete identity.

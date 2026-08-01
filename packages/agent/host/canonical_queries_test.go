@@ -25,6 +25,18 @@ type canonicalQueryStore struct {
 	err                  error
 	interactions         map[string][]storesqlite.Interaction
 	exactInteractions    []storesqlite.Interaction
+	interactionTree      storesqlite.SessionInteractionTreeSnapshot
+	interactionTreeFound bool
+}
+
+func (s canonicalQueryStore) GetSessionInteractionTreeSnapshot(
+	_ context.Context,
+	query storesqlite.SessionInteractionTreeQuery,
+) (storesqlite.SessionInteractionTreeSnapshot, bool, error) {
+	if query.WorkspaceID != s.wantWorkspaceID || query.RootAgentSessionID != s.wantSessionID || query.RootTurnID != s.wantTurnID {
+		return storesqlite.SessionInteractionTreeSnapshot{}, false, errors.New("unexpected interaction tree query")
+	}
+	return s.interactionTree, s.interactionTreeFound, s.err
 }
 
 func (s canonicalQueryStore) GetTurn(_ context.Context, workspaceID, sessionID, turnID string) (storesqlite.Turn, bool, error) {
@@ -301,5 +313,23 @@ func TestGetSessionInteractionSnapshotRejectsIncompleteIdentity(t *testing.T) {
 		if _, err := host.GetSessionInteractionSnapshot(t.Context(), ref); !errors.Is(err, ErrInvalidArgument) {
 			t.Fatalf("GetSessionInteractionSnapshot(%#v) error = %v, want %v", ref, err, ErrInvalidArgument)
 		}
+	}
+}
+
+func TestGetSessionInteractionTreeSnapshotDelegatesCanonicalRead(t *testing.T) {
+	want := storesqlite.SessionInteractionTreeSnapshot{
+		RootTurnID:   "root-turn",
+		Interactions: []storesqlite.Interaction{{AgentSessionID: "child", TurnID: "child-turn", RequestID: "request"}},
+	}
+	host := New(Config{CanonicalStore: canonicalQueryStore{
+		wantWorkspaceID: "workspace-1", wantSessionID: "root", wantTurnID: "root-turn",
+		interactionTree: want, interactionTreeFound: true,
+	}})
+
+	got, err := host.GetSessionInteractionTreeSnapshot(t.Context(), SessionRef{
+		WorkspaceID: " workspace-1 ", AgentSessionID: " root ",
+	}, SessionInteractionTreeQuery{RootTurnID: " root-turn "})
+	if err != nil || !reflect.DeepEqual(got.Interactions, want.Interactions) || got.RootTurnID != want.RootTurnID {
+		t.Fatalf("GetSessionInteractionTreeSnapshot() = (%#v, %v)", got, err)
 	}
 }

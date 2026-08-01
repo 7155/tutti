@@ -521,6 +521,17 @@ func (s *SQLiteWorkspaceStore) ListLatestTurnInteractions(ctx context.Context, w
 	return store.ListLatestTurnInteractions(ctx, workspaceID, sessionIDs)
 }
 
+func (s *SQLiteWorkspaceStore) GetSessionInteractionTreeSnapshot(
+	ctx context.Context,
+	query storesqlite.SessionInteractionTreeQuery,
+) (storesqlite.SessionInteractionTreeSnapshot, bool, error) {
+	store, err := s.store(query.WorkspaceID)
+	if err != nil {
+		return storesqlite.SessionInteractionTreeSnapshot{}, false, err
+	}
+	return store.GetSessionInteractionTreeSnapshot(ctx, query)
+}
+
 func (s *SQLiteWorkspaceStore) ListSessionInteractions(ctx context.Context, input storesqlite.ListSessionInteractionsInput) ([]storesqlite.Interaction, error) {
 	store, err := s.store(input.WorkspaceID)
 	if err != nil {

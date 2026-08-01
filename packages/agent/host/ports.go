@@ -30,6 +30,13 @@ type CanonicalTurnStore interface {
 	ListSessionInteractions(context.Context, storesqlite.ListSessionInteractionsInput) ([]storesqlite.Interaction, error)
 }
 
+// CanonicalInteractionTreeStore is an optional read capability. Keeping it
+// separate preserves source compatibility for external CanonicalStore
+// implementations that do not consume execution-tree projections.
+type CanonicalInteractionTreeStore interface {
+	GetSessionInteractionTreeSnapshot(context.Context, storesqlite.SessionInteractionTreeQuery) (storesqlite.SessionInteractionTreeSnapshot, bool, error)
+}
+
 type CanonicalMessageStore interface {
 	ListSessionMessages(context.Context, storesqlite.ListSessionMessagesInput) (storesqlite.MessagePage, bool, error)
 }

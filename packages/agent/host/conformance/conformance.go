@@ -209,6 +209,18 @@ type SessionForkScenario struct {
 	run  func(context.Context, SessionForkDriver) error
 }
 
+// InteractionTreeDriver is separate from the lifecycle Driver because tree
+// snapshots are a read capability that consumers can adopt independently.
+type InteractionTreeDriver interface {
+	ResetInteractionTree(context.Context) error
+	GetSessionInteractionTreeSnapshot(context.Context, agenthost.SessionRef, agenthost.SessionInteractionTreeQuery) (agenthost.SessionInteractionTreeSnapshot, error)
+}
+
+type InteractionTreeScenario struct {
+	Name string
+	run  func(context.Context, InteractionTreeDriver) error
+}
+
 func Run(ctx context.Context, driver Driver, scenario Scenario) error {
 	if driver == nil {
 		return fmt.Errorf("agent host conformance driver is required")
@@ -229,6 +241,20 @@ func RunSessionFork(
 	}
 	if scenario.run == nil {
 		return fmt.Errorf("agent host session fork conformance scenario %q has no runner", scenario.Name)
+	}
+	return scenario.run(ctx, driver)
+}
+
+func RunInteractionTree(
+	ctx context.Context,
+	driver InteractionTreeDriver,
+	scenario InteractionTreeScenario,
+) error {
+	if driver == nil {
+		return fmt.Errorf("agent host interaction tree conformance driver is required")
+	}
+	if scenario.run == nil {
+		return fmt.Errorf("agent host interaction tree conformance scenario %q has no runner", scenario.Name)
 	}
 	return scenario.run(ctx, driver)
 }

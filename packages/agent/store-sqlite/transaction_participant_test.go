@@ -60,11 +60,18 @@ func TestTransactionParticipantCommitsWithSessionTurnAndInteraction(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.TransactionID == "" || len(result.CommitDelta.Mutations) != 3 {
+	if result.TransactionID == "" || len(result.CommitDelta.Mutations) != 4 {
 		t.Fatalf("commit delta = %#v", result.CommitDelta)
 	}
-	assertParticipantMutationKinds(t, result.CommitDelta, MutationEntitySession, MutationEntityTurn, MutationEntityInteraction)
+	assertParticipantMutationKinds(t, result.CommitDelta,
+		MutationEntitySession, MutationEntityTurn, MutationEntityInteraction, MutationEntityInteractionTree)
 	assertParticipantMutationEntityID(t, result.CommitDelta, MutationEntityInteraction, "turn-1\x00request-1")
+	for _, mutation := range result.CommitDelta.Mutations {
+		if mutation.EntityKind == MutationEntityInteractionTree &&
+			(mutation.RootAgentSessionID != "session-1" || mutation.RootTurnID != "turn-1") {
+			t.Fatalf("interaction tree mutation identity = %#v", mutation)
+		}
+	}
 	encodedSession, err := json.Marshal(result.State.Session)
 	if err != nil {
 		t.Fatal(err)
@@ -73,8 +80,37 @@ func TestTransactionParticipantCommitsWithSessionTurnAndInteraction(t *testing.T
 		t.Fatalf("transient commit metadata leaked into session JSON: %s", encodedSession)
 	}
 	var mutationCount int
-	if err := store.db.QueryRow(`SELECT mutation_count FROM test_transaction_markers WHERE transaction_id = ?`, result.TransactionID).Scan(&mutationCount); err != nil || mutationCount != 3 {
+	if err := store.db.QueryRow(`SELECT mutation_count FROM test_transaction_markers WHERE transaction_id = ?`, result.TransactionID).Scan(&mutationCount); err != nil || mutationCount != 4 {
 		t.Fatalf("participant marker mutation_count=%d error=%v", mutationCount, err)
+	}
+}
+
+func TestTransactionParticipantAddsChildInteractionRootIdentity(t *testing.T) {
+	participant := &testTransactionParticipant{}
+	store := openParticipantTestStore(t, participant)
+	reportSessionWithTurn(t, store, SessionStateReport{
+		WorkspaceID: "ws-child-root", AgentSessionID: "root", Kind: SessionKindRoot,
+		Provider: "claude-code", OccurredAtUnixMS: 1,
+	}, "root-turn", 2)
+	reportSessionWithTurn(t, store, SessionStateReport{
+		WorkspaceID: "ws-child-root", AgentSessionID: "child", Kind: SessionKindChild,
+		RootAgentSessionID: "root", RootTurnID: "root-turn",
+		ParentAgentSessionID: "root", ParentTurnID: "root-turn", ParentToolCallID: "call-child",
+		Provider: "claude-code", OccurredAtUnixMS: 3,
+	}, "child-turn", 4)
+
+	_, result, err := store.UpsertInteraction(context.Background(), InteractionUpsert{
+		WorkspaceID: "ws-child-root", AgentSessionID: "child", TurnID: "child-turn",
+		RequestID: "request-child", Kind: InteractionKindQuestion, Status: InteractionStatusPending,
+		OccurredAtUnixMS: 5,
+	})
+	if err != nil || result != InteractionTransitionApplied {
+		t.Fatalf("UpsertInteraction() result=%v err=%v", result, err)
+	}
+	got := participant.deltas[len(participant.deltas)-1].Mutations
+	if len(got) != 2 || got[1].EntityKind != MutationEntityInteractionTree ||
+		got[1].RootAgentSessionID != "root" || got[1].RootTurnID != "root-turn" {
+		t.Fatalf("child interaction mutation = %#v", got)
 	}
 }
 
@@ -205,7 +241,8 @@ func TestRuntimeOperationCompletionParticipatesWithCanonicalAndOutboxFacts(t *te
 		t.Fatalf("completion=%#v", completion)
 	}
 	assertParticipantMutationKinds(t, completion.CommitDelta,
-		MutationEntityRuntimeOperation, MutationEntityRuntimeEvent, MutationEntityInteraction)
+		MutationEntityRuntimeOperation, MutationEntityRuntimeEvent,
+		MutationEntityInteraction, MutationEntityInteractionTree)
 	assertParticipantMutationEntityID(t, completion.CommitDelta, MutationEntityInteraction, "turn-1\x00request-1")
 }
 
@@ -340,7 +377,10 @@ func TestSessionDeleteCommitsDurableMarkerWithTombstone(t *testing.T) {
 		t.Fatalf("delete result=%#v", result)
 	}
 	assertParticipantMutationEntityID(t, result.CommitDelta, MutationEntitySession, "session-1")
-	if len(result.CommitDelta.Mutations) != 1 || result.CommitDelta.Mutations[0].Operation != "delete" {
+	if len(result.CommitDelta.Mutations) != 2 || result.CommitDelta.Mutations[0].Operation != "delete" ||
+		result.CommitDelta.Mutations[1].EntityKind != MutationEntityInteractionTree ||
+		result.CommitDelta.Mutations[1].RootAgentSessionID != "session-1" ||
+		result.CommitDelta.Mutations[1].RootTurnID != "" {
 		t.Fatalf("delete delta=%#v", result.CommitDelta)
 	}
 }

@@ -1237,6 +1237,36 @@ describe("WorkspaceActivityService", () => {
     service.dispose();
   });
 
+  test("ignores an obsolete live subscription after background resume", async () => {
+    const liveListeners: Array<(delivery: AgentLiveDelivery) => void> = [];
+    const service = createService(
+      createClient({ listMessages: emptyMessagePage }),
+      {
+        deviceLink: createLiveDeviceLink((listener) => {
+          liveListeners.push(listener);
+        })
+      }
+    );
+
+    await service.start();
+    await flushAsyncWork();
+    expect(liveListeners).toHaveLength(1);
+    liveListeners[0]!({ kind: "connection", status: "connected" });
+    expect(service.isTransportConnected()).toBe(true);
+
+    service.pause();
+    service.resume();
+    expect(liveListeners).toHaveLength(2);
+    expect(service.isTransportConnected()).toBe(false);
+
+    liveListeners[0]!({ kind: "connection", status: "connected" });
+    expect(service.isTransportConnected()).toBe(false);
+    liveListeners[1]!({ kind: "connection", status: "connected" });
+    expect(service.isTransportConnected()).toBe(true);
+
+    service.dispose();
+  });
+
   test("projects live message deltas and disables fallback message polling", async () => {
     const clock = new RecordingClock();
     let liveListener: ((delivery: AgentLiveDelivery) => void) | null = null;

@@ -145,7 +145,7 @@ func TestClaudeCodeSDKAdapterExecLeavesInitialTitleToController(t *testing.T) {
 	session := standardTestSession(ProviderClaudeCode)
 	conn := &scriptedClaudeSDKConnection{
 		frames: []ProcessFrame{{
-			Stdout: []byte(`{"type":"turn_completed","payload":{"turnId":"turn-1","stopReason":"end_turn"}}` + "\n"),
+			Stdout: []byte(`{"type":"provider_turn_identity_resolved","payload":{"turnId":"turn-1","providerTurnId":"provider-turn-1"}}` + "\n" + `{"type":"turn_completed","payload":{"turnId":"turn-1","providerTurnId":"provider-turn-1","stopReason":"end_turn"}}` + "\n"),
 		}},
 	}
 	adapterSession := &claudeSDKAdapterSession{

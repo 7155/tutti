@@ -47,11 +47,30 @@ func (a *ClaudeCodeSDKAdapter) sidecarTurnEvents(adapterSession *claudeSDKAdapte
 	if eventTurnID != "" && strings.TrimSpace(turnID) != "" && eventTurnID != strings.TrimSpace(turnID) {
 		return nil, false, nil
 	}
+	explicitProviderTurnID := payloadString(event.Payload, "providerTurnId")
+	activeProviderTurnID := a.activeClaudeSDKRootProviderTurnID(adapterSession)
+	if explicitProviderTurnID != "" &&
+		activeProviderTurnID != "" &&
+		explicitProviderTurnID != activeProviderTurnID &&
+		claudeSDKEventRequiresBoundProviderIdentity(event.Type) {
+		return nil, false, errors.New("claude SDK provider turn identity changed after binding")
+	}
+	boundProviderTurnID := firstNonEmptyString(
+		explicitProviderTurnID,
+		activeProviderTurnID,
+	)
 	providerTurnID := firstNonEmptyString(
-		payloadString(event.Payload, "providerTurnId"),
+		boundProviderTurnID,
 		strings.TrimSpace(turnID),
 		eventTurnID,
 	)
+	if event.Type == "turn_started" {
+		providerTurnID = firstNonEmptyString(
+			explicitProviderTurnID,
+			strings.TrimSpace(turnID),
+			eventTurnID,
+		)
+	}
 	a.mu.Lock()
 	_, fencedGoalTurn := adapterSession.fencedGoalTurns[providerTurnID]
 	if fencedGoalTurn && isClaudeSDKTerminalEvent(event.Type) {
@@ -78,15 +97,15 @@ func (a *ClaudeCodeSDKAdapter) sidecarTurnEvents(adapterSession *claudeSDKAdapte
 		return nil, false, nil
 	case "session_state":
 		return []activityshared.Event{newSessionActivityEvent(session, EventSessionUpdated, firstNonEmpty(session.Status, SessionStatusReady), claudeSDKRuntimeContext(session, adapterSession))}, false, nil
-	case "provider_turn_started":
-		if eventTurnID == "" || providerTurnID == "" {
-			return nil, false, errors.New("claude SDK provider turn start omitted identity")
+	case "provider_turn_identity_resolved":
+		if eventTurnID == "" || explicitProviderTurnID == "" {
+			return nil, false, errors.New("claude SDK provider turn identity resolution omitted identity")
 		}
-		a.beginClaudeSDKRootTurn(adapterSession, eventTurnID, providerTurnID)
+		a.beginClaudeSDKRootTurn(adapterSession, eventTurnID, explicitProviderTurnID)
 		return []activityshared.Event{a.claudeSDKRootProviderTurnStartedEvent(
 			session,
 			eventTurnID,
-			providerTurnID,
+			explicitProviderTurnID,
 			map[string]any{"adapter": claudeSDKSidecarAdapterName},
 		)}, false, nil
 	case "provider_turn_checkpoint":
@@ -94,7 +113,7 @@ func (a *ClaudeCodeSDKAdapter) sidecarTurnEvents(adapterSession *claudeSDKAdapte
 			event.Payload,
 			"providerCheckpointMessageId",
 		)
-		if eventTurnID == "" || providerTurnID == "" || checkpointMessageID == "" {
+		if eventTurnID == "" || boundProviderTurnID == "" || checkpointMessageID == "" {
 			return nil, false, errors.New(
 				"claude SDK provider turn checkpoint omitted identity",
 			)
@@ -102,7 +121,7 @@ func (a *ClaudeCodeSDKAdapter) sidecarTurnEvents(adapterSession *claudeSDKAdapte
 		return []activityshared.Event{a.claudeSDKRootProviderTurnCheckpointEvent(
 			session,
 			eventTurnID,
-			providerTurnID,
+			boundProviderTurnID,
 			checkpointMessageID,
 		)}, false, nil
 	case "turn_started":
@@ -191,7 +210,18 @@ func (a *ClaudeCodeSDKAdapter) sidecarTurnEvents(adapterSession *claudeSDKAdapte
 	case "error":
 		return nil, false, errors.New(payloadString(event.Payload, "error"))
 	case "approval_requested", "user_input_requested":
-		events, err := a.claudeSDKInteractiveRequested(adapterSession, session, rootTurnID, providerTurnID, event.Payload)
+		if boundProviderTurnID == "" {
+			return nil, false, errors.New(
+				"claude SDK interaction omitted bound provider turn identity",
+			)
+		}
+		events, err := a.claudeSDKInteractiveRequested(
+			adapterSession,
+			session,
+			rootTurnID,
+			boundProviderTurnID,
+			event.Payload,
+		)
 		return events, false, err
 	case "approval_resolved", "user_input_resolved":
 		return a.claudeSDKInteractiveResolved(adapterSession, session, rootTurnID, event.Payload), false, nil
@@ -311,23 +341,44 @@ func (a *ClaudeCodeSDKAdapter) sidecarTurnEvents(adapterSession *claudeSDKAdapte
 		events = append(events, newSessionActivityEvent(session, EventSessionUpdated, firstNonEmpty(session.Status, SessionStatusReady), claudeSDKRuntimeContext(session, adapterSession)))
 		return events, false, nil
 	case "turn_completed":
+		if boundProviderTurnID == "" {
+			return nil, false, errors.New("claude SDK provider turn completion omitted identity")
+		}
 		events := a.finishClaudeSDKTurnLifecycle(adapterSession, session, rootTurnID, claudeSDKTurnFinishCompleted, "")
-		events = append(events, claudeSDKRootProviderTurnCompletedEvent(session, rootTurnID, providerTurnID, activityshared.TurnOutcomeCompleted, map[string]any{
+		events = append(events, claudeSDKRootProviderTurnCompletedEvent(session, rootTurnID, boundProviderTurnID, activityshared.TurnOutcomeCompleted, map[string]any{
 			"adapter":    claudeSDKSidecarAdapterName,
 			"stopReason": firstNonEmpty(payloadString(event.Payload, "stopReason"), "end_turn"),
 		}))
 		events = append(events, a.goalEventsOnTurnSettled(adapterSession, session, providerTurnID, true)...)
 		return events, true, nil
 	case "turn_canceled":
+		if boundProviderTurnID == "" {
+			return a.finishClaudeSDKTurnLifecycle(
+				adapterSession,
+				session,
+				rootTurnID,
+				claudeSDKTurnFinishInterrupted,
+				"interrupted_before_provider_acceptance",
+			), true, nil
+		}
 		events := a.finishClaudeSDKTurnLifecycle(adapterSession, session, rootTurnID, claudeSDKTurnFinishInterrupted, "interrupted")
-		events = append(events, claudeSDKRootProviderTurnCompletedEvent(session, rootTurnID, providerTurnID, activityshared.TurnOutcomeCanceled, map[string]any{
+		events = append(events, claudeSDKRootProviderTurnCompletedEvent(session, rootTurnID, boundProviderTurnID, activityshared.TurnOutcomeCanceled, map[string]any{
 			"adapter": claudeSDKSidecarAdapterName,
 		}))
 		events = append(events, a.goalEventsOnTurnSettled(adapterSession, session, providerTurnID, false)...)
 		return events, true, nil
 	case "turn_failed":
+		if boundProviderTurnID == "" {
+			return a.finishClaudeSDKTurnLifecycle(
+				adapterSession,
+				session,
+				rootTurnID,
+				claudeSDKTurnFinishFailed,
+				"failed_before_provider_acceptance",
+			), true, nil
+		}
 		events := a.finishClaudeSDKTurnLifecycle(adapterSession, session, rootTurnID, claudeSDKTurnFinishFailed, "turn_failed")
-		events = append(events, claudeSDKRootProviderTurnCompletedEvent(session, rootTurnID, providerTurnID, activityshared.TurnOutcomeFailed, map[string]any{
+		events = append(events, claudeSDKRootProviderTurnCompletedEvent(session, rootTurnID, boundProviderTurnID, activityshared.TurnOutcomeFailed, map[string]any{
 			"adapter": claudeSDKSidecarAdapterName,
 			"error":   payloadString(event.Payload, "error"),
 		}))
@@ -335,6 +386,16 @@ func (a *ClaudeCodeSDKAdapter) sidecarTurnEvents(adapterSession *claudeSDKAdapte
 		return events, true, nil
 	default:
 		return nil, false, nil
+	}
+}
+
+func claudeSDKEventRequiresBoundProviderIdentity(eventType string) bool {
+	switch eventType {
+	case "provider_turn_identity_resolved",
+		"provider_turn_checkpoint":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -513,6 +574,8 @@ func (a *ClaudeCodeSDKAdapter) logClaudeSDKLifecycleEvent(agentSessionID string,
 func claudeSDKLifecycleEventDiagnostic(event claudeSDKSidecarEvent) bool {
 	switch strings.TrimSpace(event.Type) {
 	case "sdk_lifecycle_observed",
+		"provider_turn_identity_resolved", "provider_turn_checkpoint",
+		"approval_requested", "user_input_requested",
 		"turn_started", "turn_completed", "turn_canceled", "turn_failed",
 		"continuation_delayed",
 		"background_tasks_changed", "background_tasks_quiesced",

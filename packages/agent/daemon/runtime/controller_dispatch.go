@@ -11,19 +11,33 @@ import (
 
 type providerDispatchObserver struct {
 	once   sync.Once
-	result chan ProviderDispatchResult
+	result chan providerDispatchObservation
+}
+
+type providerDispatchObservation struct {
+	dispatch ProviderDispatchResult
+	err      error
 }
 
 func newProviderDispatchObserver() *providerDispatchObserver {
-	return &providerDispatchObserver{result: make(chan ProviderDispatchResult, 1)}
+	return &providerDispatchObserver{
+		result: make(chan providerDispatchObservation, 1),
+	}
 }
 
 func (observer *providerDispatchObserver) Report(result ProviderDispatchResult) {
+	observer.ReportWithError(result, nil)
+}
+
+func (observer *providerDispatchObserver) ReportWithError(result ProviderDispatchResult, err error) {
 	if observer == nil {
 		return
 	}
 	observer.once.Do(func() {
-		observer.result <- result
+		observer.result <- providerDispatchObservation{
+			dispatch: result,
+			err:      err,
+		}
 		close(observer.result)
 	})
 }

@@ -29,10 +29,10 @@ func TestClaudeCodeSDKAdapterInteractiveApprovalRoundTrip(t *testing.T) {
 	adapter.storeSession(session.AgentSessionID, adapterSession)
 	adapter.beginClaudeSDKRootTurn(adapterSession, "turn-approval", "provider-turn-approval")
 
-	started, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "provider-turn-approval", claudeSDKSidecarEvent{
+	started, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "turn-approval", claudeSDKSidecarEvent{
 		Type: "approval_requested",
 		Payload: map[string]any{
-			"turnId":     "provider-turn-approval",
+			"turnId":     "turn-approval",
 			"requestId":  "approval-1",
 			"toolCallId": "toolu-approval",
 			"toolName":   "Bash",
@@ -63,6 +63,16 @@ func TestClaudeCodeSDKAdapterInteractiveApprovalRoundTrip(t *testing.T) {
 	if prompt := adapter.SessionState(session).PendingInteractive; prompt == nil || prompt.Kind != "approval" || prompt.RequestID != "approval-1" {
 		t.Fatalf("pending prompt = %#v, want approval", prompt)
 	}
+	pending := adapter.getClaudeSDKPendingRequest(
+		session.AgentSessionID,
+		"turn-approval",
+		"approval-1",
+	)
+	if pending == nil ||
+		pending.providerTurnID != "provider-turn-approval" ||
+		pending.transportTurnID != "turn-approval" {
+		t.Fatalf("pending identities = %#v", pending)
+	}
 
 	type submitResult struct {
 		result SubmitInteractiveResult
@@ -75,14 +85,14 @@ func TestClaudeCodeSDKAdapterInteractiveApprovalRoundTrip(t *testing.T) {
 	}()
 	waitForCondition(t, func() bool { return len(conn.sentRequests()) == 1 })
 	sent := conn.sentRequests()
-	if len(sent) != 1 || sent[0].Type != "submit_interactive" || sent[0].Payload["requestId"] != "approval-1" || sent[0].Payload["optionId"] != "allow" || sent[0].Payload["turnId"] != "provider-turn-approval" {
+	if len(sent) != 1 || sent[0].Type != "submit_interactive" || sent[0].Payload["requestId"] != "approval-1" || sent[0].Payload["optionId"] != "allow" || sent[0].Payload["turnId"] != "turn-approval" {
 		t.Fatalf("sent requests = %#v", sent)
 	}
 
-	resolved, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "provider-turn-approval", claudeSDKSidecarEvent{
+	resolved, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "turn-approval", claudeSDKSidecarEvent{
 		Type: "approval_resolved",
 		Payload: map[string]any{
-			"turnId":    "provider-turn-approval",
+			"turnId":    "turn-approval",
 			"requestId": "approval-1",
 			"optionId":  "allow",
 		},
@@ -523,6 +533,11 @@ func TestClaudeCodeSDKAdapterApprovalResolvedUsesStoredTurnIDWhenEventTurnMissin
 		liveState:       newClaudeSDKLiveState(),
 	}
 	adapter.storeSession(session.AgentSessionID, adapterSession)
+	adapter.beginClaudeSDKRootTurn(
+		adapterSession,
+		"turn-approval",
+		"provider-turn-approval",
+	)
 
 	if _, _, err := adapter.sidecarTurnEvents(adapterSession, session, "turn-approval", claudeSDKSidecarEvent{
 		Type: "approval_requested",

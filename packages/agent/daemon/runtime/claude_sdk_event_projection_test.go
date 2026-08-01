@@ -140,7 +140,7 @@ func TestClaudeCodeSDKAdapterMapsObservedProviderTurnIdentity(t *testing.T) {
 		session,
 		"canonical-turn-1",
 		claudeSDKSidecarEvent{
-			Type: "provider_turn_started",
+			Type: "provider_turn_identity_resolved",
 			Payload: map[string]any{
 				"turnId":         "canonical-turn-1",
 				"providerTurnId": "persisted-claude-user-uuid",
@@ -148,7 +148,7 @@ func TestClaudeCodeSDKAdapterMapsObservedProviderTurnIdentity(t *testing.T) {
 		},
 	)
 	if err != nil || terminal {
-		t.Fatalf("provider_turn_started err=%v terminal=%v", err, terminal)
+		t.Fatalf("provider_turn_identity_resolved err=%v terminal=%v", err, terminal)
 	}
 	if len(events) != 1 ||
 		events[0].Type != activityshared.EventRootProviderTurnStarted ||
@@ -326,6 +326,11 @@ func TestClaudeCodeSDKAdapterApprovalDoesNotMergeWithApprovedToolCall(t *testing
 		liveState:       newClaudeSDKLiveState(),
 	}
 	adapter.storeSession(session.AgentSessionID, adapterSession)
+	adapter.beginClaudeSDKRootTurn(
+		adapterSession,
+		"turn-web",
+		"provider-turn-web",
+	)
 
 	approvalEvents, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "turn-web", claudeSDKSidecarEvent{
 		Type: "approval_requested",
@@ -792,8 +797,11 @@ func TestClaudeCodeSDKAdapterKeepsDelegationCompletionOnParentAndUpdatesChildTit
 	}
 
 	settled, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "turn-task", claudeSDKSidecarEvent{
-		Type:    "turn_completed",
-		Payload: map[string]any{"turnId": "turn-task"},
+		Type: "turn_completed",
+		Payload: map[string]any{
+			"turnId":         "turn-task",
+			"providerTurnId": "provider-turn-task",
+		},
 	})
 	if err != nil || !terminal {
 		t.Fatalf("turn_completed events=%#v terminal=%v err=%v", settled, terminal, err)
@@ -1337,6 +1345,11 @@ func TestClaudeCodeSDKAdapterMapsAskUserQuestionInteractive(t *testing.T) {
 		liveState:       newClaudeSDKLiveState(),
 	}
 	adapter.storeSession(session.AgentSessionID, adapterSession)
+	adapter.beginClaudeSDKRootTurn(
+		adapterSession,
+		"turn-ask",
+		"provider-turn-ask",
+	)
 
 	events, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "turn-ask", claudeSDKSidecarEvent{
 		Type: "user_input_requested",
@@ -1371,6 +1384,11 @@ func TestClaudeCodeSDKAdapterMapsExitPlanModeInteractive(t *testing.T) {
 		liveState:       newClaudeSDKLiveState(),
 	}
 	adapter.storeSession(session.AgentSessionID, adapterSession)
+	adapter.beginClaudeSDKRootTurn(
+		adapterSession,
+		"turn-plan",
+		"provider-turn-plan",
+	)
 
 	events, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "turn-plan", claudeSDKSidecarEvent{
 		Type: "user_input_requested",
@@ -1423,6 +1441,11 @@ func TestClaudeCodeSDKAdapterCancelClearsPendingInteractive(t *testing.T) {
 		liveState:       newClaudeSDKLiveState(),
 	}
 	adapter.storeSession(session.AgentSessionID, adapterSession)
+	adapter.beginClaudeSDKRootTurn(
+		adapterSession,
+		"turn-cancel",
+		"provider-turn-cancel",
+	)
 
 	// A turn parked on an approval has a live Exec waiter in the registry; the
 	// interrupted terminal is stamped for that registered turnID, not for the
@@ -1620,8 +1643,11 @@ func TestClaudeCodeSDKAdapterTurnCanceledFailsOpenToolCalls(t *testing.T) {
 	}
 
 	events, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "turn-write", claudeSDKSidecarEvent{
-		Type:    "turn_canceled",
-		Payload: map[string]any{"turnId": "turn-write"},
+		Type: "turn_canceled",
+		Payload: map[string]any{
+			"turnId":         "turn-write",
+			"providerTurnId": "turn-write",
+		},
 	})
 	if err != nil || !terminal {
 		t.Fatalf("turn_canceled err=%v terminal=%v", err, terminal)
@@ -1660,6 +1686,11 @@ func TestClaudeCodeSDKAdapterReaderFailureFailsPendingInteractive(t *testing.T) 
 		liveState:        newClaudeSDKLiveState(),
 	}
 	adapter.storeSession(session.AgentSessionID, adapterSession)
+	adapter.beginClaudeSDKRootTurn(
+		adapterSession,
+		"turn-disconnect",
+		"provider-turn-disconnect",
+	)
 
 	if _, _, err := adapter.sidecarTurnEvents(adapterSession, session, "turn-disconnect", claudeSDKSidecarEvent{
 		Type: "approval_requested",

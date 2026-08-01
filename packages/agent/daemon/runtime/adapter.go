@@ -145,6 +145,7 @@ type ProviderAcceptanceExecAdapter interface {
 		EventSink,
 		CommandSnapshotSink,
 		ProviderDispatchSink,
+		ProviderAcceptanceBarrier,
 	) ([]activityshared.Event, error)
 }
 
@@ -177,6 +178,12 @@ type HistoryReplacementExecInput struct {
 // DispatchDispositionAppliedWithoutProviderTurn. Implementations must report
 // exactly once before a typed execution method returns.
 type ProviderDispatchSink func(ProviderDispatchResult)
+
+// ProviderAcceptanceBarrier durably binds the canonical Turn to the exact
+// provider session and provider Turn before the adapter exposes any event that
+// depends on that identity. Implementations must call it synchronously on the
+// provider event path and stop event publication when it fails.
+type ProviderAcceptanceBarrier func(ProviderAcceptanceReceipt) error
 
 // EffectiveHistoryAdapter is the complete provider capability required by
 // edit-retry: authoritative history reads, rollback, and a fresh replacement

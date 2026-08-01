@@ -132,6 +132,24 @@ collaborators. Collaborators must not import `main.ts` or own the stdio loop.
 Projection modules emit typed sidecar events; they do not call daemon or GUI
 code.
 
+The outbound root user UUID is correlation evidence, not provider identity.
+Normally the live SDK iterator returns the persisted root user message and the
+sidecar binds its UUID before projecting the provider Turn. A successful query
+may omit that echo and begin with assistant output or an interactive tool.
+Every root assistant, stream, tool, approval, user-input, and result path enters
+one shared single-flight identity barrier before projection. The barrier reads
+the official provider transcript, resolves exactly one root user message by the
+opaque correlation UUID, and emits `provider_turn_identity_resolved` with the
+latest persisted checkpoint. A bounded cancellable retry handles short
+transcript write delay; absence at the deadline and ambiguity fail explicitly.
+
+The Go adapter converts the resolved identity into a durable acceptance
+receipt. Its event reader blocks until the Host atomically persists the
+canonical Turn, provider Session, and provider Turn mapping. The canonical
+`root_provider_turn.started` is published exactly once before streaming or
+interactive activity is released. Provider start, checkpoint, and completion
+never derive identity from the outbound UUID alone.
+
 Raw sidecar stderr is never copied into activity, logs, or user-visible errors.
 The Go transport retains only a bounded failure classification; explicitly
 prefixed auth diagnostics are separately sanitized before structured logging.

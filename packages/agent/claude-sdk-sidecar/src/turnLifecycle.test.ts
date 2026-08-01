@@ -19,7 +19,7 @@ test("turn lifecycle activates and settles a queued turn", () => {
   assert.equal(activations.count, 1);
   assert.equal(settlements.count, 1);
   assert.deepEqual(events[0], {
-    type: "provider_turn_started",
+    type: "provider_turn_identity_resolved",
     payload: {
       turnId: "turn-1",
       providerTurnId: "prompt-1"
@@ -69,7 +69,7 @@ test("turn lifecycle uses Claude's persisted root user UUID as provider identity
 
   assert.deepEqual(events, [
     {
-      type: "provider_turn_started",
+      type: "provider_turn_identity_resolved",
       payload: {
         turnId: "turn-rewritten",
         providerTurnId: "persisted-claude-user-uuid"
@@ -80,6 +80,28 @@ test("turn lifecycle uses Claude's persisted root user UUID as provider identity
       payload: {
         turnId: "turn-rewritten",
         providerTurnId: "persisted-claude-user-uuid"
+      }
+    }
+  ]);
+});
+
+test("turn lifecycle never treats the outbound correlation UUID as provider identity", () => {
+  const { lifecycle, events } = createLifecycle();
+  lifecycle.enqueue({
+    turnId: "turn-without-provider-echo",
+    promptUuid: "outbound-correlation-id",
+    settled: false
+  });
+
+  lifecycle.expectProviderTurnIdentity("turn-without-provider-echo");
+  lifecycle.ensureActive("assistant");
+  lifecycle.settleActive("turn_completed");
+
+  assert.deepEqual(events, [
+    {
+      type: "turn_completed",
+      payload: {
+        turnId: "turn-without-provider-echo"
       }
     }
   ]);

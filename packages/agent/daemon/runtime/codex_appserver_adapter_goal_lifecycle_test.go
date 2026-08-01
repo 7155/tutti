@@ -612,6 +612,7 @@ func TestCodexAppServerAdapterMidTurnGoalClearDoesNotSteer(t *testing.T) {
 		nil,
 		nil,
 		func(result ProviderDispatchResult) { dispatches <- result },
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("Exec /goal clear: %v", err)

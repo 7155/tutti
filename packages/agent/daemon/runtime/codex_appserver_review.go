@@ -89,6 +89,7 @@ func (a *CodexAppServerAdapter) execReviewSlashCommand(
 	emitTerminal func([]activityshared.Event),
 	emitCommands CommandSnapshotSink,
 	reportDispatch ProviderDispatchSink,
+	admitProviderTurn func(string) error,
 ) (bool, error) {
 	normalizer.SetThinkingPresentation("review-process")
 	params := map[string]any{
@@ -122,11 +123,9 @@ func (a *CodexAppServerAdapter) execReviewSlashCommand(
 	if providerTurnID := asString(initialTurn["id"]); providerTurnID != "" {
 		a.setSessionActiveTurnID(session.AgentSessionID, appTurn, providerTurnID)
 	}
-	reportCodexProviderTurnAccepted(
-		reportDispatch,
-		appSession.threadID,
-		asString(initialTurn["id"]),
-	)
+	if err := admitProviderTurn(asString(initialTurn["id"])); err != nil {
+		return true, err
+	}
 	finalTurn, finishErr := a.awaitTurnCompletion(ctx, appSession, appTurn, initialTurn)
 	if finishErr != nil {
 		if errors.Is(finishErr, context.Canceled) || errors.Is(finishErr, errPermissionRequestCanceled) {

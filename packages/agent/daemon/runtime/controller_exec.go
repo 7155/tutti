@@ -198,6 +198,25 @@ func (c *Controller) Exec(ctx context.Context, input ExecInput) (result ExecResu
 			dispatchObserver.Report,
 		)
 	} else if acceptanceAdapter != nil {
+		acceptProviderTurn := func(receipt ProviderAcceptanceReceipt) error {
+			dispatch := ProviderDispatchResult{
+				Disposition: DispatchDispositionApplied,
+				Acceptance:  &receipt,
+			}
+			confirmed, confirmErr := c.confirmProviderDispatchDurable(
+				// Provider acceptance persistence must finish even when the
+				// caller concurrently cancels the submitted request.
+				context.WithoutCancel(runCtx),
+				session,
+				turnID,
+				dispatch,
+			)
+			dispatchObserver.ReportWithError(confirmed, confirmErr)
+			if confirmErr != nil {
+				cancel()
+			}
+			return confirmErr
+		}
 		go c.runProviderAcceptanceTurn(
 			runCtx,
 			session,
@@ -206,6 +225,7 @@ func (c *Controller) Exec(ctx context.Context, input ExecInput) (result ExecResu
 			displayPrompt,
 			turnID,
 			dispatchObserver.Report,
+			acceptProviderTurn,
 		)
 	} else {
 		go c.runExecTurn(runCtx, session, adapter, content, displayPrompt, turnID)
@@ -229,15 +249,19 @@ func (c *Controller) Exec(ctx context.Context, input ExecInput) (result ExecResu
 		return result, nil
 	}
 	select {
-	case dispatch := <-dispatchObserver.result:
-		dispatch, confirmErr := c.confirmProviderDispatchDurable(
-			// Once the provider has positively accepted a Turn, user
-			// cancellation must not abort persistence of that identity.
-			context.WithoutCancel(runCtx),
-			session,
-			turnID,
-			dispatch,
-		)
+	case observation := <-dispatchObserver.result:
+		dispatch := observation.dispatch
+		confirmErr := observation.err
+		if acceptanceAdapter == nil {
+			dispatch, confirmErr = c.confirmProviderDispatchDurable(
+				// Once the provider has positively accepted a Turn, user
+				// cancellation must not abort persistence of that identity.
+				context.WithoutCancel(runCtx),
+				session,
+				turnID,
+				dispatch,
+			)
+		}
 		result.ProviderDispatch = &dispatch
 		if confirmErr != nil {
 			return result, confirmErr

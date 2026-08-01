@@ -94,6 +94,7 @@ func (c *Controller) runProviderAcceptanceTurn(
 	displayPrompt string,
 	turnID string,
 	reportDispatch ProviderDispatchSink,
+	acceptProviderTurn ProviderAcceptanceBarrier,
 ) {
 	c.runBlockingExecTurn(ctx, session, adapter, turnID, func(
 		emit EventSink,
@@ -108,6 +109,7 @@ func (c *Controller) runProviderAcceptanceTurn(
 			emit,
 			emitCommands,
 			reportDispatch,
+			acceptProviderTurn,
 		)
 		if reportDispatch != nil {
 			reportDispatch(ProviderDispatchResult{

@@ -2322,30 +2322,48 @@ inline data URL instead`. Claude or standard ACP may instead receive no
   A Claude Code Turn is settled and has assistant output, but AgentGUI does not
   offer Fork. The session capability reports `forkThroughTurn=false`, or its
   supported provider Turn list is empty even though the Claude transcript is
-  readable.
+  readable. On a newly created Session, the same missing binding can make the
+  completed reply roll back to the new-conversation screen with
+  `provider turn was not durably accepted`.
 - Quick checks:
   Compare the canonical Turn's `root_provider_turn_id` with the UUID of the
   matching root user message returned by the official Claude SDK
   `getSessionMessages` API. If they differ, inspect the live sidecar event
-  sequence for `provider_turn_started`. Do not infer identity from transcript
-  position or substitute the canonical Tutti Turn ID.
+  sequence for `provider_turn_identity_resolved` and the canonical activity
+  sequence for `root_provider_turn.started`. Do not infer identity from
+  transcript position or substitute the canonical Tutti Turn ID.
 - Root cause:
   The outbound user-message UUID is only a prompt correlation value. Claude
   Code may rewrite that UUID before persisting the transcript. Publishing the
   caller-generated value as canonical provider identity makes strict prefix
   verification correctly reject the Turn, which removes the Fork capability.
+  The SDK can also omit the persisted root user echo from a successful live
+  query. Activating on assistant output while waiting exclusively for that echo
+  can deadlock when approval or user input occurs before result: the Provider
+  waits for the user, the sidecar waits for result-time recovery, and the Host
+  waits for durable acceptance.
 - Fix:
   Mark the next root prompt echo as causally expected before submitting it.
-  Bind provider Turn identity from that observed root user-message UUID, emit
-  `provider_turn_started`, and only then persist the root provider lifecycle.
+  Bind provider Turn identity from that observed root user-message UUID. Route
+  every root assistant, stream, tool, approval, user-input, and result path
+  through the shared single-flight identity barrier. Without an echo, resolve
+  exactly one root user UUID and checkpoint through the official
+  `getSessionMessages` transcript read with bounded cancellable retries.
+  Emit `provider_turn_identity_resolved`, synchronously persist the acceptance
+  binding in the Host, then publish canonical `root_provider_turn.started`
+  before any interaction or streaming event. Never substitute the outbound
+  correlation UUID.
   Keep historical Turns without observed provider identity fail-closed rather
   than guessing or backfilling them.
 - Validation:
   Cover a query whose root user echo rewrites the outbound UUID. Assert
-  `provider_turn_started` and terminal events both carry the persisted UUID,
-  then verify the daemon stores the same identity and the fork capability
-  accepts it. Restart the daemon/sidecar before manually checking a newly
-  completed Claude Code Turn; historical affected Turns remain intentionally
+  `provider_turn_identity_resolved`, checkpoint, and terminal events all carry
+  the persisted UUID. Cover successful assistant/result, approval,
+  `AskUserQuestion`, and `ExitPlanMode` sequences with no root user echo.
+  Assert canonical `root_provider_turn.started` is durable and ordered before
+  every interaction, then verify Fork accepts the same identity. Restart the
+  daemon/sidecar with an accepted incomplete Turn and confirm it is recovered
+  without re-dispatch. Historical affected Turns remain intentionally
   non-forkable.
 - References:
   [sessionRuntime.ts](../../../packages/agent/claude-sdk-sidecar/src/sessionRuntime.ts)

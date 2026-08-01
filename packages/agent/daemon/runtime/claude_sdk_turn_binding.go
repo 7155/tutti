@@ -15,7 +15,7 @@ func (a *ClaudeCodeSDKAdapter) claudeSDKRootProviderTurnStartedEvent(
 ) activityshared.Event {
 	ctx, ok := activityEventContext(
 		session,
-		"claude-sdk:provider-turn-started:"+providerTurnID,
+		"root-provider-turn-started:"+providerTurnID,
 		rootTurnID,
 	)
 	if !ok {
@@ -142,6 +142,23 @@ func (a *ClaudeCodeSDKAdapter) rememberClaudeSDKRootProviderTurn(
 	}
 	adapterSession.rootProviderTurns[strings.TrimSpace(providerTurnID)] = struct{}{}
 	a.mu.Unlock()
+}
+
+func (a *ClaudeCodeSDKAdapter) activeClaudeSDKRootProviderTurnID(
+	adapterSession *claudeSDKAdapterSession,
+) string {
+	if a == nil || adapterSession == nil {
+		return ""
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if len(adapterSession.rootProviderTurns) != 1 {
+		return ""
+	}
+	for providerTurnID := range adapterSession.rootProviderTurns {
+		return strings.TrimSpace(providerTurnID)
+	}
+	return ""
 }
 
 func (a *ClaudeCodeSDKAdapter) consumeClaudeSDKRootProviderTurn(

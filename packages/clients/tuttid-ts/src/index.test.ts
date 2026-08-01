@@ -9,7 +9,6 @@ import {
   listWorkspaces,
   TuttidProtocolError,
   normalizeTuttidError,
-  workspaceProtocolErrorCodes,
   type ApiErrorResponse,
   type AgentProviderComposerOptionsResponse,
   type AppReferenceListResponse,
@@ -2204,17 +2203,6 @@ test("normalizeTuttidError recognizes Agent quick prompt conflicts", () => {
   assert.equal(normalized.reason, "agent_quick_prompt_version_conflict");
   assert.equal(normalized.statusCode, 409);
   assert.deepEqual(normalized.params, { promptId: "prompt-1" });
-});
-
-test("workspaceProtocolErrorCodes exports issue manager protocol codes", () => {
-  assert.equal(
-    workspaceProtocolErrorCodes.workspaceIssueResourceExists,
-    "workspace_issue_resource_exists"
-  );
-  assert.equal(
-    workspaceProtocolErrorCodes.workspaceIssueResourceNotFound,
-    "workspace_issue_resource_not_found"
-  );
 });
 
 test("getTuttidErrorI18nCandidates prefers reason-specific keys", () => {

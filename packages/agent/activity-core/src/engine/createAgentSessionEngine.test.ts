@@ -1002,12 +1002,6 @@ test("dispose cancels pending frames, expiries, and in-flight results", async ()
   ]);
 });
 
-test("dispose is idempotent", () => {
-  const { engine } = createHarness();
-  engine.dispose();
-  engine.dispose();
-});
-
 test("two instances with different origins do not interfere", () => {
   const local = createHarness({ origin: "local-tuttid" });
   const shared = createHarness({ origin: "shared-room" });

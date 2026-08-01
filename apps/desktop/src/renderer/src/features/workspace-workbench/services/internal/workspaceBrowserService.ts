@@ -6,7 +6,10 @@ import type {
 } from "@tutti-os/browser-node";
 import { closeBrowserNodeTab } from "@tutti-os/browser-node";
 import type { DesktopBrowserApi } from "@preload/types";
-import { requestWorkspaceBrowserLaunch } from "../workspaceBrowserLaunchCoordinator.ts";
+import {
+  requestWorkspaceBrowserLaunch,
+  requestWorkspaceBrowserSurfaceFocus
+} from "../workspaceBrowserLaunchCoordinator.ts";
 
 export type WorkspaceBrowserEventMatcher = (event: BrowserNodeEvent) => boolean;
 
@@ -142,55 +145,74 @@ export function createWorkspaceBrowserService(
           ) {
             return;
           }
-          try {
-            const anchorNodeId = request.nodeId?.trim() ?? "";
-            const surfaceNodeId = resolveBrowserSurfaceNodeId(anchorNodeId);
-            const state = surfaceNodeId
-              ? feature.tabsStore.getSurfaceState(surfaceNodeId)
-              : null;
-            if (!surfaceNodeId || !state) {
-              throw new Error("No user Browser surface is available");
-            }
-            if (request.action === "create") {
-              const tab = feature.tabsStore.addTab(
-                surfaceNodeId,
-                request.url?.trim() || "about:blank"
+          void (async () => {
+            try {
+              const anchorNodeId = request.nodeId?.trim() ?? "";
+              let surfaceNodeId = resolveBrowserSurfaceNodeId(anchorNodeId);
+              if (request.action === "create") {
+                surfaceNodeId = await requestWorkspaceBrowserSurfaceFocus({
+                  preferredNodeId: surfaceNodeId,
+                  workspaceId
+                });
+                if (!surfaceNodeId) {
+                  throw new Error("No user Browser surface is available");
+                }
+                const pageUrl = request.url?.trim() || "about:blank";
+                const state = feature.tabsStore.getSurfaceState(surfaceNodeId);
+                const tab = state
+                  ? feature.tabsStore.addTab(surfaceNodeId, pageUrl, {
+                      materializeCold: true
+                    })
+                  : feature.tabsStore.ensureSurface(surfaceNodeId, pageUrl, {
+                      materializeCold: true
+                    }).tabs[0];
+                if (!tab) {
+                  throw new Error("User Browser page was not created");
+                }
+                input.browserApi?.respondAutomationRequest?.({
+                  nodeId: tab.nodeId,
+                  ok: true,
+                  requestId: request.requestId
+                });
+                return;
+              }
+              const state = surfaceNodeId
+                ? feature.tabsStore.getSurfaceState(surfaceNodeId)
+                : null;
+              if (!surfaceNodeId || !state) {
+                throw new Error("No user Browser surface is available");
+              }
+              const tab = state.tabs.find(
+                (candidate) => candidate.nodeId === anchorNodeId
               );
+              if (!tab) {
+                throw new Error(
+                  `User Browser page is unavailable: ${anchorNodeId}`
+                );
+              }
+              if (request.action === "select") {
+                feature.tabsStore.selectTab(surfaceNodeId, tab.id);
+              } else {
+                if (state.tabs.length === 1) {
+                  throw new Error(
+                    "The final user Browser page cannot be closed"
+                  );
+                }
+                closeBrowserNodeTab(feature, surfaceNodeId, tab.id);
+              }
               input.browserApi?.respondAutomationRequest?.({
-                nodeId: tab.nodeId,
+                nodeId: anchorNodeId,
                 ok: true,
                 requestId: request.requestId
               });
-              return;
+            } catch (error) {
+              input.browserApi?.respondAutomationRequest?.({
+                error: error instanceof Error ? error.message : String(error),
+                ok: false,
+                requestId: request.requestId
+              });
             }
-            const tab = state.tabs.find(
-              (candidate) => candidate.nodeId === anchorNodeId
-            );
-            if (!tab) {
-              throw new Error(
-                `User Browser page is unavailable: ${anchorNodeId}`
-              );
-            }
-            if (request.action === "select") {
-              feature.tabsStore.selectTab(surfaceNodeId, tab.id);
-            } else {
-              if (state.tabs.length === 1) {
-                throw new Error("The final user Browser page cannot be closed");
-              }
-              closeBrowserNodeTab(feature, surfaceNodeId, tab.id);
-            }
-            input.browserApi?.respondAutomationRequest?.({
-              nodeId: anchorNodeId,
-              ok: true,
-              requestId: request.requestId
-            });
-          } catch (error) {
-            input.browserApi?.respondAutomationRequest?.({
-              error: error instanceof Error ? error.message : String(error),
-              ok: false,
-              requestId: request.requestId
-            });
-          }
+          })();
         }) ?? null;
       input.browserApi?.announceAutomationHostReady?.({
         surfaceRole: "user",

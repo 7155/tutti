@@ -124,7 +124,7 @@ test("workspace browser service launches open-url once from the owning route", a
     "workspace-browser-open-url",
     (request) => {
       requests.push(request);
-      return true;
+      return "browser:opened";
     }
   );
 
@@ -147,11 +147,13 @@ test("workspace browser service launches open-url once from the owning route", a
   disposeLaunchHandler();
   assert.deepEqual(requests, [
     {
+      kind: "open",
       reuseIfOpen: false,
       url: "https://example.com/browser-popup",
       workspaceId: "workspace-browser-open-url"
     },
     {
+      kind: "open",
       reuseIfOpen: false,
       url: "https://example.com/app-popup",
       workspaceId: "workspace-browser-open-url"
@@ -195,7 +197,7 @@ test("workspace app Browser features do not inherit Chrome Cookie import", () =>
   assert.equal(workspaceAppApi.cancelChromeCookieImport, undefined);
 });
 
-test("workspace browser service owns user automation tab lifecycle", () => {
+test("workspace browser service focuses the full Browser for user automation", async () => {
   let handleRequest = (_request: DesktopBrowserAutomationRequest): void =>
     undefined;
   const responses: DesktopBrowserAutomationResponse[] = [];
@@ -218,6 +220,14 @@ test("workspace browser service owns user automation tab lifecycle", () => {
     surfaceNodeId,
     "https://example.com/"
   );
+  const focusRequests: WorkspaceBrowserLaunchRequest[] = [];
+  const disposeLaunchHandler = registerWorkspaceBrowserLaunchHandler(
+    "workspace-1",
+    (request) => {
+      focusRequests.push(request);
+      return surfaceNodeId;
+    }
+  );
   service.setUserAutomationSurface({
     feature,
     workspaceId: "workspace-1"
@@ -232,6 +242,8 @@ test("workspace browser service owns user automation tab lifecycle", () => {
     url: "https://created.example/",
     workspaceId: "workspace-1"
   });
+  await Promise.resolve();
+  await Promise.resolve();
   const createdNodeId = responses[0]?.ok ? responses[0].nodeId : null;
   assert.ok(createdNodeId);
   assert.equal(
@@ -239,6 +251,12 @@ test("workspace browser service owns user automation tab lifecycle", () => {
       .getSurfaceState(surfaceNodeId)
       ?.tabs.find((tab) => tab.nodeId === createdNodeId)?.defaultUrl,
     "https://created.example/"
+  );
+  assert.equal(
+    feature.tabsStore
+      .getSurfaceState(surfaceNodeId)
+      ?.tabs.find((tab) => tab.nodeId === createdNodeId)?.materializeCold,
+    true
   );
 
   handleRequest({
@@ -258,6 +276,72 @@ test("workspace browser service owns user automation tab lifecycle", () => {
     responses.map((response) => response.ok),
     [true, true]
   );
+  assert.deepEqual(focusRequests, [
+    {
+      kind: "focus",
+      preferredNodeId: surfaceNodeId,
+      workspaceId: "workspace-1"
+    }
+  ]);
+  disposeLaunchHandler();
+});
+
+test("workspace browser service creates the first automation page in a newly focused Browser", async () => {
+  let handleRequest = (_request: DesktopBrowserAutomationRequest): void =>
+    undefined;
+  const responses: DesktopBrowserAutomationResponse[] = [];
+  const browserApi = {
+    ...createBrowserNodeHostApi(),
+    onAutomationRequest(listener: typeof handleRequest) {
+      handleRequest = listener;
+      return () => {
+        handleRequest = () => undefined;
+      };
+    },
+    respondAutomationRequest(response: DesktopBrowserAutomationResponse) {
+      responses.push(response);
+    }
+  };
+  const service = createWorkspaceBrowserService({ browserApi });
+  const feature = createBrowserNodeFeature({ hostApi: browserApi });
+  const surfaceNodeId = "browser:new-window";
+  const disposeLaunchHandler = registerWorkspaceBrowserLaunchHandler(
+    "workspace-new-browser",
+    () => surfaceNodeId
+  );
+  service.setUserAutomationSurface({
+    feature,
+    workspaceId: "workspace-new-browser"
+  });
+
+  handleRequest({
+    action: "create",
+    agentSessionId: "agent-1",
+    nodeId: null,
+    requestId: "create-first",
+    surfaceRole: "user",
+    url: "about:blank",
+    workspaceId: "workspace-new-browser"
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.deepEqual(responses, [
+    {
+      nodeId: `${surfaceNodeId}:tab:1`,
+      ok: true,
+      requestId: "create-first"
+    }
+  ]);
+  assert.equal(
+    feature.tabsStore.getSurfaceState(surfaceNodeId)?.tabs.length,
+    1
+  );
+  assert.equal(
+    feature.tabsStore.getSurfaceState(surfaceNodeId)?.tabs[0]?.materializeCold,
+    true
+  );
+  disposeLaunchHandler();
 });
 
 function browserNodeOwnsEvent(event: BrowserNodeEvent): boolean {

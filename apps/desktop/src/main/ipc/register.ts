@@ -51,6 +51,7 @@ export interface IpcRegistrationDependencies {
   workspaceLaunch: Pick<
     WorkspaceLaunch,
     | "ensureAgentBrowserHost"
+    | "ensureUserBrowserHost"
     | "openStartupWindow"
     | "replaceWorkspaceWindow"
     | "showAgentWindow"
@@ -71,7 +72,9 @@ export async function registerIpcHandlers(
       deps.workspaceLaunch.ensureAgentBrowserHost({
         agentSessionID: agentSessionId,
         workspaceID: workspaceId
-      })
+      }),
+    ensureUserBrowserHost: ({ workspaceId }) =>
+      deps.workspaceLaunch.ensureUserBrowserHost(workspaceId)
   });
   registerComputerUseIpc();
   registerDockPreviewCacheIpc();

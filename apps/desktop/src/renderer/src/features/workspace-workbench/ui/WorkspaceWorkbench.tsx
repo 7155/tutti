@@ -69,10 +69,8 @@ import {
   resolveWorkspaceAgentProviderLaunchIntent
 } from "../services/workspaceOpenFeatureRequest.ts";
 import type { WorkspaceLaunchpadOpenTrigger } from "../services/workspaceLaunchpadAnalytics.ts";
-import {
-  registerWorkspaceBrowserLaunchHandler,
-  type WorkspaceBrowserLaunchRequest
-} from "../services/workspaceBrowserLaunchCoordinator.ts";
+import { registerWorkspaceBrowserLaunchHandler } from "../services/workspaceBrowserLaunchCoordinator.ts";
+import { createWorkbenchWorkspaceBrowserPresenter } from "../services/workbenchWorkspaceBrowserPresenter.ts";
 import { isWorkspaceMissionControlLayoutShortcut } from "../services/workspaceMissionControlShortcut.ts";
 import {
   registerWorkspaceFilesLaunchHandler,
@@ -98,10 +96,7 @@ import {
   workspaceLaunchpadDockEntryId
 } from "../services/workspaceLaunchpadModel.ts";
 import { requestWorkspaceMessageCenterOpen } from "../services/workspaceMessageCenterCoordinator.ts";
-import {
-  workspaceBrowserNodeID,
-  workspaceFilesNodeID
-} from "../services/workspaceWorkbenchNodeIds.ts";
+import { workspaceFilesNodeID } from "../services/workspaceWorkbenchNodeIds.ts";
 import { WorkspaceChrome } from "./WorkspaceChrome";
 import { WorkspaceAppExternalBridge } from "./WorkspaceAppExternalBridge";
 import { WorkspaceLaunchpadOverlay } from "./WorkspaceLaunchpadOverlay.tsx";
@@ -600,9 +595,7 @@ function ReadyWorkspaceWorkbenchWithSession({
       unregisterBrowserLaunchRef.current =
         registerWorkspaceBrowserLaunchHandler(
           state.workspace.id,
-          async (request) => {
-            return openWorkspaceBrowserNode(host, request);
-          }
+          createWorkbenchWorkspaceBrowserPresenter({ host })
         );
       unregisterWorkbenchNodeLaunchRef.current =
         registerWorkspaceWorkbenchNodeLaunchHandler(
@@ -1320,53 +1313,4 @@ async function openGroupChatNode(
     }
   );
   return true;
-}
-
-async function openWorkspaceBrowserNode(
-  host: WorkbenchHostHandle,
-  request: WorkspaceBrowserLaunchRequest
-): Promise<boolean> {
-  const existingNodeId =
-    request.reuseIfOpen === false
-      ? null
-      : resolveCurrentWorkspaceBrowserNodeId(host);
-  const nodeId =
-    existingNodeId ??
-    (await host.launchNode({
-      launchSource: request.source,
-      reason: "host",
-      typeId: workspaceBrowserNodeID
-    }));
-  if (!nodeId) {
-    return false;
-  }
-
-  host.activateNode(
-    { nodeId },
-    {
-      payload: {
-        url: request.url
-      },
-      type: "open-url"
-    }
-  );
-  return true;
-}
-
-function resolveCurrentWorkspaceBrowserNodeId(
-  host: WorkbenchHostHandle
-): string | null {
-  const snapshot = host.getSnapshot();
-  const nodesById = new Map(snapshot.nodes.map((node) => [node.id, node]));
-  for (const nodeId of [...snapshot.nodeStack].reverse()) {
-    const node = nodesById.get(nodeId);
-    if (node?.data.typeId === workspaceBrowserNodeID) {
-      return node.id;
-    }
-  }
-
-  return (
-    snapshot.nodes.find((node) => node.data.typeId === workspaceBrowserNodeID)
-      ?.id ?? null
-  );
 }

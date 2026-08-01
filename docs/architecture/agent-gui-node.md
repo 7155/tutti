@@ -2038,6 +2038,15 @@ composer submit
 
 A successful response includes the exact Turn. Clients must not repair a missing Turn by polling, sleeping, or synthesizing an entity.
 
+AgentGUI-generated Prompt `clientSubmitId` values are canonical UUID v4
+identities. They are opaque correlation and idempotency values because a host
+may promote the same identity into a cross-device or shared-execution command.
+Business meaning must not be encoded in or recovered from the UUID. In
+particular, Plan feedback records its exact `turnId` and `requestId` in the
+pending submit's typed `source`; Message Center reads that source through the
+activity-core selector. Activity Core continues to accept caller-supplied
+submit identities as opaque strings and does not reinterpret or rewrite them.
+
 ### 7.2.1 Existing conversation Goal Control
 
 ```text

@@ -6,6 +6,9 @@ import {
 import { createTestEngineCommandPort } from "../testing/createTestAgentSessionEngine";
 import { dispatchAgentPlanPromptAction } from "./agentPlanPromptDispatch";
 
+const UUID_V4_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 describe("dispatchAgentPlanPromptAction", () => {
   it.each([
     ["implement", "plan/submitDecision"],
@@ -14,12 +17,12 @@ describe("dispatchAgentPlanPromptAction", () => {
   ] as const)(
     "dispatches %s against a settled completed plan turn",
     async (action, commandType) => {
-      const executedTypes: string[] = [];
+      const executed: EngineCommand[] = [];
       const engine = createAgentSessionEngine({
         clock: { nowUnixMs: () => 10 },
         commandPort: createTestEngineCommandPort({
           async executePlanDecision(command) {
-            executedTypes.push(command.type);
+            executed.push(command);
             return {
               operation: {
                 agentSessionId: command.agentSessionId,
@@ -33,7 +36,7 @@ describe("dispatchAgentPlanPromptAction", () => {
             };
           },
           async execute(command) {
-            executedTypes.push(command.type);
+            executed.push(command);
           }
         }),
         identity: { origin: "test", workspaceId: "workspace-1" },
@@ -80,7 +83,10 @@ describe("dispatchAgentPlanPromptAction", () => {
         })
       ).toBe(true);
       await Promise.resolve();
-      expect(executedTypes[0] ?? null).toBe(commandType);
+      expect(executed[0]?.type ?? null).toBe(commandType);
+      if (executed[0]?.type === "queue/sendPrompt") {
+        expect(executed[0].clientSubmitId).toMatch(UUID_V4_PATTERN);
+      }
     }
   );
 

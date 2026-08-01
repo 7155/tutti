@@ -647,6 +647,14 @@ activation. Every submit route, including immediate sends, active-turn
 guidance, queued delivery, and provider Plan feedback, preserves that audit
 metadata when Tutti is active.
 
+Pending submit records preserve business provenance separately from their
+opaque `clientSubmitId`. Provider Plan feedback uses the typed
+`plan-feedback` source with its exact Turn and request identities, and
+host-agnostic consumers locate it through the activity-core selector rather
+than parsing an ID prefix. AgentGUI-generated Prompt identities are UUID v4 so
+hosts may safely reuse them at a stricter shared-execution boundary; Activity
+Core itself keeps accepting opaque caller-owned identities.
+
 A create timeout does not negate the optimistic Tutti activation: the draft
 and badge remain pending until a canonical active revision arrives or the
 operation reaches a definitive failure/confirmation expiry. Revision-checked

@@ -11,6 +11,7 @@ export interface BrowserLoginCompletion {
 }
 
 interface MobileSecurityNative {
+  readonly clientVersion: string;
   cancelQRCodeScan(): Promise<void>;
   clearLegacySessionCookie(accountBaseURL: string): Promise<void>;
   clearSession(): Promise<void>;
@@ -20,7 +21,8 @@ interface MobileSecurityNative {
     sessionId: string,
     userId: string,
     email: string,
-    name: string
+    name: string,
+    avatarURL: string
   ): Promise<void>;
   scanQRCode(): Promise<string>;
   sign(message: string): Promise<string>;

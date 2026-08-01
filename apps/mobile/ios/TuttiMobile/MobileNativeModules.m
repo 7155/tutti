@@ -26,7 +26,8 @@ RCT_EXTERN_METHOD(saveSession
                   : (NSString *)sessionId userId
                   : (NSString *)userId email
                   : (NSString *)email name
-                  : (NSString *)name resolver
+                  : (NSString *)name avatarURL
+                  : (NSString *)avatarURL resolver
                   : (RCTPromiseResolveBlock)resolve rejecter
                   : (RCTPromiseRejectBlock)reject)
 

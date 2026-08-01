@@ -1172,10 +1172,9 @@ export const zhCN = {
         logsSummary: "{{count}} 个文件，共 {{size}}",
         logsTitle: "日志",
         mobileRemoteAccessSettingsDescription:
-          "显示连接设置以及手机配对与远程访问控制项",
-        mobileRemoteAccessSettingsLabel: "显示手机远程访问设置",
-        mobileRemoteAccessSettingsSaveFailed:
-          "暂时无法更新手机远程访问显示设置",
+          "允许已配对手机连接到这台电脑，并显示相关连接设置",
+        mobileRemoteAccessSettingsLabel: "启用手机远程访问",
+        mobileRemoteAccessSettingsSaveFailed: "暂时无法更新手机远程访问设置",
         openDaemonLog: "打开 daemon 日志",
         openDesktopLog: "打开 desktop 日志",
         openLogsDirectory: "打开日志目录",

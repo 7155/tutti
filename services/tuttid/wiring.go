@@ -49,8 +49,14 @@ type tuttiWiring struct {
 	tuttiModeWatchdogCancel      context.CancelFunc
 	tuttiModeWatchdogDone        <-chan struct{}
 	tuttiModeWatchdogClosed      bool
-	mobileRemoteService          *mobileremoteservice.Service
+	mobileRemoteHost             mobileRemoteHost
+	mobileRemoteHandler          http.Handler
 	modelGateway                 *modelgatewayservice.Gateway
+}
+
+type mobileRemoteHost interface {
+	StartRemoteHost(http.Handler)
+	StopRemoteHost()
 }
 
 type analyticsDebugEventPublisher struct {
@@ -128,7 +134,7 @@ func buildTuttiServer() (*http.Server, net.Listener, *tuttiWiring, error) {
 	wiring.startAgentCLIUpdateScheduler()
 
 	routes := wiring.routes()
-	wiring.mobileRemoteService.StartRemoteHost(tuttiserver.NewMux(routes))
+	wiring.startMobileRemoteHost(tuttiserver.NewMux(routes))
 	return tuttiserver.NewHTTPServer(listenerSpec, routes), listener, wiring, nil
 }
 
@@ -180,7 +186,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	if !mobileRemoteOK {
 		return errors.New("mobile remote service wiring is invalid")
 	}
-	w.mobileRemoteService = mobileRemoteService
+	w.mobileRemoteHost = mobileRemoteService
 	preferencesService, preferencesOK := api.PreferencesService.(*preferencesservice.Service)
 	agentStatusService, agentStatusOK := api.AgentStatusService.(*agentstatusservice.Service)
 	if !preferencesOK || !agentStatusOK {
@@ -189,15 +195,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	w.agentCLIUpdateScheduler = agentstatusservice.NewProviderUpdateScheduler(
 		agentstatusservice.ProviderUpdateSchedulerConfig{Discoverer: agentStatusService},
 	)
-	previousAfterPut := preferencesService.AfterPut
-	preferencesService.AfterPut = func(ctx context.Context, previous, current preferencesbiz.DesktopPreferences) {
-		if previousAfterPut != nil {
-			previousAfterPut(ctx, previous, current)
-		}
-		if previous.AgentCLIUpdateCheckEnabled != current.AgentCLIUpdateCheckEnabled {
-			w.agentCLIUpdateScheduler.SetEnabled(current.AgentCLIUpdateCheckEnabled)
-		}
-	}
+	w.observeDesktopPreferenceChanges(preferencesService)
 
 	analyticsConfig := tuttitypes.ResolveAnalyticsConfig()
 	debugPublisher := resolveAnalyticsDebugPublisher(analyticsConfig, api.EventStreamService)
@@ -227,6 +225,30 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	w.appCenterService = appCenterService
 	w.tuttiModeWakeRecoveryStarter = api.OnListenerReady
 	return nil
+}
+
+func (w *tuttiWiring) observeDesktopPreferenceChanges(preferences *preferencesservice.Service) {
+	if w == nil || preferences == nil {
+		return
+	}
+	preferences.RegisterChangeObserver(func(_ context.Context, previous, current preferencesbiz.DesktopPreferences) {
+		if w.agentCLIUpdateScheduler != nil && previous.AgentCLIUpdateCheckEnabled != current.AgentCLIUpdateCheckEnabled {
+			w.agentCLIUpdateScheduler.SetEnabled(current.AgentCLIUpdateCheckEnabled)
+		}
+	})
+	preferences.RegisterChangeObserver(func(_ context.Context, previous, current preferencesbiz.DesktopPreferences) {
+		previousMobileRemoteEnabled := preferencesbiz.IsCapabilityFlagEnabled(
+			previous.FeatureFlags,
+			preferencesbiz.FeatureFlagMobileRemoteAccess,
+		)
+		currentMobileRemoteEnabled := preferencesbiz.IsCapabilityFlagEnabled(
+			current.FeatureFlags,
+			preferencesbiz.FeatureFlagMobileRemoteAccess,
+		)
+		if previousMobileRemoteEnabled != currentMobileRemoteEnabled {
+			w.setMobileRemoteAccessEnabled(currentMobileRemoteEnabled)
+		}
+	})
 }
 
 func (w *tuttiWiring) startTuttiModeWakeRecovery() {
@@ -305,6 +327,39 @@ func (w *tuttiWiring) startAgentCLIUpdateScheduler() {
 	w.agentCLIUpdateScheduler.Start(preferences.AgentCLIUpdateCheckEnabled)
 }
 
+func (w *tuttiWiring) startMobileRemoteHost(handler http.Handler) {
+	if w == nil || w.mobileRemoteHost == nil || handler == nil || w.api.PreferencesService == nil {
+		return
+	}
+	w.mobileRemoteHandler = handler
+	enabled := false
+	preferences, err := w.api.PreferencesService.Get(context.Background())
+	if err != nil {
+		slog.Warn(
+			"failed to read mobile remote access preference",
+			"event", "tutti.mobile_remote.preference_read_failed",
+			"error", err,
+		)
+	} else {
+		enabled = preferencesbiz.IsCapabilityFlagEnabled(
+			preferences.FeatureFlags,
+			preferencesbiz.FeatureFlagMobileRemoteAccess,
+		)
+	}
+	w.setMobileRemoteAccessEnabled(enabled)
+}
+
+func (w *tuttiWiring) setMobileRemoteAccessEnabled(enabled bool) {
+	if w == nil || w.mobileRemoteHost == nil {
+		return
+	}
+	if enabled {
+		w.mobileRemoteHost.StartRemoteHost(w.mobileRemoteHandler)
+		return
+	}
+	w.mobileRemoteHost.StopRemoteHost()
+}
+
 func resolveAnalyticsDebugPublisher(analyticsConfig tuttitypes.AnalyticsConfig, service analyticsDebugEventStream) reporterservice.DebugPublisher {
 	if analyticsConfig.Disabled || service == nil {
 		return nil
@@ -353,8 +408,8 @@ func (w *tuttiWiring) Close() error {
 	w.stopTuttiModeWatchdogWorker()
 
 	var closeErr error
-	if w.mobileRemoteService != nil {
-		w.mobileRemoteService.Close()
+	if w.mobileRemoteHost != nil {
+		w.mobileRemoteHost.StopRemoteHost()
 	}
 	if w.agentCLIUpdateScheduler != nil {
 		w.agentCLIUpdateScheduler.Close()

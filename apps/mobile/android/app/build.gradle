@@ -91,7 +91,7 @@ tasks.named("preBuild").configure {
     dependsOn("verifyMobileGoAar")
 }
 
-tasks.named("preReleaseBuild").configure {
+tasks.matching { task -> task.name == "preReleaseBuild" }.configureEach {
     dependsOn("verifyReleaseSigningConfiguration")
 }
 

@@ -33,6 +33,11 @@ interface MobileSecurityNative {
   ): Promise<BrowserLoginCompletion>;
 }
 
+interface MobilePreferencesNative {
+  loadThemePreference(): unknown;
+  saveThemePreference(preference: string): Promise<void>;
+}
+
 interface DeviceLinkNative {
   addListener(eventName: string): void;
   closeLink(): Promise<void>;
@@ -82,6 +87,9 @@ function requireNativeModule<T>(name: string): T {
 
 export const mobileSecurity = requireNativeModule<MobileSecurityNative>(
   "TuttiMobileSecurity"
+);
+export const mobilePreferences = requireNativeModule<MobilePreferencesNative>(
+  "TuttiMobilePreferences"
 );
 export const appLifecycle =
   requireNativeModule<AppLifecycleNative>("TuttiAppLifecycle");

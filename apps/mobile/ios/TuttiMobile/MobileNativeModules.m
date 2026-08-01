@@ -56,3 +56,14 @@ RCT_EXTERN_METHOD(cancelQRCodeScan
                   : (RCTPromiseRejectBlock)reject)
 
 @end
+
+@interface RCT_EXTERN_MODULE(TuttiMobilePreferences, NSObject)
+
+RCT_EXTERN__BLOCKING_SYNCHRONOUS_METHOD(loadThemePreference)
+
+RCT_EXTERN_METHOD(saveThemePreference
+                  : (NSString *)preference resolver
+                  : (RCTPromiseResolveBlock)resolve rejecter
+                  : (RCTPromiseRejectBlock)reject)
+
+@end

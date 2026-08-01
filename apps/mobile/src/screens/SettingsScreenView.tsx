@@ -3,29 +3,56 @@ import {
   NativeButton,
   NativeIconButton,
   NativeListRow,
+  NativeSheet,
   type NativeTheme,
   useNativeTheme
 } from "@tutti-os/ui-system/native";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { useMemo, useState } from "react";
+import { PanResponder, ScrollView, StyleSheet, Text, View } from "react-native";
 import { t } from "../i18n";
 import type { AccountSession } from "../services/mobileDomain";
+import type { MobileThemePreference } from "../services/mobileThemePreferenceService";
 
 export interface SettingsScreenViewProps {
   appVersion: string;
   onBack(): void;
   onSignOut(): void;
+  onThemePreferenceChange(preference: MobileThemePreference): void;
   session: AccountSession;
+  themePreference: MobileThemePreference;
 }
 
 export function SettingsScreenView({
   appVersion,
   onBack,
   onSignOut,
-  session
+  onThemePreferenceChange,
+  session,
+  themePreference
 }: SettingsScreenViewProps) {
   const theme = useNativeTheme();
   const styles = createStyles(theme);
+  const [themeSheetOpen, setThemeSheetOpen] = useState(false);
   const accountLabel = session.name || session.email || t("appName");
+  const themeSheetPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          gestureState.dy > 8 &&
+          Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
+        onPanResponderRelease: (_, gestureState) => {
+          if (shouldDismissThemeSheetSwipe(gestureState.dy)) {
+            setThemeSheetOpen(false);
+          }
+        }
+      }),
+    []
+  );
+
+  const selectTheme = (preference: MobileThemePreference): void => {
+    onThemePreferenceChange(preference);
+    setThemeSheetOpen(false);
+  };
 
   return (
     <View style={styles.root}>
@@ -62,6 +89,19 @@ export function SettingsScreenView({
           <Text style={styles.sectionTitle}>{t("app")}</Text>
           <View style={styles.listCard}>
             <NativeListRow
+              onPress={() => setThemeSheetOpen(true)}
+              title={t("theme")}
+              trailing={
+                <View style={styles.themeTrailing}>
+                  <Text style={styles.themeValue}>
+                    {themePreferenceLabel(themePreference)}
+                  </Text>
+                  <Text style={styles.chevron}>›</Text>
+                </View>
+              }
+            />
+            <View style={styles.separator} />
+            <NativeListRow
               description={t("versionLabel", { version: appVersion })}
               title={t("softwareUpdate")}
             />
@@ -80,8 +120,51 @@ export function SettingsScreenView({
           variant="destructiveGhost"
         />
       </ScrollView>
+
+      <NativeSheet
+        closeAccessibilityLabel={t("closeSheet")}
+        onOpenChange={setThemeSheetOpen}
+        open={themeSheetOpen}
+      >
+        <View
+          {...themeSheetPanResponder.panHandlers}
+          style={styles.themeSheet}
+          testID="theme-selection-sheet"
+        >
+          <Text style={styles.themeSheetTitle}>{t("theme")}</Text>
+          {(["system", "light", "dark"] as const).map((preference) => {
+            const selected = preference === themePreference;
+            return (
+              <NativeListRow
+                key={preference}
+                onPress={() => selectTheme(preference)}
+                selected={selected}
+                title={themePreferenceLabel(preference)}
+                trailing={
+                  selected ? <Text style={styles.checkmark}>✓</Text> : undefined
+                }
+              />
+            );
+          })}
+        </View>
+      </NativeSheet>
     </View>
   );
+}
+
+export function shouldDismissThemeSheetSwipe(deltaY: number): boolean {
+  return deltaY >= 48;
+}
+
+function themePreferenceLabel(preference: MobileThemePreference): string {
+  switch (preference) {
+    case "light":
+      return t("themeLight");
+    case "dark":
+      return t("themeDark");
+    default:
+      return t("themeSystem");
+  }
 }
 
 function createStyles(theme: NativeTheme) {
@@ -110,6 +193,16 @@ function createStyles(theme: NativeTheme) {
       color: theme.color.text,
       fontSize: theme.space.xlarge,
       lineHeight: theme.control.icon
+    },
+    checkmark: {
+      color: theme.color.accent,
+      fontSize: theme.space.medium + 2,
+      fontWeight: "700"
+    },
+    chevron: {
+      color: theme.color.muted,
+      fontSize: theme.space.large,
+      lineHeight: theme.space.large
     },
     content: {
       gap: theme.space.xlarge,
@@ -150,6 +243,25 @@ function createStyles(theme: NativeTheme) {
       fontSize: theme.space.medium + 2,
       fontWeight: "700",
       textAlign: "center"
+    },
+    themeSheet: {
+      minHeight: theme.control.row * 4,
+      padding: theme.space.medium
+    },
+    themeSheetTitle: {
+      color: theme.color.text,
+      fontSize: theme.space.medium + 1,
+      fontWeight: "700",
+      marginBottom: theme.space.small
+    },
+    themeTrailing: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: theme.space.small
+    },
+    themeValue: {
+      color: theme.color.muted,
+      fontSize: theme.space.medium - 2
     }
   });
 }

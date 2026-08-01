@@ -296,6 +296,14 @@ screen composition and product-specific interaction.
   Software Update is an informational settings row until a signed release
   manifest and updater service are introduced; the UI must not claim that an
   update check ran before that application capability exists.
+- Mobile Settings exposes the device-local theme preference directly in the App
+  section. The row opens a compact single-choice sheet for system, light, and
+  dark modes; selection applies immediately across the full app and status bar.
+  Android persists the preference in private `SharedPreferences`, while iOS
+  uses `UserDefaults`. The preference survives sign-out and restart, does not
+  sync with Desktop or the account, and falls back to system for missing or
+  unsupported stored values. A failed write restores the previous theme and
+  reports the failure to the user.
 - React Native Reusables is a source-copy starting point for a Native primitive;
   adapt and promote a component into the UI System Native layer before an app
   consumes it. Apps must not acquire direct third-party component imports.

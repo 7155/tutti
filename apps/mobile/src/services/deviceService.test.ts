@@ -8,6 +8,7 @@ import type {
 } from "./servicePorts";
 
 const session: AccountSession = {
+  avatarURL: "https://example.com/person.png",
   email: "person@example.com",
   name: "Person",
   sessionId: "session-cookie",

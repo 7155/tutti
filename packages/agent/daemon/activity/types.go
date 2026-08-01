@@ -316,7 +316,9 @@ type WorkspaceAgentStatePatch struct {
 	Model                 string                                    `json:"model,omitempty"`
 	PermissionModeID      string                                    `json:"permissionModeId,omitempty"`
 	Settings              map[string]any                            `json:"settings,omitempty"`
+	Capabilities          *canonical.CapabilitySnapshot             `json:"capabilities,omitempty"`
 	RuntimeContext        map[string]any                            `json:"runtimeContext,omitempty"`
+	RuntimeContextPatch   *canonical.RuntimeContextPatch            `json:"runtimeContextPatch,omitempty"`
 	TurnLifecycle         *WorkspaceAgentTurnLifecycle              `json:"turnLifecycle,omitempty"`
 	SubmitAvailability    *WorkspaceAgentSubmitAvailability         `json:"submitAvailability,omitempty"`
 	InteractionTransition *WorkspaceAgentInteractionTransition      `json:"interactionTransition,omitempty"`

@@ -492,9 +492,15 @@ AAR assembly remains an explicit Android-SDK validation locally.
 The manually dispatched Mobile Internal Build workflow accepts `android`,
 `ios`, or `all`. Its Android job installs the pinned SDK/NDK versions,
 assembles the Mobile composite AAR and internal mobile APK, and uploads a
-private validation artifact. It validates the DeviceLink consumer build but
-does not publish Go module tags; the stable package release workflow owns those
-tags. Its iOS job runs on the pinned macOS 26 runner, assembles the same Mobile
+private validation artifact. Android release assembly requires the repository's
+stable keystore and credentials through the four `ANDROID_RELEASE_*` Actions
+secrets; the workflow fails closed when they are absent, and verifies both APK
+alignment and signing certificate before upload. It never generates a temporary
+signing identity. Each CI build also uses the repository-level workflow run
+number as its monotonically increasing Android `versionCode`. It validates the
+DeviceLink consumer build but does not publish Go module tags; the stable package
+release workflow owns those tags. Its iOS job runs on the pinned macOS 26 runner,
+assembles the same Mobile
 binding surface as an XCFramework, archives the React Native app, and uses the
 repository App Store Connect API key plus the `IOS_DEVELOPMENT_TEAM` repository
 variable for Xcode-managed cloud signing. It loads the Mobile Podfile's pnpm

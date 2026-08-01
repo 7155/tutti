@@ -302,7 +302,8 @@ export class MobileApplicationService extends ObservableService<MobileApplicatio
         session.sessionId,
         session.userId,
         session.email,
-        session.name
+        session.name,
+        session.avatarURL
       );
       this.disposeLoginScope();
       this.enterAuthenticated(session);

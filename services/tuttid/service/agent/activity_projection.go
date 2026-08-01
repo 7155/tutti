@@ -282,11 +282,12 @@ func (p *ActivityProjection) reportSessionState(
 	}
 	input.SessionOrigin = sessionOrigin
 	input.Source = source
-	canonicalTargetID, runtimeContext := p.canonicalizeAgentTargetID(
+	canonicalTargetID, runtimeContext, runtimeContextPatch := p.canonicalizeAgentTargetState(
 		ctx,
 		input.WorkspaceID,
 		firstNonEmptyString(input.State.AgentTargetID, input.Source.AgentTargetID),
 		input.State.RuntimeContext,
+		input.State.RuntimeContextPatch,
 	)
 	stateReport := agentactivitybiz.SessionStateReport{
 		WorkspaceID:          strings.TrimSpace(input.WorkspaceID),
@@ -300,23 +301,25 @@ func (p *ActivityProjection) reportSessionState(
 		Origin:               strings.TrimSpace(input.SessionOrigin),
 		// Tutti local workspaces intentionally leave Source.UserID empty. Cloud
 		// collaboration hosts may provide real account user ids on this wire.
-		UserID:            strings.TrimSpace(input.Source.UserID),
-		AgentTargetID:     canonicalTargetID,
-		Provider:          strings.TrimSpace(firstNonEmptyString(input.State.Provider, input.Source.Provider)),
-		ProviderSessionID: strings.TrimSpace(firstNonEmptyString(input.State.ProviderSessionID, input.Source.ProviderSessionID)),
-		Model:             strings.TrimSpace(input.State.Model),
-		Settings:          clonePayload(input.State.Settings),
-		RuntimeContext:    clonePayload(runtimeContext),
-		Cwd:               strings.TrimSpace(input.State.CWD),
-		RailPlacement:     canonicalRailSection(input.State.RailPlacement),
-		Title:             strings.TrimSpace(sessionStateTitle(input.State)),
-		Status:            strings.TrimSpace(input.State.LifecycleStatus),
-		CurrentPhase:      strings.TrimSpace(input.State.CurrentPhase),
-		LastError:         strings.TrimSpace(input.State.LastError),
-		OccurredAtUnixMS:  input.State.OccurredAtUnixMS,
-		StartedAtUnixMS:   input.State.StartedAtUnixMS,
-		EndedAtUnixMS:     input.State.EndedAtUnixMS,
-		CreatedAtUnixMS:   input.Source.SessionCreatedAtUnixMS,
+		UserID:              strings.TrimSpace(input.Source.UserID),
+		AgentTargetID:       canonicalTargetID,
+		Provider:            strings.TrimSpace(firstNonEmptyString(input.State.Provider, input.Source.Provider)),
+		ProviderSessionID:   strings.TrimSpace(firstNonEmptyString(input.State.ProviderSessionID, input.Source.ProviderSessionID)),
+		Model:               strings.TrimSpace(input.State.Model),
+		Settings:            clonePayload(input.State.Settings),
+		Capabilities:        canonical.CloneCapabilitySnapshot(input.State.Capabilities),
+		RuntimeContext:      cloneOptionalPayload(runtimeContext),
+		RuntimeContextPatch: canonical.CloneRuntimeContextPatch(runtimeContextPatch),
+		Cwd:                 strings.TrimSpace(input.State.CWD),
+		RailPlacement:       canonicalRailSection(input.State.RailPlacement),
+		Title:               strings.TrimSpace(sessionStateTitle(input.State)),
+		Status:              strings.TrimSpace(input.State.LifecycleStatus),
+		CurrentPhase:        strings.TrimSpace(input.State.CurrentPhase),
+		LastError:           strings.TrimSpace(input.State.LastError),
+		OccurredAtUnixMS:    input.State.OccurredAtUnixMS,
+		StartedAtUnixMS:     input.State.StartedAtUnixMS,
+		EndedAtUnixMS:       input.State.EndedAtUnixMS,
+		CreatedAtUnixMS:     input.Source.SessionCreatedAtUnixMS,
 	}
 	activityReport := agentactivitybiz.ActivityStateReport{Session: stateReport}
 	if transition, ok := turnTransitionFromStateInput(input); ok {

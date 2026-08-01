@@ -2,11 +2,15 @@ import { NativeModules, Platform } from "react-native";
 
 const messages = {
   en: {
+    aboutTutti: "About Tutti",
+    aboutTuttiDescription: "Open-source remote Agent app",
+    app: "App",
     appName: "Tutti",
     agent: "Agent",
     allow: "Allow",
     answerHint: "Type your answer…",
     approval: "Approval",
+    back: "Back",
     backToDevices: "Back to computers",
     cameraPermissionRequired:
       "Camera permission is required to scan the pairing QR code.",
@@ -70,6 +74,7 @@ const messages = {
     noProject: "No project",
     noProjectDescription: "Use a separate temporary working directory.",
     noQuickPromptResults: "No matching quick prompts.",
+    openSettings: "Open settings",
     pendingInteraction: "Pending interaction",
     pendingInteractionDesktop: "Open Tutti Desktop to answer this interaction.",
     pinSession: "Pin session",
@@ -143,17 +148,27 @@ const messages = {
     searchQuickPrompts: "Search quick prompts",
     selectAgent: "Select Agent",
     selectWorkingDirectory: "Select working directory",
+    settings: "Settings",
+    signOutConfirmDescription:
+      "You'll need to sign in again to access your paired computers.",
+    signOutConfirmTitle: "Sign out?",
+    softwareUpdate: "Software update",
     chat: "Chat",
     welcome: "Remote Agent",
+    versionLabel: "Version {version}",
     workingDirectory: "Folder",
     you: "You"
   },
   zh: {
+    aboutTutti: "关于 Tutti",
+    aboutTuttiDescription: "开源的远程 Agent 应用",
+    app: "应用",
     appName: "Tutti",
     agent: "Agent",
     allow: "允许",
     answerHint: "输入你的回答…",
     approval: "授权确认",
+    back: "返回",
     backToDevices: "返回电脑列表",
     cameraPermissionRequired: "需要允许相机权限才能扫描配对二维码",
     cancel: "取消",
@@ -211,6 +226,7 @@ const messages = {
     noProject: "无项目",
     noProjectDescription: "使用独立的临时工作目录",
     noQuickPromptResults: "没有匹配的快捷提示词",
+    openSettings: "打开设置",
     pendingInteraction: "待处理交互",
     pendingInteractionDesktop: "请在 Tutti 电脑端处理这个交互",
     pinSession: "置顶会话",
@@ -281,8 +297,13 @@ const messages = {
     searchQuickPrompts: "搜索快捷提示词",
     selectAgent: "选择 Agent",
     selectWorkingDirectory: "选择工作目录",
+    settings: "设置",
+    signOutConfirmDescription: "退出后需要重新登录才能访问已配对的电脑",
+    signOutConfirmTitle: "退出登录？",
+    softwareUpdate: "软件更新",
     chat: "聊天",
     welcome: "远程 Agent",
+    versionLabel: "版本 {version}",
     workingDirectory: "目录",
     you: "你"
   }

@@ -184,7 +184,7 @@ WHERE workspace_id = ? AND agent_session_id = ?
 
 func insertForkedSessionTx(ctx context.Context, tx *sql.Tx, op SessionForkOperation, snapshot sessionForkSnapshot, now int64) error {
 	target := sessionForkResultSession(op, snapshot, now)
-	metadataJSON, err := marshalSessionMetadata(target.Metadata)
+	metadataJSON, err := marshalSessionMetadata(target.Metadata, target.Capabilities)
 	if err != nil {
 		return err
 	}

@@ -157,13 +157,17 @@ func (b *sqliteProjectionBuilder) seedMutation(ctx context.Context, mutation act
 		if err != nil {
 			return err
 		}
+		_, capabilities, err := storesqlite.DecodeSessionMetadataJSON(session.SessionMetadata)
+		if err != nil {
+			return err
+		}
 		result, err := b.store.ReportSessionState(ctx, storesqlite.SessionStateReport{
 			WorkspaceID: session.WorkspaceID, AgentSessionID: session.AgentSessionID, Kind: session.Kind,
 			RootAgentSessionID: dereference(session.RootAgentSessionID), RootTurnID: dereference(session.RootTurnID),
 			ParentAgentSessionID: dereference(session.ParentAgentSessionID), ParentTurnID: dereference(session.ParentTurnID),
 			ParentToolCallID: dereference(session.ParentToolCallID), Origin: session.Origin, UserID: session.UserID,
 			AgentTargetID: dereference(session.AgentTargetID), Provider: session.Provider, ProviderSessionID: session.ProviderSessionID,
-			Model: session.Model, Settings: settings, RuntimeContext: runtimeContext, Cwd: session.CWD, Title: session.Title,
+			Model: session.Model, Settings: settings, Capabilities: capabilities, RuntimeContext: runtimeContext, Cwd: session.CWD, Title: session.Title,
 			OccurredAtUnixMS: session.LastEventAtUnixMS, StartedAtUnixMS: session.StartedAtUnixMS,
 			EndedAtUnixMS: session.EndedAtUnixMS, CreatedAtUnixMS: session.CreatedAtUnixMS,
 		})
@@ -294,7 +298,7 @@ func (b *sqliteProjectionBuilder) buildMutation(ctx context.Context, descriptor 
 		if err != nil || !found {
 			return activityreplication.Mutation{}, found, err
 		}
-		metadata, err := json.Marshal(stored.Metadata)
+		metadata, err := storesqlite.EncodeSessionMetadataJSON(stored.Metadata, stored.Capabilities)
 		if err != nil {
 			return activityreplication.Mutation{}, false, err
 		}

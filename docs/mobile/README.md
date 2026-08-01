@@ -287,6 +287,15 @@ screen composition and product-specific interaction.
   keyboard height in a service or add per-screen native keyboard listeners.
 - In a debug build, open the React Native developer menu and choose “Native UI
   gallery” to review the shared Native primitives on the actual renderer.
+- The authenticated computer screen exposes the account avatar as the direct
+  entry to the Mobile Settings screen. Settings currently owns the account
+  summary, installed app version, About Tutti summary, and confirmed sign-out;
+  it does not duplicate the computer list. The account service's avatar URL is
+  persisted with the secure session on both platforms, while sessions written
+  before that field existed continue to use the account-label fallback.
+  Software Update is an informational settings row until a signed release
+  manifest and updater service are introduced; the UI must not claim that an
+  update check ran before that application capability exists.
 - React Native Reusables is a source-copy starting point for a Native primitive;
   adapt and promote a component into the UI System Native layer before an app
   consumes it. Apps must not acquire direct third-party component imports.
@@ -315,9 +324,22 @@ screen composition and product-specific interaction.
 
 需要在没有本机开发环境的真机上测试时，可从 GitHub Actions 手动运行
 `Mobile Internal Build` 并选择 `android`。它只上传保留 14 天的内部 artifact
-`tutti-mobile-internal-<commit>`，其中的 `tutti-mobile-internal.apk` 已嵌入
-JavaScript bundle，可直接侧载；不会创建 GitHub Release 或公开下载链接。每次
-运行使用新的临时签名 key，安装新构建前可能需要先卸载手机上的旧内部构建。
+`tutti-mobile-internal-<commit>`，其中的 `app-release.apk` 已嵌入 JavaScript
+bundle，可直接侧载；不会创建 GitHub Release 或公开下载链接。所有 Android
+artifact 使用同一把长期 release key 签名，因此可覆盖升级并为后续自动更新保留
+稳定的应用身份。CI 同时用仓库级 `github.run_number` 写入单调递增的 Android
+`versionCode`；`versionName` 仍由应用源码管理。工作流从 GitHub Actions Secrets
+读取以下四项，缺失任何一项都会在构建前失败，不得回退到临时 key 或 unsigned APK：
+
+- `ANDROID_RELEASE_KEYSTORE_BASE64`
+- `ANDROID_RELEASE_KEYSTORE_PASSWORD`
+- `ANDROID_RELEASE_KEY_ALIAS`
+- `ANDROID_RELEASE_KEY_PASSWORD`
+
+release keystore 必须在 GitHub 之外另做加密备份。GitHub Secret 的值无法再次读取，
+丢失私钥后将无法向已经安装该签名版本的用户提供原地升级。仓库只提交可公开的
+`apps/mobile/android/release-certificate.pem`；CI 会把 APK 的证书指纹与它比对，
+防止 Actions Secrets 被误换后产出另一条无法升级的签名链。
 
 在 iOS 真机上测试时，运行同一工作流并选择 `ios`。它使用仓库已有的 App Store
 Connect API Key 和 `IOS_DEVELOPMENT_TEAM` 仓库变量，让 Xcode 自动管理云签名并
@@ -388,7 +410,7 @@ Google Play 账号。以下事项等正式分发前再处理：
 
 - 最终 Android application ID
 - 正式应用名称和图标
-- release keystore 的保管方式
+- release keystore 的额外离线备份和密钥轮换应急方案
 - Google Play Console 账号和签名策略
 - 隐私政策、商店截图和分发地区
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	storesqlite "github.com/tutti-os/tutti/packages/agent/store-sqlite"
+	"github.com/tutti-os/tutti/packages/agent/store-sqlite/canonical"
 )
 
 const canonicalRuntimeSessionOrigin = "WORKSPACE_AGENT_SESSION_ORIGIN_RUNTIME"
@@ -356,6 +357,7 @@ func (s *SQLiteWorkspaceStore) InitializeRuntimeSession(ctx context.Context, inp
 			ProviderSessionID: strings.TrimSpace(session.ProviderSessionID),
 			Model:             composerSettingsModel(session.Settings),
 			Settings:          composerSettingsPayload(session.Settings),
+			Capabilities:      canonical.CloneCapabilitySnapshot(session.Capabilities),
 			RuntimeContext:    runtimeContext,
 			Cwd:               strings.TrimSpace(session.Cwd),
 			RailPlacement:     railPlacement,

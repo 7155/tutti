@@ -102,6 +102,7 @@ type ProviderRuntimeSession struct {
 	Env                     []string
 	ProviderTargetRef       map[string]any
 	Settings                *ComposerSettings
+	Capabilities            *canonical.CapabilitySnapshot
 	RuntimeContext          map[string]any
 	Status                  string
 	TurnLifecycle           *TurnLifecycle

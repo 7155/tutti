@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
+	"github.com/tutti-os/tutti/packages/agent/store-sqlite/canonical"
 )
 
 func ReportActivityAsSessionUpdates(
@@ -422,7 +423,9 @@ func sessionStateUpdateFromPatch(patch WorkspaceAgentStatePatch) WorkspaceAgentS
 		ProviderSessionID:     strings.TrimSpace(patch.ProviderSessionID),
 		Model:                 strings.TrimSpace(patch.Model),
 		Settings:              clonePayloadMap(patch.Settings),
+		Capabilities:          canonical.CloneCapabilitySnapshot(patch.Capabilities),
 		RuntimeContext:        clonePayloadMap(patch.RuntimeContext),
+		RuntimeContextPatch:   canonical.CloneRuntimeContextPatch(patch.RuntimeContextPatch),
 		TurnLifecycle:         cloneTurnLifecycle(patch.TurnLifecycle),
 		SubmitAvailability:    cloneSubmitAvailability(patch.SubmitAvailability),
 		InteractionTransition: cloneInteractionTransition(patch.InteractionTransition),

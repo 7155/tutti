@@ -20,7 +20,8 @@ export interface SessionStoragePort {
     sessionId: string,
     userId: string,
     email: string,
-    name: string
+    name: string,
+    avatarURL: string
   ): Promise<void>;
 }
 

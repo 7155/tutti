@@ -8,6 +8,7 @@ import (
 
 	agentruntime "github.com/tutti-os/tutti/packages/agent/daemon/runtime"
 	host "github.com/tutti-os/tutti/packages/agent/host"
+	"github.com/tutti-os/tutti/packages/agent/store-sqlite/canonical"
 )
 
 type stateRuntimeBackend struct {
@@ -151,6 +152,7 @@ func TestRuntimeControllerProjectsProviderEnrichedLiveState(t *testing.T) {
 			Settings: &agentruntime.SessionSettings{
 				Model: "gpt-5.6", ReasoningEffort: "max", Speed: "fast",
 			},
+			Capabilities: canonical.NewCapabilitySnapshot([]string{canonical.CapabilityGoalPause}),
 			RuntimeContext: map[string]any{
 				"account":    map[string]any{"email": "agent@example.com"},
 				"rateLimits": map[string]any{"primary": 42},
@@ -174,6 +176,9 @@ func TestRuntimeControllerProjectsProviderEnrichedLiveState(t *testing.T) {
 	}
 	if projected.RuntimeContext["account"] == nil || projected.RuntimeContext["rateLimits"] == nil || projected.RuntimeContext["usage"] == nil || projected.RuntimeContext["commands"] == nil {
 		t.Fatalf("projected live runtime context = %#v", projected.RuntimeContext)
+	}
+	if projected.Capabilities == nil || len(projected.Capabilities.Values) != 1 || projected.Capabilities.Values[0] != canonical.CapabilityGoalPause {
+		t.Fatalf("projected live capabilities = %#v", projected.Capabilities)
 	}
 }
 

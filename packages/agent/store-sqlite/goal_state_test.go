@@ -314,7 +314,7 @@ func TestGoalAcceptedRemainsApplyingUntilMatchingLifecycleEvidence(t *testing.T)
 	if err != nil || !changed || state.SyncStatus != GoalSyncStatusApplying || state.PendingOperationID != "goal-op-accepted" {
 		t.Fatalf("ack state=%#v changed=%v error=%v", state, changed, err)
 	}
-	if _, err := store.ReportSessionState(ctx, SessionStateReport{
+	appliedReport, err := store.ReportSessionState(ctx, SessionStateReport{
 		WorkspaceID: "ws-accepted", AgentSessionID: "session-accepted", Provider: "claude-code", OccurredAtUnixMS: 30,
 		RuntimeContext: map[string]any{
 			"goal": map[string]any{"objective": "ship it", "status": "active"},
@@ -322,9 +322,12 @@ func TestGoalAcceptedRemainsApplyingUntilMatchingLifecycleEvidence(t *testing.T)
 				"phase": "applied", "operationId": "goal-op-accepted", "revision": float64(1), "action": "set",
 			},
 		},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
+	assertParticipantMutationKinds(t, appliedReport.CommitDelta,
+		MutationEntitySession, MutationEntityGoalState, MutationEntityGoalOperation)
 	state, found, err := store.GetSessionGoalState(ctx, "ws-accepted", "session-accepted")
 	if err != nil || !found || state.SyncStatus != GoalSyncStatusSynced || state.PendingOperationID != "" {
 		t.Fatalf("applied state=%#v found=%v error=%v", state, found, err)

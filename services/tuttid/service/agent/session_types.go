@@ -10,6 +10,7 @@ import (
 	agenthost "github.com/tutti-os/tutti/packages/agent/host"
 	runtimeprep "github.com/tutti-os/tutti/packages/agent/runtimeprep"
 	agentactivitybiz "github.com/tutti-os/tutti/packages/agent/store-sqlite"
+	"github.com/tutti-os/tutti/packages/agent/store-sqlite/canonical"
 	agenttargetbiz "github.com/tutti-os/tutti/services/tuttid/biz/agenttarget"
 	automationrulebiz "github.com/tutti-os/tutti/services/tuttid/biz/automationrule"
 	modelplanbiz "github.com/tutti-os/tutti/services/tuttid/biz/modelplan"
@@ -253,6 +254,7 @@ type Session struct {
 	Visible              bool
 	Resumable            bool
 	Settings             *ComposerSettings
+	Capabilities         *canonical.CapabilitySnapshot
 	PermissionConfig     PermissionConfig
 	Title                *string
 	MessageVersion       uint64
@@ -408,6 +410,7 @@ type PersistedSession struct {
 	RailProjectPath        string
 	RailSectionKey         string
 	Settings               ComposerSettings
+	Capabilities           *canonical.CapabilitySnapshot
 	Metadata               agentactivitybiz.SessionMetadata
 	InternalRuntimeContext map[string]any
 	Title                  string

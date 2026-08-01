@@ -1,4 +1,5 @@
 export interface AccountSession {
+  avatarURL: string;
   email: string;
   name: string;
   sessionId: string;

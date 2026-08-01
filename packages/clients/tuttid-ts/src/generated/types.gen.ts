@@ -2370,7 +2370,7 @@ export type WorkspaceAgentSession = {
    */
   pendingInteractions: Array<WorkspaceAgentInteraction>;
   /**
-   * Protocol v2. Daemon-issued capability descriptor; clients must branch on capabilities, never on provider identity.
+   * Protocol v2. Authoritative session capability snapshot. Null means no authoritative session snapshot is available, either because the runtime has not reported one yet or because legacy persisted data is ambiguous. A non-null object is complete, so false means explicitly unsupported. Only while this field is null may clients fall back to the authoritative provider composer descriptor; they must never infer capabilities from provider identity.
    */
   capabilities: WorkspaceAgentCapabilities | null;
   lifecycleCapabilities: WorkspaceAgentSessionLifecycleCapabilities;
@@ -2630,7 +2630,7 @@ export type WorkspaceAgentInteraction = {
 };
 
 /**
- * Protocol v2 daemon-issued capability descriptor. Clients branch on these booleans instead of provider identity. Field names mirror the canonical capability keys in packages/agent/daemon/runtime/capabilities.go.
+ * Protocol v2 daemon-issued capability descriptor. Clients branch on these booleans instead of provider identity. Field names mirror the canonical capability vocabulary owned by packages/agent/store-sqlite/canonical/provider.go.
  */
 export type WorkspaceAgentCapabilities = {
   imageInput: boolean;

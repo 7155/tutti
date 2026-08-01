@@ -50,7 +50,10 @@ func TestClaudeCodeSDKAdapterSessionStateSeedsCommandsAndCapabilities(t *testing
 			t.Fatalf("commands = %#v, missing %q", commands, want)
 		}
 	}
-	capabilities, _ := state.RuntimeContext["capabilities"].([]string)
+	capabilities := state.Capabilities.Values
+	if _, duplicated := state.RuntimeContext["capabilities"]; duplicated {
+		t.Fatalf("runtime context duplicated typed capabilities: %#v", state.RuntimeContext)
+	}
 	for _, want := range []string{CapabilityImageInput, CapabilityCompact, CapabilityTokenUsage, CapabilityRateLimits, CapabilityPlanMode, CapabilityInterrupt, CapabilityActiveTurnGuidance, CapabilitySkills, "review"} {
 		if !containsString(capabilities, want) {
 			t.Fatalf("capabilities = %#v, missing %q", capabilities, want)
@@ -75,7 +78,7 @@ func TestClaudeCodeSDKAdapterSessionStateReflectsOptionalComposerCapabilities(t 
 	})
 
 	state := adapter.SessionState(session)
-	capabilities, _ := state.RuntimeContext["capabilities"].([]string)
+	capabilities := state.Capabilities.Values
 	for _, want := range []string{CapabilityBrowserUse, CapabilityComputerUse} {
 		if !containsString(capabilities, want) {
 			t.Fatalf("capabilities = %#v, missing %q", capabilities, want)

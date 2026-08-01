@@ -86,6 +86,7 @@ func (p *ActivityProjection) InitializeRuntimeSession(
 			ProviderSessionID: strings.TrimSpace(session.ProviderSessionID),
 			Model:             strings.TrimSpace(settings.Model),
 			Settings:          composerSettingsToStatePayload(settings),
+			Capabilities:      canonical.CloneCapabilitySnapshot(session.Capabilities),
 			RuntimeContext:    runtimeContext,
 			CWD:               strings.TrimSpace(session.Cwd),
 			RailPlacement:     canonicalRailPlacement(railPlacement),

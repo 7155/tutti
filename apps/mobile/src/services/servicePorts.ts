@@ -2,6 +2,7 @@ import type { TuttidClient } from "@tutti-os/client-tuttid-ts";
 import type { AgentActivityLiveEvent } from "@tutti-os/agent-activity-core";
 import type {
   AccountSession,
+  DeviceLinkPathScope,
   DevicePairingChallenge,
   DevicePairing,
   DevicePairingPhase,
@@ -116,7 +117,7 @@ export interface PairingPort {
     sessionId: string,
     pairingId: string,
     isCurrent: () => boolean
-  ): Promise<void>;
+  ): Promise<DeviceLinkPathScope>;
   getPairingChallenge(
     sessionId: string,
     challengeId: string

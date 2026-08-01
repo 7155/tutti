@@ -204,6 +204,32 @@ describe("MobileApplicationService scopes", () => {
     });
   });
 
+  test("measures latency only while the DeviceLink is connected", async () => {
+    const harness = createHarness(session, [workspace]);
+    const service = new MobileApplicationService(
+      new InstantiationService(),
+      harness.ports
+    );
+    await service.start();
+
+    await expect(service.measureConnectionLatency()).resolves.toBeNull();
+    expect(harness.requestCalls).toBe(0);
+
+    await service.deviceService!.connect(pairing);
+    harness.emitAgentLiveConnection("connected");
+    const now = jest
+      .spyOn(Date, "now")
+      .mockReturnValueOnce(1_000)
+      .mockReturnValueOnce(1_042);
+    await expect(service.measureConnectionLatency()).resolves.toBe(42);
+    now.mockRestore();
+    expect(harness.requestCalls).toBe(1);
+
+    harness.failNextLatencyProbe();
+    await expect(service.measureConnectionLatency()).resolves.toBeNull();
+    expect(harness.requestCalls).toBe(2);
+  });
+
   test("clears the device atomically and blocks reconnect until close finishes", async () => {
     const close = deferred<void>();
     const harness = createHarness(session, [workspace], {
@@ -279,9 +305,11 @@ function createHarness(
   emitAgentLiveConnection(status: "connected" | "disconnected"): void;
   emitLifecycle(state: AppLifecycleState): void;
   failNextConnection(): void;
+  failNextLatencyProbe(): void;
   legacyCookieClearCalls: number;
   ports: MobileServicePorts;
   registerCalls: number;
+  requestCalls: number;
 } {
   const clock = new ManualClock();
   let lifecycleListener: ((state: AppLifecycleState) => void) | null = null;
@@ -289,6 +317,7 @@ function createHarness(
     | Parameters<MobileServicePorts["deviceLink"]["subscribeAgentLive"]>[1]
     | null = null;
   let failNextConnection = false;
+  let failNextLatencyProbe = false;
   const harness = {
     clock,
     closeCalls: 0,
@@ -304,7 +333,11 @@ function createHarness(
     failNextConnection() {
       failNextConnection = true;
     },
-    ports: null as unknown as MobileServicePorts
+    failNextLatencyProbe() {
+      failNextLatencyProbe = true;
+    },
+    ports: null as unknown as MobileServicePorts,
+    requestCalls: 0
   };
   harness.ports = {
     account: {
@@ -338,13 +371,20 @@ function createHarness(
         harness.closeCalls += 1;
         await overrides.closeLink?.();
       },
-      requestAgentHTTP: async () => ({
-        body: "",
-        errorCode: "",
-        headers: {},
-        protocolEpoch: 1,
-        status: 204
-      }),
+      requestAgentHTTP: async () => {
+        harness.requestCalls += 1;
+        if (failNextLatencyProbe) {
+          failNextLatencyProbe = false;
+          throw new Error("latency probe failed");
+        }
+        return {
+          body: "",
+          errorCode: "",
+          headers: {},
+          protocolEpoch: 1,
+          status: 204
+        };
+      },
       subscribeAgentLive: (_workspaceId, listener) => {
         liveListener = listener;
         return {
@@ -374,6 +414,7 @@ function createHarness(
           failNextConnection = false;
           throw new Error("connection failed");
         }
+        return "local_subnet" as const;
       },
       getPairingChallenge: async () => ({
         challengeId: "challenge-1",

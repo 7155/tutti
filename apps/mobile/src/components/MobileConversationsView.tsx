@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   NativeButton,
   NativeIconButton,
@@ -9,7 +9,9 @@ import {
 } from "@tutti-os/ui-system/native";
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,12 +19,14 @@ import {
   View
 } from "react-native";
 import { t } from "../i18n";
+import type { MobileConnectionSnapshot } from "../services/mobileApplicationService";
+import type { DeviceLinkPathScope } from "../services/mobileDomain";
 import type { WorkspaceActivitySnapshot } from "../services/workspaceActivityService";
 import {
   MobileKeyboardAvoidingView,
   mobileKeyboardDismissMode
 } from "./MobileKeyboardAvoidingView";
-import { MobileComputerGlyph, MobileFolderGlyph } from "./MobileLocationGlyphs";
+import { MobileFolderGlyph } from "./MobileLocationGlyphs";
 
 type ConversationDialog =
   | { kind: "actions"; sessionId: string }
@@ -30,29 +34,37 @@ type ConversationDialog =
   | { kind: "rename"; sessionId: string }
   | null;
 
+type LatencyState = "idle" | "measuring" | "done";
+
 export function MobileConversationsView({
+  connectionPhase,
   deviceName,
   model,
   onBack,
   onDeleteSession,
   onLoadMoreSessions,
+  onMeasureLatency,
   onNewSession,
   onRenameSession,
   onRefreshSessions,
   onSelectSession,
   onTogglePinned,
+  pathScope,
   workspaceName
 }: {
+  connectionPhase: MobileConnectionSnapshot["phase"];
   deviceName: string;
   model: WorkspaceActivitySnapshot;
   onBack(): void;
   onDeleteSession(id: string): Promise<void>;
   onLoadMoreSessions(sectionId: string): void;
+  onMeasureLatency(): Promise<number | null>;
   onNewSession(): void;
   onRenameSession(id: string, title: string): Promise<void>;
   onRefreshSessions(): Promise<void>;
   onSelectSession(id: string): void;
   onTogglePinned(id: string): Promise<void>;
+  pathScope: DeviceLinkPathScope | null;
   workspaceName: string;
 }) {
   const theme = useNativeTheme();
@@ -65,6 +77,10 @@ export function MobileConversationsView({
   );
   const [refreshing, setRefreshing] = useState(false);
   const [searchDraft, setSearchDraft] = useState("");
+  const [connectionInfoOpen, setConnectionInfoOpen] = useState(false);
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [latencyState, setLatencyState] = useState<LatencyState>("idle");
+  const lastStatusTapAtRef = useRef(0);
   const searchQuery = searchDraft.trim().toLocaleLowerCase();
   const actionSession = dialog
     ? model.railSections
@@ -105,6 +121,26 @@ export function MobileConversationsView({
     }
   };
 
+  const openConnectionInfo = (): void => {
+    setConnectionInfoOpen(true);
+    setLatencyState("measuring");
+    setLatencyMs(null);
+    void onMeasureLatency().then((ms) => {
+      setLatencyMs(ms);
+      setLatencyState("done");
+    });
+  };
+
+  const handleStatusPress = (): void => {
+    const now = Date.now();
+    if (now - lastStatusTapAtRef.current < 350) {
+      lastStatusTapAtRef.current = 0;
+      openConnectionInfo();
+      return;
+    }
+    lastStatusTapAtRef.current = now;
+  };
+
   return (
     <MobileKeyboardAvoidingView style={styles.root}>
       <View style={styles.header}>
@@ -117,40 +153,32 @@ export function MobileConversationsView({
             variant="secondary"
           />
         </View>
-        <Text style={styles.title}>{t("sessions")}</Text>
-        {refreshing ? (
-          <View style={styles.headerButtonSlot}>
-            <View style={styles.headerButton}>
-              <ActivityIndicator color={theme.color.accent} size="small" />
-            </View>
-          </View>
-        ) : (
-          <View style={styles.headerButtonSlot}>
-            <NativeIconButton
-              accessibilityLabel={t("refreshSessions")}
-              icon={<Text style={styles.moreIconLarge}>⋮</Text>}
-              onPress={() => void refreshRail()}
-              style={styles.headerButton}
-              variant="secondary"
+        <Text numberOfLines={1} style={styles.title}>
+          {deviceName || t("desktopFallback")}
+        </Text>
+        <View style={styles.headerButtonSlot}>
+          <Pressable
+            accessibilityLabel={t("connectionInfo")}
+            accessibilityRole="button"
+            onPress={handleStatusPress}
+            style={({ pressed }) => [
+              styles.statusButton,
+              pressed && styles.pressed
+            ]}
+          >
+            <View
+              style={[
+                styles.statusDot,
+                connectionPhase === "connected"
+                  ? styles.statusDotConnected
+                  : connectionPhase === "failed"
+                    ? styles.statusDotFailed
+                    : styles.statusDotPending
+              ]}
             />
-          </View>
-        )}
-      </View>
-
-      <ScrollView
-        contentContainerStyle={styles.deviceRail}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.deviceScroller}
-      >
-        <View style={styles.devicePill}>
-          <View style={styles.deviceDot} />
-          <MobileComputerGlyph color={theme.color.background} size={14} />
-          <Text numberOfLines={1} style={styles.deviceName}>
-            {deviceName || t("desktopFallback")}
-          </Text>
+          </Pressable>
         </View>
-      </ScrollView>
+      </View>
 
       <View style={styles.projectSection}>
         <Text style={styles.groupTitle}>{t("projects")}</Text>
@@ -166,6 +194,13 @@ export function MobileConversationsView({
         contentContainerStyle={styles.list}
         keyboardDismissMode={mobileKeyboardDismissMode}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            onRefresh={() => void refreshRail()}
+            refreshing={refreshing}
+            tintColor={theme.color.textSecondary}
+          />
+        }
         style={styles.sessionScroller}
       >
         {model.railStatus === "loading" && model.railSections.length === 0 ? (
@@ -331,6 +366,76 @@ export function MobileConversationsView({
           />
         </View>
       </View>
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setConnectionInfoOpen(false)}
+        transparent
+        visible={connectionInfoOpen}
+      >
+        <Pressable
+          onPress={() => setConnectionInfoOpen(false)}
+          style={styles.infoBackdrop}
+        >
+          <Pressable
+            onPress={(event) => event.stopPropagation()}
+            style={styles.infoCard}
+          >
+            <Text style={styles.infoTitle}>{t("connectionInfo")}</Text>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>{t("connectionStatus")}</Text>
+              <View style={styles.infoValueRow}>
+                <View
+                  style={[
+                    styles.infoDot,
+                    connectionPhase === "connected"
+                      ? styles.statusDotConnected
+                      : connectionPhase === "failed"
+                        ? styles.statusDotFailed
+                        : styles.statusDotPending
+                  ]}
+                />
+                <Text style={styles.infoValue}>
+                  {connectionPhase === "connected"
+                    ? t("statusConnected")
+                    : connectionPhase === "failed"
+                      ? t("statusFailed")
+                      : connectionPhase === "reconnecting"
+                        ? t("statusReconnecting")
+                        : t("statusSynchronizing")}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>{t("connectionPath")}</Text>
+              <Text style={styles.infoValue}>
+                {pathScope === "local_subnet"
+                  ? t("connectionPathLan")
+                  : pathScope === "public_internet"
+                    ? t("connectionPathPublic")
+                    : pathScope === "private_network"
+                      ? t("connectionPathPrivate")
+                      : t("connectionPathUnknown")}
+              </Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>{t("connectionTransport")}</Text>
+              <Text style={styles.infoValue}>
+                {t("connectionTransportP2p")}
+              </Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>{t("connectionLatency")}</Text>
+              <Text style={styles.infoValue}>
+                {latencyState === "measuring"
+                  ? t("connectionLatencyMeasuring")
+                  : latencyMs !== null
+                    ? `${latencyMs} ms`
+                    : t("connectionLatencyUnavailable")}
+              </Text>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
       {dialog && actionSession ? (
         <NativeSheet
           closeAccessibilityLabel={t("closeSheet")}
@@ -548,37 +653,6 @@ function createStyles(theme: NativeTheme) {
       fontSize: 14,
       lineHeight: 20
     },
-    deviceDot: {
-      backgroundColor: theme.color.success,
-      borderRadius: 4,
-      height: 8,
-      width: 8
-    },
-    deviceName: {
-      color: theme.color.background,
-      flexShrink: 1,
-      fontSize: 13,
-      fontWeight: "600"
-    },
-    devicePill: {
-      alignItems: "center",
-      backgroundColor: theme.color.text,
-      borderRadius: 18,
-      flexDirection: "row",
-      gap: theme.space.small,
-      height: 36,
-      maxWidth: 280,
-      paddingHorizontal: 12
-    },
-    deviceRail: {
-      alignItems: "center",
-      paddingBottom: theme.space.small,
-      paddingTop: theme.space.small
-    },
-    deviceScroller: {
-      flexGrow: 0,
-      maxHeight: 48
-    },
     root: {
       backgroundColor: theme.color.background,
       flex: 1,
@@ -611,6 +685,62 @@ function createStyles(theme: NativeTheme) {
       flexShrink: 0,
       height: 40,
       width: 40
+    },
+    infoBackdrop: {
+      backgroundColor: theme.color.scrim,
+      flex: 1,
+      paddingHorizontal: theme.space.medium,
+      paddingTop: 96
+    },
+    infoCard: {
+      alignSelf: "flex-end",
+      backgroundColor: theme.color.panelRaised,
+      borderColor: theme.color.border,
+      borderRadius: theme.radius.large,
+      borderWidth: StyleSheet.hairlineWidth,
+      elevation: 12,
+      gap: theme.space.small,
+      maxWidth: 320,
+      padding: theme.space.medium,
+      shadowColor: theme.color.text,
+      shadowOffset: { height: 10, width: 0 },
+      shadowOpacity: 0.16,
+      shadowRadius: 24,
+      width: "100%"
+    },
+    infoDot: {
+      borderRadius: 4,
+      height: 8,
+      width: 8
+    },
+    infoLabel: {
+      color: theme.color.muted,
+      fontSize: 13
+    },
+    infoRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      justifyContent: "space-between",
+      minHeight: 24
+    },
+    infoTitle: {
+      color: theme.color.text,
+      fontSize: 15,
+      fontWeight: "700",
+      marginBottom: 2
+    },
+    infoValue: {
+      color: theme.color.text,
+      flexShrink: 1,
+      fontSize: 13,
+      fontWeight: "600",
+      textAlign: "right"
+    },
+    infoValueRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      flexShrink: 1,
+      gap: 6
     },
     feedback: {
       alignItems: "center",
@@ -656,12 +786,6 @@ function createStyles(theme: NativeTheme) {
       fontWeight: "900",
       letterSpacing: 1
     },
-    moreIconLarge: {
-      color: theme.color.text,
-      fontSize: 22,
-      fontWeight: "800",
-      lineHeight: 24
-    },
     pressed: { opacity: 0.7 },
     groupTitle: {
       color: theme.color.textSecondary,
@@ -686,7 +810,8 @@ function createStyles(theme: NativeTheme) {
       width: "100%"
     },
     projectSection: {
-      paddingBottom: theme.space.small
+      paddingBottom: theme.space.small,
+      paddingTop: theme.space.small
     },
     renameInput: {
       backgroundColor: theme.color.panel,
@@ -757,11 +882,26 @@ function createStyles(theme: NativeTheme) {
       flexDirection: "row",
       gap: 2
     },
+    statusButton: {
+      alignItems: "center",
+      height: 40,
+      justifyContent: "center",
+      width: 40
+    },
+    statusDot: {
+      borderRadius: 6,
+      height: 12,
+      width: 12
+    },
+    statusDotConnected: { backgroundColor: theme.color.success },
+    statusDotFailed: { backgroundColor: theme.color.danger },
+    statusDotPending: { backgroundColor: theme.color.accent },
     title: {
       color: theme.color.text,
       flex: 1,
       fontSize: 17,
       fontWeight: "600",
+      paddingHorizontal: theme.space.small,
       textAlign: "center"
     }
   });

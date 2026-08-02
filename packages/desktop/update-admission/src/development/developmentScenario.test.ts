@@ -233,7 +233,8 @@ test("named scenarios reject individually configured outcomes", () => {
 test("policy sequences advance and keep their final response", async () => {
   const policy = resolvePolicy({
     DESKTOP_UPDATE_ADMISSION_DEV: "1",
-    DESKTOP_UPDATE_ADMISSION_POLICY_SEQUENCE: "upgradeRequired@1.1.0,disabled"
+    DESKTOP_UPDATE_ADMISSION_POLICY_SEQUENCE:
+      "upgradeRequired@1.1.0,minimumNotConfigured"
   });
   const checker = createDevelopmentMinimumVersionChecker(policy, {
     expectedCurrentVersion: "1.0.0"
@@ -251,18 +252,19 @@ test("policy sequences advance and keep their final response", async () => {
   );
   assert.equal(
     (await checker(request, new AbortController().signal)).reason,
-    "productDisabled"
+    "minimumNotConfigured"
   );
   assert.equal(
     (await checker(request, new AbortController().signal)).reason,
-    "productDisabled"
+    "minimumNotConfigured"
   );
 });
 
 test("policy sequences advance independently for each desktop product", async () => {
   const policy = resolvePolicy({
     DESKTOP_UPDATE_ADMISSION_DEV: "1",
-    DESKTOP_UPDATE_ADMISSION_POLICY_SEQUENCE: "upgradeRequired@1.1.0,disabled"
+    DESKTOP_UPDATE_ADMISSION_POLICY_SEQUENCE:
+      "upgradeRequired@1.1.0,minimumNotConfigured"
   });
   const checker = createDevelopmentMinimumVersionChecker(policy);
   const request = {
@@ -346,7 +348,7 @@ test("retry-policy-released exposes retry after updater failure", async () => {
   );
   assert.equal(
     (await checker(request, new AbortController().signal)).reason,
-    "productDisabled"
+    "minimumNotConfigured"
   );
 });
 
@@ -402,16 +404,11 @@ test("loopback mock server owns policy and returns its minimum version", async (
     );
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
-      architecture: "arm64",
       channel: "stable",
-      currentVersion: "1.0.0",
       decision: "upgradeRequired",
       featureAvailability: { keys: ["agent.preview", "workspace.example"] },
       minimumVersion: "1.4.0",
-      platform: "macos",
       policyRevision: "development-policy-1",
-      policySource: "defaultMinimum",
-      product: "tsh-desktop",
       reason: "belowMinimum"
     });
     const invalidResponse = await fetch(
@@ -450,8 +447,7 @@ function createScenario(): Extract<
       policySteps: [
         {
           minimum: { kind: "configured", version: "1.1.0" },
-          outcome: "upgradeRequired",
-          policySource: "defaultMinimum"
+          outcome: "upgradeRequired"
         }
       ]
     },

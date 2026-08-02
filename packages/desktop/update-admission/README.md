@@ -20,6 +20,10 @@ Consumers still own:
 The server remains authoritative for deciding whether the installed version is
 allowed. The client compares the updater target with the returned minimum only
 to prevent installing a release that cannot satisfy the active policy.
+Responses contain only the server decision, resolved channel, policy revision,
+optional minimum version, and optional feature availability. Request identity
+is composed locally and is never echoed by the server; policy-resolution source
+details are not part of the public contract.
 
 ## Development scenarios
 
@@ -45,14 +49,14 @@ Client-owned variables are:
 Policy variables are parsed by the in-process client checker or by the
 standalone loopback server, never by both:
 
-| Variable                                    | Meaning                                                                                         |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `DESKTOP_UPDATE_ADMISSION_MINIMUM_VERSION`  | Supplies the default minimum for policy steps that require one.                                 |
-| `DESKTOP_UPDATE_ADMISSION_POLICY`           | Selects one policy outcome.                                                                     |
-| `DESKTOP_UPDATE_ADMISSION_POLICY_SEQUENCE`  | Selects a comma-separated per-client outcome sequence such as `upgradeRequired@1.1.0,disabled`. |
-| `DESKTOP_UPDATE_ADMISSION_SCENARIO`         | Selects one named policy scenario instead of individual policy fields.                          |
-| `DESKTOP_UPDATE_ADMISSION_FEATURE_KEYS`     | Supplies a comma-separated feature key list returned by the policy mock.                        |
-| `DESKTOP_UPDATE_ADMISSION_MOCK_SERVER_PORT` | Selects the loopback CLI port; omit it for an ephemeral port.                                   |
+| Variable                                    | Meaning                                                                                                     |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `DESKTOP_UPDATE_ADMISSION_MINIMUM_VERSION`  | Supplies the default minimum for policy steps that require one.                                             |
+| `DESKTOP_UPDATE_ADMISSION_POLICY`           | Selects one policy outcome.                                                                                 |
+| `DESKTOP_UPDATE_ADMISSION_POLICY_SEQUENCE`  | Selects a comma-separated per-client outcome sequence such as `upgradeRequired@1.1.0,minimumNotConfigured`. |
+| `DESKTOP_UPDATE_ADMISSION_SCENARIO`         | Selects one named policy scenario instead of individual policy fields.                                      |
+| `DESKTOP_UPDATE_ADMISSION_FEATURE_KEYS`     | Supplies a comma-separated feature key list returned by the policy mock.                                    |
+| `DESKTOP_UPDATE_ADMISSION_MOCK_SERVER_PORT` | Selects the loopback CLI port; omit it for an ephemeral port.                                               |
 
 The shortest startup-blocking scenario is:
 
@@ -66,7 +70,7 @@ DESKTOP_UPDATE_ADMISSION_UPDATER=available
 ```
 
 Policy sequences make cross-request behavior deterministic. For example,
-`upgradeRequired@1.1.0,disabled` releases the block on retry, while
+`upgradeRequired@1.1.0,minimumNotConfigured` releases the block on retry, while
 `allowed@1.0.0,upgradeRequired@1.1.0` allows startup and prompts after the
 foreground interval.
 

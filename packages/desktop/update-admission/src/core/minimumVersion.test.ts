@@ -11,7 +11,7 @@ test("compares updater targets without numeric precision loss", () => {
   assert.equal(updaterTargetMeetsMinimum("1.7.0", "1.7.0-rc.2"), true);
   assert.equal(updaterTargetMeetsMinimum("1.7.0-rc.1", "1.7.0-rc.2"), false);
   assert.equal(updaterTargetMeetsMinimum("1.7.0-beta.1", "1.7.0"), false);
-  assert.equal(
+  assert.deepEqual(
     updaterTargetMeetsMinimum(
       "900719925474099312345.0.0",
       "900719925474099312344.999.999"
@@ -20,37 +20,54 @@ test("compares updater targets without numeric precision loss", () => {
   );
 });
 
-test("validates a response against the exact request identity", () => {
+test("combines a validated policy response with the local request identity", () => {
   const request = {
     architecture: "arm64",
     currentVersion: "1.6.0",
     platform: "macos",
     product: "tsh-desktop"
   } as const;
-  assert.equal(
+  assert.deepEqual(
     validateMinimumVersionResponse(
       {
-        ...request,
         channel: "stable",
         decision: "upgradeRequired",
         minimumVersion: "1.6.1",
         policyRevision: "revision-1",
-        policySource: "defaultMinimum",
         reason: "belowMinimum"
       },
       request
-    ).decision,
-    "upgradeRequired"
+    ),
+    {
+      ...request,
+      channel: "stable",
+      decision: "upgradeRequired",
+      minimumVersion: "1.6.1",
+      policyRevision: "revision-1",
+      reason: "belowMinimum"
+    }
   );
-  assert.throws(() =>
-    validateMinimumVersionResponse(
-      {
-        ...request,
-        product: "tutti-desktop"
-      },
-      request
-    )
+});
+
+test("accepts an explicitly unconfigured minimum version", () => {
+  const request = {
+    architecture: "arm64",
+    currentVersion: "1.6.0",
+    platform: "macos",
+    product: "tsh-desktop"
+  } as const;
+  const response = validateMinimumVersionResponse(
+    {
+      channel: "stable",
+      decision: "allowed",
+      policyRevision: "revision-1",
+      reason: "minimumNotConfigured"
+    },
+    request
   );
+
+  assert.equal(response.reason, "minimumNotConfigured");
+  assert.equal("minimumVersion" in response, false);
 });
 
 test("enforces the foreground interval and one-prompt lifecycle", () => {

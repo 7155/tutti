@@ -650,8 +650,7 @@ function createDevelopmentScenario(): DesktopUpdateDevelopmentScenario {
       policySteps: [
         {
           minimum: { kind: "configured", version: "0.2.0-rc.1" },
-          outcome: "upgradeRequired",
-          policySource: "defaultMinimum"
+          outcome: "upgradeRequired"
         }
       ]
     },

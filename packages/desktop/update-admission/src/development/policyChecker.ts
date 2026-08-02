@@ -53,75 +53,59 @@ function responseForStep<TProduct extends DesktopProduct>(
   step: DesktopUpdateDevelopmentPolicyStep,
   revision: number,
   featureKeys: readonly string[]
-): MinimumVersionCheckResponse<TProduct> {
+): MinimumVersionCheckResponse {
   const channel = developmentChannel(request.currentVersion);
   const base = {
-    ...request,
     channel,
     featureAvailability: {
       keys: featureKeys
     },
-    minimumVersion: "",
-    policyRevision: `development-policy-${revision}`,
-    policySource: ""
+    policyRevision: `development-policy-${revision}`
   } as const;
   const minimumVersion = (
     minimum: DesktopUpdateDevelopmentPolicyMinimum
   ): string =>
     minimum.kind === "configured" ? minimum.version : request.currentVersion;
+  const validatedResponse = (value: unknown): MinimumVersionCheckResponse => {
+    validateMinimumVersionResponse(value, request);
+    return value as MinimumVersionCheckResponse;
+  };
   switch (step.outcome) {
     case "allowed":
-      return validateMinimumVersionResponse(
-        {
-          ...base,
-          channel,
-          decision: "allowed",
-          minimumVersion: minimumVersion(step.minimum),
-          policySource: step.policySource,
-          reason: "meetsMinimum"
-        },
-        request
-      );
+      return validatedResponse({
+        ...base,
+        channel,
+        decision: "allowed",
+        minimumVersion: minimumVersion(step.minimum),
+        reason: "meetsMinimum"
+      });
     case "upgradeRequired":
-      return validateMinimumVersionResponse(
-        {
-          ...base,
-          channel,
-          decision: "upgradeRequired",
-          minimumVersion: minimumVersion(step.minimum),
-          policySource: step.policySource,
-          reason: "belowMinimum"
-        },
-        request
-      );
-    case "disabled":
-      return validateMinimumVersionResponse(
-        {
-          ...base,
-          decision: "notApplicable",
-          reason: "productDisabled"
-        },
-        request
-      );
+      return validatedResponse({
+        ...base,
+        channel,
+        decision: "upgradeRequired",
+        minimumVersion: minimumVersion(step.minimum),
+        reason: "belowMinimum"
+      });
+    case "minimumNotConfigured":
+      return validatedResponse({
+        ...base,
+        decision: "allowed",
+        reason: "minimumNotConfigured"
+      });
     case "unsupported":
-      return validateMinimumVersionResponse(
-        {
-          ...base,
-          decision: "notApplicable",
-          reason: "unsupportedRelease"
-        },
-        request
-      );
+      return validatedResponse({
+        ...base,
+        decision: "notApplicable",
+        reason: "unsupportedRelease"
+      });
     case "unmanagedPrerelease":
-      return validateMinimumVersionResponse(
-        {
-          ...base,
-          channel: "unmanaged",
-          decision: "notApplicable",
-          reason: "unmanagedPrerelease"
-        },
-        request
-      );
+      return validatedResponse({
+        ...base,
+        channel: "unmanaged",
+        decision: "notApplicable",
+        reason: "unmanagedPrerelease"
+      });
     case "error":
     case "timeout":
       throw new Error(`cannot synthesize ${step.outcome} as a policy response`);
@@ -136,13 +120,13 @@ export function createDevelopmentMinimumVersionChecker(
 ): <TProduct extends DesktopProduct>(
   request: MinimumVersionCheckRequest<TProduct>,
   signal: AbortSignal
-) => Promise<MinimumVersionCheckResponse<TProduct>> {
+) => Promise<MinimumVersionCheckResponse> {
   const checkIndexes = new Map<string, number>();
   const policyFeatureKeys = policy.featureKeys;
   return async <TProduct extends DesktopProduct>(
     request: MinimumVersionCheckRequest<TProduct>,
     signal: AbortSignal
-  ): Promise<MinimumVersionCheckResponse<TProduct>> => {
+  ): Promise<MinimumVersionCheckResponse> => {
     if (
       options.expectedCurrentVersion &&
       request.currentVersion !== options.expectedCurrentVersion

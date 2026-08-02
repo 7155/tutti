@@ -9,9 +9,10 @@ import {
   type DesktopProduct,
   type MinimumVersionAppUpdateService,
   type MinimumVersionCheckRequest,
-  type MinimumVersionCheckResponse,
+  type MinimumVersionCheckResult,
   type MinimumVersionUpgradeError,
   type MinimumVersionUpgradeState,
+  type UpgradeRequiredMinimumVersionCheckResult,
   type MandatoryDesktopUpdateSession,
   type MandatoryDesktopUpdateTarget
 } from "../contracts/index.ts";
@@ -66,7 +67,9 @@ export interface DesktopUpdateAdmissionControllerOptions<
   preloadPath: string;
   rendererFilePath: string;
   rendererUrl?: string;
-  manualDownloadUrl(response: MinimumVersionCheckResponse<TProduct>): string;
+  manualDownloadUrl(
+    response: UpgradeRequiredMinimumVersionCheckResult<TProduct>
+  ): string;
   listBusinessWindows(): ElectronBrowserWindow[];
   icon?: BrowserWindowConstructorOptions["icon"];
   now?: () => number;
@@ -95,7 +98,7 @@ export function createDesktopUpdateAdmissionController<
   let forcedFlowStarted = false;
   let installRequested = false;
   let disposed = false;
-  let activeCheck: Promise<MinimumVersionCheckResponse<TProduct> | null> | null =
+  let activeCheck: Promise<MinimumVersionCheckResult<TProduct> | null> | null =
     null;
   let activeForcedFlow: Promise<void> | null = null;
   let appQuitStarted = false;
@@ -261,7 +264,7 @@ export function createDesktopUpdateAdmissionController<
 
   const runPolicyCheck = async (
     bounded: boolean
-  ): Promise<MinimumVersionCheckResponse<TProduct> | null> => {
+  ): Promise<MinimumVersionCheckResult<TProduct> | null> => {
     const request = requestPayload();
     if (!request) {
       lastCheckAt = now();
@@ -341,7 +344,7 @@ export function createDesktopUpdateAdmissionController<
 
   const checkPolicy = async (
     bounded: boolean
-  ): Promise<MinimumVersionCheckResponse<TProduct> | null> => {
+  ): Promise<MinimumVersionCheckResult<TProduct> | null> => {
     if (activeCheck) {
       return activeCheck;
     }

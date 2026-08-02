@@ -13,7 +13,7 @@ import { normalizeDesktopFeatureKeys } from "../feature-availability/core.ts";
 export type DesktopUpdateDevelopmentPolicyOutcome =
   | "allowed"
   | "upgradeRequired"
-  | "disabled"
+  | "minimumNotConfigured"
   | "unsupported"
   | "unmanagedPrerelease"
   | "error"
@@ -32,10 +32,9 @@ export type DesktopUpdateDevelopmentPolicyStep =
   | {
       outcome: "allowed" | "upgradeRequired";
       minimum: DesktopUpdateDevelopmentPolicyMinimum;
-      policySource: "defaultMinimum" | "platformOverride";
     }
   | {
-      outcome: "disabled" | "unsupported" | "unmanagedPrerelease";
+      outcome: "minimumNotConfigured" | "unsupported" | "unmanagedPrerelease";
     }
   | {
       outcome: "error";
@@ -67,7 +66,7 @@ function parseOutcome(value: string): DesktopUpdateDevelopmentPolicyOutcome {
   switch (value) {
     case "allowed":
     case "upgradeRequired":
-    case "disabled":
+    case "minimumNotConfigured":
     case "unsupported":
     case "unmanagedPrerelease":
     case "error":
@@ -110,8 +109,7 @@ function createPolicyStep(
         rawMinimumVersion?.trim() || fallbackMinimumVersion || "",
         desktopUpdateAdmissionDevelopmentEnvironment.minimumVersion
       ),
-      outcome,
-      policySource: "defaultMinimum"
+      outcome
     };
   }
   if (rawMinimumVersion !== undefined) {
@@ -145,8 +143,7 @@ function createPresetPolicySteps(
       return [
         {
           minimum: requiredMinimum(),
-          outcome: "upgradeRequired",
-          policySource: "defaultMinimum"
+          outcome: "upgradeRequired"
         }
       ];
     case "startup-policy-timeout":
@@ -155,22 +152,19 @@ function createPresetPolicySteps(
       return [
         {
           minimum: requiredMinimum(),
-          outcome: "upgradeRequired",
-          policySource: "defaultMinimum"
+          outcome: "upgradeRequired"
         },
-        { outcome: "disabled" }
+        { outcome: "minimumNotConfigured" }
       ];
     case "foreground-upgrade-required":
       return [
         {
           minimum: { kind: "requestCurrentVersion" },
-          outcome: "allowed",
-          policySource: "defaultMinimum"
+          outcome: "allowed"
         },
         {
           minimum: requiredMinimum(),
-          outcome: "upgradeRequired",
-          policySource: "defaultMinimum"
+          outcome: "upgradeRequired"
         }
       ];
     default:
@@ -247,7 +241,8 @@ export function validateDevelopmentPolicyScenarioForCurrentVersion(
     }
     if (step.outcome !== "allowed" && step.outcome !== "upgradeRequired") {
       if (
-        (step.outcome === "disabled" || step.outcome === "unsupported") &&
+        (step.outcome === "minimumNotConfigured" ||
+          step.outcome === "unsupported") &&
         !current
       ) {
         invalidDevelopmentScenario(

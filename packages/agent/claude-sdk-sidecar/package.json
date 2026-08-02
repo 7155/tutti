@@ -11,6 +11,7 @@
     "src/errors.ts",
     "src/eventSink.ts",
     "src/executablePath.ts",
+    "src/goalProjection.ts",
     "src/goalExecQueue.ts",
     "src/interactive.ts",
     "src/interactiveTurnResolver.ts",

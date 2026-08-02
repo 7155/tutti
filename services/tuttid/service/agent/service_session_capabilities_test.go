@@ -51,6 +51,7 @@ func assertSessionCapabilityValues(t *testing.T, snapshot *canonical.CapabilityS
 	t.Helper()
 	if snapshot == nil {
 		t.Fatal("capability snapshot = nil")
+		return
 	}
 	if len(snapshot.Values) != len(expected) {
 		t.Fatalf("capability values = %#v, want %#v", snapshot.Values, expected)

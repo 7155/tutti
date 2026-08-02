@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-const claudeSDKSidecarProtocolVersion = 7
+const claudeSDKSidecarProtocolVersion = 8
 
 type claudeSDKSidecarRequest struct {
 	Version int            `json:"version"`

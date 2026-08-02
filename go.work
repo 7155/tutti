@@ -12,6 +12,8 @@ use ./packages/analytics/reporter-go
 
 use ./packages/device-link
 
+use ./packages/desktop/update-admission
+
 use ./apps/cli
 
 use ./packages/workbench/service

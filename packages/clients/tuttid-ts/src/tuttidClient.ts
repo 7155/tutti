@@ -26,6 +26,8 @@ import {
   deleteWorkspace,
   deleteWorkspaceFileEntry,
   getDesktopPreferences,
+  getDesktopUpdateAdmissionSnapshot,
+  getDesktopUpdateAdmissionStartup,
   getAccountLoginStatus,
   getAccountProductSummary,
   getAccountUserInfo,
@@ -71,6 +73,7 @@ import {
   preflightUploadWorkspaceFiles,
   putDesktopPreferences,
   purgeDeletedAgentConversations,
+  refreshDesktopUpdateAdmission,
   putWorkspaceWorkbench,
   checkWorkspaceTerminalCloseGuard,
   readWorkspaceFilePreview,
@@ -550,6 +553,34 @@ export function createTuttidClient(
       return unwrapData(
         await getDesktopPreferences({ client }),
         "Desktop preferences request failed."
+      );
+    },
+    async getDesktopUpdateAdmissionSnapshot(requestOptions) {
+      return unwrapData(
+        await getDesktopUpdateAdmissionSnapshot({
+          client,
+          ...requestOptions
+        }),
+        "Desktop update admission snapshot request failed."
+      );
+    },
+    async getDesktopUpdateAdmissionStartup(requestOptions) {
+      return unwrapData(
+        await getDesktopUpdateAdmissionStartup({
+          client,
+          ...requestOptions
+        }),
+        "Desktop update admission startup request failed."
+      );
+    },
+    async refreshDesktopUpdateAdmission(trigger, requestOptions) {
+      return unwrapData(
+        await refreshDesktopUpdateAdmission({
+          client,
+          body: { trigger },
+          ...requestOptions
+        }),
+        "Desktop update admission refresh request failed."
       );
     },
     async purgeDeletedAgentConversations() {

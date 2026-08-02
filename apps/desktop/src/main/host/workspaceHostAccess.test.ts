@@ -302,6 +302,15 @@ function createTransportClient(
     async getDesktopPreferences() {
       throw new Error("not used");
     },
+    async getDesktopUpdateAdmissionSnapshot() {
+      throw new Error("not used");
+    },
+    async getDesktopUpdateAdmissionStartup() {
+      throw new Error("not used");
+    },
+    async refreshDesktopUpdateAdmission() {
+      throw new Error("not used");
+    },
     async getHealth() {
       return { service: "tuttid", status: "ok" as const };
     },

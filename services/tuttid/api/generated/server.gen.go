@@ -98,6 +98,15 @@ type ServerInterface interface {
 	// Invoke one registered CLI command
 	// (POST /v1/cli/commands/{commandID}/invoke)
 	InvokeCliCommand(w http.ResponseWriter, r *http.Request, commandID CliCommandID)
+	// Read the daemon-owned desktop update admission snapshot
+	// (GET /v1/desktop-update-admission)
+	GetDesktopUpdateAdmissionSnapshot(w http.ResponseWriter, r *http.Request)
+	// Ask the daemon to refresh admission for a lifecycle trigger
+	// (POST /v1/desktop-update-admission/refresh)
+	RefreshDesktopUpdateAdmission(w http.ResponseWriter, r *http.Request)
+	// Wait for the daemon-initiated startup admission check
+	// (GET /v1/desktop-update-admission/startup)
+	GetDesktopUpdateAdmissionStartup(w http.ResponseWriter, r *http.Request)
 	// Attach a WebSocket stream to daemon business events
 	// (GET /v1/events/ws)
 	AttachEventStream(w http.ResponseWriter, r *http.Request)
@@ -1563,6 +1572,66 @@ func (siw *ServerInterfaceWrapper) InvokeCliCommand(w http.ResponseWriter, r *ht
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.InvokeCliCommand(w, r, commandID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetDesktopUpdateAdmissionSnapshot operation middleware
+func (siw *ServerInterfaceWrapper) GetDesktopUpdateAdmissionSnapshot(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDesktopUpdateAdmissionSnapshot(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RefreshDesktopUpdateAdmission operation middleware
+func (siw *ServerInterfaceWrapper) RefreshDesktopUpdateAdmission(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RefreshDesktopUpdateAdmission(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetDesktopUpdateAdmissionStartup operation middleware
+func (siw *ServerInterfaceWrapper) GetDesktopUpdateAdmissionStartup(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDesktopUpdateAdmissionStartup(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -10469,6 +10538,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/agent-targets/{agentTargetID}/enabled", wrapper.SetSystemAgentTargetEnabled)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/cli/capabilities", wrapper.ListCliCapabilities)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/cli/commands/{commandID}/invoke", wrapper.InvokeCliCommand)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/desktop-update-admission", wrapper.GetDesktopUpdateAdmissionSnapshot)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/desktop-update-admission/refresh", wrapper.RefreshDesktopUpdateAdmission)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/desktop-update-admission/startup", wrapper.GetDesktopUpdateAdmissionStartup)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/events/ws", wrapper.AttachEventStream)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/health", wrapper.GetHealth)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/mobile-remote-access/pairing-challenges", wrapper.StartMobileRemotePairing)
@@ -12947,6 +13019,224 @@ type InvokeCliCommand503JSONResponse struct {
 }
 
 func (response InvokeCliCommand503JSONResponse) VisitInvokeCliCommandResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDesktopUpdateAdmissionSnapshotRequestObject struct {
+}
+
+type GetDesktopUpdateAdmissionSnapshotResponseObject interface {
+	VisitGetDesktopUpdateAdmissionSnapshotResponse(w http.ResponseWriter) error
+}
+
+type GetDesktopUpdateAdmissionSnapshot200JSONResponse DesktopUpdateAdmissionSnapshot
+
+func (response GetDesktopUpdateAdmissionSnapshot200JSONResponse) VisitGetDesktopUpdateAdmissionSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDesktopUpdateAdmissionSnapshot401JSONResponse struct{ UnauthorizedErrorJSONResponse }
+
+func (response GetDesktopUpdateAdmissionSnapshot401JSONResponse) VisitGetDesktopUpdateAdmissionSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDesktopUpdateAdmissionSnapshot405JSONResponse struct {
+	MethodNotAllowedErrorJSONResponse
+}
+
+func (response GetDesktopUpdateAdmissionSnapshot405JSONResponse) VisitGetDesktopUpdateAdmissionSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(405)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDesktopUpdateAdmissionSnapshot503JSONResponse struct {
+	ServiceUnavailableErrorJSONResponse
+}
+
+func (response GetDesktopUpdateAdmissionSnapshot503JSONResponse) VisitGetDesktopUpdateAdmissionSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshDesktopUpdateAdmissionRequestObject struct {
+	Body *RefreshDesktopUpdateAdmissionJSONRequestBody
+}
+
+type RefreshDesktopUpdateAdmissionResponseObject interface {
+	VisitRefreshDesktopUpdateAdmissionResponse(w http.ResponseWriter) error
+}
+
+type RefreshDesktopUpdateAdmission200JSONResponse DesktopUpdateAdmissionRefreshResult
+
+func (response RefreshDesktopUpdateAdmission200JSONResponse) VisitRefreshDesktopUpdateAdmissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshDesktopUpdateAdmission400JSONResponse struct {
+	InvalidRequestErrorJSONResponse
+}
+
+func (response RefreshDesktopUpdateAdmission400JSONResponse) VisitRefreshDesktopUpdateAdmissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshDesktopUpdateAdmission401JSONResponse struct{ UnauthorizedErrorJSONResponse }
+
+func (response RefreshDesktopUpdateAdmission401JSONResponse) VisitRefreshDesktopUpdateAdmissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshDesktopUpdateAdmission405JSONResponse struct {
+	MethodNotAllowedErrorJSONResponse
+}
+
+func (response RefreshDesktopUpdateAdmission405JSONResponse) VisitRefreshDesktopUpdateAdmissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(405)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshDesktopUpdateAdmission503JSONResponse struct {
+	ServiceUnavailableErrorJSONResponse
+}
+
+func (response RefreshDesktopUpdateAdmission503JSONResponse) VisitRefreshDesktopUpdateAdmissionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDesktopUpdateAdmissionStartupRequestObject struct {
+}
+
+type GetDesktopUpdateAdmissionStartupResponseObject interface {
+	VisitGetDesktopUpdateAdmissionStartupResponse(w http.ResponseWriter) error
+}
+
+type GetDesktopUpdateAdmissionStartup200JSONResponse DesktopUpdateAdmissionSnapshot
+
+func (response GetDesktopUpdateAdmissionStartup200JSONResponse) VisitGetDesktopUpdateAdmissionStartupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDesktopUpdateAdmissionStartup401JSONResponse struct{ UnauthorizedErrorJSONResponse }
+
+func (response GetDesktopUpdateAdmissionStartup401JSONResponse) VisitGetDesktopUpdateAdmissionStartupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDesktopUpdateAdmissionStartup405JSONResponse struct {
+	MethodNotAllowedErrorJSONResponse
+}
+
+func (response GetDesktopUpdateAdmissionStartup405JSONResponse) VisitGetDesktopUpdateAdmissionStartupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(405)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDesktopUpdateAdmissionStartup503JSONResponse struct {
+	ServiceUnavailableErrorJSONResponse
+}
+
+func (response GetDesktopUpdateAdmissionStartup503JSONResponse) VisitGetDesktopUpdateAdmissionStartupResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -36363,6 +36653,15 @@ type StrictServerInterface interface {
 	// Invoke one registered CLI command
 	// (POST /v1/cli/commands/{commandID}/invoke)
 	InvokeCliCommand(ctx context.Context, request InvokeCliCommandRequestObject) (InvokeCliCommandResponseObject, error)
+	// Read the daemon-owned desktop update admission snapshot
+	// (GET /v1/desktop-update-admission)
+	GetDesktopUpdateAdmissionSnapshot(ctx context.Context, request GetDesktopUpdateAdmissionSnapshotRequestObject) (GetDesktopUpdateAdmissionSnapshotResponseObject, error)
+	// Ask the daemon to refresh admission for a lifecycle trigger
+	// (POST /v1/desktop-update-admission/refresh)
+	RefreshDesktopUpdateAdmission(ctx context.Context, request RefreshDesktopUpdateAdmissionRequestObject) (RefreshDesktopUpdateAdmissionResponseObject, error)
+	// Wait for the daemon-initiated startup admission check
+	// (GET /v1/desktop-update-admission/startup)
+	GetDesktopUpdateAdmissionStartup(ctx context.Context, request GetDesktopUpdateAdmissionStartupRequestObject) (GetDesktopUpdateAdmissionStartupResponseObject, error)
 	// Attach a WebSocket stream to daemon business events
 	// (GET /v1/events/ws)
 	AttachEventStream(ctx context.Context, request AttachEventStreamRequestObject) (AttachEventStreamResponseObject, error)
@@ -37759,6 +38058,87 @@ func (sh *strictHandler) InvokeCliCommand(w http.ResponseWriter, r *http.Request
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(InvokeCliCommandResponseObject); ok {
 		if err := validResponse.VisitInvokeCliCommandResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetDesktopUpdateAdmissionSnapshot operation middleware
+func (sh *strictHandler) GetDesktopUpdateAdmissionSnapshot(w http.ResponseWriter, r *http.Request) {
+	var request GetDesktopUpdateAdmissionSnapshotRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetDesktopUpdateAdmissionSnapshot(ctx, request.(GetDesktopUpdateAdmissionSnapshotRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetDesktopUpdateAdmissionSnapshot")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetDesktopUpdateAdmissionSnapshotResponseObject); ok {
+		if err := validResponse.VisitGetDesktopUpdateAdmissionSnapshotResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RefreshDesktopUpdateAdmission operation middleware
+func (sh *strictHandler) RefreshDesktopUpdateAdmission(w http.ResponseWriter, r *http.Request) {
+	var request RefreshDesktopUpdateAdmissionRequestObject
+
+	var body RefreshDesktopUpdateAdmissionJSONRequestBody
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RefreshDesktopUpdateAdmission(ctx, request.(RefreshDesktopUpdateAdmissionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RefreshDesktopUpdateAdmission")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RefreshDesktopUpdateAdmissionResponseObject); ok {
+		if err := validResponse.VisitRefreshDesktopUpdateAdmissionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetDesktopUpdateAdmissionStartup operation middleware
+func (sh *strictHandler) GetDesktopUpdateAdmissionStartup(w http.ResponseWriter, r *http.Request) {
+	var request GetDesktopUpdateAdmissionStartupRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetDesktopUpdateAdmissionStartup(ctx, request.(GetDesktopUpdateAdmissionStartupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetDesktopUpdateAdmissionStartup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetDesktopUpdateAdmissionStartupResponseObject); ok {
+		if err := validResponse.VisitGetDesktopUpdateAdmissionStartupResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

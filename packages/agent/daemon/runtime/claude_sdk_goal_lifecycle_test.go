@@ -551,7 +551,7 @@ func TestClaudeSDKGoalControlClearDoesNotInterruptLiveTurn(t *testing.T) {
 	}
 }
 
-func TestClaudeSDKGoalCompletesOnlyFromActiveGoalLifecycle(t *testing.T) {
+func TestClaudeSDKGoalCompletesOnlyFromProviderGoalObservation(t *testing.T) {
 	t.Parallel()
 
 	adapter := NewClaudeCodeSDKAdapter(nil)
@@ -580,8 +580,10 @@ func TestClaudeSDKGoalCompletesOnlyFromActiveGoalLifecycle(t *testing.T) {
 		t.Fatalf("goal after completed turn = %#v", goal)
 	}
 	malformed, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "turn-goal", claudeSDKSidecarEvent{
-		Type:    "active_goal_updated",
-		Payload: map[string]any{"turnId": "turn-goal", "goal": map[string]any{}},
+		Type: "goal_observed",
+		Payload: map[string]any{
+			"turnId": "turn-goal", "updateType": "thread_goal_update", "goal": map[string]any{},
+		},
 	})
 	if err != nil || terminal || len(malformed) != 0 {
 		t.Fatalf("malformed active goal events=%#v terminal=%v err=%v", malformed, terminal, err)
@@ -591,11 +593,11 @@ func TestClaudeSDKGoalCompletesOnlyFromActiveGoalLifecycle(t *testing.T) {
 	}
 
 	updates, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "turn-goal", claudeSDKSidecarEvent{
-		Type: "active_goal_updated",
+		Type: "goal_observed",
 		Payload: map[string]any{
-			"turnId": "turn-goal",
+			"turnId": "turn-goal", "source": "active_goal", "updateType": "thread_goal_update",
 			"goal": map[string]any{
-				"condition": "ship it", "iterations": float64(2), "last_reason": "not yet",
+				"objective": "ship it", "status": "active", "iterations": float64(2), "reason": "not yet",
 			},
 		},
 	})
@@ -608,8 +610,10 @@ func TestClaudeSDKGoalCompletesOnlyFromActiveGoalLifecycle(t *testing.T) {
 	}
 
 	updates, terminal, err = adapter.sidecarTurnEvents(adapterSession, session, "turn-goal", claudeSDKSidecarEvent{
-		Type:    "active_goal_updated",
-		Payload: map[string]any{"turnId": "turn-goal", "goal": nil},
+		Type: "goal_observed",
+		Payload: map[string]any{
+			"turnId": "turn-goal", "source": "active_goal", "updateType": "thread_goal_completed",
+		},
 	})
 	if err != nil || terminal {
 		t.Fatalf("completed goal terminal=%v err=%v", terminal, err)
@@ -617,6 +621,26 @@ func TestClaudeSDKGoalCompletesOnlyFromActiveGoalLifecycle(t *testing.T) {
 	assertClaudeSDKGoalUpdateEvent(t, updates, "thread_goal_update")
 	if goal := adapter.localGoal(adapterSession); goal["status"] != "complete" {
 		t.Fatalf("completed goal mirror = %#v", goal)
+	}
+
+	adapter.applyLocalGoal(adapterSession, map[string]any{"objective": "ship it", "status": "active"})
+	updates, terminal, err = adapter.sidecarTurnEvents(adapterSession, session, "turn-goal", claudeSDKSidecarEvent{
+		Type: "goal_observed",
+		Payload: map[string]any{
+			"turnId": "turn-goal", "source": "goal_status", "updateType": "thread_goal_update",
+			"goal": map[string]any{
+				"objective": "ship it", "status": "complete", "iterations": float64(3),
+				"reason": "all steps finished", "durationMs": float64(16_386), "tokens": float64(1_479),
+			},
+		},
+	})
+	if err != nil || terminal {
+		t.Fatalf("goal_status completion terminal=%v err=%v", terminal, err)
+	}
+	assertClaudeSDKGoalUpdateEvent(t, updates, "thread_goal_update")
+	goal := adapter.localGoal(adapterSession)
+	if goal["status"] != "complete" || goal["iterations"] != int64(3) || goal["durationMs"] != int64(16_386) || goal["tokens"] != int64(1_479) || goal["reason"] != "all steps finished" {
+		t.Fatalf("goal_status completion mirror = %#v", goal)
 	}
 }
 
@@ -628,9 +652,9 @@ func TestClaudeSDKExplicitClearUsesNilActiveGoalAsClear(t *testing.T) {
 	adapter.applyLocalGoal(adapterSession, map[string]any{"objective": "ship it", "status": "active"})
 
 	events, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "goal-clear-turn", claudeSDKSidecarEvent{
-		Type: "active_goal_updated",
+		Type: "goal_observed",
 		Payload: map[string]any{
-			"turnId": "goal-clear-turn", "action": "clear", "goal": nil,
+			"turnId": "goal-clear-turn", "action": "clear", "source": "active_goal", "updateType": "thread_goal_cleared",
 		},
 	})
 	if err != nil || terminal {

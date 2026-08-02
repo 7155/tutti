@@ -335,19 +335,8 @@ func (a *ClaudeCodeSDKAdapter) sidecarTurnEvents(adapterSession *claudeSDKAdapte
 			}
 		}
 		return nil, false, nil
-	case "goal_updated":
-		updateType := adapterSession.applyGoalUpdated(event.Payload)
-		if updateType == "" {
-			return nil, false, nil
-		}
-		events := make([]activityshared.Event, 0, 2)
-		if goalEvent, ok := normalizedGoalUpdatedEvent(session, updateType); ok {
-			events = append(events, goalEvent)
-		}
-		events = append(events, newSessionActivityEvent(session, EventSessionUpdated, firstNonEmpty(session.Status, SessionStatusReady), claudeSDKRuntimeContext(session, adapterSession)))
-		return events, false, nil
-	case "active_goal_updated":
-		updateType := a.applyClaudeSDKActiveGoal(adapterSession, event.Payload)
+	case "goal_observed":
+		updateType := a.applyClaudeSDKGoalObservation(adapterSession, event.Payload)
 		if updateType == "" {
 			return nil, false, nil
 		}
@@ -576,6 +565,7 @@ func claudeSDKLifecycleEventDiagnostic(event claudeSDKSidecarEvent) bool {
 	switch strings.TrimSpace(event.Type) {
 	case "sdk_lifecycle_observed",
 		"provider_turn_identity_resolved", "provider_turn_checkpoint",
+		"goal_observed",
 		"approval_requested", "user_input_requested",
 		"turn_started", "turn_completed", "turn_canceled", "turn_failed",
 		"continuation_delayed",

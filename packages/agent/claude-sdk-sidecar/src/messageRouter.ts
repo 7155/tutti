@@ -4,6 +4,7 @@ import {
   isToolUseBlock,
   recordValue
 } from "./normalizer.ts";
+import { ClaudeGoalProjection } from "./goalProjection.ts";
 import type { ClaudeSDKSidecarEventEmitter } from "./protocol.ts";
 import {
   readQueuedTaskNotificationPrompt,
@@ -44,6 +45,7 @@ export class SDKMessageRouter {
   private readonly projection: MessageProjection;
   private readonly compaction: CompactionTracker;
   private readonly emit: ClaudeSDKSidecarEventEmitter;
+  private readonly goals: ClaudeGoalProjection;
   private readonly emitProviderCheckpointEvent: (
     turnId: string,
     providerTurnId: string,
@@ -92,6 +94,7 @@ export class SDKMessageRouter {
     this.projection = options.projection;
     this.compaction = options.compaction;
     this.emit = options.emit;
+    this.goals = new ClaudeGoalProjection(options.turns, options.emit);
     this.emitProviderCheckpointEvent = options.emitProviderCheckpoint;
     this.ensureProviderTurnAcceptance = options.ensureProviderTurnAcceptance;
   }
@@ -114,11 +117,11 @@ export class SDKMessageRouter {
       this.onSessionState();
     }
 
-    const messageType = (message as { type?: string }).type;
-    if (messageType === "active_goal") {
-      this.emitActiveGoal(message as unknown as Record<string, unknown>);
+    const rawMessage = message as unknown as Record<string, unknown>;
+    if (this.goals.handle(rawMessage)) {
       return;
     }
+    const messageType = (message as { type?: string }).type;
     if (messageType === "attachment") {
       const prompt = readQueuedTaskNotificationPrompt(
         message as unknown as Record<string, unknown>
@@ -202,29 +205,6 @@ export class SDKMessageRouter {
     if (message.type === "result") {
       await this.handleResult(message, parentToolUseID);
     }
-  }
-
-  private emitActiveGoal(message: Record<string, unknown>): void {
-    const activeTurn = this.turns.activeTurn;
-    if (!Object.hasOwn(message, "value")) {
-      return;
-    }
-    const rawValue = message.value;
-    const value = rawValue === null ? null : recordValue(rawValue);
-    if (rawValue !== null && !value) {
-      return;
-    }
-    this.emit({
-      type: "active_goal_updated",
-      payload: {
-        turnId: this.turns.activeId,
-        ...(this.turns.lastProviderTurnId
-          ? { providerTurnId: this.turns.lastProviderTurnId }
-          : {}),
-        ...(activeTurn?.goalAction ? { action: activeTurn.goalAction } : {}),
-        goal: value
-      }
-    });
   }
 
   private emitLifecycleObservation(

@@ -675,7 +675,7 @@ func (a *ClaudeCodeSDKAdapter) restoreClaudeGoalArmIfCurrent(
 
 // goalEventsOnArmTurnFailed rolls back the optimistic mirror only when the
 // /goal arm command itself never completes. Ordinary terminal Turn events are
-// not Goal evidence; active_goal is the sole provider-owned status signal.
+// not Goal evidence; only normalized provider Goal observations are.
 func (a *ClaudeCodeSDKAdapter) goalEventsOnArmTurnFailed(
 	adapterSession *claudeSDKAdapterSession,
 	session Session,
@@ -705,48 +705,60 @@ func (a *ClaudeCodeSDKAdapter) goalEventsOnArmTurnFailed(
 	return nil
 }
 
-// applyClaudeSDKActiveGoal projects the SDK's first-class active_goal event.
-// A nil value means Claude cleared its active hook. An explicit clear already
-// emptied the local mirror; otherwise nil completes the last observed goal.
-func (a *ClaudeCodeSDKAdapter) applyClaudeSDKActiveGoal(
+// applyClaudeSDKGoalObservation consumes the sidecar's normalized projection
+// of Claude active_goal messages and native goal_status attachments.
+func (a *ClaudeCodeSDKAdapter) applyClaudeSDKGoalObservation(
 	adapterSession *claudeSDKAdapterSession,
 	payload map[string]any,
 ) string {
-	goalValue, present := payload["goal"]
-	if !present {
-		return ""
-	}
-	if goalValue == nil {
+	updateType := strings.TrimSpace(payloadString(payload, "updateType"))
+	switch updateType {
+	case "thread_goal_cleared":
 		a.mu.Lock()
 		defer a.mu.Unlock()
 		adapterSession.goalArmTurnID = ""
-		if payloadString(payload, "action") == "clear" || len(adapterSession.liveState.goal) == 0 {
-			adapterSession.liveState.goal = nil
-			return "thread_goal_cleared"
+		adapterSession.liveState.goal = nil
+		return updateType
+	case "thread_goal_completed":
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		adapterSession.goalArmTurnID = ""
+		if len(adapterSession.liveState.goal) == 0 {
+			return ""
 		}
 		next := clonePayload(adapterSession.liveState.goal)
 		next["status"] = "complete"
 		delete(next, "reason")
 		adapterSession.liveState.goal = next
 		return "thread_goal_update"
-	}
-	goal := payloadObject(goalValue)
-	condition := strings.TrimSpace(asString(goal["condition"]))
-	if condition == "" {
+	case "thread_goal_update":
+		// Continue below and validate the normalized Goal payload.
+	default:
 		return ""
 	}
-	next := map[string]any{"objective": condition, "status": "active"}
-	if iterations := payloadInt64(goal, "iterations"); goal["iterations"] != nil && iterations >= 0 {
-		next["iterations"] = iterations
+	goal := payloadObject(payload["goal"])
+	objective := strings.TrimSpace(asString(goal["objective"]))
+	status := strings.TrimSpace(asString(goal["status"]))
+	if objective == "" || status != "active" && status != "complete" {
+		return ""
 	}
-	if reason := strings.TrimSpace(asString(goal["last_reason"])); reason != "" {
+	next := map[string]any{"objective": objective, "status": status}
+	if reason := strings.TrimSpace(asString(goal["reason"])); reason != "" {
 		next["reason"] = reason
+	}
+	for _, key := range []string{"iterations", "durationMs", "tokens"} {
+		if value, ok := firstInt64Value(goal, key); ok && value >= 0 {
+			next[key] = value
+		}
+	}
+	if sentinel, ok := goal["sentinel"].(bool); ok {
+		next["sentinel"] = sentinel
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	adapterSession.goalArmTurnID = ""
 	adapterSession.liveState.goal = next
-	return "thread_goal_update"
+	return updateType
 }
 
 // localGoal returns a copy of the adapter-local goal mirror.

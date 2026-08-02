@@ -267,22 +267,6 @@ func (s *claudeSDKAdapterSession) mirrorGoalSlashPrompt(session Session, prompt 
 	return normalizedGoalUpdatedEvent(session, updateType)
 }
 
-func (s *claudeSDKAdapterSession) applyGoalUpdated(payload map[string]any) string {
-	if s == nil {
-		return ""
-	}
-	updateType := strings.TrimSpace(payloadString(payload, "updateType"))
-	if updateType == "thread_goal_clear" || updateType == "thread_goal_cleared" {
-		s.liveState.goal = nil
-		return firstNonEmpty(updateType, "thread_goal_cleared")
-	}
-	if goal := payloadObject(payload["goal"]); len(goal) > 0 {
-		s.liveState.goal = clonePayload(goal)
-		return firstNonEmpty(updateType, "thread_goal_update")
-	}
-	return ""
-}
-
 func claudeSDKResumeCursor(session Session, adapterSession *claudeSDKAdapterSession) map[string]any {
 	if adapterSession != nil && len(adapterSession.resumeCursor) > 0 {
 		return clonePayload(adapterSession.resumeCursor)

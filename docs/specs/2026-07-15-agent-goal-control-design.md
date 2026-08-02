@@ -222,11 +222,14 @@ All providers implement one semantic boundary:
 
 Codex uses thread goal RPCs and an authoritative goal query. Claude Code has no
 equivalent query API, so the adapter forwards native slash commands. With the
-Claude Agent SDK `active_goal` contract, a non-null value is the current active
-condition and a null value means the native Goal hook was cleared. The adapter
-uses the exact command action plus its previous observation to distinguish an
-explicit clear from provider-reported completion. An ordinary
-`turn_completed` is never Goal evidence.
+Claude Agent SDK Goal contract, the sidecar accepts the SDK `active_goal`
+message and the native `/goal` Stop hook's top-level `goal_status` attachment,
+then emits one normalized `goal_observed` event. A non-null `active_goal` or
+`goal_status.met=false` is active, while `goal_status.met=true` is complete. A
+null `active_goal` means the native Goal hook was cleared; the adapter uses the
+exact command action plus its previous observation to distinguish an explicit
+clear from provider-reported completion. An ordinary `turn_completed` is
+never Goal evidence.
 
 Claude command consumption is a separate control transition. The sidecar emits
 `goal.control_applied` with immutable operation ID, revision, repair epoch, and

@@ -944,7 +944,7 @@ test("goal set scheduling ack followed by immediate clear coalesces before SDK a
   }
 });
 
-test("SDK active_goal messages preserve provider goal lifecycle", async () => {
+test("SDK active_goal messages normalize provider goal lifecycle", async () => {
   const events: Array<{ type: string; payload?: Record<string, unknown> }> = [];
   const restoreSink = withSidecarEventSinkForTest((event) =>
     events.push(event)
@@ -1009,25 +1009,25 @@ test("SDK active_goal messages preserve provider goal lifecycle", async () => {
     session.exec("goal-work-turn", "continue");
     await waitForEvent(events, "turn_completed");
 
-    const updates = events.filter(
-      (event) => event.type === "active_goal_updated"
-    );
+    const updates = events.filter((event) => event.type === "goal_observed");
     assert.equal(updates.length, 2);
     assert.deepEqual(updates[0]?.payload, {
       turnId: "goal-work-turn",
       providerTurnId: "provider-goal-turn",
+      source: "active_goal",
+      updateType: "thread_goal_update",
       goal: {
-        condition: "count to three",
+        objective: "count to three",
+        status: "active",
         iterations: 2,
-        set_at: "2026-08-02T00:00:00.000Z",
-        tokens_at_start: 100,
-        last_reason: "only reached two"
+        reason: "only reached two"
       }
     });
     assert.deepEqual(updates[1]?.payload, {
       turnId: "goal-work-turn",
       providerTurnId: "provider-goal-turn",
-      goal: null
+      source: "active_goal",
+      updateType: "thread_goal_completed"
     });
   } finally {
     restoreSink();
@@ -1085,9 +1085,118 @@ test("SDK active_goal clear keeps the exact goal command action", async () => {
     });
     await waitForEvent(events, "turn_completed");
 
-    const update = events.find((event) => event.type === "active_goal_updated");
+    const update = events.find((event) => event.type === "goal_observed");
     assert.equal(update?.payload?.action, "clear");
-    assert.equal(update?.payload?.goal, null);
+    assert.equal(update?.payload?.source, "active_goal");
+    assert.equal(update?.payload?.updateType, "thread_goal_cleared");
+  } finally {
+    restoreSink();
+  }
+});
+
+test("native goal_status attachments normalize the live Stop hook lifecycle", async () => {
+  const events: Array<{ type: string; payload?: Record<string, unknown> }> = [];
+  const restoreSink = withSidecarEventSinkForTest((event) =>
+    events.push(event)
+  );
+  try {
+    const session = new SessionRuntime(
+      "provider-session-goal-status",
+      "/repo",
+      {},
+      false,
+      false,
+      {
+        model: "",
+        permissionModeId: "default",
+        planMode: false,
+        effort: "",
+        speed: ""
+      },
+      sidecarClaudeOptionsFromPayload({}),
+      undefined,
+      ({ prompt }) => ({
+        async *[Symbol.asyncIterator]() {
+          const outbound = await prompt[Symbol.asyncIterator]().next();
+          yield {
+            ...outbound.value,
+            uuid: "provider-goal-status-turn",
+            type: "user",
+            parent_tool_use_id: null,
+            session_id: "provider-session-goal-status"
+          } as never;
+          yield {
+            type: "attachment",
+            attachment: {
+              type: "goal_status",
+              condition: "count to three"
+            }
+          } as never;
+          yield {
+            type: "attachment",
+            attachment: {
+              type: "goal_status",
+              met: false,
+              condition: "count to three",
+              reason: "only reached two",
+              iterations: 2
+            }
+          } as never;
+          yield {
+            type: "attachment",
+            attachment: {
+              type: "goal_status",
+              met: true,
+              condition: "count to three",
+              reason: "counted one number per turn",
+              iterations: 3,
+              durationMs: 16_386,
+              tokens: 1_479
+            }
+          } as never;
+          yield { type: "result", subtype: "success" } as never;
+        },
+        close() {}
+      })
+    );
+
+    await session.start();
+    session.exec(
+      "goal-status-turn",
+      "/goal count to three",
+      undefined,
+      undefined,
+      {
+        operationId: "goal-op-status",
+        revision: 1,
+        action: "set"
+      }
+    );
+    await waitForEvent(events, "turn_completed");
+
+    const updates = events.filter((event) => event.type === "goal_observed");
+    assert.equal(updates.length, 2);
+    assert.deepEqual(updates[0]?.payload?.goal, {
+      objective: "count to three",
+      status: "active",
+      reason: "only reached two",
+      iterations: 2
+    });
+    assert.deepEqual(updates[1]?.payload, {
+      turnId: "goal-status-turn",
+      providerTurnId: "provider-goal-status-turn",
+      action: "set",
+      source: "goal_status",
+      updateType: "thread_goal_update",
+      goal: {
+        objective: "count to three",
+        status: "complete",
+        reason: "counted one number per turn",
+        iterations: 3,
+        durationMs: 16_386,
+        tokens: 1_479
+      }
+    });
   } finally {
     restoreSink();
   }

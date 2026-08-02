@@ -202,6 +202,19 @@ Client packages provide domain-specific access helpers for consumers.
 
 They should remain focused, named by responsibility, and free of hidden business rules.
 
+`packages/clients/device-authority-go` is the shared Go client boundary for the
+Device Authority owner lifecycle across Tutti and TSH. The initial package is a
+staged cross-repository extraction from TSH: publish the stable module first,
+then refactor TSH to the released version without changing behavior, then wire
+the same client into Tutti. This ordering is required because cross-repository
+consumers must not use workspace replacements or pseudo-versions. The package
+owns the control-plane wire contract, canonical Ed25519 enrollment and
+owner-token signing, bounded HTTP response semantics, and credential-binding
+validation. Product adapters still own base-URL and API-prefix selection,
+account/session/device headers, durable identity storage, Relay demand and lease
+scheduling, logging, and retry policy. The client must not infer
+local-versus-remote deployment policy or import Relay transport lifecycle code.
+
 ### `packages/device-link`
 
 DeviceLink is the shared Go peer-transport boundary for Tutti Desktop, TSH

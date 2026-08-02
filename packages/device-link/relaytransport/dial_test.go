@@ -153,7 +153,7 @@ func TestDialRejectsWrongNegotiatedSubprotocol(t *testing.T) {
 }
 
 func TestDialErrorClosesResponseBodyAndPreservesRetryMetadata(t *testing.T) {
-	body := &trackingReadCloser{}
+	body := &trackingReadCloser{Reader: strings.NewReader(`{"reason":"authority_offline"}`)}
 	cause := errors.New("handshake rejected")
 	err := newDialError(&http.Response{
 		StatusCode: http.StatusServiceUnavailable,
@@ -174,11 +174,47 @@ func TestDialErrorClosesResponseBodyAndPreservesRetryMetadata(t *testing.T) {
 	if dialErr.HTTPStatusCode() != http.StatusServiceUnavailable || dialErr.HTTPRetryAfter() != "12" {
 		t.Fatalf("retry metadata = (%d, %q), want (503, 12)", dialErr.HTTPStatusCode(), dialErr.HTTPRetryAfter())
 	}
+	if got := string(dialErr.HTTPResponseBody()); got != `{"reason":"authority_offline"}` {
+		t.Fatalf("response body = %q, want product reason", got)
+	}
+	if strings.Contains(err.Error(), "authority_offline") {
+		t.Fatal("DialError.Error() exposed the raw response body")
+	}
+	first := dialErr.HTTPResponseBody()
+	first[0] = 'x'
+	if got := string(dialErr.HTTPResponseBody()); got != `{"reason":"authority_offline"}` {
+		t.Fatal("HTTPResponseBody() exposed mutable internal storage")
+	}
 }
 
-type trackingReadCloser struct{ closed bool }
+func TestDialErrorBoundsHandshakeResponseBody(t *testing.T) {
+	body := &trackingReadCloser{Reader: strings.NewReader(strings.Repeat("x", maxHandshakeErrorBody+1))}
+	err := newDialError(&http.Response{
+		StatusCode: http.StatusConflict,
+		Header:     make(http.Header),
+		Body:       body,
+	}, errors.New("handshake rejected"))
 
-func (*trackingReadCloser) Read([]byte) (int, error) { return 0, io.EOF }
+	var dialErr *DialError
+	if !errors.As(err, &dialErr) {
+		t.Fatalf("newDialError() = %T, want *DialError", err)
+	}
+	if got := len(dialErr.HTTPResponseBody()); got != maxHandshakeErrorBody {
+		t.Fatalf("bounded response body length = %d, want %d", got, maxHandshakeErrorBody)
+	}
+	if !dialErr.HTTPResponseBodyTruncated() {
+		t.Fatal("oversized response body was not marked truncated")
+	}
+	if !body.closed {
+		t.Fatal("oversized response body was not closed")
+	}
+}
+
+type trackingReadCloser struct {
+	io.Reader
+	closed bool
+}
+
 func (r *trackingReadCloser) Close() error {
 	r.closed = true
 	return nil

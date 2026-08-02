@@ -102,7 +102,10 @@ Relay endpoints, headers, query values, credentials, leases, registrations,
 room or pairing state, application protocols, and token invalidation remain in
 consumer adapters. In particular, a shared transport error is evidence for the
 adapter to update its product state, not permission for this package to
-interpret HTTP status codes as product policy.
+interpret HTTP status codes as product policy. `DialError` makes a bounded
+handshake response body available for adapter-owned wire-reason parsing, but
+does not include that body in its error string; adapters must not persist the
+raw value in ordinary logs or metrics.
 
 ## Trickle ICE and protocol migration
 

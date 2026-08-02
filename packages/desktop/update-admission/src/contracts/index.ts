@@ -57,22 +57,54 @@ export type MinimumVersionDecision =
   | "upgradeRequired"
   | "notApplicable";
 
-export interface MinimumVersionCheckResponse<
-  TProduct extends DesktopProduct = DesktopProduct
-> extends MinimumVersionCheckRequest<TProduct> {
-  channel: DesktopUpdateChannel | "unmanaged";
-  minimumVersion: string;
-  decision: MinimumVersionDecision;
-  reason:
-    | "unmanagedPrerelease"
-    | "productDisabled"
-    | "unsupportedRelease"
-    | "belowMinimum"
-    | "meetsMinimum";
-  policySource: "" | "defaultMinimum" | "platformOverride";
+interface MinimumVersionPolicyResponseBase {
   policyRevision: string;
-  featureAvailability?: DesktopFeatureAvailability;
 }
+
+export type MinimumVersionPolicyResponse =
+  | (MinimumVersionPolicyResponseBase & {
+      channel: "unmanaged";
+      decision: "notApplicable";
+      reason: "unmanagedPrerelease";
+      minimumVersion?: never;
+    })
+  | (MinimumVersionPolicyResponseBase & {
+      channel: DesktopUpdateChannel;
+      decision: "notApplicable";
+      reason: "unsupportedRelease";
+      minimumVersion?: never;
+    })
+  | (MinimumVersionPolicyResponseBase & {
+      channel: DesktopUpdateChannel;
+      decision: "allowed";
+      reason: "minimumNotConfigured";
+      minimumVersion?: never;
+    })
+  | (MinimumVersionPolicyResponseBase & {
+      channel: DesktopUpdateChannel;
+      decision: "allowed";
+      reason: "meetsMinimum";
+      minimumVersion: string;
+    })
+  | (MinimumVersionPolicyResponseBase & {
+      channel: DesktopUpdateChannel;
+      decision: "upgradeRequired";
+      reason: "belowMinimum";
+      minimumVersion: string;
+    });
+
+export type MinimumVersionCheckResponse = MinimumVersionPolicyResponse & {
+  featureAvailability?: DesktopFeatureAvailability;
+};
+
+export type MinimumVersionCheckResult<
+  TProduct extends DesktopProduct = DesktopProduct
+> = MinimumVersionCheckRequest<TProduct> & MinimumVersionPolicyResponse;
+
+export type UpgradeRequiredMinimumVersionCheckResult<
+  TProduct extends DesktopProduct = DesktopProduct
+> = MinimumVersionCheckRequest<TProduct> &
+  Extract<MinimumVersionPolicyResponse, { decision: "upgradeRequired" }>;
 
 export interface DesktopFeatureAvailability {
   keys: readonly string[];
@@ -128,7 +160,7 @@ export interface MinimumVersionUpgradeState<
   TProduct extends DesktopProduct = DesktopProduct
 > {
   phase: MinimumVersionUpgradePhase;
-  check: MinimumVersionCheckResponse<TProduct>;
+  check: UpgradeRequiredMinimumVersionCheckResult<TProduct>;
   update: DesktopUpdateState;
   message: MinimumVersionUpgradeError | null;
 }

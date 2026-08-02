@@ -10,7 +10,7 @@ host.
 The package owns:
 
 - request and response contracts for `tutti-desktop` and `tsh-desktop`
-- exact response identity and policy-shape validation
+- local request identity composition and policy-shape validation
 - startup and foreground check timing
 - the one-prompt-per-process foreground rule
 - exclusive mandatory-updater ownership and minimum-target validation
@@ -32,6 +32,10 @@ Each host owns:
 The policy service remains authoritative for deciding whether the installed
 version is allowed. The package validates the updater target independently so
 that a forced flow never installs a release below the active minimum.
+Managed stable/RC versions with no configured minimum are explicitly allowed
+with `reason: "minimumNotConfigured"` and no `minimumVersion` field. Responses
+do not echo request identity or expose policy-resolution source details. There
+is no product enable switch or `productDisabled` response state.
 
 ## Dependency Direction
 
@@ -62,7 +66,7 @@ windows start. A failed or timed-out check is fail-open. An upgrade-required
 response opens the isolated admission window and holds the startup gate.
 
 Before that check, the feature runtime loads only a cache matching the exact
-product, platform, architecture, and current version. A successful v4 response
+product, platform, architecture, and current version. A successful v5 response
 updates the snapshot before the business window starts and persists it with an
 atomic file replacement. Missing, malformed, failed, or timed-out feature
 responses retain the snapshot. A valid empty key list explicitly clears it.

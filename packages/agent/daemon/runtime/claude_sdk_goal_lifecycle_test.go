@@ -551,12 +551,7 @@ func TestClaudeSDKGoalControlClearDoesNotInterruptLiveTurn(t *testing.T) {
 	}
 }
 
-// Claude Code emits no goal_status attachment on achievement: the goal loop
-// holds the provider turn open via Stop-hook feedback until the condition is
-// met, so a normally completed provider turn flips the provider-native goal
-// mirror to complete. Neither fact is a canonical root-turn terminal; tuttid
-// may still keep that root turn waiting for provider-native children.
-func TestClaudeSDKGoalCompletesWhenTurnSettles(t *testing.T) {
+func TestClaudeSDKGoalCompletesOnlyFromActiveGoalLifecycle(t *testing.T) {
 	t.Parallel()
 
 	adapter := NewClaudeCodeSDKAdapter(nil)
@@ -581,9 +576,69 @@ func TestClaudeSDKGoalCompletesWhenTurnSettles(t *testing.T) {
 	if canonicalCompleted := activityEventsWithType(events, activityshared.EventTurnCompleted); len(canonicalCompleted) != 0 {
 		t.Fatalf("provider and goal completion emitted canonical root completion: %#v", canonicalCompleted)
 	}
-	assertClaudeSDKGoalUpdateEvent(t, events, "thread_goal_update")
-	if goal := adapter.localGoal(adapterSession); goal["status"] != "complete" {
+	if goal := adapter.localGoal(adapterSession); goal["status"] != "active" {
 		t.Fatalf("goal after completed turn = %#v", goal)
+	}
+	malformed, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "turn-goal", claudeSDKSidecarEvent{
+		Type:    "active_goal_updated",
+		Payload: map[string]any{"turnId": "turn-goal", "goal": map[string]any{}},
+	})
+	if err != nil || terminal || len(malformed) != 0 {
+		t.Fatalf("malformed active goal events=%#v terminal=%v err=%v", malformed, terminal, err)
+	}
+	if goal := adapter.localGoal(adapterSession); goal["status"] != "active" {
+		t.Fatalf("malformed active goal changed mirror=%#v", goal)
+	}
+
+	updates, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "turn-goal", claudeSDKSidecarEvent{
+		Type: "active_goal_updated",
+		Payload: map[string]any{
+			"turnId": "turn-goal",
+			"goal": map[string]any{
+				"condition": "ship it", "iterations": float64(2), "last_reason": "not yet",
+			},
+		},
+	})
+	if err != nil || terminal {
+		t.Fatalf("active goal terminal=%v err=%v", terminal, err)
+	}
+	assertClaudeSDKGoalUpdateEvent(t, updates, "thread_goal_update")
+	if goal := adapter.localGoal(adapterSession); goal["status"] != "active" || goal["iterations"] != int64(2) || goal["reason"] != "not yet" {
+		t.Fatalf("active goal mirror = %#v", goal)
+	}
+
+	updates, terminal, err = adapter.sidecarTurnEvents(adapterSession, session, "turn-goal", claudeSDKSidecarEvent{
+		Type:    "active_goal_updated",
+		Payload: map[string]any{"turnId": "turn-goal", "goal": nil},
+	})
+	if err != nil || terminal {
+		t.Fatalf("completed goal terminal=%v err=%v", terminal, err)
+	}
+	assertClaudeSDKGoalUpdateEvent(t, updates, "thread_goal_update")
+	if goal := adapter.localGoal(adapterSession); goal["status"] != "complete" {
+		t.Fatalf("completed goal mirror = %#v", goal)
+	}
+}
+
+func TestClaudeSDKExplicitClearUsesNilActiveGoalAsClear(t *testing.T) {
+	t.Parallel()
+
+	adapter := NewClaudeCodeSDKAdapter(nil)
+	session, adapterSession := newClaudeSDKLifecycleTestSession(t, adapter, &recordingClaudeSDKConnection{})
+	adapter.applyLocalGoal(adapterSession, map[string]any{"objective": "ship it", "status": "active"})
+
+	events, terminal, err := adapter.sidecarTurnEvents(adapterSession, session, "goal-clear-turn", claudeSDKSidecarEvent{
+		Type: "active_goal_updated",
+		Payload: map[string]any{
+			"turnId": "goal-clear-turn", "action": "clear", "goal": nil,
+		},
+	})
+	if err != nil || terminal {
+		t.Fatalf("clear active goal terminal=%v err=%v", terminal, err)
+	}
+	assertClaudeSDKGoalUpdateEvent(t, events, "thread_goal_cleared")
+	if goal := adapter.localGoal(adapterSession); len(goal) != 0 {
+		t.Fatalf("goal after explicit clear=%#v", goal)
 	}
 }
 
@@ -619,9 +674,9 @@ func TestClaudeSDKGoalSurvivesInterruptAndFailure(t *testing.T) {
 	}
 }
 
-// While a /goal set is still queued behind a live turn, that turn's settle
-// says nothing about the goal; only the arm turn's own completion counts.
-// A canceled arm turn never reached the CLI, so the mirror clears.
+// While a /goal set is still queued behind a live turn, terminal Turn events
+// say nothing about the goal. A canceled arm turn never reached the CLI, so
+// the optimistic mirror clears.
 func TestClaudeSDKGoalArmTurnGatesCompletion(t *testing.T) {
 	t.Parallel()
 
@@ -662,7 +717,7 @@ func TestClaudeSDKGoalArmTurnGatesCompletion(t *testing.T) {
 		t.Fatalf("goal completed by unrelated turn: %#v", goal)
 	}
 
-	// The arm turn's own completion is the achievement signal.
+	// The arm turn's own completion is still not Goal status evidence.
 	events, _, err := adapter.sidecarTurnEvents(adapterSession, session, armTurnID, claudeSDKSidecarEvent{
 		Type: "turn_completed",
 		Payload: map[string]any{
@@ -673,8 +728,12 @@ func TestClaudeSDKGoalArmTurnGatesCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("arm turn_completed: %v", err)
 	}
-	assertClaudeSDKGoalUpdateEvent(t, events, "thread_goal_update")
-	if goal := adapter.localGoal(adapterSession); goal["status"] != "complete" {
+	for _, event := range events {
+		if event.Payload.Metadata["sessionUpdateKind"] != nil {
+			t.Fatalf("arm turn completion changed goal: %#v", events)
+		}
+	}
+	if goal := adapter.localGoal(adapterSession); goal["status"] != "active" {
 		t.Fatalf("goal after arm turn completed = %#v", goal)
 	}
 }
@@ -765,7 +824,7 @@ func TestClaudeSDKGoalArmTurnCarriesDurableGoalIdentity(t *testing.T) {
 		completedPatch.RootProviderTurn.Phase != agentsessionstore.RootProviderTurnPhaseCompleted {
 		t.Fatalf("goal arm provider completion patch=%#v", completedPatch)
 	}
-	if goal := adapter.localGoal(adapterSession); goal["status"] != "complete" {
+	if goal := adapter.localGoal(adapterSession); goal["status"] != "active" {
 		t.Fatalf("goal arm completion mirror=%#v", goal)
 	}
 	adapter.mu.Lock()
@@ -849,11 +908,14 @@ func TestClaudeSDKGoalSetAckThenImmediateClearPreservesDelayedArmUntilTerminal(t
 			"operationId": "goal-op-clear", "revision": float64(2), "repairEpoch": float64(7), "action": "clear",
 		},
 	})
-	if err != nil || len(clearEvents) != 1 {
+	if err != nil || len(clearEvents) != 2 {
 		t.Fatalf("clear applied events=%#v error=%v", clearEvents, err)
 	}
-	evidence := payloadObject(clearEvents[0].Payload.Metadata["goalControlEvidence"])
-	if evidence["phase"] != "applied" || evidence["operationId"] != "goal-op-clear" || evidence["revision"] != int64(2) || evidence["repairEpoch"] != int64(7) {
+	if clearEvents[0].Type != activityshared.EventGoalControlApplied {
+		t.Fatalf("clear applied event type=%q", clearEvents[0].Type)
+	}
+	evidence := clearEvents[0].Payload.Metadata
+	if evidence["operationId"] != "goal-op-clear" || evidence["revision"] != int64(2) || evidence["repairEpoch"] != int64(7) || evidence["action"] != "clear" {
 		t.Fatalf("clear applied evidence=%#v", evidence)
 	}
 }

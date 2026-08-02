@@ -28,6 +28,7 @@ const (
 	EventSessionCompleted           EventType = "session.completed"
 	EventSessionFailed              EventType = "session.failed"
 	EventSessionAudit               EventType = "session.audit"
+	EventGoalControlApplied         EventType = "goal.control_applied"
 	EventGoalReconcileRequired      EventType = "goal.reconcile_required"
 	EventTurnStarted                EventType = "turn.started"
 	EventTurnUpdated                EventType = "turn.updated"
@@ -303,6 +304,15 @@ func NewSessionAudit(ctx EventContext, role MessageRole, content string, metadat
 // nor a Turn lifecycle event.
 func NewGoalReconcileRequired(ctx EventContext, metadata map[string]any) Event {
 	event := eventFromContext(ctx, EventGoalReconcileRequired, EventPayload{Metadata: cloneMap(metadata)})
+	event.Payload.TurnID = ""
+	return event
+}
+
+// NewGoalControlApplied carries exact provider lifecycle evidence to the
+// Host-owned Goal state machine. It is internal control data, not transcript
+// content, session metadata, or a Turn lifecycle transition.
+func NewGoalControlApplied(ctx EventContext, metadata map[string]any) Event {
+	event := eventFromContext(ctx, EventGoalControlApplied, EventPayload{Metadata: cloneMap(metadata)})
 	event.Payload.TurnID = ""
 	return event
 }

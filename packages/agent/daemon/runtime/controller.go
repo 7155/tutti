@@ -29,6 +29,7 @@ type Controller struct {
 	mu                          sync.Mutex
 	streamObserverMu            sync.RWMutex
 	providerObservationMu       sync.RWMutex
+	goalControlObserverMu       sync.RWMutex
 	sessions                    map[string]Session
 	sessionAvailabilityWaiters  map[string]*sessionAvailabilityWaiter
 	adapters                    map[string]Adapter
@@ -49,6 +50,7 @@ type Controller struct {
 	terminalInteractions        terminalInteractiveDispositionStore
 	streamObserver              RuntimeStreamEventObserver
 	providerObservationObserver ProviderObservationObserver
+	goalControlObserver         GoalControlLifecycleObserver
 }
 
 // RuntimeStreamEventObserver receives the ordered precommit stream projection
@@ -73,6 +75,25 @@ type ProviderObservationObserver interface {
 		string,
 		[]replay.ProviderObservationBatch,
 	) error
+}
+
+// GoalControlAppliedObservation is exact provider evidence that one durable
+// Goal operation was consumed by the runtime. The Host validates every fence
+// before completing the operation.
+type GoalControlAppliedObservation struct {
+	WorkspaceID      string
+	AgentSessionID   string
+	OperationID      string
+	Revision         int64
+	RepairEpoch      int64
+	Action           string
+	ProviderTurnID   string
+	Observed         map[string]any
+	OccurredAtUnixMS int64
+}
+
+type GoalControlLifecycleObserver interface {
+	ObserveGoalControlApplied(context.Context, GoalControlAppliedObservation) error
 }
 
 type controllerLifecycleLock struct {

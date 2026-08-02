@@ -944,6 +944,155 @@ test("goal set scheduling ack followed by immediate clear coalesces before SDK a
   }
 });
 
+test("SDK active_goal messages preserve provider goal lifecycle", async () => {
+  const events: Array<{ type: string; payload?: Record<string, unknown> }> = [];
+  const restoreSink = withSidecarEventSinkForTest((event) =>
+    events.push(event)
+  );
+  try {
+    const session = new SessionRuntime(
+      "provider-session-active-goal",
+      "/repo",
+      {},
+      false,
+      false,
+      {
+        model: "",
+        permissionModeId: "default",
+        planMode: false,
+        effort: "",
+        speed: ""
+      },
+      sidecarClaudeOptionsFromPayload({}),
+      undefined,
+      ({ prompt }) => ({
+        async *[Symbol.asyncIterator]() {
+          const outbound = await prompt[Symbol.asyncIterator]().next();
+          yield {
+            ...outbound.value,
+            uuid: "provider-goal-turn",
+            type: "user",
+            parent_tool_use_id: null,
+            session_id: "provider-session-active-goal"
+          } as never;
+          yield {
+            type: "active_goal",
+            value: "malformed",
+            uuid: "active-goal-malformed",
+            session_id: "provider-session-active-goal"
+          } as never;
+          yield {
+            type: "active_goal",
+            value: {
+              condition: "count to three",
+              iterations: 2,
+              set_at: "2026-08-02T00:00:00.000Z",
+              tokens_at_start: 100,
+              last_reason: "only reached two"
+            },
+            uuid: "active-goal-1",
+            session_id: "provider-session-active-goal"
+          } as never;
+          yield {
+            type: "active_goal",
+            value: null,
+            uuid: "active-goal-2",
+            session_id: "provider-session-active-goal"
+          } as never;
+          yield { type: "result", subtype: "success" } as never;
+        },
+        close() {}
+      })
+    );
+
+    await session.start();
+    session.exec("goal-work-turn", "continue");
+    await waitForEvent(events, "turn_completed");
+
+    const updates = events.filter(
+      (event) => event.type === "active_goal_updated"
+    );
+    assert.equal(updates.length, 2);
+    assert.deepEqual(updates[0]?.payload, {
+      turnId: "goal-work-turn",
+      providerTurnId: "provider-goal-turn",
+      goal: {
+        condition: "count to three",
+        iterations: 2,
+        set_at: "2026-08-02T00:00:00.000Z",
+        tokens_at_start: 100,
+        last_reason: "only reached two"
+      }
+    });
+    assert.deepEqual(updates[1]?.payload, {
+      turnId: "goal-work-turn",
+      providerTurnId: "provider-goal-turn",
+      goal: null
+    });
+  } finally {
+    restoreSink();
+  }
+});
+
+test("SDK active_goal clear keeps the exact goal command action", async () => {
+  const events: Array<{ type: string; payload?: Record<string, unknown> }> = [];
+  const restoreSink = withSidecarEventSinkForTest((event) =>
+    events.push(event)
+  );
+  try {
+    const session = new SessionRuntime(
+      "provider-session-goal-clear",
+      "/repo",
+      {},
+      false,
+      false,
+      {
+        model: "",
+        permissionModeId: "default",
+        planMode: false,
+        effort: "",
+        speed: ""
+      },
+      sidecarClaudeOptionsFromPayload({}),
+      undefined,
+      ({ prompt }) => ({
+        async *[Symbol.asyncIterator]() {
+          const outbound = await prompt[Symbol.asyncIterator]().next();
+          yield {
+            ...outbound.value,
+            uuid: "provider-goal-clear-turn",
+            type: "user",
+            parent_tool_use_id: null,
+            session_id: "provider-session-goal-clear"
+          } as never;
+          yield {
+            type: "active_goal",
+            value: null,
+            uuid: "active-goal-clear",
+            session_id: "provider-session-goal-clear"
+          } as never;
+          yield { type: "result", subtype: "success" } as never;
+        },
+        close() {}
+      })
+    );
+
+    await session.start();
+    session.exec("goal-clear-turn", "/goal clear", undefined, undefined, {
+      operationId: "goal-op-clear",
+      revision: 2,
+      action: "clear"
+    });
+    await waitForEvent(events, "turn_completed");
+
+    const update = events.find((event) => event.type === "active_goal_updated");
+    assert.equal(update?.payload?.action, "clear");
+    assert.equal(update?.payload?.goal, null);
+  } finally {
+    restoreSink();
+  }
+});
+
 test("query enables bypass permission capability for later live mode switch", async () => {
   const events: Array<{ type: string; payload?: Record<string, unknown> }> = [];
   const restoreSink = withSidecarEventSinkForTest((event) =>

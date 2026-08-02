@@ -221,9 +221,19 @@ All providers implement one semantic boundary:
 - typed `/goal` classification before Turn allocation
 
 Codex uses thread goal RPCs and an authoritative goal query. Claude Code has no
-equivalent query API, so the adapter forwards native slash commands and labels
-its evidence as lifecycle-inferred. The upper layer, not the provider adapter,
-decides convergence.
+equivalent query API, so the adapter forwards native slash commands. With the
+Claude Agent SDK `active_goal` contract, a non-null value is the current active
+condition and a null value means the native Goal hook was cleared. The adapter
+uses the exact command action plus its previous observation to distinguish an
+explicit clear from provider-reported completion. An ordinary
+`turn_completed` is never Goal evidence.
+
+Claude command consumption is a separate control transition. The sidecar emits
+`goal.control_applied` with immutable operation ID, revision, repair epoch, and
+action. Controller routes that internal event directly to the Host Goal lane;
+Host validates the current durable operation fence and completes it. Applied
+evidence is not stored in session runtime context and is not reconstructed from
+session snapshots.
 
 ## Synchronization And Repair
 
@@ -243,6 +253,8 @@ Bottom-up:
 5. Capture the canonical Goal revision before asynchronously adopting a
    provider-authored generation, and reject the adoption if a newer mutation
    serialized first.
+6. Route command-application evidence through the Host Goal state machine,
+   independently from public session metadata.
 
 Calibration APIs:
 
@@ -264,6 +276,9 @@ Calibration APIs:
 9. A provider-authored Goal adoption is conditional on the revision observed
    when it entered the adoption lane; actor wait time cannot make stale
    evidence appear newer.
+10. Session runtime context cannot settle a Goal control operation; only an
+    exact Host-validated lifecycle observation or authoritative reconciliation
+    may do so.
 
 ## Compatibility
 

@@ -2,7 +2,6 @@ package agentruntime
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -39,71 +38,10 @@ func claudeGoalSlashPromptUpdate(prompt string) (map[string]any, string, bool) {
 	return map[string]any{"objective": objective, "status": "active"}, "thread_goal_update", true
 }
 
-func claudeSDKGoalStatusPayload(raw json.RawMessage) (map[string]any, bool) {
-	var params any
-	if err := json.Unmarshal(raw, &params); err != nil {
-		return nil, false
-	}
-	attachment := claudeSDKGoalStatusAttachment(params, 6)
-	if len(attachment) == 0 {
-		return nil, false
-	}
-	objective := strings.TrimSpace(asString(attachment["condition"]))
-	if objective == "" {
-		return nil, false
-	}
-	goal := map[string]any{"objective": objective, "status": "active"}
-	if met, ok := attachment["met"].(bool); ok && met {
-		goal["status"] = "complete"
-	}
-	for _, key := range []string{"reason", "iterations", "durationMs", "tokens", "sentinel"} {
-		if value, ok := attachment[key]; ok {
-			goal[key] = value
-		}
-	}
-	return goal, true
-}
-
-func claudeSDKGoalStatusAttachment(value any, depth int) map[string]any {
-	if depth <= 0 {
-		return nil
-	}
-	obj := payloadObject(value)
-	if len(obj) > 0 {
-		if strings.TrimSpace(asString(obj["type"])) == "goal_status" {
-			return obj
-		}
-		if attachment := payloadObject(obj["attachment"]); strings.TrimSpace(asString(attachment["type"])) == "goal_status" {
-			return attachment
-		}
-		for _, child := range obj {
-			if attachment := claudeSDKGoalStatusAttachment(child, depth-1); len(attachment) > 0 {
-				return attachment
-			}
-		}
-		return nil
-	}
-	switch items := value.(type) {
-	case []any:
-		for _, item := range items {
-			if attachment := claudeSDKGoalStatusAttachment(item, depth-1); len(attachment) > 0 {
-				return attachment
-			}
-		}
-	case []map[string]any:
-		for _, item := range items {
-			if attachment := claudeSDKGoalStatusAttachment(item, depth-1); len(attachment) > 0 {
-				return attachment
-			}
-		}
-	}
-	return nil
-}
-
 // Claude Code's goal is a session-level entity inside the CLI (a condition
 // whose evaluator drives autonomous new turns until it is met), but the SDK
-// exposes no API for it: commands go in as /goal prompt text, state comes
-// out as goal_status attachments, and there is no paused state — an
+// exposes no control API for it: commands go in as /goal prompt text, state
+// comes out as active_goal lifecycle messages, and there is no paused state — an
 // interrupted goal stays active and resumes continuation after the next user
 // message. The adapter therefore keeps goal interaction 1:1 with that
 // surface: set and clear forward the native /goal command (the sidecar
@@ -735,23 +673,13 @@ func (a *ClaudeCodeSDKAdapter) restoreClaudeGoalArmIfCurrent(
 	}
 }
 
-// goalEventsOnTurnSettled reconciles the goal mirror when a turn settles.
-// This Claude Code version emits no goal_status attachment on achievement
-// (verified against claude CLI stream-json output): the goal loop holds the
-// turn open through Stop-hook feedback until the condition is met, so a turn
-// settling as turn_completed IS the achievement signal. A manual stop cannot
-// be mistaken for it — interrupting an unmet goal yields a result with
-// subtype error_during_execution / terminal_reason aborted_streaming
-// (verified empirically), which the sidecar maps to turn_canceled or
-// turn_failed, never turn_completed — and those keep the goal active
-// CLI-side (it resumes after the next user message). A canceled arm turn
-// means the /goal set never reached the CLI, so the mirror clears instead of
-// claiming a goal the CLI never received.
-func (a *ClaudeCodeSDKAdapter) goalEventsOnTurnSettled(
+// goalEventsOnArmTurnFailed rolls back the optimistic mirror only when the
+// /goal arm command itself never completes. Ordinary terminal Turn events are
+// not Goal evidence; active_goal is the sole provider-owned status signal.
+func (a *ClaudeCodeSDKAdapter) goalEventsOnArmTurnFailed(
 	adapterSession *claudeSDKAdapterSession,
 	session Session,
 	turnID string,
-	completed bool,
 ) []activityshared.Event {
 	trimmed := strings.TrimSpace(turnID)
 	a.mu.Lock()
@@ -767,22 +695,58 @@ func (a *ClaudeCodeSDKAdapter) goalEventsOnTurnSettled(
 		a.mu.Unlock()
 		return nil
 	}
-	if !completed {
-		if armTurnID != "" && trimmed == armTurnID {
-			adapterSession.goalArmTurnID = ""
-			adapterSession.liveState.goal = nil
-			a.mu.Unlock()
-			return a.goalMirrorEvents(session, "thread_goal_cleared")
-		}
+	if armTurnID != "" && trimmed == armTurnID {
+		adapterSession.goalArmTurnID = ""
+		adapterSession.liveState.goal = nil
 		a.mu.Unlock()
-		return nil
+		return a.goalMirrorEvents(session, "thread_goal_cleared")
 	}
-	next := clonePayload(goal)
-	next["status"] = "complete"
-	adapterSession.liveState.goal = next
-	adapterSession.goalArmTurnID = ""
 	a.mu.Unlock()
-	return a.goalMirrorEvents(session, "thread_goal_update")
+	return nil
+}
+
+// applyClaudeSDKActiveGoal projects the SDK's first-class active_goal event.
+// A nil value means Claude cleared its active hook. An explicit clear already
+// emptied the local mirror; otherwise nil completes the last observed goal.
+func (a *ClaudeCodeSDKAdapter) applyClaudeSDKActiveGoal(
+	adapterSession *claudeSDKAdapterSession,
+	payload map[string]any,
+) string {
+	goalValue, present := payload["goal"]
+	if !present {
+		return ""
+	}
+	if goalValue == nil {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		adapterSession.goalArmTurnID = ""
+		if payloadString(payload, "action") == "clear" || len(adapterSession.liveState.goal) == 0 {
+			adapterSession.liveState.goal = nil
+			return "thread_goal_cleared"
+		}
+		next := clonePayload(adapterSession.liveState.goal)
+		next["status"] = "complete"
+		delete(next, "reason")
+		adapterSession.liveState.goal = next
+		return "thread_goal_update"
+	}
+	goal := payloadObject(goalValue)
+	condition := strings.TrimSpace(asString(goal["condition"]))
+	if condition == "" {
+		return ""
+	}
+	next := map[string]any{"objective": condition, "status": "active"}
+	if iterations := payloadInt64(goal, "iterations"); goal["iterations"] != nil && iterations >= 0 {
+		next["iterations"] = iterations
+	}
+	if reason := strings.TrimSpace(asString(goal["last_reason"])); reason != "" {
+		next["reason"] = reason
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	adapterSession.goalArmTurnID = ""
+	adapterSession.liveState.goal = next
+	return "thread_goal_update"
 }
 
 // localGoal returns a copy of the adapter-local goal mirror.

@@ -59,6 +59,7 @@ var (
 	_ host.SessionForkRuntime                      = (*RuntimeController)(nil)
 	_ host.SessionForkTurnBindingRecoveryRuntime   = (*RuntimeController)(nil)
 	_ host.GoalRuntimeController                   = (*RuntimeController)(nil)
+	_ host.GoalRuntimeControlLifecycleRegistrar    = (*RuntimeController)(nil)
 	_ host.GoalRuntimeReconciler                   = (*RuntimeController)(nil)
 	_ host.GoalRuntimeRecoveryPolicyResolver       = (*RuntimeController)(nil)
 	_ host.GoalRuntimeGenerationFencer             = (*RuntimeController)(nil)

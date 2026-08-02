@@ -115,6 +115,10 @@ export class SDKMessageRouter {
     }
 
     const messageType = (message as { type?: string }).type;
+    if (messageType === "active_goal") {
+      this.emitActiveGoal(message as unknown as Record<string, unknown>);
+      return;
+    }
     if (messageType === "attachment") {
       const prompt = readQueuedTaskNotificationPrompt(
         message as unknown as Record<string, unknown>
@@ -198,6 +202,29 @@ export class SDKMessageRouter {
     if (message.type === "result") {
       await this.handleResult(message, parentToolUseID);
     }
+  }
+
+  private emitActiveGoal(message: Record<string, unknown>): void {
+    const activeTurn = this.turns.activeTurn;
+    if (!Object.hasOwn(message, "value")) {
+      return;
+    }
+    const rawValue = message.value;
+    const value = rawValue === null ? null : recordValue(rawValue);
+    if (rawValue !== null && !value) {
+      return;
+    }
+    this.emit({
+      type: "active_goal_updated",
+      payload: {
+        turnId: this.turns.activeId,
+        ...(this.turns.lastProviderTurnId
+          ? { providerTurnId: this.turns.lastProviderTurnId }
+          : {}),
+        ...(activeTurn?.goalAction ? { action: activeTurn.goalAction } : {}),
+        goal: value
+      }
+    });
   }
 
   private emitLifecycleObservation(
@@ -383,7 +410,6 @@ export class SDKMessageRouter {
         Boolean(assistantError)
       );
     }
-    this.projection.emitGoalStatusFromBlocks(blocks);
   }
 
   private handleNestedAssistant(
@@ -467,7 +493,6 @@ export class SDKMessageRouter {
     for (const block of blocks) {
       this.activities.handleUserContentBlock(block, parentToolUseID);
     }
-    this.projection.emitGoalStatusFromBlocks(blocks);
   }
 
   private async handleResult(

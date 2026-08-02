@@ -14,6 +14,7 @@ import (
 )
 
 func (c *Controller) enqueueSessionReport(ctx context.Context, session Session, events []activityshared.Event) {
+	c.observeGoalControlLifecycle(ctx, session, events)
 	report := reportActivityInput(session, events)
 	c.enrichReportStatePatchesWithSessionMetadata(session, &report)
 	c.observeProviderObservations(ctx, session, report.ProviderObservations)
@@ -27,6 +28,59 @@ func (c *Controller) enqueueSessionReport(ctx context.Context, session Session, 
 		_ = c.reportGoalReconcileControl(ctx, control)
 	}
 	c.enqueueReport(ctx, report)
+}
+
+func (c *Controller) SetGoalControlLifecycleObserver(observer GoalControlLifecycleObserver) {
+	if c == nil {
+		return
+	}
+	c.goalControlObserverMu.Lock()
+	c.goalControlObserver = observer
+	c.goalControlObserverMu.Unlock()
+}
+
+func (c *Controller) observeGoalControlLifecycle(
+	ctx context.Context,
+	session Session,
+	events []activityshared.Event,
+) {
+	if c == nil || len(events) == 0 {
+		return
+	}
+	c.goalControlObserverMu.RLock()
+	observer := c.goalControlObserver
+	c.goalControlObserverMu.RUnlock()
+	if observer == nil {
+		return
+	}
+	for _, event := range events {
+		if event.Type != activityshared.EventGoalControlApplied {
+			continue
+		}
+		metadata := event.Payload.Metadata
+		observation := GoalControlAppliedObservation{
+			WorkspaceID:      session.RoomID,
+			AgentSessionID:   firstNonEmptyString(event.AgentSessionID, session.AgentSessionID),
+			OperationID:      stringFromPayload(metadata, "operationId"),
+			Revision:         payloadInt64(metadata, "revision"),
+			RepairEpoch:      payloadInt64(metadata, "repairEpoch"),
+			Action:           stringFromPayload(metadata, "action"),
+			ProviderTurnID:   stringFromPayload(metadata, "providerTurnId"),
+			Observed:         payloadObject(metadata["goal"]),
+			OccurredAtUnixMS: event.OccurredAtUnixMS,
+		}
+		if err := observer.ObserveGoalControlApplied(ctx, observation); err != nil {
+			slog.Warn(
+				"record runtime goal control application failed",
+				"event", "agent_session.goal_control.observe_applied_failed",
+				"room_id", observation.WorkspaceID,
+				"agent_session_id", observation.AgentSessionID,
+				"operation_id", observation.OperationID,
+				"revision", observation.Revision,
+				"error", err,
+			)
+		}
+	}
 }
 
 func (c *Controller) SetProviderObservationObserver(observer ProviderObservationObserver) {

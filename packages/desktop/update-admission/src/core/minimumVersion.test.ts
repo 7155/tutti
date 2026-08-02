@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  shouldCheckMinimumVersionAfterForeground,
   updaterTargetMeetsMinimum,
   validateMinimumVersionResponse
 } from "./minimumVersion.ts";
@@ -68,31 +67,4 @@ test("accepts an explicitly unconfigured minimum version", () => {
 
   assert.equal(response.reason, "minimumNotConfigured");
   assert.equal("minimumVersion" in response, false);
-});
-
-test("enforces the foreground interval and one-prompt lifecycle", () => {
-  assert.equal(
-    shouldCheckMinimumVersionAfterForeground({
-      checksEnabled: true,
-      disposed: false,
-      foregroundCheckIntervalMs: 30 * 60 * 1_000,
-      foregroundPrompted: false,
-      lastCheckAt: 0,
-      now: 30 * 60 * 1_000,
-      startupBlocked: false
-    }),
-    true
-  );
-  assert.equal(
-    shouldCheckMinimumVersionAfterForeground({
-      checksEnabled: true,
-      disposed: false,
-      foregroundCheckIntervalMs: 30 * 60 * 1_000,
-      foregroundPrompted: true,
-      lastCheckAt: 0,
-      now: 60 * 60 * 1_000,
-      startupBlocked: false
-    }),
-    false
-  );
 });

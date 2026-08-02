@@ -519,6 +519,70 @@ export type PutDesktopPreferencesRequest = {
   preferences: DesktopPreferences;
 };
 
+export type DesktopUpdateAdmissionProduct = "tsh-desktop" | "tutti-desktop";
+
+export type DesktopUpdateAdmissionPlatform = "macos" | "windows" | "linux";
+
+export type DesktopUpdateAdmissionArchitecture = "arm64" | "x64";
+
+export type DesktopUpdateAdmissionIdentity = {
+  product: DesktopUpdateAdmissionProduct;
+  platform: DesktopUpdateAdmissionPlatform;
+  architecture: DesktopUpdateAdmissionArchitecture;
+  currentVersion: string;
+};
+
+export type DesktopUpdateAdmissionPolicyResponse = {
+  channel: "stable" | "rc" | "unmanaged";
+  minimumVersion?: string;
+  decision: "allowed" | "upgradeRequired" | "notApplicable";
+  reason:
+    | "belowMinimum"
+    | "meetsMinimum"
+    | "minimumNotConfigured"
+    | "unmanagedPrerelease"
+    | "unsupportedRelease";
+  policyRevision: string;
+};
+
+export type DesktopUpdateAdmissionPolicyFailure = {
+  kind: "timeout" | "transport" | "invalidResponse";
+};
+
+export type DesktopUpdateAdmissionPolicySnapshot = {
+  status: "checking" | "resolved" | "failedOpen" | "skipped";
+  response?: DesktopUpdateAdmissionPolicyResponse;
+  failure?: DesktopUpdateAdmissionPolicyFailure;
+  reason?: "checksDisabled";
+};
+
+export type DesktopUpdateAdmissionFeatureAvailability = {
+  keys: Array<string>;
+  source: "remote" | "cache" | "empty";
+  policyRevision: string | null;
+  fetchedAt: string | null;
+};
+
+export type DesktopUpdateAdmissionSnapshot = {
+  identity: DesktopUpdateAdmissionIdentity;
+  policy: DesktopUpdateAdmissionPolicySnapshot;
+  featureAvailability: DesktopUpdateAdmissionFeatureAvailability;
+  lastAttemptAt: string | null;
+  nextForegroundCheckAt: string | null;
+};
+
+export type DesktopUpdateAdmissionRefreshTrigger = "foreground" | "retry";
+
+export type DesktopUpdateAdmissionRefreshRequest = {
+  trigger: DesktopUpdateAdmissionRefreshTrigger;
+};
+
+export type DesktopUpdateAdmissionRefreshResult = {
+  performed: boolean;
+  skipReason?: "checksDisabled" | "throttled" | "requestInFlight";
+  snapshot: DesktopUpdateAdmissionSnapshot;
+};
+
 export type AgentTargetProvider = string;
 
 export type AgentTargetSource = "system" | "user";
@@ -5113,6 +5177,115 @@ export type PutDesktopPreferencesResponses = {
 
 export type PutDesktopPreferencesResponse =
   PutDesktopPreferencesResponses[keyof PutDesktopPreferencesResponses];
+
+export type GetDesktopUpdateAdmissionSnapshotData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/desktop-update-admission";
+};
+
+export type GetDesktopUpdateAdmissionSnapshotErrors = {
+  /**
+   * Bearer token is missing or invalid
+   */
+  401: ApiErrorResponse;
+  /**
+   * HTTP method is not supported on this route
+   */
+  405: ApiErrorResponse;
+  /**
+   * Required daemon service dependency is unavailable
+   */
+  503: ApiErrorResponse;
+};
+
+export type GetDesktopUpdateAdmissionSnapshotError =
+  GetDesktopUpdateAdmissionSnapshotErrors[keyof GetDesktopUpdateAdmissionSnapshotErrors];
+
+export type GetDesktopUpdateAdmissionSnapshotResponses = {
+  /**
+   * Current desktop update admission snapshot
+   */
+  200: DesktopUpdateAdmissionSnapshot;
+};
+
+export type GetDesktopUpdateAdmissionSnapshotResponse =
+  GetDesktopUpdateAdmissionSnapshotResponses[keyof GetDesktopUpdateAdmissionSnapshotResponses];
+
+export type GetDesktopUpdateAdmissionStartupData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/desktop-update-admission/startup";
+};
+
+export type GetDesktopUpdateAdmissionStartupErrors = {
+  /**
+   * Bearer token is missing or invalid
+   */
+  401: ApiErrorResponse;
+  /**
+   * HTTP method is not supported on this route
+   */
+  405: ApiErrorResponse;
+  /**
+   * Required daemon service dependency is unavailable
+   */
+  503: ApiErrorResponse;
+};
+
+export type GetDesktopUpdateAdmissionStartupError =
+  GetDesktopUpdateAdmissionStartupErrors[keyof GetDesktopUpdateAdmissionStartupErrors];
+
+export type GetDesktopUpdateAdmissionStartupResponses = {
+  /**
+   * Completed startup admission snapshot
+   */
+  200: DesktopUpdateAdmissionSnapshot;
+};
+
+export type GetDesktopUpdateAdmissionStartupResponse =
+  GetDesktopUpdateAdmissionStartupResponses[keyof GetDesktopUpdateAdmissionStartupResponses];
+
+export type RefreshDesktopUpdateAdmissionData = {
+  body: DesktopUpdateAdmissionRefreshRequest;
+  path?: never;
+  query?: never;
+  url: "/v1/desktop-update-admission/refresh";
+};
+
+export type RefreshDesktopUpdateAdmissionErrors = {
+  /**
+   * Request payload or parameters are invalid
+   */
+  400: ApiErrorResponse;
+  /**
+   * Bearer token is missing or invalid
+   */
+  401: ApiErrorResponse;
+  /**
+   * HTTP method is not supported on this route
+   */
+  405: ApiErrorResponse;
+  /**
+   * Required daemon service dependency is unavailable
+   */
+  503: ApiErrorResponse;
+};
+
+export type RefreshDesktopUpdateAdmissionError =
+  RefreshDesktopUpdateAdmissionErrors[keyof RefreshDesktopUpdateAdmissionErrors];
+
+export type RefreshDesktopUpdateAdmissionResponses = {
+  /**
+   * Desktop update admission refresh result
+   */
+  200: DesktopUpdateAdmissionRefreshResult;
+};
+
+export type RefreshDesktopUpdateAdmissionResponse =
+  RefreshDesktopUpdateAdmissionResponses[keyof RefreshDesktopUpdateAdmissionResponses];
 
 export type PurgeDeletedAgentConversationsData = {
   body?: never;

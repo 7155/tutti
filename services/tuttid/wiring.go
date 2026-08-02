@@ -22,6 +22,7 @@ import (
 	agentstatusservice "github.com/tutti-os/tutti/services/tuttid/service/agentstatus"
 	browsersvc "github.com/tutti-os/tutti/services/tuttid/service/browser"
 	computersvc "github.com/tutti-os/tutti/services/tuttid/service/computer"
+	desktopupdateadmissionservice "github.com/tutti-os/tutti/services/tuttid/service/desktopupdateadmission"
 	eventstreamservice "github.com/tutti-os/tutti/services/tuttid/service/eventstream"
 	mobileremoteservice "github.com/tutti-os/tutti/services/tuttid/service/mobileremote"
 	modelgatewayservice "github.com/tutti-os/tutti/services/tuttid/service/modelgateway"
@@ -39,6 +40,7 @@ type tuttiWiring struct {
 	analyticsReporter            reporterservice.Reporter
 	browserService               *browsersvc.Service
 	computerService              *computersvc.Service
+	desktopUpdateAdmission       *desktopupdateadmissionservice.Service
 	agentTargetSetup             *agentextensionservice.SetupService
 	agentRuntime                 *agentdaemon.Runtime
 	providerAuthWatcher          *agentservice.ProviderAuthWatcher
@@ -100,6 +102,14 @@ func (p analyticsDebugEventPublisher) PublishAnalyticsDebugEvents(ctx context.Co
 
 func newTuttiWiring() (*tuttiWiring, error) {
 	wiring := &tuttiWiring{}
+	desktopUpdateAdmission, err := desktopupdateadmissionservice.NewFromEnvironment()
+	if err != nil {
+		return nil, fmt.Errorf("configure desktop update admission: %w", err)
+	}
+	wiring.desktopUpdateAdmission = desktopUpdateAdmission
+	if desktopUpdateAdmission != nil {
+		desktopUpdateAdmission.Start(context.Background())
+	}
 	if err := wiring.buildWorkspaceModule(context.Background()); err != nil {
 		_ = wiring.Close()
 		return nil, err
@@ -222,6 +232,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	attachAnalyticsReporter(&api, analyticsReporter)
 	w.analyticsReporter = analyticsReporter
 	w.api = api
+	w.api.DesktopUpdateAdmissionService = w.desktopUpdateAdmission
 	w.appCenterService = appCenterService
 	w.tuttiModeWakeRecoveryStarter = api.OnListenerReady
 	return nil
@@ -406,6 +417,9 @@ func (w *tuttiWiring) Close() error {
 		return nil
 	}
 	w.stopTuttiModeWatchdogWorker()
+	if w.desktopUpdateAdmission != nil {
+		w.desktopUpdateAdmission.Close()
+	}
 
 	var closeErr error
 	if w.mobileRemoteHost != nil {

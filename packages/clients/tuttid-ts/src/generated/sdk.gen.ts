@@ -256,6 +256,12 @@ import type {
   GetDesktopPreferencesData,
   GetDesktopPreferencesErrors,
   GetDesktopPreferencesResponses,
+  GetDesktopUpdateAdmissionSnapshotData,
+  GetDesktopUpdateAdmissionSnapshotErrors,
+  GetDesktopUpdateAdmissionSnapshotResponses,
+  GetDesktopUpdateAdmissionStartupData,
+  GetDesktopUpdateAdmissionStartupErrors,
+  GetDesktopUpdateAdmissionStartupResponses,
   GetHealthData,
   GetHealthErrors,
   GetHealthResponses,
@@ -532,6 +538,9 @@ import type {
   RecoverWorkspaceAgentEditRetryData,
   RecoverWorkspaceAgentEditRetryErrors,
   RecoverWorkspaceAgentEditRetryResponses,
+  RefreshDesktopUpdateAdmissionData,
+  RefreshDesktopUpdateAdmissionErrors,
+  RefreshDesktopUpdateAdmissionResponses,
   RefreshWorkspaceAppCatalogData,
   RefreshWorkspaceAppCatalogErrors,
   RefreshWorkspaceAppCatalogResponses,
@@ -957,6 +966,64 @@ export const putDesktopPreferences = <ThrowOnError extends boolean = false>(
   >({
     security: [{ scheme: "bearer", type: "http" }],
     url: "/v1/preferences/desktop",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers
+    }
+  });
+
+/**
+ * Read the daemon-owned desktop update admission snapshot
+ */
+export const getDesktopUpdateAdmissionSnapshot = <
+  ThrowOnError extends boolean = false
+>(
+  options?: Options<GetDesktopUpdateAdmissionSnapshotData, ThrowOnError>
+) =>
+  (options?.client ?? client).get<
+    GetDesktopUpdateAdmissionSnapshotResponses,
+    GetDesktopUpdateAdmissionSnapshotErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/v1/desktop-update-admission",
+    ...options
+  });
+
+/**
+ * Wait for the daemon-initiated startup admission check
+ */
+export const getDesktopUpdateAdmissionStartup = <
+  ThrowOnError extends boolean = false
+>(
+  options?: Options<GetDesktopUpdateAdmissionStartupData, ThrowOnError>
+) =>
+  (options?.client ?? client).get<
+    GetDesktopUpdateAdmissionStartupResponses,
+    GetDesktopUpdateAdmissionStartupErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/v1/desktop-update-admission/startup",
+    ...options
+  });
+
+/**
+ * Ask the daemon to refresh admission for a lifecycle trigger
+ */
+export const refreshDesktopUpdateAdmission = <
+  ThrowOnError extends boolean = false
+>(
+  options: Options<RefreshDesktopUpdateAdmissionData, ThrowOnError>
+) =>
+  (options.client ?? client).post<
+    RefreshDesktopUpdateAdmissionResponses,
+    RefreshDesktopUpdateAdmissionErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/v1/desktop-update-admission/refresh",
     ...options,
     headers: {
       "Content-Type": "application/json",

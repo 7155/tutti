@@ -97,24 +97,6 @@ export function resolveMinimumVersionRuntimeTarget(
   };
 }
 
-export function shouldCheckMinimumVersionAfterForeground(input: {
-  disposed: boolean;
-  checksEnabled: boolean;
-  foregroundCheckIntervalMs: number;
-  foregroundPrompted: boolean;
-  startupBlocked: boolean;
-  lastCheckAt: number;
-  now: number;
-}): boolean {
-  return !(
-    input.disposed ||
-    !input.checksEnabled ||
-    input.foregroundPrompted ||
-    input.startupBlocked ||
-    input.now - input.lastCheckAt < input.foregroundCheckIntervalMs
-  );
-}
-
 export function validateMinimumVersionResponse<TProduct extends DesktopProduct>(
   value: unknown,
   request: MinimumVersionCheckRequest<TProduct>

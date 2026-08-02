@@ -131,6 +131,69 @@ export interface DesktopFeatureAvailabilityRuntime<
   ): () => void;
 }
 
+export type DesktopUpdateAdmissionPolicySnapshot =
+  | {
+      status: "checking";
+      response?: never;
+      failure?: never;
+      reason?: never;
+    }
+  | {
+      status: "resolved";
+      response: MinimumVersionPolicyResponse;
+      failure?: never;
+      reason?: never;
+    }
+  | {
+      status: "failedOpen";
+      response?: never;
+      failure: {
+        kind: "timeout" | "transport" | "invalidResponse";
+      };
+      reason?: never;
+    }
+  | {
+      status: "skipped";
+      response?: never;
+      failure?: never;
+      reason: "checksDisabled";
+    };
+
+export interface DesktopUpdateAdmissionSnapshot<
+  TProduct extends DesktopProduct = DesktopProduct
+> {
+  identity: MinimumVersionCheckRequest<TProduct>;
+  policy: DesktopUpdateAdmissionPolicySnapshot;
+  featureAvailability: {
+    keys: readonly string[];
+    source: DesktopFeatureAvailabilitySource;
+    policyRevision: string | null;
+    fetchedAt: string | null;
+  };
+  lastAttemptAt: string | null;
+  nextForegroundCheckAt: string | null;
+}
+
+export interface DesktopUpdateAdmissionRefreshResult<
+  TProduct extends DesktopProduct = DesktopProduct
+> {
+  performed: boolean;
+  skipReason?: "checksDisabled" | "throttled" | "requestInFlight";
+  snapshot: DesktopUpdateAdmissionSnapshot<TProduct>;
+}
+
+export interface DesktopUpdateAdmissionBackend<
+  TProduct extends DesktopProduct = DesktopProduct
+> {
+  getStartupSnapshot(
+    signal: AbortSignal
+  ): Promise<DesktopUpdateAdmissionSnapshot<TProduct>>;
+  refresh(
+    trigger: "foreground" | "retry",
+    signal: AbortSignal
+  ): Promise<DesktopUpdateAdmissionRefreshResult<TProduct>>;
+}
+
 export interface DesktopFeatureAvailabilityApi {
   getSnapshot(): Promise<DesktopFeatureAvailabilitySnapshot>;
   isSupported(key: string): Promise<boolean>;
@@ -191,7 +254,6 @@ export interface DesktopUpdateAdmissionRuntime {
   checksEnabled: boolean;
   currentVersion: string;
   development: boolean;
-  foregroundCheckIntervalMs: number;
 }
 
 export const desktopUpdateAdmissionIpcChannels = {

@@ -1,111 +1,108 @@
 # Desktop Update Admission
 
-`@tutti-os/desktop-update-admission` is the shared minimum-version admission
-boundary for Tutti Desktop and TSH Desktop. It keeps policy enforcement and the
-forced-upgrade lifecycle identical while leaving product integrations in each
-host.
+`@tutti-os/desktop-update-admission` is the shared desktop admission boundary
+for Tutti Desktop and TSH Desktop. It contains a Go daemon core for policy
+transport, scheduling, validation, and feature caching, plus TypeScript
+contracts, Electron presentation, updater ownership, preload APIs, and React
+UI.
 
 ## Ownership
 
-The package owns:
+The background daemon (`tuttid` or `desktopd`) owns:
 
-- request and response contracts for `tutti-desktop` and `tsh-desktop`
-- local request identity composition and policy-shape validation
-- startup and foreground check timing
-- the one-prompt-per-process foreground rule
-- exclusive mandatory-updater ownership and minimum-target validation
-- immutable unpackaged development scenarios, policy/updater mocks, and the
-  loopback policy server
-- Electron admission-window lifecycle and restricted IPC handlers
-- feature-key envelope validation, exact-identity persistent cache, immutable
-  snapshots, membership queries, subscriptions, and trusted renderer IPC
-- the capability-minimal preload API
-- shared React presentation and English and Simplified Chinese defaults
+- the production or development policy checker
+- the authoritative request identity supplied by its Electron parent
+- the proactive startup request
+- the 3-second startup and 10-second foreground request timeouts
+- foreground throttling and request single-flight
+- policy-response validation and fail-open classification
+- exact-identity feature-availability persistence
+- local snapshot, startup-wait, and refresh APIs
 
-Each host owns:
+Electron owns:
 
-- the policy transport and trusted endpoint
-- the production updater, feed resolution, and normal update preferences
-- product download URLs, icon and renderer paths, logging sinks, and the list
-  of business windows to isolate
+- resolving the installed or explicitly mocked current version once
+- injecting that same identity into the daemon and updater
+- sending foreground and retry lifecycle signals to the daemon
+- the startup gate and forced-upgrade window
+- mandatory updater ownership and minimum-target validation
+- renderer IPC and an in-memory projection of the daemon feature snapshot
 
-The policy service remains authoritative for deciding whether the installed
-version is allowed. The package validates the updater target independently so
-that a forced flow never installs a release below the active minimum.
-Managed stable/RC versions with no configured minimum are explicitly allowed
-with `reason: "minimumNotConfigured"` and no `minimumVersion` field. Responses
-do not echo request identity or expose policy-resolution source details. There
-is no product enable switch or `productDisabled` response state.
+Product adapters own endpoint selection, the concrete updater, download URLs,
+window assets, and the authenticated local-daemon transport. They do not
+perform policy HTTP requests or persist feature policy.
 
-## Dependency Direction
+## Dependency direction
 
 ```text
-product bootstrap
-  -> product transport adapter
-  -> @tutti-os/desktop-update-admission controller
-  -> product updater adapter
+Electron bootstrap
+  -> starts tuttid / desktopd with one immutable desktop identity
+  -> daemon proactively checks the policy service
+  -> Electron reads the completed startup snapshot over authenticated local HTTP
+  -> shared Electron controller applies the startup gate and updater flow
 
-admission renderer
-  -> @tutti-os/desktop-update-admission React UI
-  -> @tutti-os/desktop-update-admission preload API
-  -> shared controller IPC
+resume / focus / retry
+  -> Electron sends a local refresh trigger
+  -> daemon applies throttling, timeout, validation, and remote transport
+  -> Electron consumes the returned snapshot
 
 business renderer
-  -> product preload API
-  -> shared feature-availability IPC
-  -> shared feature-availability runtime
+  -> trusted preload IPC
+  -> in-memory feature projection
+  -> daemon-owned remote/cache snapshot
 ```
 
-The package must not import product services, product globals, feed URLs,
-backend clients, or product translation dictionaries.
+Tutti's production remote chain is
+`Electron -> tuttid -> daemon HTTP client -> policy service`. TSH's chain is
+`Electron -> desktopd -> control-plane client -> policy service`. A business
+renderer never reads environment variables or accesses either remote endpoint.
 
 ## Lifecycle
 
-At startup, a packaged desktop checks policy before business services and
-windows start. A failed or timed-out check is fail-open. An upgrade-required
-response opens the isolated admission window and holds the startup gate.
+The daemon starts its initial policy request during construction, before the
+local API is consumed. `GET /v1/desktop-update-admission/startup` waits for that
+initial request and returns its completed snapshot; it never initiates the
+remote request. A failed, malformed, or timed-out request is represented as
+`failedOpen`, so Electron opens the application.
 
-Before that check, the feature runtime loads only a cache matching the exact
-product, platform, architecture, and current version. A successful v5 response
-updates the snapshot before the business window starts and persists it with an
-atomic file replacement. Missing, malformed, failed, or timed-out feature
-responses retain the snapshot. A valid empty key list explicitly clears it.
-The cache has no time expiry and stores no minimum version or admission
-decision, so it cannot block startup or affect the forced-upgrade state.
+`POST /v1/desktop-update-admission/refresh` accepts only `foreground` or
+`retry`. Foreground requests are throttled for 30 minutes by default. Retry
+bypasses that interval. Concurrent refreshes share the active request.
+Electron retains only the one-prompt-per-process presentation rule.
 
-After startup, resume and foreground restoration may check again after the
-shared 30-minute interval. Only one foreground prompt is shown per process. The
-user may defer before starting the forced flow; after it starts, business
-windows remain isolated until install or process exit.
+An `upgradeRequired` decision opens the isolated admission window. The forced
+flow acquires the updater lease, captures normal configuration, prepares a
+channel-matched update, validates the target against the returned minimum,
+downloads it, validates again, and requests installation. A later allowed
+policy releases the gate and restores normal updater configuration.
 
-The forced flow acquires the updater lease, captures normal configuration,
-stops normal scheduling, prepares a channel-matched update, validates its
-target, downloads it, validates the downloaded target again, and requests the
-mandatory install. Releasing a cleared policy restores the captured normal
-configuration.
+## Feature availability
+
+Feature availability is independent from the minimum-version decision. A valid
+remote envelope atomically replaces the daemon cache. A missing or invalid
+feature envelope retains the previous feature snapshot while a valid minimum
+version decision remains usable. A valid empty list explicitly clears the
+cache.
+
+The cache lives under the daemon state directory, is accepted only for the
+exact product, platform, architecture, and current version, and stores no
+minimum version or admission decision. Remote policy is never restored from
+disk. Electron and renderer code only receive the daemon's immutable
+`remote`, `cache`, or `empty` projection.
 
 ## Development boundary
 
-The package resolves client-owned `DESKTOP_UPDATE_ADMISSION_*` variables once
-in the Electron main process. The resulting runtime injects `checksEnabled`,
-`currentVersion`, and `foregroundCheckIntervalMs` into the controller, and the
-same `currentVersion` configures both admission requests and the updater
-driver. Product adapters do not read scenario variables or implement their own
-mock state machines.
+Packaged daemons ignore all `DESKTOP_UPDATE_ADMISSION_*` variables. For an
+unpackaged client, Electron resolves only `currentVersion` and updater
+simulation fields. It injects the current version into both the daemon identity
+and updater. The daemon independently owns policy, feature, timeout scenario,
+sequence, and foreground-interval parsing.
 
-The in-process transport also resolves a local immutable policy scenario. The
-loopback transport instead resolves no client-side policy: the standalone mock
-server exclusively parses policy, minimum-version, feature-key, sequence, and
-named-policy variables and evaluates them against the `currentVersion` in each
-HTTP request.
-The client parser rejects those server-owned variables in loopback mode. This
-keeps Tutti's Electron-to-`outboundFetch` path and TSH's
-Electron-to-desktopd-to-HTTP path as real transport tests with one policy
-authority.
+With `in-process` transport, the daemon evaluates the local policy scenario.
+With `loopback` transport, the standalone mock server exclusively owns policy,
+minimum-version, feature-key, sequence, and named-policy fields; the client
+daemon receives only the loopback URL and sends the real HTTP request.
 
-Packaged applications ignore the environment family before parsing it. Enabled
-invalid scenarios fail startup. The optional HTTP server binds only to
-`127.0.0.1`; TSH routes it through desktopd's dedicated desktop-version client
-while Tutti Desktop uses its normal outbound policy transport. Simulated
-installation terminates in an explicit development-only state and never invokes
-the production installer or restart path.
+Invalid enabled configurations fail daemon startup. The mock server binds only
+to `127.0.0.1`. Simulated installation ends in an explicit development state
+and never invokes the production installer or restart path.

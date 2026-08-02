@@ -82,7 +82,7 @@ Rules:
 
 - organize packages by responsibility, not by language alone
 - use `clients/*` for domain-specific client access
-- use `device-link` for the shared ICE/QUIC peer transport and gomobile boundary consumed by Tutti, TSH, and mobile clients
+- use `device-link` for shared ICE/QUIC peer transport, product-neutral Relay stream mechanics, and the gomobile boundary consumed by Tutti, TSH, and mobile clients
 - use `events/*` for schema-first shared business event protocol contracts, validators, and generated transport metadata that multiple hosts consume
 - use `browser/*` for reusable browser/workbench node mechanics that are shared by desktop hosts without carrying product-specific bridge methods
 - use `configs/*` for shared engineering configuration
@@ -210,15 +210,20 @@ selected packet path, mutual ephemeral certificate pinning, categorical path
 classification, the gomobile build surface, and product-neutral authenticated
 link lifecycle mechanics: generation-fenced admission, establishment
 serialization, pooled stream ownership, connection racing, and annealed path
-probing.
+probing. It also owns generic Relay byte-stream dialing and the reusable
+reference-counted WebSocket/yamux owner-tunnel mechanics, including liveness,
+readiness ordering, reconnect backoff, stream dispatch, and close ordering.
 
-It exposes authenticated bidirectional streams and must remain independent of
-Agent, Session, Workspace, account, pairing, rendezvous, and Relay product
-policy. Peer keys and registration metadata stay opaque; host services and apps
-inject path dialers, credentials, fallback timing, and application stream
-protocols. The `tuttid` Mobile Remote owner is the first adapter for the shared
-manager; its pairing and Agent framing remain service-owned. Raw addresses,
-candidates, credentials, and payloads must not enter ordinary logs or metrics.
+It exposes authenticated bidirectional streams and generic Relay byte streams,
+and must remain independent of Agent, Session, Workspace, account, pairing,
+rendezvous, Relay authorization, and Relay product policy. Peer and owner keys
+stay opaque; host services and apps inject path dialers, credentials, leases,
+fallback timing, and application stream protocols. The `tuttid` Mobile Remote
+owner is the first adapter for the shared link manager; its pairing and Agent
+framing remain service-owned. TSH remains the product authority for its Relay
+registration and lease lifecycle even when it consumes the shared owner-tunnel
+mechanics. Raw addresses, candidates, credentials, and payloads must not enter
+ordinary logs or metrics.
 
 ### `packages/events/*`
 

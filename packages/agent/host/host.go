@@ -159,6 +159,9 @@ func New(config Config) *Host {
 	if host.goals != nil && host.commitObserver != nil {
 		host.goals = &observedGoalStateStore{GoalStateStore: host.goals, host: host}
 	}
+	if registrar, ok := config.GoalRuntime.(GoalRuntimeControlLifecycleRegistrar); ok {
+		registrar.SetGoalControlAppliedSink(host.ObserveRuntimeGoalControlApplied)
+	}
 	return host
 }
 

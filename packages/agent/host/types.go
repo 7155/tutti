@@ -864,6 +864,21 @@ type RuntimeGoalControlResult struct {
 	ProviderPhase  string
 }
 
+// RuntimeGoalControlAppliedInput is an internal runtime-to-Host lifecycle
+// observation. Operation identity and revision are mandatory stale-event
+// fences; provider output alone is never allowed to settle another command.
+type RuntimeGoalControlAppliedInput struct {
+	WorkspaceID      string
+	AgentSessionID   string
+	OperationID      string
+	GoalRevision     int64
+	RepairEpoch      int64
+	Action           string
+	ProviderTurnID   string
+	Observed         map[string]any
+	OccurredAtUnixMS int64
+}
+
 type RuntimeGoalReconcileResult struct {
 	AgentSessionID string
 	Goal           map[string]any

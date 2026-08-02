@@ -4,6 +4,7 @@ import {
   isToolUseBlock,
   recordValue
 } from "./normalizer.ts";
+import { ClaudeGoalProjection } from "./goalProjection.ts";
 import type { ClaudeSDKSidecarEventEmitter } from "./protocol.ts";
 import {
   readQueuedTaskNotificationPrompt,
@@ -44,6 +45,7 @@ export class SDKMessageRouter {
   private readonly projection: MessageProjection;
   private readonly compaction: CompactionTracker;
   private readonly emit: ClaudeSDKSidecarEventEmitter;
+  private readonly goals: ClaudeGoalProjection;
   private readonly emitProviderCheckpointEvent: (
     turnId: string,
     providerTurnId: string,
@@ -92,6 +94,7 @@ export class SDKMessageRouter {
     this.projection = options.projection;
     this.compaction = options.compaction;
     this.emit = options.emit;
+    this.goals = new ClaudeGoalProjection(options.turns, options.emit);
     this.emitProviderCheckpointEvent = options.emitProviderCheckpoint;
     this.ensureProviderTurnAcceptance = options.ensureProviderTurnAcceptance;
   }
@@ -114,6 +117,10 @@ export class SDKMessageRouter {
       this.onSessionState();
     }
 
+    const rawMessage = message as unknown as Record<string, unknown>;
+    if (this.goals.handle(rawMessage)) {
+      return;
+    }
     const messageType = (message as { type?: string }).type;
     if (messageType === "attachment") {
       const prompt = readQueuedTaskNotificationPrompt(
@@ -383,7 +390,6 @@ export class SDKMessageRouter {
         Boolean(assistantError)
       );
     }
-    this.projection.emitGoalStatusFromBlocks(blocks);
   }
 
   private handleNestedAssistant(
@@ -467,7 +473,6 @@ export class SDKMessageRouter {
     for (const block of blocks) {
       this.activities.handleUserContentBlock(block, parentToolUseID);
     }
-    this.projection.emitGoalStatusFromBlocks(blocks);
   }
 
   private async handleResult(

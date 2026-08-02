@@ -24,6 +24,43 @@ type provenanceRuntimeBackend struct {
 	err   error
 }
 
+type goalLifecycleRuntimeBackend struct {
+	RuntimeBackend
+	observer agentruntime.GoalControlLifecycleObserver
+}
+
+func (b *goalLifecycleRuntimeBackend) SetGoalControlLifecycleObserver(observer agentruntime.GoalControlLifecycleObserver) {
+	b.observer = observer
+}
+
+func TestRuntimeControllerBridgesGoalLifecycleToHostSink(t *testing.T) {
+	t.Parallel()
+	backend := &goalLifecycleRuntimeBackend{}
+	controller := &RuntimeController{Backend: backend}
+	var received host.RuntimeGoalControlAppliedInput
+	controller.SetGoalControlAppliedSink(func(_ context.Context, input host.RuntimeGoalControlAppliedInput) error {
+		received = input
+		return nil
+	})
+	if backend.observer == nil {
+		t.Fatal("goal lifecycle observer was not registered")
+	}
+	err := backend.observer.ObserveGoalControlApplied(t.Context(), agentruntime.GoalControlAppliedObservation{
+		WorkspaceID: "workspace", AgentSessionID: "session", OperationID: "goal-op-1",
+		Revision: 3, RepairEpoch: 1, Action: "set", ProviderTurnID: "provider-turn-1",
+		Observed: map[string]any{"objective": "ship it", "status": "active"}, OccurredAtUnixMS: 42,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if received.WorkspaceID != "workspace" || received.AgentSessionID != "session" ||
+		received.OperationID != "goal-op-1" || received.GoalRevision != 3 || received.RepairEpoch != 1 ||
+		received.Action != "set" || received.ProviderTurnID != "provider-turn-1" ||
+		received.Observed["objective"] != "ship it" || received.OccurredAtUnixMS != 42 {
+		t.Fatalf("host goal lifecycle input=%#v", received)
+	}
+}
+
 func (b *provenanceRuntimeBackend) DurablyReportSubmitProvenance(_ context.Context, input agentruntime.SubmitProvenanceInput) error {
 	b.input = input
 	return b.err

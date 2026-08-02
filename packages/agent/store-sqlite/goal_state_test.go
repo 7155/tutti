@@ -289,7 +289,7 @@ func TestGoalControlOperationPersistsWithoutTurn(t *testing.T) {
 	}
 }
 
-func TestGoalAcceptedRemainsApplyingUntilMatchingLifecycleEvidence(t *testing.T) {
+func TestGoalAcceptedIgnoresSessionMetadataUntilHostCompletesOperation(t *testing.T) {
 	t.Parallel()
 	store := openTestStore(t, testOptions(&staticProjectPaths{}))
 	ctx := context.Background()
@@ -318,23 +318,27 @@ func TestGoalAcceptedRemainsApplyingUntilMatchingLifecycleEvidence(t *testing.T)
 		WorkspaceID: "ws-accepted", AgentSessionID: "session-accepted", Provider: "claude-code", OccurredAtUnixMS: 30,
 		RuntimeContext: map[string]any{
 			"goal": map[string]any{"objective": "ship it", "status": "active"},
-			"goalControlEvidence": map[string]any{
-				"phase": "applied", "operationId": "goal-op-accepted", "revision": float64(1), "action": "set",
-			},
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertParticipantMutationKinds(t, appliedReport.CommitDelta,
-		MutationEntitySession, MutationEntityGoalState, MutationEntityGoalOperation)
+		MutationEntitySession, MutationEntityGoalState)
 	state, found, err := store.GetSessionGoalState(ctx, "ws-accepted", "session-accepted")
-	if err != nil || !found || state.SyncStatus != GoalSyncStatusSynced || state.PendingOperationID != "" {
-		t.Fatalf("applied state=%#v found=%v error=%v", state, found, err)
+	if err != nil || !found || state.SyncStatus != GoalSyncStatusApplying || state.PendingOperationID != "goal-op-accepted" {
+		t.Fatalf("reported state=%#v found=%v error=%v", state, found, err)
 	}
 	op, found, err := getGoalControlOperation(ctx, store.db, "ws-accepted", "goal-op-accepted")
-	if err != nil || !found || op.Status != GoalOperationStatusCompleted {
-		t.Fatalf("applied operation=%#v found=%v error=%v", op, found, err)
+	if err != nil || !found || op.Status != GoalOperationStatusDispatched {
+		t.Fatalf("reported operation=%#v found=%v error=%v", op, found, err)
+	}
+	if _, state, changed, err = store.CompleteGoalControlOperation(ctx, GoalControlOperationComplete{
+		WorkspaceID: "ws-accepted", OperationID: "goal-op-accepted", Succeeded: true,
+		Observed: map[string]any{"objective": "ship it", "status": "active"},
+		Evidence: map[string]any{"source": "runtime_goal_control_lifecycle"}, OccurredAtUnixMS: 31,
+	}); err != nil || !changed || state.SyncStatus != GoalSyncStatusSynced || state.PendingOperationID != "" {
+		t.Fatalf("completed state=%#v changed=%v error=%v", state, changed, err)
 	}
 	repair, _, created, err := store.EnsureOrWakeGoalRepairOperation(ctx, EnsureGoalRepairOperationInput{WorkspaceID: "ws-accepted", AgentSessionID: "session-accepted", SourceOperationID: "stale-provider-op", SourceRevision: 0, CurrentRevision: 1, OccurredAtUnixMS: 40})
 	if err != nil || !created || repair.RepairEpoch != 1 {
@@ -349,8 +353,12 @@ func TestGoalAcceptedRemainsApplyingUntilMatchingLifecycleEvidence(t *testing.T)
 	if _, _, _, err := store.AcknowledgeGoalControlOperation(ctx, GoalControlOperationAcknowledge{WorkspaceID: "ws-accepted", OperationID: repair.OperationID, RepairEpoch: 1, OccurredAtUnixMS: 42}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ReportSessionState(ctx, SessionStateReport{WorkspaceID: "ws-accepted", AgentSessionID: "session-accepted", Provider: "claude-code", OccurredAtUnixMS: 50, RuntimeContext: map[string]any{"goal": map[string]any{"objective": "ship it", "status": "active"}, "goalControlEvidence": map[string]any{"phase": "applied", "operationId": repair.OperationID, "revision": float64(1), "repairEpoch": float64(1), "action": "set"}}}); err != nil {
-		t.Fatal(err)
+	if _, state, changed, err = store.CompleteGoalControlOperation(ctx, GoalControlOperationComplete{
+		WorkspaceID: "ws-accepted", OperationID: repair.OperationID, RepairEpoch: 1, Succeeded: true,
+		Observed: map[string]any{"objective": "ship it", "status": "active"},
+		Evidence: map[string]any{"source": "runtime_goal_control_lifecycle"}, OccurredAtUnixMS: 50,
+	}); err != nil || !changed || state.PendingOperationID != "" {
+		t.Fatalf("repair completion state=%#v changed=%v error=%v", state, changed, err)
 	}
 	repair, found, err = store.GetGoalControlOperation(ctx, "ws-accepted", repair.OperationID)
 	if err != nil || !found || repair.Status != GoalOperationStatusCompleted {
@@ -925,20 +933,19 @@ func TestGoalRevisionTerminalFenceCoversAppliedEvidenceCompletionAndNewRevision(
 		t.Fatalf("manual reconcile unlocked terminal=%#v err=%v", ordinary, err)
 	}
 	// Simulate a stale dispatched owner racing with the terminal transition.
-	// Applied evidence and operation completion must both consult the same
-	// revision fence rather than independently claiming synced.
+	// Session observation and operation completion must both preserve the
+	// terminal revision fence rather than independently claiming synced.
 	if _, err := store.db.ExecContext(ctx, `UPDATE workspace_agent_session_goals SET pending_operation_id='goal-1',sync_status='applying' WHERE workspace_id='ws-terminal-fence' AND agent_session_id='session'`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.ReportSessionState(ctx, SessionStateReport{WorkspaceID: "ws-terminal-fence", AgentSessionID: "session", Provider: "codex", OccurredAtUnixMS: 50, RuntimeContext: map[string]any{
-		"goal":                map[string]any{"objective": "ship", "status": "active"},
-		"goalControlEvidence": map[string]any{"phase": "applied", "operationId": "goal-1", "revision": float64(1)},
+		"goal": map[string]any{"objective": "ship", "status": "active"},
 	}}); err != nil {
 		t.Fatal(err)
 	}
 	afterEvidence, _, _ := store.GetSessionGoalState(ctx, "ws-terminal-fence", "session")
 	if afterEvidence.SyncStatus != GoalSyncStatusUnknown || afterEvidence.LastError == "" {
-		t.Fatalf("applied evidence unlocked terminal=%#v", afterEvidence)
+		t.Fatalf("session observation unlocked terminal=%#v", afterEvidence)
 	}
 	_, completed, changed, err := store.CompleteGoalControlOperation(ctx, GoalControlOperationComplete{WorkspaceID: "ws-terminal-fence", OperationID: "goal-1", Succeeded: true, Observed: map[string]any{"objective": "ship", "status": "active"}, OccurredAtUnixMS: 60})
 	if err != nil || !changed || completed.SyncStatus != GoalSyncStatusUnknown || completed.LastError == "" {

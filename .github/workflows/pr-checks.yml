@@ -312,6 +312,7 @@ jobs:
             packages/agent/store-sqlite/canonical/go.mod
             packages/auth/bridge-go/go.mod
             packages/appcli/core/go.mod
+            packages/clients/device-authority-go/go.mod
             packages/events/stream-go/go.mod
             packages/workbench/service/go.mod
             packages/workspace/files/go.mod
@@ -362,6 +363,7 @@ jobs:
             packages/agent/runtimeprep/go.mod
             packages/agent/store-sqlite/canonical/go.mod
             packages/appcli/core/go.mod
+            packages/clients/device-authority-go/go.mod
             packages/workbench/service/go.mod
             packages/workspace/files/go.mod
             packages/workspace/issues/go.mod

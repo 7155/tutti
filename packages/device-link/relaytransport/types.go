@@ -2,6 +2,7 @@ package relaytransport
 
 import (
 	"context"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -74,13 +75,14 @@ func (f OwnerLifecycleFactoryFunc) NewOwnerLifecycle() OwnerLifecycle { return f
 type OwnerPhase string
 
 const (
-	OwnerPhasePrepare OwnerPhase = "prepare"
-	OwnerPhaseDial    OwnerPhase = "dial"
-	OwnerPhaseServe   OwnerPhase = "serve"
-	OwnerPhaseSession OwnerPhase = "session"
-	OwnerPhaseRetry   OwnerPhase = "retry"
-	OwnerPhaseStream  OwnerPhase = "stream"
-	OwnerPhaseRelease OwnerPhase = "release"
+	OwnerPhasePrepare  OwnerPhase = "prepare"
+	OwnerPhaseDial     OwnerPhase = "dial"
+	OwnerPhaseServe    OwnerPhase = "serve"
+	OwnerPhaseSession  OwnerPhase = "session"
+	OwnerPhaseRetry    OwnerPhase = "retry"
+	OwnerPhaseStream   OwnerPhase = "stream"
+	OwnerPhaseLiveness OwnerPhase = "liveness"
+	OwnerPhaseRelease  OwnerPhase = "release"
 )
 
 // OwnerOutcome identifies the result of one owner-tunnel phase. New outcomes
@@ -88,12 +90,15 @@ const (
 type OwnerOutcome string
 
 const (
-	OwnerOutcomeSucceeded OwnerOutcome = "succeeded"
-	OwnerOutcomeFailed    OwnerOutcome = "failed"
-	OwnerOutcomeConnected OwnerOutcome = "connected"
-	OwnerOutcomeReady     OwnerOutcome = "ready"
-	OwnerOutcomeEnded     OwnerOutcome = "ended"
-	OwnerOutcomeScheduled OwnerOutcome = "scheduled"
+	OwnerOutcomeSucceeded    OwnerOutcome = "succeeded"
+	OwnerOutcomeFailed       OwnerOutcome = "failed"
+	OwnerOutcomeConnected    OwnerOutcome = "connected"
+	OwnerOutcomeReady        OwnerOutcome = "ready"
+	OwnerOutcomeEnded        OwnerOutcome = "ended"
+	OwnerOutcomeScheduled    OwnerOutcome = "scheduled"
+	OwnerOutcomePingSent     OwnerOutcome = "ping_sent"
+	OwnerOutcomePongReceived OwnerOutcome = "pong_received"
+	OwnerOutcomeStopped      OwnerOutcome = "stopped"
 )
 
 // OwnerEvent is a sanitized transport observation. Product adapters decide how
@@ -102,8 +107,27 @@ type OwnerEvent struct {
 	Phase      OwnerPhase
 	Outcome    OwnerOutcome
 	SessionKey string
-	Delay      time.Duration
+	Retry      *OwnerRetryObservation
+	Liveness   *OwnerLivenessObservation
 	Error      error
+}
+
+// OwnerRetryObservation describes one scheduled reconnect without product
+// identifiers or credentials.
+type OwnerRetryObservation struct {
+	Delay        time.Duration
+	BackoffCap   time.Duration
+	BackoffDelay time.Duration
+	RetryAfter   time.Duration
+}
+
+// OwnerLivenessObservation describes WebSocket ping/pong progress. LastPongAt
+// is populated on the stopped event after at least one pong was received.
+type OwnerLivenessObservation struct {
+	PingCount  int64
+	PongCount  int64
+	At         time.Time
+	LastPongAt time.Time
 }
 
 // OwnerObserver receives synchronous, non-payload transport observations. It
@@ -115,9 +139,10 @@ type BackoffConfig struct {
 	Initial    time.Duration
 	Max        time.Duration
 	Multiplier float64
-	// RandInt63n is an optional deterministic-test seam. It must return a value
-	// in [0, limit), matching math/rand.Int63n.
-	RandInt63n func(int64) int64
+	// RandFactory is called once per zero-to-one owner lifecycle. It may return
+	// a seeded generator for deterministic tests; nil uses an isolated random
+	// generator. The Host never shares one returned generator between runs.
+	RandFactory func() *rand.Rand
 }
 
 // OwnerHostConfig configures one reference-counted Relay owner tunnel.

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -281,12 +282,66 @@ func TestOwnerHostReleasesPartialPrepareState(t *testing.T) {
 	}
 }
 
+func TestOwnerHostReportsRetryComponentsAndCancelsWaitOnRelease(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "2")
+		http.Error(w, "relay draining", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	endpoint := "ws" + server.URL[len("http"):]
+	lifecycle := newTestOwnerLifecycle(testOwnerSession(endpoint, "owner-retry"))
+	retries := make(chan OwnerEvent, 1)
+	const seed = int64(11)
+	host := newTestOwnerHost(t, lifecycle, StreamHandlerFunc(func(context.Context, net.Conn) error { return nil }), func(cfg *OwnerHostConfig) {
+		cfg.Backoff = BackoffConfig{
+			Initial:     100 * time.Millisecond,
+			Max:         time.Second,
+			Multiplier:  2,
+			RandFactory: func() *rand.Rand { return rand.New(rand.NewSource(seed)) },
+		}
+		cfg.Sleep = func(ctx context.Context, _ time.Duration) error {
+			<-ctx.Done()
+			return ctx.Err()
+		}
+		cfg.Observe = func(event OwnerEvent) {
+			if event.Phase == OwnerPhaseRetry {
+				retries <- event
+			}
+		}
+	})
+
+	if err := host.Acquire(context.Background(), "owner"); err != nil {
+		t.Fatal(err)
+	}
+	var retry OwnerEvent
+	select {
+	case retry = <-retries:
+	case <-time.After(2 * time.Second):
+		t.Fatal("owner host did not report retry metadata")
+	}
+	expectedRandom := rand.New(rand.NewSource(seed))
+	wantBackoff := time.Duration(expectedRandom.Int63n(int64(100*time.Millisecond) + 1))
+	if retry.Retry == nil {
+		t.Fatal("retry event did not include retry observation")
+	}
+	if retry.Retry.BackoffCap != 100*time.Millisecond || retry.Retry.BackoffDelay != wantBackoff || retry.Retry.RetryAfter != 2*time.Second {
+		t.Fatalf("retry components = cap %s backoff %s retry-after %s", retry.Retry.BackoffCap, retry.Retry.BackoffDelay, retry.Retry.RetryAfter)
+	}
+	if retry.Retry.Delay != 2*time.Second+wantBackoff {
+		t.Fatalf("retry delay = %s, want %s", retry.Retry.Delay, 2*time.Second+wantBackoff)
+	}
+	if err := host.Release("owner"); err != nil {
+		t.Fatalf("Release() error = %v", err)
+	}
+}
+
 func TestOwnerHostSendsPingAndJoinsHandlersOnRelease(t *testing.T) {
 	relay := newTestOwnerRelay(t)
 	defer relay.Close()
 	lifecycle := newTestOwnerLifecycle(testOwnerSession(relay.OwnerEndpoint(), "owner-live"))
 	handlerStarted := make(chan struct{}, 1)
 	handlerStopped := make(chan struct{}, 1)
+	livenessEvents := make(chan OwnerEvent, 16)
 	host := newTestOwnerHost(t, lifecycle, StreamHandlerFunc(func(ctx context.Context, _ net.Conn) error {
 		handlerStarted <- struct{}{}
 		<-ctx.Done()
@@ -295,6 +350,11 @@ func TestOwnerHostSendsPingAndJoinsHandlersOnRelease(t *testing.T) {
 	}), func(cfg *OwnerHostConfig) {
 		cfg.PingInterval = 10 * time.Millisecond
 		cfg.PongTimeout = 100 * time.Millisecond
+		cfg.Observe = func(event OwnerEvent) {
+			if event.Phase == OwnerPhaseLiveness {
+				livenessEvents <- event
+			}
+		}
 	})
 
 	if err := host.Acquire(context.Background(), "owner"); err != nil {
@@ -314,6 +374,16 @@ func TestOwnerHostSendsPingAndJoinsHandlersOnRelease(t *testing.T) {
 	if got := relay.WaitPing(t); got != "owner-live" {
 		t.Fatalf("ping payload = %q, want owner-live", got)
 	}
+	seenPing, seenPong := false, false
+	for !seenPing || !seenPong {
+		select {
+		case event := <-livenessEvents:
+			seenPing = seenPing || event.Outcome == OwnerOutcomePingSent
+			seenPong = seenPong || event.Outcome == OwnerOutcomePongReceived
+		case <-time.After(2 * time.Second):
+			t.Fatalf("liveness events = ping:%t pong:%t, want both", seenPing, seenPong)
+		}
+	}
 	if err := host.Release("owner"); err != nil {
 		t.Fatalf("Release() error = %v", err)
 	}
@@ -327,6 +397,20 @@ func TestOwnerHostSendsPingAndJoinsHandlersOnRelease(t *testing.T) {
 	}
 	if got := lifecycle.ReleaseCount(); got != 1 {
 		t.Fatalf("lifecycle release count = %d, want 1", got)
+	}
+	for {
+		select {
+		case event := <-livenessEvents:
+			if event.Outcome != OwnerOutcomeStopped {
+				continue
+			}
+			if event.Liveness == nil || event.Liveness.PingCount < 1 || event.Liveness.PongCount < 1 || event.Liveness.LastPongAt.IsZero() {
+				t.Fatalf("stopped liveness event = %#v, want ping/pong totals", event)
+			}
+			return
+		default:
+			t.Fatal("Release() returned without a stopped liveness event")
+		}
 	}
 }
 
@@ -349,10 +433,10 @@ func newTestOwnerHost(t *testing.T, lifecycle OwnerLifecycle, handler StreamHand
 		LifecycleFactory: OwnerLifecycleFactoryFunc(func() OwnerLifecycle { return lifecycle }),
 		Handler:          handler,
 		Backoff: BackoffConfig{
-			Initial:    time.Millisecond,
-			Max:        5 * time.Millisecond,
-			Multiplier: 2,
-			RandInt63n: func(int64) int64 { return 0 },
+			Initial:     time.Millisecond,
+			Max:         5 * time.Millisecond,
+			Multiplier:  2,
+			RandFactory: func() *rand.Rand { return rand.New(rand.NewSource(1)) },
 		},
 		PingInterval: time.Hour,
 		PongTimeout:  2 * time.Hour,

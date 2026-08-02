@@ -9,6 +9,7 @@ import (
 type exponentialBackoff struct {
 	cfg     BackoffConfig
 	current time.Duration
+	random  *rand.Rand
 }
 
 func newExponentialBackoff(cfg BackoffConfig) *exponentialBackoff {
@@ -24,13 +25,21 @@ func newExponentialBackoff(cfg BackoffConfig) *exponentialBackoff {
 	if cfg.Initial > cfg.Max {
 		cfg.Initial = cfg.Max
 	}
-	if cfg.RandInt63n == nil {
-		cfg.RandInt63n = rand.Int63n
+	var random *rand.Rand
+	if cfg.RandFactory != nil {
+		random = cfg.RandFactory()
 	}
-	return &exponentialBackoff{cfg: cfg}
+	if random == nil {
+		// The package-level generator is concurrency-safe and supplies distinct
+		// seeds to the generator owned by each business lifecycle.
+		random = rand.New(rand.NewSource(rand.Int63()))
+	}
+	return &exponentialBackoff{cfg: cfg, random: random}
 }
 
 func (b *exponentialBackoff) Reset() { b.current = 0 }
+
+func (b *exponentialBackoff) Cap() time.Duration { return b.current }
 
 func (b *exponentialBackoff) Next() time.Duration {
 	if b.current == 0 {
@@ -49,7 +58,7 @@ func (b *exponentialBackoff) Next() time.Duration {
 		return 0
 	}
 	if b.current == time.Duration(math.MaxInt64) {
-		return time.Duration(b.cfg.RandInt63n(math.MaxInt64))
+		return time.Duration(b.random.Int63())
 	}
-	return time.Duration(b.cfg.RandInt63n(int64(b.current) + 1))
+	return time.Duration(b.random.Int63n(int64(b.current) + 1))
 }

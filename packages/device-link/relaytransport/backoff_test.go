@@ -2,28 +2,26 @@ package relaytransport
 
 import (
 	"math"
+	"math/rand"
 	"testing"
 	"time"
 )
 
 func TestExponentialBackoffUsesBoundedFullJitter(t *testing.T) {
-	inputs := []int64{0, 25, 100, 399, 999}
-	index := 0
+	const seed = int64(73)
 	backoff := newExponentialBackoff(BackoffConfig{
-		Initial:    100 * time.Millisecond,
-		Max:        time.Second,
-		Multiplier: 2,
-		RandInt63n: func(limit int64) int64 {
-			value := inputs[index]
-			index++
-			if value >= limit {
-				t.Fatalf("random input %d is outside limit %d", value, limit)
-			}
-			return value
-		},
+		Initial:     100 * time.Millisecond,
+		Max:         time.Second,
+		Multiplier:  2,
+		RandFactory: func() *rand.Rand { return rand.New(rand.NewSource(seed)) },
 	})
 
-	want := []time.Duration{0, 25, 100, 399, 999}
+	expectedRandom := rand.New(rand.NewSource(seed))
+	caps := []time.Duration{100 * time.Millisecond, 200 * time.Millisecond, 400 * time.Millisecond, 800 * time.Millisecond, time.Second}
+	want := make([]time.Duration, len(caps))
+	for i, cap := range caps {
+		want[i] = time.Duration(expectedRandom.Int63n(int64(cap) + 1))
+	}
 	for i, expected := range want {
 		if got := backoff.Next(); got != expected {
 			t.Fatalf("Next() call %d = %s, want %s", i+1, got, expected)
@@ -32,58 +30,49 @@ func TestExponentialBackoffUsesBoundedFullJitter(t *testing.T) {
 }
 
 func TestExponentialBackoffResetRestartsGeneration(t *testing.T) {
-	var limits []int64
+	const seed = int64(19)
 	backoff := newExponentialBackoff(BackoffConfig{
-		Initial:    100 * time.Millisecond,
-		Max:        time.Second,
-		Multiplier: 2,
-		RandInt63n: func(limit int64) int64 {
-			limits = append(limits, limit)
-			return 0
-		},
+		Initial:     100 * time.Millisecond,
+		Max:         time.Second,
+		Multiplier:  2,
+		RandFactory: func() *rand.Rand { return rand.New(rand.NewSource(seed)) },
 	})
 
-	backoff.Next()
-	backoff.Next()
+	first := backoff.Next()
+	second := backoff.Next()
 	backoff.Reset()
-	backoff.Next()
+	third := backoff.Next()
 
-	want := []int64{
-		int64(100*time.Millisecond) + 1,
-		int64(200*time.Millisecond) + 1,
-		int64(100*time.Millisecond) + 1,
+	expectedRandom := rand.New(rand.NewSource(seed))
+	want := []time.Duration{
+		time.Duration(expectedRandom.Int63n(int64(100*time.Millisecond) + 1)),
+		time.Duration(expectedRandom.Int63n(int64(200*time.Millisecond) + 1)),
+		time.Duration(expectedRandom.Int63n(int64(100*time.Millisecond) + 1)),
 	}
-	if len(limits) != len(want) {
-		t.Fatalf("random limits = %v, want %v", limits, want)
-	}
-	for i := range want {
-		if limits[i] != want[i] {
-			t.Fatalf("random limit %d = %d, want %d", i+1, limits[i], want[i])
+	got := []time.Duration{first, second, third}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Fatalf("delay %d = %s, want %s", i+1, got[i], want[i])
 		}
 	}
 }
 
 func TestExponentialBackoffSaturatesWithoutOverflow(t *testing.T) {
-	var limits []int64
+	const seed = int64(31)
 	backoff := newExponentialBackoff(BackoffConfig{
-		Initial:    time.Duration(math.MaxInt64 - 1),
-		Max:        time.Duration(math.MaxInt64),
-		Multiplier: 2,
-		RandInt63n: func(limit int64) int64 {
-			limits = append(limits, limit)
-			return limit - 1
-		},
+		Initial:     time.Duration(math.MaxInt64 - 1),
+		Max:         time.Duration(math.MaxInt64),
+		Multiplier:  2,
+		RandFactory: func() *rand.Rand { return rand.New(rand.NewSource(seed)) },
 	})
 
 	first := backoff.Next()
 	second := backoff.Next()
-	if first != time.Duration(math.MaxInt64-1) {
-		t.Fatalf("first delay = %s, want MaxInt64-1", first)
+	expectedRandom := rand.New(rand.NewSource(seed))
+	if want := time.Duration(expectedRandom.Int63n(math.MaxInt64)); first != want {
+		t.Fatalf("first delay = %s, want %s", first, want)
 	}
-	if second != time.Duration(math.MaxInt64-1) {
-		t.Fatalf("second delay = %s, want MaxInt64-1", second)
-	}
-	if len(limits) != 2 || limits[0] != math.MaxInt64 || limits[1] != math.MaxInt64 {
-		t.Fatalf("random limits = %v, want two MaxInt64 limits", limits)
+	if want := time.Duration(expectedRandom.Int63()); second != want {
+		t.Fatalf("second delay = %s, want %s", second, want)
 	}
 }

@@ -2,6 +2,7 @@ package relaytransport
 
 import (
 	"context"
+	"math/rand"
 	"net"
 	"sync"
 	"testing"
@@ -9,6 +10,7 @@ import (
 )
 
 func TestOwnerHostResetsBackoffOnlyAfterStableReadySession(t *testing.T) {
+	const seed = int64(73)
 	relay := newTestOwnerRelay(t)
 	defer relay.Close()
 	lifecycle := newTestOwnerLifecycle(testOwnerSession(relay.OwnerEndpoint(), "owner-stability"))
@@ -19,10 +21,10 @@ func TestOwnerHostResetsBackoffOnlyAfterStableReadySession(t *testing.T) {
 		cfg.StableSessionFor = 30 * time.Second
 		cfg.Now = clock.Now
 		cfg.Backoff = BackoffConfig{
-			Initial:    100 * time.Millisecond,
-			Max:        time.Second,
-			Multiplier: 2,
-			RandInt63n: func(limit int64) int64 { return limit - 1 },
+			Initial:     100 * time.Millisecond,
+			Max:         time.Second,
+			Multiplier:  2,
+			RandFactory: func() *rand.Rand { return rand.New(rand.NewSource(seed)) },
 		}
 		cfg.Sleep = func(ctx context.Context, _ time.Duration) error {
 			select {
@@ -37,7 +39,7 @@ func TestOwnerHostResetsBackoffOnlyAfterStableReadySession(t *testing.T) {
 				ready <- struct{}{}
 			}
 			if event.Phase == OwnerPhaseRetry && event.Outcome == OwnerOutcomeScheduled {
-				delays <- event.Delay
+				delays <- event.Retry.Delay
 			}
 		}
 	})
@@ -51,24 +53,25 @@ func TestOwnerHostResetsBackoffOnlyAfterStableReadySession(t *testing.T) {
 	waitOwnerReady(t, ready)
 	clock.Advance(29*time.Second + 999*time.Millisecond)
 	first.Close()
-	if got := waitOwnerRetry(t, delays); got != 100*time.Millisecond {
-		t.Fatalf("first retry = %s, want 100ms", got)
+	expectedRandom := rand.New(rand.NewSource(seed))
+	if got, want := waitOwnerRetry(t, delays), time.Duration(expectedRandom.Int63n(int64(100*time.Millisecond)+1)); got != want {
+		t.Fatalf("first retry = %s, want %s", got, want)
 	}
 
 	second := relay.WaitSession(t)
 	waitOwnerReady(t, ready)
 	clock.Advance(29*time.Second + 999*time.Millisecond)
 	second.Close()
-	if got := waitOwnerRetry(t, delays); got != 200*time.Millisecond {
-		t.Fatalf("second retry = %s, want growing 200ms", got)
+	if got, want := waitOwnerRetry(t, delays), time.Duration(expectedRandom.Int63n(int64(200*time.Millisecond)+1)); got != want {
+		t.Fatalf("second retry = %s, want growing cap result %s", got, want)
 	}
 
 	third := relay.WaitSession(t)
 	waitOwnerReady(t, ready)
 	clock.Advance(30 * time.Second)
 	third.Close()
-	if got := waitOwnerRetry(t, delays); got != 100*time.Millisecond {
-		t.Fatalf("retry after stable session = %s, want reset 100ms", got)
+	if got, want := waitOwnerRetry(t, delays), time.Duration(expectedRandom.Int63n(int64(100*time.Millisecond)+1)); got != want {
+		t.Fatalf("retry after stable session = %s, want reset cap result %s", got, want)
 	}
 }
 

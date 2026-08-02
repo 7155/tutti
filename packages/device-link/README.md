@@ -96,7 +96,9 @@ The lifecycle factory creates isolated product state for every zero-to-one
 demand run. A final release may overlap a new acquire, but the old release can
 only clean up its own lifecycle. WebSocket ping/pong owns tunnel liveness, so
 yamux keepalive is disabled. Internal yamux logging is discarded; adapters map
-sanitized `OwnerEvent` values into product logs or metrics.
+sanitized, typed `OwnerEvent` values into product logs or metrics. Retry events
+separate the backoff cap, chosen jitter, server `Retry-After`, and total delay;
+liveness events expose only ping/pong counts and timestamps, never payloads.
 
 Relay endpoints, headers, query values, credentials, leases, registrations,
 room or pairing state, application protocols, and token invalidation remain in

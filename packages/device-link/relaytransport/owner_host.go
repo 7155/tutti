@@ -173,8 +173,16 @@ func (h *OwnerHost) runLoop(ctx context.Context, run *ownerRun) {
 		}
 		run.lifecycle.SessionEnded(session, err)
 		h.observe(OwnerEvent{Phase: OwnerPhaseSession, Outcome: OwnerOutcomeEnded, SessionKey: session.Key, Error: err})
-		delay := combineRetryDelay(backoff.Next(), retryDelay(err, h.cfg.Now()))
-		h.observe(OwnerEvent{Phase: OwnerPhaseRetry, Outcome: OwnerOutcomeScheduled, SessionKey: session.Key, Delay: delay, Error: err})
+		backoffDelay := backoff.Next()
+		retryAfter := retryDelay(err, h.cfg.Now())
+		delay := combineRetryDelay(backoffDelay, retryAfter)
+		h.observe(OwnerEvent{
+			Phase: OwnerPhaseRetry, Outcome: OwnerOutcomeScheduled, SessionKey: session.Key,
+			Retry: &OwnerRetryObservation{
+				Delay: delay, BackoffCap: backoff.Cap(), BackoffDelay: backoffDelay, RetryAfter: retryAfter,
+			},
+			Error: err,
+		})
 		if sleepErr := h.cfg.Sleep(ctx, delay); sleepErr != nil {
 			return
 		}
@@ -192,6 +200,8 @@ func (h *OwnerHost) runSession(ctx context.Context, run *ownerRun, session Owner
 		pingInterval: h.cfg.PingInterval,
 		pongTimeout:  h.cfg.PongTimeout,
 		pingPayload:  session.PingPayload,
+		sessionKey:   session.Key,
+		observe:      h.observe,
 	})
 	if err != nil {
 		return 0, err

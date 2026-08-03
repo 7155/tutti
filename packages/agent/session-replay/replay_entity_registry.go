@@ -1,4 +1,4 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"encoding/base64"
@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-
-	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
-	replaybiz "github.com/tutti-os/tutti/services/tuttid/biz/agentsessionreplay"
 )
 
 type replayEntityBinding struct {
@@ -21,14 +18,14 @@ type replayEntityBinding struct {
 
 type replayEntityRegistry struct {
 	rootSessionID string
-	byRuntime     map[string]replay.EntityAddress
+	byRuntime     map[string]EntityAddress
 	byAddress     map[string]replayEntityBinding
 }
 
 func newReplayEntityRegistry(rootSessionID string) replayEntityRegistry {
 	r := replayEntityRegistry{
 		rootSessionID: strings.TrimSpace(rootSessionID),
-		byRuntime:     make(map[string]replay.EntityAddress),
+		byRuntime:     make(map[string]EntityAddress),
 		byAddress:     make(map[string]replayEntityBinding),
 	}
 	if r.rootSessionID != "" {
@@ -56,52 +53,52 @@ func (r replayEntityRegistry) clone() replayEntityRegistry {
 	return out
 }
 
-func recordingRootAddress() replay.EntityAddress {
-	return replay.EntityAddress{
-		Kind: replay.EntityKindSession,
-		Origin: replay.EntityOrigin{
-			Source: replay.EntityOriginRecordingRoot,
+func recordingRootAddress() EntityAddress {
+	return EntityAddress{
+		Kind: EntityKindSession,
+		Origin: EntityOrigin{
+			Source: EntityOriginRecordingRoot,
 		},
 	}
 }
 
 func initialStateAddress(
-	kind replay.EntityKind,
+	kind EntityKind,
 	path string,
-) replay.EntityAddress {
-	return replay.EntityAddress{
+) EntityAddress {
+	return EntityAddress{
 		Kind: kind,
-		Origin: replay.EntityOrigin{
-			Source:           replay.EntityOriginInitialState,
+		Origin: EntityOrigin{
+			Source:           EntityOriginInitialState,
 			InitialStatePath: path,
 		},
 	}
 }
 
-func activityAddress(
-	kind replay.EntityKind,
+func replayActivityAddress(
+	kind EntityKind,
 	sequence uint64,
 	discriminator string,
-) replay.EntityAddress {
-	return replay.EntityAddress{
+) EntityAddress {
+	return EntityAddress{
 		Kind: kind,
-		Origin: replay.EntityOrigin{
-			Source:                replay.EntityOriginActivityEvent,
+		Origin: EntityOrigin{
+			Source:                EntityOriginActivityEvent,
 			ActivityEventSequence: sequence,
 		},
 		Discriminator: discriminator,
 	}
 }
 
-func providerAddress(
-	kind replay.EntityKind,
-	position replay.ProviderObservationPosition,
+func replayProviderAddress(
+	kind EntityKind,
+	position ProviderObservationPosition,
 	discriminator string,
-) replay.EntityAddress {
-	return replay.EntityAddress{
+) EntityAddress {
+	return EntityAddress{
 		Kind: kind,
-		Origin: replay.EntityOrigin{
-			Source:              replay.EntityOriginProviderObservation,
+		Origin: EntityOrigin{
+			Source:              EntityOriginProviderObservation,
 			ProviderObservation: &position,
 		},
 		Discriminator: discriminator,
@@ -110,23 +107,23 @@ func providerAddress(
 
 func (r *replayEntityRegistry) bind(
 	runtimeKey string,
-	address replay.EntityAddress,
+	address EntityAddress,
 	binding replayEntityBinding,
-) (replay.EntityAddress, bool) {
+) (EntityAddress, bool) {
 	runtimeKey = strings.TrimSpace(runtimeKey)
-	if runtimeKey == "" || replay.ValidateEntityAddress(address) != nil {
-		return replay.EntityAddress{}, false
+	if runtimeKey == "" || ValidateEntityAddress(address) != nil {
+		return EntityAddress{}, false
 	}
-	addressKey, err := replay.EntityAddressKey(address)
+	addressKey, err := EntityAddressKey(address)
 	if err != nil {
-		return replay.EntityAddress{}, false
+		return EntityAddress{}, false
 	}
 	if existing, ok := r.byRuntime[runtimeKey]; ok {
-		return existing, replay.EntityAddressesEqual(existing, address)
+		return existing, EntityAddressesEqual(existing, address)
 	}
 	if existing, ok := r.byAddress[addressKey]; ok &&
 		existing != binding {
-		return replay.EntityAddress{}, false
+		return EntityAddress{}, false
 	}
 	r.byRuntime[runtimeKey] = address
 	r.byAddress[addressKey] = binding
@@ -135,9 +132,9 @@ func (r *replayEntityRegistry) bind(
 
 func (r *replayEntityRegistry) bindFirst(
 	runtimeKey string,
-	address replay.EntityAddress,
+	address EntityAddress,
 	binding replayEntityBinding,
-) (replay.EntityAddress, bool) {
+) (EntityAddress, bool) {
 	if existing, ok := r.byRuntime[strings.TrimSpace(runtimeKey)]; ok {
 		existingBinding, found := r.binding(existing)
 		return existing, found && existingBinding == binding
@@ -145,8 +142,8 @@ func (r *replayEntityRegistry) bindFirst(
 	return r.bind(runtimeKey, address, binding)
 }
 
-func entityParentDiscriminator(address replay.EntityAddress) string {
-	key, err := replay.EntityAddressKey(address)
+func entityParentDiscriminator(address EntityAddress) string {
+	key, err := EntityAddressKey(address)
 	if err != nil {
 		return ""
 	}
@@ -168,12 +165,12 @@ func parentAddressKey(discriminator string) (string, bool) {
 }
 
 func (r *replayEntityRegistry) bindActivityAddress(
-	address replay.EntityAddress,
+	address EntityAddress,
 ) bool {
 	if _, ok := r.binding(address); ok {
 		return true
 	}
-	if address.Origin.Source != replay.EntityOriginActivityEvent {
+	if address.Origin.Source != EntityOriginActivityEvent {
 		return false
 	}
 	parentKey, ok := parentAddressKey(address.Discriminator)
@@ -185,7 +182,7 @@ func (r *replayEntityRegistry) bindActivityAddress(
 		return false
 	}
 	switch address.Kind {
-	case replay.EntityKindGoal:
+	case EntityKindGoal:
 		_, ok = r.bind(
 			goalRuntimeKey(parent.SessionID),
 			address,
@@ -201,9 +198,9 @@ func (r *replayEntityRegistry) bindActivityAddress(
 }
 
 func (r replayEntityRegistry) binding(
-	address replay.EntityAddress,
+	address EntityAddress,
 ) (replayEntityBinding, bool) {
-	key, err := replay.EntityAddressKey(address)
+	key, err := EntityAddressKey(address)
 	if err != nil {
 		return replayEntityBinding{}, false
 	}
@@ -213,7 +210,7 @@ func (r replayEntityRegistry) binding(
 
 func (r replayEntityRegistry) sessionAddress(
 	sessionID string,
-) (replay.EntityAddress, bool) {
+) (EntityAddress, bool) {
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
 		sessionID = r.rootSessionID
@@ -224,20 +221,20 @@ func (r replayEntityRegistry) sessionAddress(
 
 func (r replayEntityRegistry) turnAddress(
 	sessionID, turnID string,
-) (replay.EntityAddress, bool) {
+) (EntityAddress, bool) {
 	address, ok := r.byRuntime[turnRuntimeKey(sessionID, turnID)]
 	return address, ok
 }
 
 func (r replayEntityRegistry) interactionAddress(
 	sessionID, turnID, kind, requestID string,
-) (replay.EntityAddress, bool) {
+) (EntityAddress, bool) {
 	key := interactionRuntimeKey(sessionID, turnID, kind, requestID)
 	address, ok := r.byRuntime[key]
 	if ok {
 		return address, true
 	}
-	var matched replay.EntityAddress
+	var matched EntityAddress
 	matchCount := 0
 	for key, candidate := range r.byRuntime {
 		binding, found := r.binding(candidate)
@@ -257,7 +254,7 @@ func (r *replayEntityRegistry) seedInitialState(raw []byte) error {
 	if len(raw) == 0 {
 		return nil
 	}
-	var state replaybiz.TuttiReplayState
+	var state TuttiReplayState
 	if err := json.Unmarshal(raw, &state); err != nil {
 		return fmt.Errorf("decode replay initial state identities: %w", err)
 	}
@@ -265,12 +262,12 @@ func (r *replayEntityRegistry) seedInitialState(raw []byte) error {
 }
 
 func (r *replayEntityRegistry) seedState(
-	state replaybiz.TuttiReplayState,
+	state TuttiReplayState,
 ) error {
 	for sessionIndex, session := range state.Agent.Sessions {
 		sessionPath := fmt.Sprintf("/agent/sessions/%d", sessionIndex)
 		sessionAddress := initialStateAddress(
-			replay.EntityKindSession,
+			EntityKindSession,
 			sessionPath,
 		)
 		if session.ID == state.Agent.RootSessionID ||
@@ -292,7 +289,7 @@ func (r *replayEntityRegistry) seedState(
 		}
 		for turnIndex, turn := range session.Turns {
 			address := initialStateAddress(
-				replay.EntityKindTurn,
+				EntityKindTurn,
 				fmt.Sprintf("%s/turns/%d", sessionPath, turnIndex),
 			)
 			if _, ok := r.bindFirst(
@@ -321,7 +318,7 @@ func (r *replayEntityRegistry) seedState(
 			}
 			if _, ok := r.bindFirst(
 				messageRuntimeKey(session.ID, message.ID),
-				initialStateAddress(replay.EntityKindMessage, messagePath),
+				initialStateAddress(EntityKindMessage, messagePath),
 				binding,
 			); !ok {
 				return fmt.Errorf("bind initial Message %q", message.ID)
@@ -337,7 +334,7 @@ func (r *replayEntityRegistry) seedState(
 						callID,
 					),
 					initialStateAddress(
-						replay.EntityKindToolCall,
+						EntityKindToolCall,
 						messagePath,
 					),
 					callBinding,
@@ -368,7 +365,7 @@ func (r *replayEntityRegistry) seedState(
 						attachmentIndex,
 					),
 					initialStateAddress(
-						replay.EntityKindAttachment,
+						EntityKindAttachment,
 						fmt.Sprintf(
 							"%s/payload/content/%d",
 							messagePath,
@@ -386,7 +383,7 @@ func (r *replayEntityRegistry) seedState(
 		}
 		for interactionIndex, interaction := range session.Interactions {
 			address := initialStateAddress(
-				replay.EntityKindInteraction,
+				EntityKindInteraction,
 				fmt.Sprintf(
 					"%s/interactions/%d",
 					sessionPath,
@@ -417,7 +414,7 @@ func (r *replayEntityRegistry) seedState(
 			if _, ok := r.bindFirst(
 				goalRuntimeKey(session.ID),
 				initialStateAddress(
-					replay.EntityKindGoal,
+					EntityKindGoal,
 					sessionPath+"/goal",
 				),
 				replayEntityBinding{
@@ -433,10 +430,10 @@ func (r *replayEntityRegistry) seedState(
 }
 
 func (r *replayEntityRegistry) providerAddresses(
-	position replay.ProviderObservationPosition,
-	event replay.ProviderObservationEvent,
-) ([]replay.EntityAddress, bool) {
-	return r.providerAddressesForPlan(position, event, replay.CheckpointPlan{})
+	position ProviderObservationPosition,
+	event ProviderObservationEvent,
+) ([]EntityAddress, bool) {
+	return r.providerAddressesForPlan(position, event, CheckpointPlan{})
 }
 
 // providerAddressesForPlan binds portable entity addresses for a Provider
@@ -444,10 +441,10 @@ func (r *replayEntityRegistry) providerAddresses(
 // subject origin) when available so completed-first replay still fingerprints
 // against the same Address recorded at started.
 func (r *replayEntityRegistry) providerAddressesForPlan(
-	position replay.ProviderObservationPosition,
-	event replay.ProviderObservationEvent,
-	plan replay.CheckpointPlan,
-) ([]replay.EntityAddress, bool) {
+	position ProviderObservationPosition,
+	event ProviderObservationEvent,
+	plan CheckpointPlan,
+) ([]EntityAddress, bool) {
 	sessionID := strings.TrimSpace(event.AgentSessionID)
 	if sessionID == "" {
 		sessionID = r.rootSessionID
@@ -480,13 +477,13 @@ func (r *replayEntityRegistry) providerAddressesForPlan(
 		}
 		address, ok := r.bindFirst(
 			sessionRuntimeKey(sessionID),
-			providerAddress(replay.EntityKindSession, position, ""),
+			replayProviderAddress(EntityKindSession, position, ""),
 			replayEntityBinding{
 				SessionID: sessionID,
 				EntityID:  sessionID,
 			},
 		)
-		return []replay.EntityAddress{address}, ok
+		return []EntityAddress{address}, ok
 	case "turn.started", "turn.updated", "turn.completed",
 		"turn.failed", "turn.canceled",
 		"root_provider_turn.started", "root_provider_turn.completed",
@@ -498,14 +495,14 @@ func (r *replayEntityRegistry) providerAddressesForPlan(
 		birth := turnBirthPositionFromPlan(plan, position, event.Type)
 		address, ok := r.bindFirst(
 			turnRuntimeKey(sessionID, turnID),
-			providerAddress(replay.EntityKindTurn, birth, ""),
+			replayProviderAddress(EntityKindTurn, birth, ""),
 			replayEntityBinding{
 				SessionID: sessionID,
 				TurnID:    turnID,
 				EntityID:  turnID,
 			},
 		)
-		return []replay.EntityAddress{address}, ok
+		return []EntityAddress{address}, ok
 	case "call.started", "call.completed", "call.failed":
 		turnID := strings.TrimSpace(event.TurnID)
 		callID := strings.TrimSpace(event.CallID)
@@ -514,14 +511,14 @@ func (r *replayEntityRegistry) providerAddressesForPlan(
 		}
 		address, ok := r.bindFirst(
 			toolCallRuntimeKey(sessionID, turnID, callID),
-			providerAddress(replay.EntityKindToolCall, position, ""),
+			replayProviderAddress(EntityKindToolCall, position, ""),
 			replayEntityBinding{
 				SessionID: sessionID,
 				TurnID:    turnID,
 				EntityID:  callID,
 			},
 		)
-		return []replay.EntityAddress{address}, ok
+		return []EntityAddress{address}, ok
 	case "interaction.requested", "interaction.superseded":
 		turnID := strings.TrimSpace(event.TurnID)
 		requestID := strings.TrimSpace(event.InteractionID)
@@ -536,14 +533,14 @@ func (r *replayEntityRegistry) providerAddressesForPlan(
 				kind,
 				requestID,
 			),
-			providerAddress(replay.EntityKindInteraction, position, ""),
+			replayProviderAddress(EntityKindInteraction, position, ""),
 			replayEntityBinding{
 				SessionID: sessionID,
 				TurnID:    turnID,
 				EntityID:  requestID,
 			},
 		)
-		return []replay.EntityAddress{address}, ok
+		return []EntityAddress{address}, ok
 	case "attachment.materialized":
 		turnID := strings.TrimSpace(event.TurnID)
 		messageID := strings.TrimSpace(event.MessageID)
@@ -553,8 +550,8 @@ func (r *replayEntityRegistry) providerAddressesForPlan(
 		}
 		_, _ = r.bindFirst(
 			messageRuntimeKey(sessionID, messageID),
-			providerAddress(
-				replay.EntityKindMessage,
+			replayProviderAddress(
+				EntityKindMessage,
 				position,
 				"message",
 			),
@@ -566,15 +563,15 @@ func (r *replayEntityRegistry) providerAddressesForPlan(
 			},
 		)
 		addresses := make(
-			[]replay.EntityAddress,
+			[]EntityAddress,
 			0,
 			event.AttachmentCount,
 		)
 		for index := uint64(1); index <= event.AttachmentCount; index++ {
 			address, ok := r.bindFirst(
 				attachmentRuntimeKey(sessionID, messageID, index),
-				providerAddress(
-					replay.EntityKindAttachment,
+				replayProviderAddress(
+					EntityKindAttachment,
 					position,
 					strconv.FormatUint(index, 10),
 				),
@@ -617,10 +614,10 @@ func runtimeKey(parts ...string) string {
 //  3. latest started trigger on the same connection before this event
 //  4. current position (degraded)
 func turnBirthPositionFromPlan(
-	plan replay.CheckpointPlan,
-	eventPosition replay.ProviderObservationPosition,
+	plan CheckpointPlan,
+	eventPosition ProviderObservationPosition,
 	eventType string,
-) replay.ProviderObservationPosition {
+) ProviderObservationPosition {
 	switch eventType {
 	case "turn.started", "root_provider_turn.started":
 		return eventPosition
@@ -628,26 +625,26 @@ func turnBirthPositionFromPlan(
 	for _, checkpoint := range plan.Checkpoints {
 		trigger := checkpoint.Trigger
 		if trigger.Source !=
-			replay.CheckpointTriggerProviderObservation ||
+			CheckpointTriggerProviderObservation ||
 			trigger.Position == nil ||
 			*trigger.Position != eventPosition {
 			continue
 		}
 		for _, subject := range checkpoint.Subjects {
-			if subject.Kind != replay.EntityKindTurn ||
+			if subject.Kind != EntityKindTurn ||
 				subject.Origin.Source !=
-					replay.EntityOriginProviderObservation ||
+					EntityOriginProviderObservation ||
 				subject.Origin.ProviderObservation == nil {
 				continue
 			}
 			return *subject.Origin.ProviderObservation
 		}
 	}
-	var best *replay.ProviderObservationPosition
+	var best *ProviderObservationPosition
 	for _, checkpoint := range plan.Checkpoints {
 		trigger := checkpoint.Trigger
 		if trigger.Source !=
-			replay.CheckpointTriggerProviderObservation ||
+			CheckpointTriggerProviderObservation ||
 			trigger.Position == nil {
 			continue
 		}
@@ -678,7 +675,7 @@ func turnBirthPositionFromPlan(
 }
 
 func providerObservationPositionBeforeOrEqual(
-	left, right replay.ProviderObservationPosition,
+	left, right ProviderObservationPosition,
 ) bool {
 	if left.ConnectionID != right.ConnectionID {
 		return false

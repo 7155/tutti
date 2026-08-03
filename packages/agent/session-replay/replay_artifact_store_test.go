@@ -1,4 +1,4 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"context"
@@ -9,12 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
 )
 
-func replayPrerequisitesForTest() replay.ReplayPrerequisites {
-	return replay.ReplayPrerequisites{ComposerDefaults: replay.ReplayComposerDefaults{
+func replayPrerequisitesForTest() ReplayPrerequisites {
+	return ReplayPrerequisites{ComposerDefaults: ReplayComposerDefaults{
 		Model:            "gpt-5.4",
 		PermissionModeID: "default",
 		ReasoningEffort:  "medium",
@@ -26,7 +24,7 @@ func TestArtifactStorePrepareWritesNeutralBootstrapCheckpoint(t *testing.T) {
 	store := &Store{StateDir: t.TempDir()}
 	layout, err := store.Prepare(
 		context.Background(),
-		replay.Recording{ID: "recording-bootstrap"},
+		Recording{ID: "recording-bootstrap"},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -35,7 +33,7 @@ func TestArtifactStorePrepareWritesNeutralBootstrapCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var plan replay.CheckpointPlan
+	var plan CheckpointPlan
 	if err := json.Unmarshal(raw, &plan); err != nil {
 		t.Fatal(err)
 	}
@@ -50,38 +48,38 @@ func TestArtifactStorePrepareWritesNeutralBootstrapCheckpoint(t *testing.T) {
 func completeArtifactCandidate(
 	t *testing.T,
 	store *Store,
-	recording replay.Recording,
-) replay.ArtifactLayout {
+	recording Recording,
+) ArtifactLayout {
 	t.Helper()
 	layout, err := store.Prepare(context.Background(), recording)
 	if err != nil {
 		t.Fatal(err)
 	}
 	recording.ArtifactKey = layout.StorageKey
-	if err := store.AppendActivityEvent(context.Background(), recording, replay.ActivityEvent{
-		SchemaVersion: replay.CassetteSchemaVersion, Sequence: 1,
-		Kind: replay.ActivityEventKindDirectStimulus, Type: "session.send",
+	if err := store.AppendActivityEvent(context.Background(), recording, ActivityEvent{
+		SchemaVersion: CassetteSchemaVersion, Sequence: 1,
+		Kind: ActivityEventKindDirectStimulus, Type: "session.send",
 		EventID: "event-1", ScopeID: recording.ScopeID, OccurredAtMS: 1,
 		Payload: map[string]any{"displayPrompt": recording.ScopeID},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	turn := replay.EntityAddress{
-		Kind: replay.EntityKindTurn,
-		Origin: replay.EntityOrigin{
-			Source:                replay.EntityOriginActivityEvent,
+	turn := EntityAddress{
+		Kind: EntityKindTurn,
+		Origin: EntityOrigin{
+			Source:                EntityOriginActivityEvent,
 			ActivityEventSequence: 1,
 		},
 	}
-	if err := store.WriteCheckpointPlan(context.Background(), recording, replay.NewCheckpointPlan([]replay.ReplayCheckpoint{
+	if err := store.WriteCheckpointPlan(context.Background(), recording, NewCheckpointPlan([]ReplayCheckpoint{
 		{
 			ID:      "checkpoint-0000",
 			Index:   0,
 			Kind:    "replay.bootstrap",
 			Tags:    []string{"replay.bootstrap"},
-			Trigger: replay.CheckpointTrigger{Source: replay.CheckpointTriggerBootstrap},
-			Readiness: replay.CheckpointReadiness{
-				All: []replay.ReadinessPredicate{},
+			Trigger: CheckpointTrigger{Source: CheckpointTriggerBootstrap},
+			Readiness: CheckpointReadiness{
+				All: []ReadinessPredicate{},
 			},
 		},
 		{
@@ -89,14 +87,14 @@ func completeArtifactCandidate(
 			Index:  1,
 			Kind:   "turn.terminal",
 			Tags:   []string{"turn.terminal"},
-			Cursor: replay.ReplayCursor{ActivityEventSequence: 1},
-			Trigger: replay.CheckpointTrigger{
-				Source:                     replay.CheckpointTriggerActivityBoundary,
+			Cursor: ReplayCursor{ActivityEventSequence: 1},
+			Trigger: CheckpointTrigger{
+				Source:                     CheckpointTriggerActivityBoundary,
 				AfterActivityEventSequence: 1,
-				BoundaryKind:               replay.ActivityBoundarySingleEvent,
+				BoundaryKind:               ActivityBoundarySingleEvent,
 			},
-			Subjects: []replay.EntityAddress{turn},
-			Readiness: replay.CheckpointReadiness{All: []replay.ReadinessPredicate{{
+			Subjects: []EntityAddress{turn},
+			Readiness: CheckpointReadiness{All: []ReadinessPredicate{{
 				Type: "turn.status", Subject: 0, Equals: "completed",
 			}}},
 		},
@@ -119,35 +117,35 @@ func completeArtifactCandidate(
 }
 
 func TestMergeObservationJournalEntryRejectsIdentityConflicts(t *testing.T) {
-	position := replay.ProviderObservationPosition{
+	position := ProviderObservationPosition{
 		ConnectionID: "connection-1",
 		ChunkSeq:     1,
 		UnitIndex:    1,
 		EventIndex:   1,
 	}
-	address := replay.EntityAddress{
-		Kind: replay.EntityKindToolCall,
-		Origin: replay.EntityOrigin{
-			Source:              replay.EntityOriginProviderObservation,
+	address := EntityAddress{
+		Kind: EntityKindToolCall,
+		Origin: EntityOrigin{
+			Source:              EntityOriginProviderObservation,
 			ProviderObservation: &position,
 		},
 	}
 	fingerprint := "sha256:" + strings.Repeat("a", 64)
-	base := replay.ObservationJournalEntry{
-		SchemaVersion: replay.ObservationSchemaVersion,
-		Position: replay.ProviderUnitPosition{
+	base := ObservationJournalEntry{
+		SchemaVersion: ObservationSchemaVersion,
+		Position: ProviderUnitPosition{
 			ConnectionID: position.ConnectionID,
 			ChunkSeq:     position.ChunkSeq,
 			UnitIndex:    position.UnitIndex,
 		},
-		UnitKind: replay.ProviderInputUnitProtocolMessage,
-		Observations: []replay.JournalObservation{{
+		UnitKind: ProviderInputUnitProtocolMessage,
+		Observations: []JournalObservation{{
 			Position:    position,
 			Type:        "call.started",
 			Fingerprint: fingerprint,
 			Address:     address,
 		}},
-		Correlations: []replay.CheckpointCommitCorrelation{{
+		Correlations: []CheckpointCommitCorrelation{{
 			ID:                     "correlation-1",
 			Kind:                   "call.status",
 			Address:                address,
@@ -158,43 +156,43 @@ func TestMergeObservationJournalEntryRejectsIdentityConflicts(t *testing.T) {
 	}
 	tests := []struct {
 		name   string
-		mutate func(*replay.ObservationJournalEntry)
+		mutate func(*ObservationJournalEntry)
 	}{
 		{
 			name: "observation fingerprint",
-			mutate: func(entry *replay.ObservationJournalEntry) {
+			mutate: func(entry *ObservationJournalEntry) {
 				entry.Observations[0].Fingerprint =
 					"sha256:" + strings.Repeat("b", 64)
 			},
 		},
 		{
 			name: "correlation address",
-			mutate: func(entry *replay.ObservationJournalEntry) {
+			mutate: func(entry *ObservationJournalEntry) {
 				entry.Correlations[0].Address.Kind =
-					replay.EntityKindInteraction
+					EntityKindInteraction
 			},
 		},
 		{
 			name: "correlation kind",
-			mutate: func(entry *replay.ObservationJournalEntry) {
+			mutate: func(entry *ObservationJournalEntry) {
 				entry.Correlations[0].Kind = "turn.status"
 			},
 		},
 		{
 			name: "correlation expected",
-			mutate: func(entry *replay.ObservationJournalEntry) {
+			mutate: func(entry *ObservationJournalEntry) {
 				entry.Correlations[0].Expected = "completed"
 			},
 		},
 		{
 			name: "correlation observation",
-			mutate: func(entry *replay.ObservationJournalEntry) {
+			mutate: func(entry *ObservationJournalEntry) {
 				entry.Correlations[0].ObservationPosition.EventIndex = 2
 			},
 		},
 		{
 			name: "correlation fingerprint",
-			mutate: func(entry *replay.ObservationJournalEntry) {
+			mutate: func(entry *ObservationJournalEntry) {
 				entry.Correlations[0].ObservationFingerprint =
 					"sha256:" + strings.Repeat("b", 64)
 			},
@@ -204,11 +202,11 @@ func TestMergeObservationJournalEntryRejectsIdentityConflicts(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			update := base
 			update.Observations = append(
-				[]replay.JournalObservation(nil),
+				[]JournalObservation(nil),
 				base.Observations...,
 			)
 			update.Correlations = append(
-				[]replay.CheckpointCommitCorrelation(nil),
+				[]CheckpointCommitCorrelation(nil),
 				base.Correlations...,
 			)
 			test.mutate(&update)
@@ -220,27 +218,27 @@ func TestMergeObservationJournalEntryRejectsIdentityConflicts(t *testing.T) {
 }
 
 func TestMergeObservationJournalEntryConfirmsMonotonically(t *testing.T) {
-	position := replay.ProviderObservationPosition{
+	position := ProviderObservationPosition{
 		ConnectionID: "connection-1",
 		ChunkSeq:     1,
 		UnitIndex:    1,
 		EventIndex:   1,
 	}
-	address := replay.EntityAddress{
-		Kind: replay.EntityKindTurn,
-		Origin: replay.EntityOrigin{
-			Source:                replay.EntityOriginActivityEvent,
+	address := EntityAddress{
+		Kind: EntityKindTurn,
+		Origin: EntityOrigin{
+			Source:                EntityOriginActivityEvent,
 			ActivityEventSequence: 1,
 		},
 	}
 	fingerprint := "sha256:" + strings.Repeat("a", 64)
-	base := replay.ObservationJournalEntry{
-		SchemaVersion: replay.ObservationSchemaVersion,
-		Position: replay.ProviderUnitPosition{
+	base := ObservationJournalEntry{
+		SchemaVersion: ObservationSchemaVersion,
+		Position: ProviderUnitPosition{
 			ConnectionID: "connection-1", ChunkSeq: 1, UnitIndex: 1,
 		},
-		UnitKind: replay.ProviderInputUnitProtocolMessage,
-		Correlations: []replay.CheckpointCommitCorrelation{{
+		UnitKind: ProviderInputUnitProtocolMessage,
+		Correlations: []CheckpointCommitCorrelation{{
 			ID: "correlation-1", Kind: "turn.status", Address: address,
 			ObservationPosition: position, ObservationFingerprint: fingerprint,
 			Expected: "completed",
@@ -248,7 +246,7 @@ func TestMergeObservationJournalEntryConfirmsMonotonically(t *testing.T) {
 	}
 	update := base
 	update.Correlations = append(
-		[]replay.CheckpointCommitCorrelation(nil),
+		[]CheckpointCommitCorrelation(nil),
 		base.Correlations...,
 	)
 	update.Correlations[0].Confirmed = true
@@ -263,7 +261,7 @@ func TestMergeObservationJournalEntryConfirmsMonotonically(t *testing.T) {
 	}
 	conflict := update
 	conflict.Correlations = append(
-		[]replay.CheckpointCommitCorrelation(nil),
+		[]CheckpointCommitCorrelation(nil),
 		update.Correlations...,
 	)
 	conflict.Correlations[0].TransactionID = "transaction-2"
@@ -276,11 +274,11 @@ func TestArtifactStorePublishesAndVerifiesSharedCassetteSchema(t *testing.T) {
 	store := &Store{
 		StateDir: t.TempDir(),
 	}
-	recording := replay.Recording{
+	recording := Recording{
 		ID: "recording-1", ScopeID: "workspace-1", AgentTargetID: "local:codex",
 		ReplayPrerequisites: replayPrerequisitesForTest(),
 		Name:                "2026-07-28T10:00:00.000Z",
-		RootAgentSessionID:  "session-1", Mode: replay.ScenarioModeCreateSession,
+		RootAgentSessionID:  "session-1", Mode: ScenarioModeCreateSession,
 		RecordingAtUnixMS: 1, StoppedAtUnixMS: 2,
 	}
 	layout := completeArtifactCandidate(t, store, recording)
@@ -296,11 +294,11 @@ func TestArtifactStorePublishesAndVerifiesSharedCassetteSchema(t *testing.T) {
 	); !os.IsNotExist(err) {
 		t.Fatalf("candidate observation journal was published: %v", err)
 	}
-	raw, err := os.ReadFile(filepath.Join(artifact.Layout.StorageKey, replay.CassetteManifestFile))
+	raw, err := os.ReadFile(filepath.Join(artifact.Layout.StorageKey, CassetteManifestFile))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var manifest replay.CassetteManifest
+	var manifest CassetteManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatal(err)
 	}
@@ -309,8 +307,8 @@ func TestArtifactStorePublishesAndVerifiesSharedCassetteSchema(t *testing.T) {
 		t.Fatalf("manifest = %#v", manifest)
 	}
 	for _, portablePath := range []string{
-		replay.CassetteManifestFile,
-		replay.ActivityEventsFile,
+		CassetteManifestFile,
+		ActivityEventsFile,
 	} {
 		contents, readErr := os.ReadFile(
 			filepath.Join(artifact.Layout.StorageKey, portablePath),
@@ -321,7 +319,7 @@ func TestArtifactStorePublishesAndVerifiesSharedCassetteSchema(t *testing.T) {
 		if strings.Contains(string(contents), `"scopeId"`) {
 			t.Fatalf("%s contains capture Scope identity: %s", portablePath, contents)
 		}
-		if portablePath == replay.ActivityEventsFile &&
+		if portablePath == ActivityEventsFile &&
 			!strings.Contains(string(contents), recording.ScopeID) {
 			t.Fatalf("activity user payload was rewritten: %s", contents)
 		}
@@ -352,7 +350,7 @@ func TestArtifactStorePublishesAndVerifiesSharedCassetteSchema(t *testing.T) {
 		renamed.Cassette.ManifestSHA256 == artifact.Cassette.ManifestSHA256 {
 		t.Fatalf("renamed = %#v", renamed.Cassette)
 	}
-	raw, err = os.ReadFile(filepath.Join(artifact.Layout.StorageKey, replay.CassetteManifestFile))
+	raw, err = os.ReadFile(filepath.Join(artifact.Layout.StorageKey, CassetteManifestFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,7 +361,7 @@ func TestArtifactStorePublishesAndVerifiesSharedCassetteSchema(t *testing.T) {
 		t.Fatalf("manifest name = %q", manifest.Name)
 	}
 	if err := os.WriteFile(
-		filepath.Join(artifact.Layout.StorageKey, replay.ProviderFramesFile),
+		filepath.Join(artifact.Layout.StorageKey, ProviderFramesFile),
 		[]byte("corrupt"),
 		0o600,
 	); err != nil {
@@ -376,11 +374,11 @@ func TestArtifactStorePublishesAndVerifiesSharedCassetteSchema(t *testing.T) {
 
 func TestArtifactStoreImportsAndVerifiesPortableCassetteDirectory(t *testing.T) {
 	sourceStore := &Store{StateDir: t.TempDir()}
-	recording := replay.Recording{
+	recording := Recording{
 		ID: "recording-1", ScopeID: "workspace-1", AgentTargetID: "local:codex",
 		ReplayPrerequisites: replayPrerequisitesForTest(),
 		Name:                "portable cassette",
-		RootAgentSessionID:  "session-1", Mode: replay.ScenarioModeCreateSession,
+		RootAgentSessionID:  "session-1", Mode: ScenarioModeCreateSession,
 	}
 	completeArtifactCandidate(t, sourceStore, recording)
 	source, err := sourceStore.Publish(context.Background(), recording, "cassette-1", 1)
@@ -409,11 +407,11 @@ func TestArtifactStoreRejectsUnrelatedFile(t *testing.T) {
 	store := &Store{
 		StateDir: t.TempDir(),
 	}
-	recording := replay.Recording{
+	recording := Recording{
 		ID: "recording-1", ScopeID: "workspace-1", AgentTargetID: "local:codex",
 		ReplayPrerequisites: replayPrerequisitesForTest(),
 		Name:                "2026-07-28T10:00:00.000Z",
-		RootAgentSessionID:  "session-1", Mode: replay.ScenarioModeCreateSession,
+		RootAgentSessionID:  "session-1", Mode: ScenarioModeCreateSession,
 	}
 	layout := completeArtifactCandidate(t, store, recording)
 	if err := os.WriteFile(filepath.Join(layout.StorageKey, "desktop.log"), []byte("log"), 0o600); err != nil {
@@ -429,11 +427,11 @@ func TestArtifactStoreResolveIgnoresFinderMetadataOnly(t *testing.T) {
 	store := &Store{
 		StateDir: t.TempDir(),
 	}
-	recording := replay.Recording{
+	recording := Recording{
 		ID: "recording-1", ScopeID: "workspace-1", AgentTargetID: "local:codex",
 		ReplayPrerequisites: replayPrerequisitesForTest(),
 		Name:                "2026-07-28T10:00:00.000Z",
-		RootAgentSessionID:  "session-1", Mode: replay.ScenarioModeCreateSession,
+		RootAgentSessionID:  "session-1", Mode: ScenarioModeCreateSession,
 	}
 	completeArtifactCandidate(t, store, recording)
 	artifact, err := store.Publish(context.Background(), recording, "cassette-1", 1)
@@ -473,15 +471,15 @@ func TestArtifactStoreMakesActivityEventAssetPortable(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := &Store{StateDir: stateDir}
-	recording := replay.Recording{ID: "recording-1", ScopeID: "workspace-1"}
+	recording := Recording{ID: "recording-1", ScopeID: "workspace-1"}
 	layout, err := store.Prepare(context.Background(), recording)
 	if err != nil {
 		t.Fatal(err)
 	}
 	recording.ArtifactKey = layout.StorageKey
-	if err := store.AppendActivityEvent(context.Background(), recording, replay.ActivityEvent{
-		SchemaVersion: replay.CassetteSchemaVersion, Sequence: 1,
-		Kind: replay.ActivityEventKindIntent, Type: "submit/requested",
+	if err := store.AppendActivityEvent(context.Background(), recording, ActivityEvent{
+		SchemaVersion: CassetteSchemaVersion, Sequence: 1,
+		Kind: ActivityEventKindIntent, Type: "submit/requested",
 		EventID: "event-1", ScopeID: "workspace-1", OccurredAtMS: 1,
 		Payload: map[string]any{"content": []map[string]any{{
 			"type": "image", "path": asset, "mimeType": "image/png",
@@ -489,7 +487,7 @@ func TestArtifactStoreMakesActivityEventAssetPortable(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile(filepath.Join(layout.StorageKey, replay.ActivityEventsFile))
+	raw, err := os.ReadFile(filepath.Join(layout.StorageKey, ActivityEventsFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -541,9 +539,9 @@ func TestArtifactStoreExportsGeneratedImageBlob(t *testing.T) {
 				"messages": []any{map[string]any{
 					"payload": map[string]any{
 						"output": map[string]any{
-							"savedPath": replay.PortableReplayHomeToken + "/" + relativePath,
+							"savedPath": PortableReplayHomeToken + "/" + relativePath,
 							"savedPaths": []any{
-								replay.PortableReplayHomeToken + "/" + relativePath,
+								PortableReplayHomeToken + "/" + relativePath,
 							},
 							"imageMimeType": "image/png",
 						},
@@ -572,7 +570,7 @@ func TestArtifactStoreExportsGeneratedImageBlob(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(manifest.Blobs) != 1 ||
-		manifest.Blobs[0].Kind != replay.BlobKindAgentGeneratedImage ||
+		manifest.Blobs[0].Kind != BlobKindAgentGeneratedImage ||
 		manifest.Blobs[0].RelativePath != relativePath {
 		t.Fatalf("generated image blob manifest = %#v", manifest)
 	}
@@ -601,7 +599,7 @@ func TestArtifactStoreMakesActivationContentAssetsPortable(t *testing.T) {
 	}
 	store := &Store{StateDir: stateDir}
 	for _, field := range []string{"content", "runtimeContent", "initialContent"} {
-		event, err := store.portableActivityEvent(replay.ActivityEvent{
+		event, err := store.portableActivityEvent(ActivityEvent{
 			Type: "session/activate",
 			Payload: map[string]any{field: []map[string]any{{
 				"type": "image", "path": asset, "mimeType": "image/png",
@@ -623,10 +621,10 @@ func TestArtifactStoreMakesActivationContentAssetsPortable(t *testing.T) {
 
 func TestProviderTapePublicationAuditRejectsResidualSensitiveField(t *testing.T) {
 	store := &Store{StateDir: t.TempDir()}
-	recording := replay.Recording{
+	recording := Recording{
 		ID: "recording-1", ScopeID: "workspace-1", AgentTargetID: "local:codex",
 		Name:               "2026-07-28T10:00:00.000Z",
-		RootAgentSessionID: "session-1", Mode: replay.ScenarioModeCreateSession,
+		RootAgentSessionID: "session-1", Mode: ScenarioModeCreateSession,
 		RecordingAtUnixMS: 1, StoppedAtUnixMS: 2,
 	}
 	layout := completeArtifactCandidate(t, store, recording)
@@ -653,17 +651,17 @@ func TestProviderTapePublicationAuditRejectsResidualSensitiveField(t *testing.T)
 
 func TestArtifactStoreProjectsSessionCreatePathsAtRecordingBoundary(t *testing.T) {
 	store := &Store{StateDir: t.TempDir()}
-	recording := replay.Recording{ID: "recording-1", ScopeID: "workspace-1"}
+	recording := Recording{ID: "recording-1", ScopeID: "workspace-1"}
 	layout, err := store.Prepare(context.Background(), recording)
 	if err != nil {
 		t.Fatal(err)
 	}
 	recording.ArtifactKey = layout.StorageKey
 	recordedCWD := filepath.Join(string(filepath.Separator), "Users", "developer", "project")
-	if err := store.AppendActivityEvent(context.Background(), recording, replay.ActivityEvent{
-		SchemaVersion: replay.CassetteSchemaVersion,
+	if err := store.AppendActivityEvent(context.Background(), recording, ActivityEvent{
+		SchemaVersion: CassetteSchemaVersion,
 		Sequence:      1,
-		Kind:          replay.ActivityEventKindDirectStimulus,
+		Kind:          ActivityEventKindDirectStimulus,
 		Type:          "session.create",
 		EventID:       "event-1",
 		ScopeID:       recording.ScopeID,
@@ -678,7 +676,7 @@ func TestArtifactStoreProjectsSessionCreatePathsAtRecordingBoundary(t *testing.T
 	}); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile(filepath.Join(layout.StorageKey, replay.ActivityEventsFile))
+	raw, err := os.ReadFile(filepath.Join(layout.StorageKey, ActivityEventsFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -696,7 +694,7 @@ func TestArtifactStoreProjectsSessionCreatePathsAtRecordingBoundary(t *testing.T
 func TestArtifactStoreProjectsEngineActivationPathsAtRecordingBoundary(t *testing.T) {
 	recordedCWD := filepath.Join(string(filepath.Separator), "Users", "developer", "project")
 	for _, eventType := range []string{"activation/requested", "session/activate"} {
-		event, err := (&Store{}).portableActivityEvent(replay.ActivityEvent{
+		event, err := (&Store{}).portableActivityEvent(ActivityEvent{
 			Type: eventType,
 			Payload: map[string]any{
 				"cwd": recordedCWD,
@@ -711,14 +709,14 @@ func TestArtifactStoreProjectsEngineActivationPathsAtRecordingBoundary(t *testin
 		if err != nil {
 			t.Fatal(err)
 		}
-		if event.Payload["cwd"] != replay.PortableReplayCWDToken {
+		if event.Payload["cwd"] != PortableReplayCWDToken {
 			t.Fatalf("%s cwd = %v", eventType, event.Payload["cwd"])
 		}
 		rail, _ := event.Payload["railPlacement"].(map[string]any)
-		if rail["projectPath"] != replay.PortableReplayCWDToken+"/packages/agent" {
+		if rail["projectPath"] != PortableReplayCWDToken+"/packages/agent" {
 			t.Fatalf("%s railPlacement = %#v", eventType, rail)
 		}
-		portableSectionKey := "project:" + replay.PortableReplayCWDToken + "/packages/agent"
+		portableSectionKey := "project:" + PortableReplayCWDToken + "/packages/agent"
 		if rail["sectionKey"] != portableSectionKey {
 			t.Fatalf("%s railPlacement.sectionKey = %v", eventType, rail["sectionKey"])
 		}
@@ -729,7 +727,7 @@ func TestArtifactStoreProjectsEngineActivationPathsAtRecordingBoundary(t *testin
 }
 
 func TestArtifactStoreKeepsConversationsSectionKeyPortable(t *testing.T) {
-	event, err := (&Store{}).portableActivityEvent(replay.ActivityEvent{
+	event, err := (&Store{}).portableActivityEvent(ActivityEvent{
 		Type: "activation/requested",
 		Payload: map[string]any{
 			"cwd": "",
@@ -762,7 +760,7 @@ func TestPortableActivityValidationRejectsResidualAbsoluteActivationPath(t *test
 			{"railPlacement": map[string]any{"sectionKey": "project:/Users/developer/project"}},
 			{"railSectionKey": "project:/Users/developer/project"},
 		} {
-			err := validatePortableActivityEvents([]replay.ActivityEvent{{
+			err := validatePortableActivityEvents([]ActivityEvent{{
 				Sequence: 1,
 				Type:     eventType,
 				Payload:  payload,

@@ -1,22 +1,20 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"context"
 	"testing"
-
-	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
 )
 
 func TestSemanticCassetteReaderReturnsValidatedArtifact(t *testing.T) {
 	store := &Store{StateDir: t.TempDir()}
-	recording := replay.Recording{
+	recording := Recording{
 		ID:                  "recording-reader",
 		ScopeID:             "workspace-reader",
 		AgentTargetID:       "local:codex",
 		ReplayPrerequisites: replayPrerequisitesForTest(),
 		Name:                "semantic reader",
 		RootAgentSessionID:  "session-1",
-		Mode:                replay.ScenarioModeCreateSession,
+		Mode:                ScenarioModeCreateSession,
 	}
 	completeArtifactCandidate(t, store, recording)
 	published, err := store.Publish(

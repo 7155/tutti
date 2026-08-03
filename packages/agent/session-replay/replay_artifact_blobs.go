@@ -1,4 +1,4 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"crypto/sha256"
@@ -12,16 +12,14 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-
-	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
 )
 
 var (
-	maxPortablePromptAsset = replay.MaxPortableBlobBytes
+	maxPortablePromptAsset = MaxPortableBlobBytes
 )
 
-type blobManifest = replay.BlobManifest
-type blobManifestEntry = replay.BlobManifestEntry
+type blobManifest = BlobManifest
+type blobManifestEntry = BlobManifestEntry
 
 type attachmentReference struct {
 	AgentSessionID string
@@ -113,7 +111,7 @@ func blobReferencesFromReplayState(
 	var attachments []attachmentReference
 	var generatedImages []generatedImageReference
 	for _, session := range state.Agent.Sessions {
-		descriptor, _ := replay.ResolveProviderReplay(
+		descriptor, _ := ResolveProviderReplay(
 			session.AgentTargetID,
 			session.Provider,
 		)
@@ -239,7 +237,7 @@ func (s *Store) copyAttachmentBlob(
 		)
 	}
 	return blobManifestEntry{
-		Kind:           replay.BlobKindAgentPromptAttachment,
+		Kind:           BlobKindAgentPromptAttachment,
 		SHA256:         digest,
 		SizeBytes:      size,
 		AgentSessionID: reference.AgentSessionID,
@@ -274,7 +272,7 @@ func (s *Store) copyGeneratedImageBlob(
 		)
 	}
 	return blobManifestEntry{
-		Kind:           replay.BlobKindAgentGeneratedImage,
+		Kind:           BlobKindAgentGeneratedImage,
 		SHA256:         digest,
 		SizeBytes:      size,
 		AgentSessionID: reference.AgentSessionID,
@@ -344,7 +342,7 @@ func readBlobManifest(path string) (blobManifest, error) {
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		return blobManifest{}, err
 	}
-	if manifest.SchemaVersion != replay.BlobManifestSchemaVersion {
+	if manifest.SchemaVersion != BlobManifestSchemaVersion {
 		return blobManifest{}, errors.New("unsupported blob manifest schema version")
 	}
 	if manifest.Blobs == nil {
@@ -373,7 +371,7 @@ func safeBlobSegment(value string) bool {
 }
 
 func portableGeneratedImageRelativePath(value string) (string, bool) {
-	const prefix = replay.PortableReplayHomeToken + "/"
+	const prefix = PortableReplayHomeToken + "/"
 	value = strings.TrimSpace(value)
 	if !strings.HasPrefix(value, prefix) {
 		return "", false
@@ -382,32 +380,25 @@ func portableGeneratedImageRelativePath(value string) (string, bool) {
 	return relative, safeGeneratedImageRelativePath(relative)
 }
 
-func safeGeneratedImageRelativePath(value string) bool {
-	value = strings.TrimSpace(value)
-	return strings.HasPrefix(value, "generated_images/") &&
-		!strings.Contains(value, `\`) &&
-		path.Clean(value) == value
-}
-
 func attachmentBlobReferenceKey(sessionID, attachmentID, mimeType string) string {
-	return replay.BlobKindAgentPromptAttachment + "\x00" +
+	return BlobKindAgentPromptAttachment + "\x00" +
 		sessionID + "\x00" + attachmentID + "\x00" + mimeType
 }
 
 func generatedImageBlobReferenceKey(sessionID, relativePath, mimeType string) string {
-	return replay.BlobKindAgentGeneratedImage + "\x00" +
+	return BlobKindAgentGeneratedImage + "\x00" +
 		sessionID + "\x00" + relativePath + "\x00" + mimeType
 }
 
 func blobManifestEntryKey(entry blobManifestEntry) string {
 	switch entry.Kind {
-	case replay.BlobKindAgentPromptAttachment:
+	case BlobKindAgentPromptAttachment:
 		return attachmentBlobReferenceKey(
 			entry.AgentSessionID,
 			entry.AttachmentID,
 			entry.MimeType,
 		)
-	case replay.BlobKindAgentGeneratedImage:
+	case BlobKindAgentGeneratedImage:
 		return generatedImageBlobReferenceKey(
 			entry.AgentSessionID,
 			entry.RelativePath,
@@ -421,18 +412,18 @@ func blobManifestEntryKey(entry blobManifestEntry) string {
 // portableActivityEvent projects runtime-owned fields before the mutable
 // recording candidate is written. User-authored content remains unchanged.
 func (s *Store) portableActivityEvent(
-	event replay.ActivityEvent,
-) (replay.ActivityEvent, error) {
+	event ActivityEvent,
+) (ActivityEvent, error) {
 	if event.Payload == nil {
 		return event, nil
 	}
 	raw, err := json.Marshal(event.Payload)
 	if err != nil {
-		return replay.ActivityEvent{}, err
+		return ActivityEvent{}, err
 	}
 	var portable map[string]any
 	if err := json.Unmarshal(raw, &portable); err != nil {
-		return replay.ActivityEvent{}, err
+		return ActivityEvent{}, err
 	}
 	for _, field := range []string{"content", "runtimeContent", "initialContent"} {
 		content, _ := portable[field].([]any)
@@ -447,7 +438,7 @@ func (s *Store) portableActivityEvent(
 			}
 			data, err := s.readPortablePromptAsset(path)
 			if err != nil {
-				return replay.ActivityEvent{}, err
+				return ActivityEvent{}, err
 			}
 			block["data"] = base64.StdEncoding.EncodeToString(data)
 			delete(block, "path")
@@ -472,7 +463,7 @@ func projectPortableSessionActivationPaths(payload map[string]any) {
 	if cwd == "" {
 		return
 	}
-	payload["cwd"] = replay.PortableReplayCWDToken
+	payload["cwd"] = PortableReplayCWDToken
 	railPlacement, _ := payload["railPlacement"].(map[string]any)
 	projectPath, _ := railPlacement["projectPath"].(string)
 	if mapped, ok := portableReplayPath(projectPath, cwd); ok {
@@ -529,9 +520,9 @@ func portableReplayPath(path, root string) (string, bool) {
 		return path, false
 	}
 	if relative == "." {
-		return replay.PortableReplayCWDToken, true
+		return PortableReplayCWDToken, true
 	}
-	return replay.PortableReplayCWDToken + "/" + filepath.ToSlash(relative), true
+	return PortableReplayCWDToken + "/" + filepath.ToSlash(relative), true
 }
 
 func (s *Store) readPortablePromptAsset(path string) ([]byte, error) {

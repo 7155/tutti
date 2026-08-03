@@ -1,17 +1,15 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"context"
 	"sort"
 	"strings"
-
-	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
 )
 
 func (s *Service) ObserveProviderObservations(
 	ctx context.Context,
 	workspaceID, _ string,
-	batches []replay.ProviderObservationBatch,
+	batches []ProviderObservationBatch,
 ) error {
 	if s == nil || s.Workflow == nil || len(batches) == 0 {
 		return nil
@@ -22,7 +20,7 @@ func (s *Service) ObserveProviderObservations(
 		if !s.Workflow.HasRecordingCaptureForScope(workspaceID) {
 			return nil
 		}
-		return replay.ErrInvalidState
+		return ErrInvalidState
 	}
 	snapshot, admitted :=
 		s.Workflow.RecordingCursorSnapshotForCapture(recordingID)
@@ -31,7 +29,7 @@ func (s *Service) ObserveProviderObservations(
 	}
 	for _, batch := range batches[1:] {
 		if strings.TrimSpace(batch.RecordingID) != recordingID {
-			return replay.ErrInvalidState
+			return ErrInvalidState
 		}
 	}
 	initialized := false
@@ -63,7 +61,7 @@ func (s *Service) ObserveProviderObservations(
 // observations. It never creates checkpoint candidates.
 func (s *Service) ObserveProviderInputUnit(
 	recordingID string,
-	position replay.ProviderUnitPosition,
+	position ProviderUnitPosition,
 ) {
 	if s == nil {
 		return
@@ -87,7 +85,7 @@ func (s *Service) ObserveProviderInputUnit(
 }
 
 func providerUnitPositionAfter(
-	left, right replay.ProviderUnitPosition,
+	left, right ProviderUnitPosition,
 ) bool {
 	return left.ChunkSeq > right.ChunkSeq ||
 		(left.ChunkSeq == right.ChunkSeq && left.UnitIndex > right.UnitIndex)
@@ -95,17 +93,17 @@ func providerUnitPositionAfter(
 
 func (s *Service) recordProviderObservationBatch(
 	ctx context.Context,
-	snapshot replay.RecordingCursorSnapshot,
-	batch replay.ProviderObservationBatch,
+	snapshot RecordingCursorSnapshot,
+	batch ProviderObservationBatch,
 ) error {
 	recordingID := strings.TrimSpace(batch.RecordingID)
 	if recordingID == "" {
-		return replay.ErrInvalidState
+		return ErrInvalidState
 	}
 	if recordingID != snapshot.Recording.ID {
 		return nil
 	}
-	position := replay.ProviderUnitPosition{
+	position := ProviderUnitPosition{
 		ConnectionID: strings.TrimSpace(batch.ConnectionID),
 		ChunkSeq:     batch.ChunkSeq,
 		UnitIndex:    batch.UnitIndex,
@@ -118,7 +116,7 @@ func (s *Service) recordProviderObservationBatch(
 	defer s.checkpoints.mu.Unlock()
 	r := &s.checkpoints
 	if r.recordingID != snapshot.Recording.ID {
-		return replay.ErrInvalidState
+		return ErrInvalidState
 	}
 	r.connections[position.ConnectionID] = position
 	r.backfillConnections()
@@ -133,12 +131,12 @@ func (s *Service) recordProviderObservationBatch(
 	if previous, exists := r.pending[position]; exists {
 		entry = mergeCheckpointJournalEntry(previous, entry)
 		r.plan.Checkpoints[len(r.plan.Checkpoints)-1] =
-			replay.MergeCheckpointCandidate(
+			MergeCheckpointCandidate(
 				r.plan.Checkpoints[len(r.plan.Checkpoints)-1],
 				checkpoint,
 			)
 	} else {
-		replay.AppendCheckpoint(&r.plan, checkpoint)
+		AppendCheckpoint(&r.plan, checkpoint)
 	}
 	r.pending[position] = entry
 	return s.Workflow.RecordCheckpointCandidate(
@@ -150,26 +148,26 @@ func (s *Service) recordProviderObservationBatch(
 }
 
 func (r *checkpointRecorder) buildCandidate(
-	snapshot replay.RecordingCursorSnapshot,
-	position replay.ProviderUnitPosition,
-	batch replay.ProviderObservationBatch,
+	snapshot RecordingCursorSnapshot,
+	position ProviderUnitPosition,
+	batch ProviderObservationBatch,
 ) (
-	replay.ObservationJournalEntry,
-	replay.ReplayCheckpoint,
+	ObservationJournalEntry,
+	ReplayCheckpoint,
 	bool,
 	error,
 ) {
-	entry := replay.ObservationJournalEntry{
-		SchemaVersion: replay.ObservationSchemaVersion,
+	entry := ObservationJournalEntry{
+		SchemaVersion: ObservationSchemaVersion,
 		Position:      position,
-		UnitKind:      replay.ProviderInputUnitKind(batch.UnitKind),
-		Observations:  []replay.JournalObservation{},
-		Correlations:  []replay.CheckpointCommitCorrelation{},
+		UnitKind:      ProviderInputUnitKind(batch.UnitKind),
+		Observations:  []JournalObservation{},
+		Correlations:  []CheckpointCommitCorrelation{},
 	}
-	var checkpoint replay.ReplayCheckpoint
+	var checkpoint ReplayCheckpoint
 	found := false
 	for _, event := range batch.Events {
-		observationPosition := replay.ProviderObservationPosition{
+		observationPosition := ProviderObservationPosition{
 			ConnectionID: position.ConnectionID,
 			ChunkSeq:     position.ChunkSeq,
 			UnitIndex:    position.UnitIndex,
@@ -188,19 +186,19 @@ func (r *checkpointRecorder) buildCandidate(
 			continue
 		}
 		primary := addresses[len(addresses)-1]
-		observation := replay.ProviderObservation{
-			SchemaVersion: replay.ObservationSchemaVersion,
+		observation := ProviderObservation{
+			SchemaVersion: ObservationSchemaVersion,
 			Type:          event.Type,
 			Address:       primary,
 			Stable:        stableObservationFields(event),
 		}
-		fingerprint, err := replay.ObservationFingerprint(observation)
+		fingerprint, err := ObservationFingerprint(observation)
 		if err != nil {
 			return entry, checkpoint, false, err
 		}
 		entry.Observations = append(
 			entry.Observations,
-			replay.JournalObservation{
+			JournalObservation{
 				Position:    observationPosition,
 				Type:        event.Type,
 				Fingerprint: fingerprint,
@@ -209,7 +207,7 @@ func (r *checkpointRecorder) buildCandidate(
 		)
 		entry.Correlations = append(
 			entry.Correlations,
-			replay.CheckpointCommitCorrelation{
+			CheckpointCommitCorrelation{
 				ID:                     correlationID(position, event, primary),
 				Kind:                   correlationKind(event),
 				Address:                primary,
@@ -219,29 +217,29 @@ func (r *checkpointRecorder) buildCandidate(
 			},
 		)
 		predicates := make(
-			[]replay.ReadinessPredicate,
+			[]ReadinessPredicate,
 			0,
 			len(addresses),
 		)
 		for index := range addresses {
-			predicates = append(predicates, replay.ReadinessPredicate{
+			predicates = append(predicates, ReadinessPredicate{
 				Type:    readiness.Type,
 				Subject: index,
 				Equals:  readiness.Equals,
 			})
 		}
-		eventCheckpoint := replay.ReplayCheckpoint{
+		eventCheckpoint := ReplayCheckpoint{
 			Kind: kind,
 			Tags: []string{kind},
-			Trigger: replay.CheckpointTrigger{
-				Source:      replay.CheckpointTriggerProviderObservation,
+			Trigger: CheckpointTrigger{
+				Source:      CheckpointTriggerProviderObservation,
 				Position:    &observationPosition,
-				UnitKind:    replay.ProviderInputUnitKind(batch.UnitKind),
+				UnitKind:    ProviderInputUnitKind(batch.UnitKind),
 				Type:        event.Type,
 				Fingerprint: fingerprint,
 			},
 			Subjects: addresses,
-			Readiness: replay.CheckpointReadiness{
+			Readiness: CheckpointReadiness{
 				All: predicates,
 			},
 		}
@@ -249,7 +247,7 @@ func (r *checkpointRecorder) buildCandidate(
 			checkpoint = eventCheckpoint
 			found = true
 		} else {
-			checkpoint = replay.MergeCheckpointCandidate(
+			checkpoint = MergeCheckpointCandidate(
 				checkpoint,
 				eventCheckpoint,
 			)
@@ -258,7 +256,7 @@ func (r *checkpointRecorder) buildCandidate(
 	if !found {
 		return entry, checkpoint, false, nil
 	}
-	checkpoint.Cursor = replay.ReplayCursor{
+	checkpoint.Cursor = ReplayCursor{
 		ActivityEventSequence: max(
 			snapshot.ActivityEventSequence,
 			1,
@@ -269,37 +267,37 @@ func (r *checkpointRecorder) buildCandidate(
 }
 
 func describeProviderEvent(
-	event replay.ProviderObservationEvent,
-) (replay.ReadinessPredicate, string, bool) {
+	event ProviderObservationEvent,
+) (ReadinessPredicate, string, bool) {
 	switch event.Type {
 	case "interaction.requested":
-		return replay.ReadinessPredicate{
+		return ReadinessPredicate{
 			Type: "interaction.status", Equals: "pending",
 		}, "interaction.pending", true
 	case "interaction.superseded":
-		return replay.ReadinessPredicate{
+		return ReadinessPredicate{
 			Type: "interaction.status", Equals: "superseded",
 		}, "interaction.superseded", true
 	case "call.started":
-		return replay.ReadinessPredicate{
+		return ReadinessPredicate{
 			Type: "call.status", Equals: "running",
 		}, "tool.started", true
 	case "call.completed":
-		return replay.ReadinessPredicate{
+		return ReadinessPredicate{
 			Type: "call.status", Equals: "completed",
 		}, "tool.completed", true
 	case "call.failed":
-		return replay.ReadinessPredicate{
+		return ReadinessPredicate{
 			Type: "call.status", Equals: "failed",
 		}, "tool.completed", true
 	case "plan.proposed":
-		return replay.ReadinessPredicate{
+		return ReadinessPredicate{
 			Type: "plan.status", Equals: "completed",
 		}, "plan.waiting", true
 	case "compaction.updated":
 		status := strings.TrimSpace(event.NoticeCommandStatus)
 		if event.NoticeCommand != "compact" || status == "" {
-			return replay.ReadinessPredicate{}, "", false
+			return ReadinessPredicate{}, "", false
 		}
 		kind := "compaction." + status
 		switch status {
@@ -307,24 +305,24 @@ func describeProviderEvent(
 		case "failed":
 			kind = "compaction.completed"
 		default:
-			return replay.ReadinessPredicate{}, "", false
+			return ReadinessPredicate{}, "", false
 		}
-		return replay.ReadinessPredicate{
+		return ReadinessPredicate{
 			Type: "compaction.status", Equals: status,
 		}, kind, true
 	case "attachment.materialized":
 		if event.AttachmentCount == 0 {
-			return replay.ReadinessPredicate{}, "", false
+			return ReadinessPredicate{}, "", false
 		}
-		return replay.ReadinessPredicate{
+		return ReadinessPredicate{
 			Type: "attachment.materialized", Equals: "true",
 		}, "attachment.materialized", true
 	case "session.started", "session.updated":
-		return replay.ReadinessPredicate{
+		return ReadinessPredicate{
 			Type: "child-session.status", Equals: "running",
 		}, "child-session.running", true
 	case "session.completed", "session.failed":
-		return replay.ReadinessPredicate{
+		return ReadinessPredicate{
 			Type: "child-session.status", Equals: "completed",
 		}, "child-session.completed", true
 	case "turn.completed", "turn.failed", "turn.canceled",
@@ -342,13 +340,13 @@ func describeProviderEvent(
 		case "turn.failed":
 			status = "failed"
 		}
-		return replay.ReadinessPredicate{
+		return ReadinessPredicate{
 			Type: "turn.status", Equals: status,
 		}, kind, true
 	case "turn.started", "turn.updated", "root_provider_turn.started":
 		// Fold the observed activity-layer phase into the canonical store
 		// vocabulary so replay readiness compares against canonical turns.
-		return replay.ReadinessPredicate{
+		return ReadinessPredicate{
 			Type: "turn.phase",
 			Equals: canonicalTurnPhase(firstNonEmpty(
 				event.TurnPhase,
@@ -356,7 +354,7 @@ func describeProviderEvent(
 			)),
 		}, "turn.working", true
 	default:
-		return replay.ReadinessPredicate{}, "", false
+		return ReadinessPredicate{}, "", false
 	}
 }
 
@@ -374,7 +372,7 @@ func (r *checkpointRecorder) backfillConnections() {
 			if _, ok := existing[connectionID]; !ok {
 				cursor.ProviderConnections = append(
 					cursor.ProviderConnections,
-					replay.ProviderUnitPosition{
+					ProviderUnitPosition{
 						ConnectionID: connectionID,
 					},
 				)
@@ -398,7 +396,7 @@ func (r *checkpointRecorder) backfillConnections() {
 // never hold at the checkpoint (the canceled-compaction interrupt round trip
 // is the known case). Connections that never carried an observation stay
 // excluded so optional probe connections cannot enter checkpoint cursors.
-func (r *checkpointRecorder) activityBoundaryCursor() []replay.ProviderUnitPosition {
+func (r *checkpointRecorder) activityBoundaryCursor() []ProviderUnitPosition {
 	cursor := r.connectionCursor()
 	for index := range cursor {
 		handled, ok := r.handledUnits[cursor[index].ConnectionID]
@@ -409,9 +407,9 @@ func (r *checkpointRecorder) activityBoundaryCursor() []replay.ProviderUnitPosit
 	return cursor
 }
 
-func (r *checkpointRecorder) connectionCursor() []replay.ProviderUnitPosition {
+func (r *checkpointRecorder) connectionCursor() []ProviderUnitPosition {
 	result := make(
-		[]replay.ProviderUnitPosition,
+		[]ProviderUnitPosition,
 		0,
 		len(r.connections),
 	)

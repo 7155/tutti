@@ -1,4 +1,4 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"bufio"
@@ -12,20 +12,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
-	replaybiz "github.com/tutti-os/tutti/services/tuttid/biz/agentsessionreplay"
 )
 
 func (s *Store) Publish(
 	_ context.Context,
-	recording replay.Recording,
+	recording Recording,
 	cassetteID string,
 	activityEventCount uint64,
-) (replay.Artifact, error) {
+) (Artifact, error) {
 	cassetteID = strings.TrimSpace(cassetteID)
 	if cassetteID == "" {
-		return replay.Artifact{}, replay.ErrInvalidState
+		return Artifact{}, ErrInvalidState
 	}
 	layout, _ := s.LocateRecording(context.Background(), recording)
 	activityEvents, err := validateRecordedActivityEvents(
@@ -33,29 +30,29 @@ func (s *Store) Publish(
 		activityEventCount,
 	)
 	if err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	plan, err := loadAndValidateCheckpointPlan(layout.StorageKey, activityEvents)
 	if err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
-	if err := replay.ValidatePublishedCheckpointPlan(plan); err != nil {
-		return replay.Artifact{}, err
+	if err := ValidatePublishedCheckpointPlan(plan); err != nil {
+		return Artifact{}, err
 	}
 	if err := validateObservationJournal(layout.StorageKey, plan); err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
-	blobManifest, err := readBlobManifest(filepath.Join(layout.StorageKey, replay.BlobManifestFile))
+	blobManifest, err := readBlobManifest(filepath.Join(layout.StorageKey, BlobManifestFile))
 	if err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	files, err := collectCassetteFiles(layout.StorageKey, nil)
 	if err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
-	manifest, err := replay.BuildCassetteManifest(replay.CassetteManifestInput{
+	manifest, err := BuildCassetteManifest(CassetteManifestInput{
 		ID:                  cassetteID,
-		StateFormat:         replaybiz.StateFormat,
+		StateFormat:         StateFormat,
 		Name:                recording.Name,
 		SourceRecordingID:   recording.ID,
 		AgentTargetID:       recording.AgentTargetID,
@@ -65,27 +62,27 @@ func (s *Store) Publish(
 		CreatedAtUnixMS:     s.now().UnixMilli(),
 	}, files, blobManifest)
 	if err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
-	manifestPath := filepath.Join(layout.StorageKey, replay.CassetteManifestFile)
+	manifestPath := filepath.Join(layout.StorageKey, CassetteManifestFile)
 	if err := writeJSONAtomic(manifestPath, manifest); err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	manifestHash, err := fileSHA256(manifestPath)
 	if err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	destination := s.cassetteLayout(cassetteID)
 	if err := os.MkdirAll(filepath.Dir(destination.StorageKey), 0o700); err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	if err := os.RemoveAll(filepath.Join(layout.StorageKey, ".recording")); err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	if err := os.Rename(layout.StorageKey, destination.StorageKey); err != nil {
-		return replay.Artifact{}, fmt.Errorf("publish cassette: %w", err)
+		return Artifact{}, fmt.Errorf("publish cassette: %w", err)
 	}
-	cassette := replay.Cassette{
+	cassette := Cassette{
 		ID:                 cassetteID,
 		Name:               manifest.Name,
 		SourceRecordingID:  recording.ID,
@@ -97,15 +94,15 @@ func (s *Store) Publish(
 		ArtifactKey:        destination.StorageKey,
 		CreatedAtUnixMS:    manifest.CreatedAtUnixMS,
 	}
-	return replay.Artifact{Cassette: cassette, Layout: destination}, nil
+	return Artifact{Cassette: cassette, Layout: destination}, nil
 }
 
 func validateRecordedActivityEvents(
 	directory string,
 	expectedCount uint64,
-) ([]replay.ActivityEvent, error) {
-	events, err := readJSONLines[replay.ActivityEvent](
-		filepath.Join(directory, replay.ActivityEventsFile),
+) ([]ActivityEvent, error) {
+	events, err := readJSONLines[ActivityEvent](
+		filepath.Join(directory, ActivityEventsFile),
 		"activity event",
 	)
 	if err != nil {
@@ -118,7 +115,7 @@ func validateRecordedActivityEvents(
 			expectedCount,
 		)
 	}
-	if err := replay.ValidateActivityEvents(events); err != nil {
+	if err := ValidateActivityEvents(events); err != nil {
 		return nil, err
 	}
 	if err := validatePortableActivityEvents(events); err != nil {
@@ -128,14 +125,14 @@ func validateRecordedActivityEvents(
 }
 
 func validatePortableReplayFiles(directory string) error {
-	events, err := readJSONLines[replay.ActivityEvent](
-		filepath.Join(directory, replay.ActivityEventsFile),
+	events, err := readJSONLines[ActivityEvent](
+		filepath.Join(directory, ActivityEventsFile),
 		"activity event",
 	)
 	if err != nil {
 		return err
 	}
-	if err := replay.ValidateActivityEvents(events); err != nil {
+	if err := ValidateActivityEvents(events); err != nil {
 		return err
 	}
 	if err := validatePortableActivityEvents(events); err != nil {
@@ -145,14 +142,14 @@ func validatePortableReplayFiles(directory string) error {
 		return err
 	}
 	if err := rejectJSONLineScopeFields(
-		filepath.Join(directory, replay.ActivityEventsFile),
+		filepath.Join(directory, ActivityEventsFile),
 		"activity event",
 	); err != nil {
 		return err
 	}
 	for _, statePath := range []string{
-		replay.InitialStateFile,
-		replay.ExpectedStateFile,
+		InitialStateFile,
+		ExpectedStateFile,
 	} {
 		path := filepath.Join(directory, filepath.FromSlash(statePath))
 		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
@@ -167,7 +164,7 @@ func validatePortableReplayFiles(directory string) error {
 	return nil
 }
 
-func validatePortableActivityEvents(events []replay.ActivityEvent) error {
+func validatePortableActivityEvents(events []ActivityEvent) error {
 	for _, event := range events {
 		if !isSessionActivationActivityType(event.Type) {
 			continue
@@ -216,8 +213,8 @@ func validatePortableReplayPath(value any, label string) error {
 		return nil
 	}
 	path = strings.TrimSpace(path)
-	if path == replay.PortableReplayCWDToken ||
-		strings.HasPrefix(path, replay.PortableReplayCWDToken+"/") {
+	if path == PortableReplayCWDToken ||
+		strings.HasPrefix(path, PortableReplayCWDToken+"/") {
 		return nil
 	}
 	if filepath.IsAbs(path) || strings.HasPrefix(path, "file://") {
@@ -228,59 +225,59 @@ func validatePortableReplayPath(value any, label string) error {
 
 func loadAndValidateCheckpointPlan(
 	directory string,
-	events []replay.ActivityEvent,
-) (replay.CheckpointPlan, error) {
-	raw, err := os.ReadFile(filepath.Join(directory, replay.CheckpointPlanFile))
+	events []ActivityEvent,
+) (CheckpointPlan, error) {
+	raw, err := os.ReadFile(filepath.Join(directory, CheckpointPlanFile))
 	if err != nil {
-		return replay.CheckpointPlan{}, fmt.Errorf("read checkpoint plan: %w", err)
+		return CheckpointPlan{}, fmt.Errorf("read checkpoint plan: %w", err)
 	}
-	var plan replay.CheckpointPlan
+	var plan CheckpointPlan
 	if err := json.Unmarshal(raw, &plan); err != nil {
-		return replay.CheckpointPlan{}, fmt.Errorf("decode checkpoint plan: %w", err)
+		return CheckpointPlan{}, fmt.Errorf("decode checkpoint plan: %w", err)
 	}
 	connectionIDs, err := readProviderConnectionIDs(directory)
 	if err != nil {
-		return replay.CheckpointPlan{}, err
+		return CheckpointPlan{}, err
 	}
-	if err := replay.ValidateCheckpointPlan(plan, connectionIDs, events); err != nil {
-		return replay.CheckpointPlan{}, fmt.Errorf("checkpoint_plan_invalid: %w", err)
+	if err := ValidateCheckpointPlan(plan, connectionIDs, events); err != nil {
+		return CheckpointPlan{}, fmt.Errorf("checkpoint_plan_invalid: %w", err)
 	}
 	return plan, nil
 }
 
 func validateObservationJournal(
 	directory string,
-	plan replay.CheckpointPlan,
+	plan CheckpointPlan,
 ) error {
-	entries, err := readJSONLines[replay.ObservationJournalEntry](
+	entries, err := readJSONLines[ObservationJournalEntry](
 		filepath.Join(directory, observationJournalPath),
 		"observation journal entry",
 	)
 	if err != nil {
 		return err
 	}
-	return replay.ValidateCheckpointJournalAnchors(plan, entries)
+	return ValidateCheckpointJournalAnchors(plan, entries)
 }
 
 func readProviderConnectionIDs(directory string) ([]string, error) {
-	raw, err := os.ReadFile(filepath.Join(directory, replay.ProviderManifestFile))
+	raw, err := os.ReadFile(filepath.Join(directory, ProviderManifestFile))
 	if err != nil {
 		return nil, fmt.Errorf("read provider manifest for checkpoint plan: %w", err)
 	}
-	var manifest replay.ProcessCassetteManifest
+	var manifest ProcessCassetteManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		return nil, fmt.Errorf("decode provider manifest for checkpoint plan: %w", err)
 	}
-	if manifest.SchemaVersion != replay.ProcessCassetteSchemaVersion ||
-		manifest.ProjectionVersion != replay.ProcessCassetteProjectionVersion ||
-		manifest.Status != replay.ProcessCassetteStatusComplete {
+	if manifest.SchemaVersion != ProcessCassetteSchemaVersion ||
+		manifest.ProjectionVersion != ProcessCassetteProjectionVersion ||
+		manifest.Status != ProcessCassetteStatusComplete {
 		return nil, errors.New("provider tape is not a completed projected recording")
 	}
-	frames, err := os.Open(filepath.Join(directory, replay.ProviderFramesFile))
+	frames, err := os.Open(filepath.Join(directory, ProviderFramesFile))
 	if err != nil {
 		return nil, fmt.Errorf("open projected provider tape: %w", err)
 	}
-	auditErr := replay.AuditProjectedProcessCassetteFrames(
+	auditErr := AuditProjectedProcessCassetteFrames(
 		frames,
 		manifest.Connections,
 	)
@@ -315,7 +312,7 @@ func rejectJSONLineScopeFields(path, label string) error {
 	}
 	defer file.Close()
 	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), int(replay.MaxCassetteBytes))
+	scanner.Buffer(make([]byte, 64*1024), int(MaxCassetteBytes))
 	for scanner.Scan() {
 		if err := rejectPortableScopeFields(scanner.Bytes(), label); err != nil {
 			return err
@@ -332,7 +329,7 @@ func readJSONLines[T any](path, label string) ([]T, error) {
 	defer file.Close()
 	var values []T
 	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), int(replay.MaxCassetteBytes))
+	scanner.Buffer(make([]byte, 64*1024), int(MaxCassetteBytes))
 	for scanner.Scan() {
 		var value T
 		if err := json.Unmarshal(scanner.Bytes(), &value); err != nil {
@@ -348,13 +345,13 @@ func readJSONLines[T any](path, label string) ([]T, error) {
 
 func collectCassetteFiles(
 	directory string,
-	expected []replay.CassetteFile,
-) ([]replay.CassetteFile, error) {
+	expected []CassetteFile,
+) ([]CassetteFile, error) {
 	expectedRoles := make(map[string]string, len(expected))
 	for _, file := range expected {
 		expectedRoles[file.Path] = file.Role
 	}
-	var result []replay.CassetteFile
+	var result []CassetteFile
 	err := filepath.WalkDir(directory, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -373,7 +370,7 @@ func collectCassetteFiles(
 		if entry.Name() == ".DS_Store" {
 			return nil
 		}
-		if relative == replay.CassetteManifestFile {
+		if relative == CassetteManifestFile {
 			return nil
 		}
 		info, err := entry.Info()
@@ -387,7 +384,7 @@ func collectCassetteFiles(
 		if err != nil {
 			return err
 		}
-		result = append(result, replay.CassetteFile{
+		result = append(result, CassetteFile{
 			Path:      relative,
 			Role:      expectedRoles[relative],
 			SizeBytes: info.Size(),

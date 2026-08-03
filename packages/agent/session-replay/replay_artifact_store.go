@@ -1,4 +1,4 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"bufio"
@@ -12,14 +12,11 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
-	replaybiz "github.com/tutti-os/tutti/services/tuttid/biz/agentsessionreplay"
 )
 
 type Store struct {
 	StateDir  string
-	Now       replay.Clock
+	Now       Clock
 	journalMu sync.Mutex
 }
 
@@ -27,8 +24,8 @@ const observationJournalPath = ".recording/observation-journal.jsonl"
 
 func (s *Store) Prepare(
 	_ context.Context,
-	recording replay.Recording,
-) (replay.ArtifactLayout, error) {
+	recording Recording,
+) (ArtifactLayout, error) {
 	layout := s.recordingLayout(recording.ID)
 	for _, directory := range []string{
 		layout.StorageKey,
@@ -37,59 +34,59 @@ func (s *Store) Prepare(
 		filepath.Join(layout.StorageKey, ".recording"),
 	} {
 		if err := os.MkdirAll(directory, 0o700); err != nil {
-			return replay.ArtifactLayout{}, err
+			return ArtifactLayout{}, err
 		}
 	}
-	if err := writeJSONAtomic(filepath.Join(layout.StorageKey, replay.BlobManifestFile), replay.BlobManifest{
-		SchemaVersion: replay.BlobManifestSchemaVersion,
-		Blobs:         []replay.BlobManifestEntry{},
+	if err := writeJSONAtomic(filepath.Join(layout.StorageKey, BlobManifestFile), BlobManifest{
+		SchemaVersion: BlobManifestSchemaVersion,
+		Blobs:         []BlobManifestEntry{},
 	}); err != nil {
-		return replay.ArtifactLayout{}, err
+		return ArtifactLayout{}, err
 	}
 	if err := os.WriteFile(
-		filepath.Join(layout.StorageKey, replay.ActivityEventsFile),
+		filepath.Join(layout.StorageKey, ActivityEventsFile),
 		nil,
 		0o600,
 	); err != nil {
-		return replay.ArtifactLayout{}, err
+		return ArtifactLayout{}, err
 	}
 	if err := os.WriteFile(
 		filepath.Join(layout.StorageKey, observationJournalPath),
 		nil,
 		0o600,
 	); err != nil {
-		return replay.ArtifactLayout{}, err
+		return ArtifactLayout{}, err
 	}
 	if err := writeJSONAtomic(
 		layout.CheckpointPlanKey,
-		replay.NewCheckpointPlan([]replay.ReplayCheckpoint{{
+		NewCheckpointPlan([]ReplayCheckpoint{{
 			ID:    "checkpoint-0000",
 			Index: 0,
 			Kind:  "replay.bootstrap",
 			Tags:  []string{"replay.bootstrap"},
-			Trigger: replay.CheckpointTrigger{
-				Source: replay.CheckpointTriggerBootstrap,
+			Trigger: CheckpointTrigger{
+				Source: CheckpointTriggerBootstrap,
 			},
-			Readiness: replay.CheckpointReadiness{
-				All: []replay.ReadinessPredicate{},
+			Readiness: CheckpointReadiness{
+				All: []ReadinessPredicate{},
 			},
 		}}),
 	); err != nil {
-		return replay.ArtifactLayout{}, err
+		return ArtifactLayout{}, err
 	}
 	return layout, nil
 }
 
 func (s *Store) AppendObservationJournalEntry(
 	_ context.Context,
-	recording replay.Recording,
-	entry replay.ObservationJournalEntry,
+	recording Recording,
+	entry ObservationJournalEntry,
 ) error {
 	s.journalMu.Lock()
 	defer s.journalMu.Unlock()
 	layout, _ := s.LocateRecording(context.Background(), recording)
 	path := filepath.Join(layout.StorageKey, observationJournalPath)
-	entries, err := readJSONLines[replay.ObservationJournalEntry](
+	entries, err := readJSONLines[ObservationJournalEntry](
 		path,
 		"observation journal entry",
 	)
@@ -124,17 +121,17 @@ func (s *Store) AppendObservationJournalEntry(
 }
 
 func mergeObservationJournalEntry(
-	current replay.ObservationJournalEntry,
-	update replay.ObservationJournalEntry,
-) (replay.ObservationJournalEntry, error) {
+	current ObservationJournalEntry,
+	update ObservationJournalEntry,
+) (ObservationJournalEntry, error) {
 	if current.SchemaVersion != update.SchemaVersion ||
 		current.UnitKind != update.UnitKind ||
 		current.Position != update.Position {
-		return replay.ObservationJournalEntry{}, errors.New(
+		return ObservationJournalEntry{}, errors.New(
 			"observation journal entry identity conflict",
 		)
 	}
-	observations := make(map[replay.ProviderObservationPosition]int)
+	observations := make(map[ProviderObservationPosition]int)
 	for index, observation := range current.Observations {
 		observations[observation.Position] = index
 	}
@@ -143,11 +140,11 @@ func mergeObservationJournalEntry(
 			existing := current.Observations[index]
 			if existing.Type != observation.Type ||
 				existing.Fingerprint != observation.Fingerprint ||
-				!replay.EntityAddressesEqual(
+				!EntityAddressesEqual(
 					existing.Address,
 					observation.Address,
 				) {
-				return replay.ObservationJournalEntry{}, errors.New(
+				return ObservationJournalEntry{}, errors.New(
 					"observation journal observation identity conflict",
 				)
 			}
@@ -169,18 +166,18 @@ func mergeObservationJournalEntry(
 					correlation.ObservationPosition ||
 				existing.ObservationFingerprint !=
 					correlation.ObservationFingerprint ||
-				!replay.EntityAddressesEqual(
+				!EntityAddressesEqual(
 					existing.Address,
 					correlation.Address,
 				) {
-				return replay.ObservationJournalEntry{}, errors.New(
+				return ObservationJournalEntry{}, errors.New(
 					"observation journal commit correlation identity conflict",
 				)
 			}
 			if existing.TransactionID != "" &&
 				correlation.TransactionID != "" &&
 				existing.TransactionID != correlation.TransactionID {
-				return replay.ObservationJournalEntry{}, errors.New(
+				return ObservationJournalEntry{}, errors.New(
 					"observation journal commit transaction conflict",
 				)
 			}
@@ -199,8 +196,8 @@ func mergeObservationJournalEntry(
 
 func (s *Store) LocateRecording(
 	_ context.Context,
-	recording replay.Recording,
-) (replay.ArtifactLayout, error) {
+	recording Recording,
+) (ArtifactLayout, error) {
 	if strings.TrimSpace(recording.CassetteID) != "" {
 		return s.cassetteLayout(recording.CassetteID), nil
 	}
@@ -209,10 +206,10 @@ func (s *Store) LocateRecording(
 
 func (s *Store) AppendActivityEvent(
 	_ context.Context,
-	recording replay.Recording,
-	event replay.ActivityEvent,
+	recording Recording,
+	event ActivityEvent,
 ) error {
-	if err := replay.ValidateActivityEvent(event); err != nil {
+	if err := ValidateActivityEvent(event); err != nil {
 		return err
 	}
 	portable, err := s.portableActivityEvent(event)
@@ -221,18 +218,18 @@ func (s *Store) AppendActivityEvent(
 	}
 	event = portable
 	layout, _ := s.LocateRecording(context.Background(), recording)
-	return appendJSONLine(filepath.Join(layout.StorageKey, replay.ActivityEventsFile), event)
+	return appendJSONLine(filepath.Join(layout.StorageKey, ActivityEventsFile), event)
 }
 
 func (s *Store) WriteReplayState(
 	_ context.Context,
-	recording replay.Recording,
-	phase replay.ReplayStatePhase,
+	recording Recording,
+	phase ReplayStatePhase,
 	state []byte,
 ) error {
 	layout, _ := s.LocateRecording(context.Background(), recording)
 	statePath := layout.ExpectedStateKey
-	if phase == replay.ReplayStatePhaseInitial {
+	if phase == ReplayStatePhaseInitial {
 		statePath = layout.InitialStateKey
 	}
 	if err := os.MkdirAll(filepath.Dir(statePath), 0o700); err != nil {
@@ -246,10 +243,10 @@ func (s *Store) WriteReplayState(
 
 func (s *Store) WriteCheckpointPlan(
 	_ context.Context,
-	recording replay.Recording,
-	plan replay.CheckpointPlan,
+	recording Recording,
+	plan CheckpointPlan,
 ) error {
-	if err := replay.ValidateCheckpointPlan(plan, nil, nil); err != nil {
+	if err := ValidateCheckpointPlan(plan, nil, nil); err != nil {
 		return err
 	}
 	layout, _ := s.LocateRecording(context.Background(), recording)
@@ -266,8 +263,8 @@ func (s *Store) DiscardCassette(_ context.Context, cassetteID string) error {
 
 func (s *Store) RollbackPublish(
 	_ context.Context,
-	artifact replay.Artifact,
-	recording replay.Recording,
+	artifact Artifact,
+	recording Recording,
 ) error {
 	candidate := s.recordingLayout(recording.ID)
 	if err := os.MkdirAll(filepath.Dir(candidate.StorageKey), 0o700); err != nil {
@@ -276,53 +273,53 @@ func (s *Store) RollbackPublish(
 	return os.Rename(artifact.Layout.StorageKey, candidate.StorageKey)
 }
 
-func (s *Store) Resolve(_ context.Context, requested replay.Cassette) (replay.Artifact, error) {
+func (s *Store) Resolve(_ context.Context, requested Cassette) (Artifact, error) {
 	layout := s.cassetteLayout(requested.ID)
-	manifestPath := filepath.Join(layout.StorageKey, replay.CassetteManifestFile)
+	manifestPath := filepath.Join(layout.StorageKey, CassetteManifestFile)
 	raw, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	manifestSHA256, err := fileSHA256(manifestPath)
 	if err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	if requested.ManifestSHA256 != "" &&
 		!strings.EqualFold(requested.ManifestSHA256, manifestSHA256) {
-		return replay.Artifact{}, errors.New("cassette manifest integrity mismatch")
+		return Artifact{}, errors.New("cassette manifest integrity mismatch")
 	}
-	var manifest replay.CassetteManifest
+	var manifest CassetteManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	if err := rejectPortableScopeFields(raw, "cassette manifest"); err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	if manifest.ID != requested.ID {
-		return replay.Artifact{}, errors.New("cassette identity mismatch")
+		return Artifact{}, errors.New("cassette identity mismatch")
 	}
-	if manifest.StateFormat != replaybiz.StateFormat {
-		return replay.Artifact{}, errors.New("unsupported cassette state format")
+	if manifest.StateFormat != StateFormat {
+		return Artifact{}, errors.New("unsupported cassette state format")
 	}
-	blobManifest, err := readBlobManifest(filepath.Join(layout.StorageKey, replay.BlobManifestFile))
+	blobManifest, err := readBlobManifest(filepath.Join(layout.StorageKey, BlobManifestFile))
 	if err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
-	if err := replay.ValidateCassetteManifestPolicy(manifest, blobManifest); err != nil {
-		return replay.Artifact{}, err
+	if err := ValidateCassetteManifestPolicy(manifest, blobManifest); err != nil {
+		return Artifact{}, err
 	}
 	files, err := collectCassetteFiles(layout.StorageKey, manifest.Files)
 	if err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
-	if err := replay.ValidateCassetteIntegrity(manifest, files); err != nil {
-		return replay.Artifact{}, err
+	if err := ValidateCassetteIntegrity(manifest, files); err != nil {
+		return Artifact{}, err
 	}
 	if err := validatePortableReplayFiles(layout.StorageKey); err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
-	return replay.Artifact{
-		Cassette: replay.Cassette{
+	return Artifact{
+		Cassette: Cassette{
 			ID:                 manifest.ID,
 			Name:               manifest.Name,
 			SourceRecordingID:  manifest.SourceRecordingID,
@@ -340,40 +337,40 @@ func (s *Store) Resolve(_ context.Context, requested replay.Cassette) (replay.Ar
 
 func (s *Store) RenameCassette(
 	ctx context.Context,
-	requested replay.Cassette,
+	requested Cassette,
 	name string,
-) (replay.Artifact, error) {
-	name, err := replay.NormalizeRecordingName(name)
+) (Artifact, error) {
+	name, err := NormalizeRecordingName(name)
 	if err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	artifact, err := s.Resolve(ctx, requested)
 	if err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
-	manifestPath := filepath.Join(artifact.Layout.StorageKey, replay.CassetteManifestFile)
+	manifestPath := filepath.Join(artifact.Layout.StorageKey, CassetteManifestFile)
 	raw, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
-	var manifest replay.CassetteManifest
+	var manifest CassetteManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	manifest.Name = name
 	if err := writeJSONAtomic(manifestPath, manifest); err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	manifestSHA256, err := fileSHA256(manifestPath)
 	if err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	artifact.Cassette.Name = name
 	artifact.Cassette.ManifestSHA256 = manifestSHA256
 	return artifact, nil
 }
 
-func (s *Store) recordingLayout(recordingID string) replay.ArtifactLayout {
+func (s *Store) recordingLayout(recordingID string) ArtifactLayout {
 	root := filepath.Join(
 		filepath.Clean(strings.TrimSpace(s.StateDir)),
 		"agent-session-recordings",
@@ -383,7 +380,7 @@ func (s *Store) recordingLayout(recordingID string) replay.ArtifactLayout {
 	return artifactLayout(root)
 }
 
-func (s *Store) cassetteLayout(cassetteID string) replay.ArtifactLayout {
+func (s *Store) cassetteLayout(cassetteID string) ArtifactLayout {
 	root := filepath.Join(
 		filepath.Clean(strings.TrimSpace(s.StateDir)),
 		"agent-session-cassettes",
@@ -392,13 +389,13 @@ func (s *Store) cassetteLayout(cassetteID string) replay.ArtifactLayout {
 	return artifactLayout(root)
 }
 
-func artifactLayout(root string) replay.ArtifactLayout {
-	return replay.ArtifactLayout{
+func artifactLayout(root string) ArtifactLayout {
+	return ArtifactLayout{
 		StorageKey:        root,
 		ProviderTapeKey:   filepath.Join(root, "provider"),
-		CheckpointPlanKey: filepath.Join(root, filepath.FromSlash(replay.CheckpointPlanFile)),
-		InitialStateKey:   filepath.Join(root, filepath.FromSlash(replay.InitialStateFile)),
-		ExpectedStateKey:  filepath.Join(root, filepath.FromSlash(replay.ExpectedStateFile)),
+		CheckpointPlanKey: filepath.Join(root, filepath.FromSlash(CheckpointPlanFile)),
+		InitialStateKey:   filepath.Join(root, filepath.FromSlash(InitialStateFile)),
+		ExpectedStateKey:  filepath.Join(root, filepath.FromSlash(ExpectedStateFile)),
 	}
 }
 

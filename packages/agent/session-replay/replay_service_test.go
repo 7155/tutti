@@ -1,4 +1,4 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"time"
 
 	agenthost "github.com/tutti-os/tutti/packages/agent/host"
-	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
 	"github.com/tutti-os/tutti/packages/agent/store-sqlite/canonical"
 )
 
@@ -30,7 +29,7 @@ func TestServiceKeepsTuttiTargetPolicyOutsideSharedWorkflow(t *testing.T) {
 func TestServiceMapsWorkspaceActivityEventToSharedScope(t *testing.T) {
 	artifacts := &activityEventArtifactStore{}
 	store := &serviceMetadataStore{}
-	service := &Service{Workflow: &replay.Workflow{
+	service := &Service{Workflow: &Workflow{
 		States:    serviceFixtureStore{},
 		Artifacts: artifacts,
 		Transport: serviceRecorder{},
@@ -49,7 +48,7 @@ func TestServiceMapsWorkspaceActivityEventToSharedScope(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.RecordActivityEvent(context.Background(), ActivityEvent{
+	if err := service.RecordActivityEvent(context.Background(), RecordingActivityEvent{
 		Kind: ActivityEventKindDirectStimulus, Type: "session.send",
 		EventID: "event-1", WorkspaceID: "workspace-1", AgentSessionID: "session-1",
 	}); err != nil {
@@ -65,7 +64,7 @@ func TestServiceAcceptsProviderObservationSynchronousWithArm(t *testing.T) {
 	artifacts := &activityEventArtifactStore{}
 	store := &serviceMetadataStore{}
 	recorder := &serviceCallbackRecorder{}
-	service := &Service{Workflow: &replay.Workflow{
+	service := &Service{Workflow: &Workflow{
 		States:    serviceFixtureStore{},
 		Artifacts: artifacts,
 		Transport: recorder,
@@ -77,13 +76,13 @@ func TestServiceAcceptsProviderObservationSynchronousWithArm(t *testing.T) {
 			ctx,
 			"workspace-1",
 			"session-1",
-			[]replay.ProviderObservationBatch{{
+			[]ProviderObservationBatch{{
 				RecordingID:  recordingID,
 				ConnectionID: "connection-1",
 				ChunkSeq:     1,
 				UnitIndex:    1,
-				UnitKind:     string(replay.ProviderInputUnitProtocolMessage),
-				Events: []replay.ProviderObservationEvent{{
+				UnitKind:     string(ProviderInputUnitProtocolMessage),
+				Events: []ProviderObservationEvent{{
 					EventIndex:     1,
 					Type:           "turn.started",
 					AgentSessionID: "session-1",
@@ -119,7 +118,7 @@ func TestServiceAcceptsProviderObservationSynchronousWithArm(t *testing.T) {
 func TestServiceKeepsFirstCommitForConfirmedProviderObservation(t *testing.T) {
 	ctx := context.Background()
 	artifacts := &activityEventArtifactStore{}
-	service := &Service{Workflow: &replay.Workflow{
+	service := &Service{Workflow: &Workflow{
 		States:    serviceFixtureStore{},
 		Artifacts: artifacts,
 		Transport: serviceRecorder{},
@@ -138,13 +137,13 @@ func TestServiceKeepsFirstCommitForConfirmedProviderObservation(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	batch := replay.ProviderObservationBatch{
+	batch := ProviderObservationBatch{
 		RecordingID:  recording.ID,
 		ConnectionID: "connection-1",
 		ChunkSeq:     1,
 		UnitIndex:    1,
-		UnitKind:     string(replay.ProviderInputUnitProtocolMessage),
-		Events: []replay.ProviderObservationEvent{{
+		UnitKind:     string(ProviderInputUnitProtocolMessage),
+		Events: []ProviderObservationEvent{{
 			EventIndex:     1,
 			Type:           "turn.started",
 			AgentSessionID: "session-1",
@@ -154,7 +153,7 @@ func TestServiceKeepsFirstCommitForConfirmedProviderObservation(t *testing.T) {
 	}
 	if err := service.ObserveProviderObservations(
 		ctx, "workspace-1", "session-1",
-		[]replay.ProviderObservationBatch{batch},
+		[]ProviderObservationBatch{batch},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -179,9 +178,9 @@ func TestServiceKeepsFirstCommitForConfirmedProviderObservation(t *testing.T) {
 					EntityID:   "turn-1",
 				}},
 			},
-			replay.ProviderObservationCommitContext{
+			ProviderObservationCommitContext{
 				RecordingID: recording.ID,
-				Batches:     []replay.ProviderObservationBatch{batch},
+				Batches:     []ProviderObservationBatch{batch},
 			},
 		)
 	}
@@ -191,7 +190,7 @@ func TestServiceKeepsFirstCommitForConfirmedProviderObservation(t *testing.T) {
 	if err := commit("transaction-2"); err != nil {
 		t.Fatal(err)
 	}
-	entry := service.checkpoints.pending[replay.ProviderUnitPosition{
+	entry := service.checkpoints.pending[ProviderUnitPosition{
 		ConnectionID: "connection-1", ChunkSeq: 1, UnitIndex: 1,
 	}]
 	if len(entry.Correlations) != 1 ||
@@ -207,7 +206,7 @@ func TestServiceIgnoresLateProviderCallbacksFromCanceledRecording(t *testing.T) 
 	store := &serviceMetadataStore{}
 	recordingIDs := []string{"recording-1", "recording-2"}
 	nextRecording := 0
-	service := &Service{Workflow: &replay.Workflow{
+	service := &Service{Workflow: &Workflow{
 		States:    serviceFixtureStore{},
 		Artifacts: artifacts,
 		Transport: serviceRecorder{},
@@ -245,13 +244,13 @@ func TestServiceIgnoresLateProviderCallbacksFromCanceledRecording(t *testing.T) 
 	}); err != nil {
 		t.Fatal(err)
 	}
-	batch := replay.ProviderObservationBatch{
+	batch := ProviderObservationBatch{
 		RecordingID:  first.ID,
 		ConnectionID: "connection-1",
 		ChunkSeq:     1,
 		UnitIndex:    1,
-		UnitKind:     string(replay.ProviderInputUnitProtocolMessage),
-		Events: []replay.ProviderObservationEvent{{
+		UnitKind:     string(ProviderInputUnitProtocolMessage),
+		Events: []ProviderObservationEvent{{
 			EventIndex: 1, Type: "turn.started",
 			AgentSessionID: "session-1",
 			TurnID:         "turn-from-old-recording",
@@ -264,8 +263,8 @@ func TestServiceIgnoresLateProviderCallbacksFromCanceledRecording(t *testing.T) 
 		ctx,
 		"workspace-1",
 		"session-1",
-		[]replay.ProviderObservationBatch{missingGeneration},
-	); !errors.Is(err, replay.ErrInvalidState) {
+		[]ProviderObservationBatch{missingGeneration},
+	); !errors.Is(err, ErrInvalidState) {
 		t.Fatalf("missing Provider callback generation error = %v", err)
 	}
 	if err := service.ObserveReplayCommitted(
@@ -278,17 +277,17 @@ func TestServiceIgnoresLateProviderCallbacksFromCanceledRecording(t *testing.T) 
 				},
 			},
 		},
-		replay.ProviderObservationCommitContext{
-			Batches: []replay.ProviderObservationBatch{missingGeneration},
+		ProviderObservationCommitContext{
+			Batches: []ProviderObservationBatch{missingGeneration},
 		},
-	); !errors.Is(err, replay.ErrInvalidState) {
+	); !errors.Is(err, ErrInvalidState) {
 		t.Fatalf("missing commit generation error = %v", err)
 	}
 	if err := service.ObserveProviderObservations(
 		ctx,
 		"workspace-1",
 		"session-1",
-		[]replay.ProviderObservationBatch{batch},
+		[]ProviderObservationBatch{batch},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -302,9 +301,9 @@ func TestServiceIgnoresLateProviderCallbacksFromCanceledRecording(t *testing.T) 
 				},
 			},
 		},
-		replay.ProviderObservationCommitContext{
+		ProviderObservationCommitContext{
 			RecordingID: first.ID,
-			Batches:     []replay.ProviderObservationBatch{batch},
+			Batches:     []ProviderObservationBatch{batch},
 		},
 	); err != nil {
 		t.Fatal(err)
@@ -329,7 +328,7 @@ func TestActivityBoundaryCursorCoversHandledUnitsBeyondObservationLane(
 	ctx := context.Background()
 	artifacts := &activityEventArtifactStore{}
 	store := &serviceMetadataStore{}
-	service := &Service{Workflow: &replay.Workflow{
+	service := &Service{Workflow: &Workflow{
 		States:    serviceFixtureStore{},
 		Artifacts: artifacts,
 		Transport: serviceRecorder{},
@@ -354,13 +353,13 @@ func TestActivityBoundaryCursorCoversHandledUnitsBeyondObservationLane(
 		ctx,
 		"workspace-1",
 		"session-1",
-		[]replay.ProviderObservationBatch{{
+		[]ProviderObservationBatch{{
 			RecordingID:  recording.ID,
 			ConnectionID: "connection-1",
 			ChunkSeq:     59,
 			UnitIndex:    1,
-			UnitKind:     string(replay.ProviderInputUnitProtocolMessage),
-			Events: []replay.ProviderObservationEvent{{
+			UnitKind:     string(ProviderInputUnitProtocolMessage),
+			Events: []ProviderObservationEvent{{
 				EventIndex:     1,
 				Type:           "turn.started",
 				AgentSessionID: "session-1",
@@ -374,11 +373,11 @@ func TestActivityBoundaryCursorCoversHandledUnitsBeyondObservationLane(
 	// Units from another Recording generation must not advance the lane.
 	service.ObserveProviderInputUnit(
 		"recording-stale",
-		replay.ProviderUnitPosition{
+		ProviderUnitPosition{
 			ConnectionID: "connection-1", ChunkSeq: 99, UnitIndex: 1,
 		},
 	)
-	for _, position := range []replay.ProviderUnitPosition{
+	for _, position := range []ProviderUnitPosition{
 		{ConnectionID: "connection-1", ChunkSeq: 60, UnitIndex: 1},
 		{ConnectionID: "connection-1", ChunkSeq: 62, UnitIndex: 2},
 		{ConnectionID: "connection-1", ChunkSeq: 63, UnitIndex: 1},
@@ -387,14 +386,14 @@ func TestActivityBoundaryCursorCoversHandledUnitsBeyondObservationLane(
 	} {
 		service.ObserveProviderInputUnit(recording.ID, position)
 	}
-	if err := service.RecordActivityEvent(ctx, ActivityEvent{
+	if err := service.RecordActivityEvent(ctx, RecordingActivityEvent{
 		Kind: ActivityEventKindIntent, Type: "session/stopRequested",
 		EventID: "event-1", WorkspaceID: "workspace-1",
 		AgentSessionID: "session-1",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.RecordActivityEvent(ctx, ActivityEvent{
+	if err := service.RecordActivityEvent(ctx, RecordingActivityEvent{
 		Kind: ActivityEventKindEffect, Type: "turn/cancel",
 		EventID: "event-2", CausedByEventID: "event-1",
 		WorkspaceID: "workspace-1", AgentSessionID: "session-1",
@@ -413,7 +412,7 @@ func TestActivityBoundaryCursorCoversHandledUnitsBeyondObservationLane(
 	if canceled.Kind != "turn.canceled" {
 		t.Fatalf("last checkpoint kind = %q", canceled.Kind)
 	}
-	wantCursor := []replay.ProviderUnitPosition{{
+	wantCursor := []ProviderUnitPosition{{
 		ConnectionID: "connection-1", ChunkSeq: 63, UnitIndex: 1,
 	}}
 	if len(canceled.Cursor.ProviderConnections) != 1 ||
@@ -438,9 +437,9 @@ func TestActivityBoundaryCursorCoversHandledUnitsBeyondObservationLane(
 
 func TestServiceListsCassettesByWorkspaceScope(t *testing.T) {
 	store := &serviceMetadataStore{
-		cassettes: []replay.Cassette{{ID: "cassette-1"}},
+		cassettes: []Cassette{{ID: "cassette-1"}},
 	}
-	service := &Service{Workflow: &replay.Workflow{Store: store}}
+	service := &Service{Workflow: &Workflow{Store: store}}
 	cassettes, err := service.ListCassettes(context.Background(), " workspace-1 ")
 	if err != nil {
 		t.Fatal(err)
@@ -462,18 +461,18 @@ func TestServiceImportsCassetteAsCompletedWorkspaceRecording(t *testing.T) {
 		importErrors: map[string]error{
 			"/tmp/bad-tape": errors.New("corrupt cassette"),
 		},
-		imported: replay.Artifact{
-			Cassette: replay.Cassette{
+		imported: Artifact{
+			Cassette: Cassette{
 				ID: cassetteID, SourceRecordingID: recordingID,
 				Name: "imported", AgentTargetID: "local:codex",
 				RootAgentSessionID: "session-1",
-				Mode:               replay.ScenarioModeCreateSession,
+				Mode:               ScenarioModeCreateSession,
 				CreatedAtUnixMS:    10,
 			},
-			Layout: replay.ArtifactLayout{StorageKey: "cassette/" + cassetteID},
+			Layout: ArtifactLayout{StorageKey: "cassette/" + cassetteID},
 		},
 	}
-	service := &Service{Workflow: &replay.Workflow{
+	service := &Service{Workflow: &Workflow{
 		Artifacts: artifacts,
 		Store:     store,
 		Now:       func() time.Time { return time.UnixMilli(20) },
@@ -504,7 +503,7 @@ func TestServiceImportsCassetteAsCompletedWorkspaceRecording(t *testing.T) {
 }
 
 func TestServiceRejectsImportedCursorCassette(t *testing.T) {
-	if validImportedCassette(replay.Cassette{
+	if validImportedCassette(Cassette{
 		ID:                "277377ed-af34-454f-a8b9-1047b4064e74",
 		SourceRecordingID: "54f46b5c-34e5-40e2-8147-361bb0d046dc",
 		AgentTargetID:     "local:cursor",
@@ -514,14 +513,14 @@ func TestServiceRejectsImportedCursorCassette(t *testing.T) {
 }
 
 func TestServiceMapsReplayWorkspaceBatchToCassettes(t *testing.T) {
-	cassette := replay.Cassette{
+	cassette := Cassette{
 		ID:                 "cassette-1",
 		RootAgentSessionID: "session-1",
 	}
 	store := &serviceMetadataStore{
-		cassetteByID: map[string]replay.Cassette{cassette.ID: cassette},
+		cassetteByID: map[string]Cassette{cassette.ID: cassette},
 	}
-	service := &Service{Workflow: &replay.Workflow{
+	service := &Service{Workflow: &Workflow{
 		Artifacts: &activityEventArtifactStore{},
 		Store:     store,
 	}}
@@ -541,58 +540,58 @@ func TestServiceMapsReplayWorkspaceBatchToCassettes(t *testing.T) {
 }
 
 type serviceMetadataStore struct {
-	recording     replay.Recording
-	cassettes     []replay.Cassette
-	cassetteByID  map[string]replay.Cassette
+	recording     Recording
+	cassettes     []Cassette
+	cassetteByID  map[string]Cassette
 	cassetteScope string
 }
 
-func (s *serviceMetadataStore) PutRecording(_ context.Context, value replay.Recording) error {
+func (s *serviceMetadataStore) PutRecording(_ context.Context, value Recording) error {
 	s.recording = value
 	return nil
 }
 func (s *serviceMetadataStore) DeleteRecording(context.Context, string) error {
-	s.recording = replay.Recording{}
+	s.recording = Recording{}
 	return nil
 }
-func (s *serviceMetadataStore) GetRecording(_ context.Context, id string) (replay.Recording, error) {
+func (s *serviceMetadataStore) GetRecording(_ context.Context, id string) (Recording, error) {
 	if s.recording.ID != id {
-		return replay.Recording{}, replay.ErrRecordingNotFound
+		return Recording{}, ErrRecordingNotFound
 	}
 	return s.recording, nil
 }
-func (s *serviceMetadataStore) ListRecordings(context.Context, string) ([]replay.Recording, error) {
-	return []replay.Recording{s.recording}, nil
+func (s *serviceMetadataStore) ListRecordings(context.Context, string) ([]Recording, error) {
+	return []Recording{s.recording}, nil
 }
 func (s *serviceMetadataStore) PublishCassette(
 	_ context.Context,
-	recording replay.Recording,
-	cassette replay.Cassette,
+	recording Recording,
+	cassette Cassette,
 ) error {
 	s.recording = recording
 	if s.cassetteByID == nil {
-		s.cassetteByID = map[string]replay.Cassette{}
+		s.cassetteByID = map[string]Cassette{}
 	}
 	s.cassetteByID[cassette.ID] = cassette
 	return nil
 }
-func (*serviceMetadataStore) UpdateCassette(context.Context, replay.Recording, replay.Cassette) error {
+func (*serviceMetadataStore) UpdateCassette(context.Context, Recording, Cassette) error {
 	return nil
 }
 func (s *serviceMetadataStore) GetCassette(
 	_ context.Context,
 	id string,
-) (replay.Cassette, error) {
+) (Cassette, error) {
 	cassette, ok := s.cassetteByID[id]
 	if !ok {
-		return replay.Cassette{}, replay.ErrCassetteNotFound
+		return Cassette{}, ErrCassetteNotFound
 	}
 	return cassette, nil
 }
 func (s *serviceMetadataStore) ListCassettes(
 	_ context.Context,
 	scopeID string,
-) ([]replay.Cassette, error) {
+) ([]Cassette, error) {
 	s.cassetteScope = scopeID
 	return s.cassettes, nil
 }
@@ -626,18 +625,18 @@ func (*serviceCallbackRecorder) Complete(string) error { return nil }
 func (*serviceCallbackRecorder) Cancel(string) error   { return nil }
 
 type activityEventArtifactStore struct {
-	events         []replay.ActivityEvent
-	plans          []replay.CheckpointPlan
-	journalEntries []replay.ObservationJournalEntry
-	imported       replay.Artifact
+	events         []ActivityEvent
+	plans          []CheckpointPlan
+	journalEntries []ObservationJournalEntry
+	imported       Artifact
 	importErrors   map[string]error
 	discarded      []string
 }
 
 func (s *activityEventArtifactStore) WriteCheckpointPlan(
 	_ context.Context,
-	_ replay.Recording,
-	plan replay.CheckpointPlan,
+	_ Recording,
+	plan CheckpointPlan,
 ) error {
 	s.plans = append(s.plans, plan)
 	return nil
@@ -646,9 +645,9 @@ func (s *activityEventArtifactStore) WriteCheckpointPlan(
 func (s *activityEventArtifactStore) Import(
 	_ context.Context,
 	sourceDirectory string,
-) (replay.Artifact, error) {
+) (Artifact, error) {
 	if err := s.importErrors[sourceDirectory]; err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	return s.imported, nil
 }
@@ -663,72 +662,72 @@ func (s *activityEventArtifactStore) DiscardCassette(
 
 func (*activityEventArtifactStore) Prepare(
 	context.Context,
-	replay.Recording,
-) (replay.ArtifactLayout, error) {
-	return replay.ArtifactLayout{StorageKey: "candidate", ProviderTapeKey: "provider"}, nil
+	Recording,
+) (ArtifactLayout, error) {
+	return ArtifactLayout{StorageKey: "candidate", ProviderTapeKey: "provider"}, nil
 }
 func (*activityEventArtifactStore) LocateRecording(
 	context.Context,
-	replay.Recording,
-) (replay.ArtifactLayout, error) {
-	return replay.ArtifactLayout{StorageKey: "candidate", ProviderTapeKey: "provider"}, nil
+	Recording,
+) (ArtifactLayout, error) {
+	return ArtifactLayout{StorageKey: "candidate", ProviderTapeKey: "provider"}, nil
 }
 func (s *activityEventArtifactStore) AppendActivityEvent(
 	_ context.Context,
-	_ replay.Recording,
-	value replay.ActivityEvent,
+	_ Recording,
+	value ActivityEvent,
 ) error {
 	s.events = append(s.events, value)
 	return nil
 }
 func (s *activityEventArtifactStore) AppendObservationJournalEntry(
 	_ context.Context,
-	_ replay.Recording,
-	entry replay.ObservationJournalEntry,
+	_ Recording,
+	entry ObservationJournalEntry,
 ) error {
 	s.journalEntries = append(s.journalEntries, entry)
 	return nil
 }
 func (*activityEventArtifactStore) WriteReplayState(
 	context.Context,
-	replay.Recording,
-	replay.ReplayStatePhase,
+	Recording,
+	ReplayStatePhase,
 	[]byte,
 ) error {
 	return nil
 }
 func (*activityEventArtifactStore) Publish(
 	context.Context,
-	replay.Recording,
+	Recording,
 	string,
 	uint64,
-) (replay.Artifact, error) {
-	return replay.Artifact{}, nil
+) (Artifact, error) {
+	return Artifact{}, nil
 }
 func (*activityEventArtifactStore) RollbackPublish(
 	context.Context,
-	replay.Artifact,
-	replay.Recording,
+	Artifact,
+	Recording,
 ) error {
 	return nil
 }
 func (*activityEventArtifactStore) Resolve(
 	_ context.Context,
-	cassette replay.Cassette,
-) (replay.Artifact, error) {
-	return replay.Artifact{
+	cassette Cassette,
+) (Artifact, error) {
+	return Artifact{
 		Cassette: cassette,
-		Layout: replay.ArtifactLayout{
+		Layout: ArtifactLayout{
 			StorageKey: "cassette/" + cassette.ID,
 		},
 	}, nil
 }
 func (*activityEventArtifactStore) RenameCassette(
 	context.Context,
-	replay.Cassette,
+	Cassette,
 	string,
-) (replay.Artifact, error) {
-	return replay.Artifact{}, nil
+) (Artifact, error) {
+	return Artifact{}, nil
 }
 func (*activityEventArtifactStore) DiscardRecording(context.Context, string) error {
 	return nil

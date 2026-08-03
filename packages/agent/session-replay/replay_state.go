@@ -1,4 +1,4 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"encoding/json"
@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	agenthost "github.com/tutti-os/tutti/packages/agent/host"
-	sessionreplay "github.com/tutti-os/tutti/packages/agent/session-replay"
 	storesqlite "github.com/tutti-os/tutti/packages/agent/store-sqlite"
 )
 
@@ -130,8 +129,8 @@ func ProjectPortableAgentState(
 			*sourceSession,
 			stateDirectory,
 		)
-		session.Cwd = portableReplayPath(session.Cwd, rootCWD)
-		session.RailProjectPath = portableReplayPath(
+		session.Cwd = portableAgentStatePath(session.Cwd, rootCWD)
+		session.RailProjectPath = portableAgentStatePath(
 			session.RailProjectPath,
 			rootCWD,
 		)
@@ -184,7 +183,7 @@ func replayProviderHome(
 	session TuttiReplaySession,
 	stateDirectory string,
 ) string {
-	descriptor, ok := sessionreplay.ResolveProviderReplay(
+	descriptor, ok := ResolveProviderReplay(
 		session.AgentTargetID,
 		session.Provider,
 	)
@@ -255,7 +254,7 @@ func portableGeneratedImagePath(value, providerHome string) (string, bool) {
 	if !strings.HasPrefix(portable, "generated_images/") {
 		return "", false
 	}
-	return sessionreplay.PortableReplayHomeToken + "/" + portable, true
+	return PortableReplayHomeToken + "/" + portable, true
 }
 
 func projectPortableCanceledTurnCompletionWatermark(turn *TuttiReplayTurn) {
@@ -326,7 +325,7 @@ func ResolvePortableAgentState(
 		}
 		if strings.HasPrefix(
 			session.RailSectionKey,
-			"project:"+sessionreplay.PortableReplayCWDToken,
+			"project:"+PortableReplayCWDToken,
 		) {
 			portablePath := strings.TrimPrefix(session.RailSectionKey, "project:")
 			projectPath, err := resolvePortableReplayPath(portablePath, replayCWD)
@@ -401,7 +400,7 @@ func replayRootCWD(agent TuttiReplayAgent) string {
 	return ""
 }
 
-func portableReplayPath(path, root string) string {
+func portableAgentStatePath(path, root string) string {
 	path = strings.TrimSpace(path)
 	root = strings.TrimSpace(root)
 	if path == "" || root == "" {
@@ -421,9 +420,9 @@ func portableReplayPath(path, root string) string {
 		return path
 	}
 	if relative == "." {
-		return sessionreplay.PortableReplayCWDToken
+		return PortableReplayCWDToken
 	}
-	return sessionreplay.PortableReplayCWDToken + "/" + filepath.ToSlash(relative)
+	return PortableReplayCWDToken + "/" + filepath.ToSlash(relative)
 }
 
 func resolvePortableReplayPath(path, replayCWD string) (string, error) {
@@ -431,10 +430,10 @@ func resolvePortableReplayPath(path, replayCWD string) (string, error) {
 	if path == "" {
 		return "", nil
 	}
-	if path == sessionreplay.PortableReplayCWDToken {
+	if path == PortableReplayCWDToken {
 		return replayCWD, nil
 	}
-	prefix := sessionreplay.PortableReplayCWDToken + "/"
+	prefix := PortableReplayCWDToken + "/"
 	if !strings.HasPrefix(path, prefix) {
 		return path, nil
 	}
@@ -531,7 +530,7 @@ func projectPortablePathFields(value any, rootCWD string) any {
 			// rewrite path-bearing strings so tool-owned nested cwd can remain.
 			if childPath, ok := child.(string); ok &&
 				strings.Contains(lowerKey, "path") {
-				projected[key] = portableReplayPath(childPath, rootCWD)
+				projected[key] = portableAgentStatePath(childPath, rootCWD)
 				continue
 			}
 			projected[key] = projectPortablePathFields(child, rootCWD)

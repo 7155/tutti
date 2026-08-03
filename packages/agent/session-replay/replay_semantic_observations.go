@@ -1,17 +1,15 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"context"
 	"fmt"
 	"strings"
-
-	sessionreplay "github.com/tutti-os/tutti/packages/agent/session-replay"
 )
 
 func (r *SemanticRuntime) ObserveProviderObservations(
 	_ context.Context,
 	workspaceID, agentSessionID string,
-	batches []sessionreplay.ProviderObservationBatch,
+	batches []ProviderObservationBatch,
 ) error {
 	if r == nil || strings.TrimSpace(workspaceID) != r.workspaceID {
 		return nil
@@ -41,7 +39,7 @@ func (r *SemanticRuntime) ObserveProviderObservations(
 
 func (r *SemanticRuntime) cassetteForSession(
 	agentSessionID string,
-	batches []sessionreplay.ProviderObservationBatch,
+	batches []ProviderObservationBatch,
 ) string {
 	agentSessionID = strings.TrimSpace(agentSessionID)
 	for cassetteID, registration := range r.registrations {
@@ -63,10 +61,10 @@ func (r *SemanticRuntime) cassetteForSession(
 }
 
 func (s *semanticObservationState) observeBatch(
-	plan sessionreplay.CheckpointPlan,
-	batch sessionreplay.ProviderObservationBatch,
+	plan CheckpointPlan,
+	batch ProviderObservationBatch,
 ) {
-	position := sessionreplay.ProviderUnitPosition{
+	position := ProviderUnitPosition{
 		ConnectionID: strings.TrimSpace(batch.ConnectionID),
 		ChunkSeq:     batch.ChunkSeq,
 		UnitIndex:    batch.UnitIndex,
@@ -77,7 +75,7 @@ func (s *semanticObservationState) observeBatch(
 	}
 	s.handled[position.ConnectionID] = position
 	for _, event := range batch.Events {
-		eventPosition := sessionreplay.ProviderObservationPosition{
+		eventPosition := ProviderObservationPosition{
 			ConnectionID: position.ConnectionID,
 			ChunkSeq:     position.ChunkSeq,
 			UnitIndex:    position.UnitIndex,
@@ -92,9 +90,9 @@ func (s *semanticObservationState) observeBatch(
 			continue
 		}
 		address := addresses[len(addresses)-1]
-		fingerprint, err := sessionreplay.ObservationFingerprint(
-			sessionreplay.ProviderObservation{
-				SchemaVersion: sessionreplay.ObservationSchemaVersion,
+		fingerprint, err := ObservationFingerprint(
+			ProviderObservation{
+				SchemaVersion: ObservationSchemaVersion,
 				Type:          event.Type,
 				Address:       address,
 				Stable:        stableObservationFields(event),
@@ -107,13 +105,13 @@ func (s *semanticObservationState) observeBatch(
 		for index, checkpoint := range plan.Checkpoints {
 			trigger := checkpoint.Trigger
 			if trigger.Source !=
-				sessionreplay.CheckpointTriggerProviderObservation ||
+				CheckpointTriggerProviderObservation ||
 				trigger.Position == nil ||
 				*trigger.Position != eventPosition {
 				continue
 			}
 			if trigger.UnitKind !=
-				sessionreplay.ProviderInputUnitKind(batch.UnitKind) ||
+				ProviderInputUnitKind(batch.UnitKind) ||
 				trigger.Type != event.Type ||
 				trigger.Fingerprint != fingerprint {
 				s.failure = fmt.Errorf(
@@ -128,7 +126,7 @@ func (s *semanticObservationState) observeBatch(
 	for index, checkpoint := range plan.Checkpoints {
 		trigger := checkpoint.Trigger
 		if trigger.Source !=
-			sessionreplay.CheckpointTriggerProviderObservation ||
+			CheckpointTriggerProviderObservation ||
 			trigger.Position == nil ||
 			trigger.Position.ConnectionID != position.ConnectionID ||
 			trigger.Position.ChunkSeq != position.ChunkSeq ||
@@ -158,7 +156,7 @@ func (*SemanticRuntime) flushPendingObservationBatches(
 // turn/started is the known case).
 func (r *SemanticRuntime) NoteHandledProviderUnits(
 	cassetteID string,
-	handled map[string]sessionreplay.ProviderUnitPosition,
+	handled map[string]ProviderUnitPosition,
 ) {
 	if r == nil || len(handled) == 0 {
 		return
@@ -188,8 +186,8 @@ func (r *SemanticRuntime) NoteHandledProviderUnits(
 }
 
 func providerPositionPassed(
-	handled map[string]sessionreplay.ProviderUnitPosition,
-	position *sessionreplay.ProviderObservationPosition,
+	handled map[string]ProviderUnitPosition,
+	position *ProviderObservationPosition,
 ) bool {
 	if position == nil {
 		return false
@@ -204,8 +202,8 @@ func providerPositionPassed(
 }
 
 func providerPositionReached(
-	handled map[string]sessionreplay.ProviderUnitPosition,
-	position *sessionreplay.ProviderObservationPosition,
+	handled map[string]ProviderUnitPosition,
+	position *ProviderObservationPosition,
 ) bool {
 	if position == nil {
 		return false

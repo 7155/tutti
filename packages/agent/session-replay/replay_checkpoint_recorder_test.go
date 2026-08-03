@@ -1,4 +1,4 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"encoding/json"
@@ -6,12 +6,10 @@ import (
 	"testing"
 
 	agenthost "github.com/tutti-os/tutti/packages/agent/host"
-	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
-	replaybiz "github.com/tutti-os/tutti/services/tuttid/biz/agentsessionreplay"
 )
 
 func TestProviderEntityAddressIsStableAcrossRuntimeIDs(t *testing.T) {
-	position := replay.ProviderObservationPosition{
+	position := ProviderObservationPosition{
 		ConnectionID: "provider-connection",
 		ChunkSeq:     4,
 		UnitIndex:    2,
@@ -22,7 +20,7 @@ func TestProviderEntityAddressIsStableAcrossRuntimeIDs(t *testing.T) {
 
 	first, firstOK := firstRegistry.providerAddresses(
 		position,
-		replay.ProviderObservationEvent{
+		ProviderObservationEvent{
 			EventIndex:     1,
 			Type:           "call.started",
 			AgentSessionID: "record-runtime-session",
@@ -32,7 +30,7 @@ func TestProviderEntityAddressIsStableAcrossRuntimeIDs(t *testing.T) {
 	)
 	second, secondOK := secondRegistry.providerAddresses(
 		position,
-		replay.ProviderObservationEvent{
+		ProviderObservationEvent{
 			EventIndex:     1,
 			Type:           "call.started",
 			AgentSessionID: "replay-runtime-session",
@@ -49,7 +47,7 @@ func TestProviderEntityAddressIsStableAcrossRuntimeIDs(t *testing.T) {
 			secondOK,
 		)
 	}
-	if !replay.EntityAddressesEqual(first[0], second[0]) {
+	if !EntityAddressesEqual(first[0], second[0]) {
 		t.Fatalf(
 			"runtime IDs changed portable address: first=%#v second=%#v",
 			first[0],
@@ -90,7 +88,7 @@ func TestDescribeProviderEventFoldsTurnPhaseToCanonicalVocabulary(
 	}
 	for observed, want := range tests {
 		predicate, kind, ok := describeProviderEvent(
-			replay.ProviderObservationEvent{
+			ProviderObservationEvent{
 				Type:      "turn.updated",
 				TurnPhase: observed,
 			},
@@ -110,7 +108,7 @@ func TestDescribeProviderEventFoldsTurnPhaseToCanonicalVocabulary(
 }
 
 func TestTerminalCorrelationPrefersOutcomeOverIdleStatus(t *testing.T) {
-	event := replay.ProviderObservationEvent{
+	event := ProviderObservationEvent{
 		Type:        "turn.completed",
 		TurnPhase:   "idle",
 		TurnOutcome: "completed",
@@ -121,8 +119,8 @@ func TestTerminalCorrelationPrefersOutcomeOverIdleStatus(t *testing.T) {
 	}
 }
 
-func providerPosition(eventIndex uint64) replay.ProviderObservationPosition {
-	return replay.ProviderObservationPosition{
+func providerPosition(eventIndex uint64) ProviderObservationPosition {
+	return ProviderObservationPosition{
 		ConnectionID: "provider-1",
 		ChunkSeq:     eventIndex,
 		UnitIndex:    1,
@@ -136,7 +134,7 @@ func TestProviderEntityAddressesReuseUpdatesAndKeepRuntimeScopes(
 	registry := newReplayEntityRegistry("root-runtime")
 	firstTurn, ok := registry.providerAddresses(
 		providerPosition(1),
-		replay.ProviderObservationEvent{
+		ProviderObservationEvent{
 			EventIndex:     1,
 			Type:           "turn.started",
 			AgentSessionID: "root-runtime",
@@ -148,14 +146,14 @@ func TestProviderEntityAddressesReuseUpdatesAndKeepRuntimeScopes(
 	}
 	updatedTurn, ok := registry.providerAddresses(
 		providerPosition(2),
-		replay.ProviderObservationEvent{
+		ProviderObservationEvent{
 			EventIndex:     2,
 			Type:           "turn.updated",
 			AgentSessionID: "root-runtime",
 			TurnID:         "turn-shared",
 		},
 	)
-	if !ok || !replay.EntityAddressesEqual(
+	if !ok || !EntityAddressesEqual(
 		firstTurn[0],
 		updatedTurn[0],
 	) {
@@ -168,7 +166,7 @@ func TestProviderEntityAddressesReuseUpdatesAndKeepRuntimeScopes(
 
 	if _, ok := registry.providerAddresses(
 		providerPosition(3),
-		replay.ProviderObservationEvent{
+		ProviderObservationEvent{
 			EventIndex:           3,
 			Type:                 "session.started",
 			AgentSessionID:       "child-runtime",
@@ -181,7 +179,7 @@ func TestProviderEntityAddressesReuseUpdatesAndKeepRuntimeScopes(
 	}
 	childTurn, ok := registry.providerAddresses(
 		providerPosition(4),
-		replay.ProviderObservationEvent{
+		ProviderObservationEvent{
 			EventIndex:     4,
 			Type:           "turn.started",
 			AgentSessionID: "child-runtime",
@@ -189,7 +187,7 @@ func TestProviderEntityAddressesReuseUpdatesAndKeepRuntimeScopes(
 			TurnID:         "turn-shared",
 		},
 	)
-	if !ok || replay.EntityAddressesEqual(
+	if !ok || EntityAddressesEqual(
 		firstTurn[0],
 		childTurn[0],
 	) {
@@ -202,7 +200,7 @@ func TestProviderEntityAddressesReuseUpdatesAndKeepRuntimeScopes(
 
 	firstCall, ok := registry.providerAddresses(
 		providerPosition(5),
-		replay.ProviderObservationEvent{
+		ProviderObservationEvent{
 			EventIndex:     5,
 			Type:           "call.started",
 			AgentSessionID: "root-runtime",
@@ -215,7 +213,7 @@ func TestProviderEntityAddressesReuseUpdatesAndKeepRuntimeScopes(
 	}
 	secondTurn, ok := registry.providerAddresses(
 		providerPosition(6),
-		replay.ProviderObservationEvent{
+		ProviderObservationEvent{
 			EventIndex:     6,
 			Type:           "turn.started",
 			AgentSessionID: "root-runtime",
@@ -227,7 +225,7 @@ func TestProviderEntityAddressesReuseUpdatesAndKeepRuntimeScopes(
 	}
 	secondCall, ok := registry.providerAddresses(
 		providerPosition(7),
-		replay.ProviderObservationEvent{
+		ProviderObservationEvent{
 			EventIndex:     7,
 			Type:           "call.started",
 			AgentSessionID: "root-runtime",
@@ -235,7 +233,7 @@ func TestProviderEntityAddressesReuseUpdatesAndKeepRuntimeScopes(
 			CallID:         "call-shared",
 		},
 	)
-	if !ok || replay.EntityAddressesEqual(
+	if !ok || EntityAddressesEqual(
 		firstCall[0],
 		secondCall[0],
 	) {
@@ -244,7 +242,7 @@ func TestProviderEntityAddressesReuseUpdatesAndKeepRuntimeScopes(
 
 	firstInteraction, ok := registry.providerAddresses(
 		providerPosition(8),
-		replay.ProviderObservationEvent{
+		ProviderObservationEvent{
 			EventIndex: 8, Type: "interaction.requested",
 			AgentSessionID: "root-runtime", TurnID: "turn-2",
 			InteractionID: "request-shared", InteractionKind: "approval",
@@ -255,13 +253,13 @@ func TestProviderEntityAddressesReuseUpdatesAndKeepRuntimeScopes(
 	}
 	secondInteraction, ok := registry.providerAddresses(
 		providerPosition(9),
-		replay.ProviderObservationEvent{
+		ProviderObservationEvent{
 			EventIndex: 9, Type: "interaction.requested",
 			AgentSessionID: "root-runtime", TurnID: "turn-2",
 			InteractionID: "request-shared", InteractionKind: "question",
 		},
 	)
-	if !ok || replay.EntityAddressesEqual(
+	if !ok || EntityAddressesEqual(
 		firstInteraction[0],
 		secondInteraction[0],
 	) {
@@ -271,7 +269,7 @@ func TestProviderEntityAddressesReuseUpdatesAndKeepRuntimeScopes(
 
 func TestProviderEntityAddressRejectsMissingRequiredTurn(t *testing.T) {
 	registry := newReplayEntityRegistry("root-runtime")
-	for _, event := range []replay.ProviderObservationEvent{
+	for _, event := range []ProviderObservationEvent{
 		{
 			EventIndex: 1, Type: "turn.started",
 			AgentSessionID: "root-runtime",
@@ -309,7 +307,7 @@ func TestAttachmentUpdateReusesExistingAddresses(t *testing.T) {
 	registry := newReplayEntityRegistry("root-runtime")
 	first, ok := registry.providerAddresses(
 		providerPosition(1),
-		replay.ProviderObservationEvent{
+		ProviderObservationEvent{
 			EventIndex: 1, Type: "attachment.materialized",
 			AgentSessionID: "root-runtime", TurnID: "turn-1",
 			MessageID: "message-1", AttachmentCount: 1,
@@ -320,14 +318,14 @@ func TestAttachmentUpdateReusesExistingAddresses(t *testing.T) {
 	}
 	update, ok := registry.providerAddresses(
 		providerPosition(2),
-		replay.ProviderObservationEvent{
+		ProviderObservationEvent{
 			EventIndex: 2, Type: "attachment.materialized",
 			AgentSessionID: "root-runtime", TurnID: "turn-1",
 			MessageID: "message-1", AttachmentCount: 2,
 		},
 	)
 	if !ok || len(update) != 2 ||
-		!replay.EntityAddressesEqual(first[0], update[0]) ||
+		!EntityAddressesEqual(first[0], update[0]) ||
 		update[1].Origin.ProviderObservation == nil ||
 		update[1].Origin.ProviderObservation.EventIndex != 2 {
 		t.Fatalf("attachment update addresses=%#v", update)
@@ -337,8 +335,8 @@ func TestAttachmentUpdateReusesExistingAddresses(t *testing.T) {
 func TestContinueInitialStateSeedsStructuralAddressesAndActivityTargetsChild(
 	t *testing.T,
 ) {
-	state := replaybiz.TuttiReplayState{
-		SchemaVersion: replaybiz.SchemaVersion,
+	state := TuttiReplayState{
+		SchemaVersion: SchemaVersion,
 		Agent: agenthost.HistoricalSessionGraph{
 			RootSessionID: "root-runtime",
 			Sessions: []agenthost.HistoricalSession{
@@ -378,10 +376,10 @@ func TestContinueInitialStateSeedsStructuralAddressesAndActivityTargetsChild(
 	if err := recorder.entities.seedState(state); err != nil {
 		t.Fatal(err)
 	}
-	kind, address, _, ok := recorder.describeActivity(replay.ActivityEvent{
-		SchemaVersion:  replay.CassetteSchemaVersion,
+	kind, address, _, ok := recorder.describeActivity(ActivityEvent{
+		SchemaVersion:  CassetteSchemaVersion,
 		Sequence:       1,
-		Kind:           replay.ActivityEventKindEffect,
+		Kind:           ActivityEventKindEffect,
 		Type:           "interaction/respond",
 		AgentSessionID: "child-runtime",
 		Payload: map[string]any{
@@ -391,13 +389,13 @@ func TestContinueInitialStateSeedsStructuralAddressesAndActivityTargetsChild(
 		},
 	})
 	if !ok || kind != "interaction.resolved" ||
-		address.Origin.Source != replay.EntityOriginInitialState ||
+		address.Origin.Source != EntityOriginInitialState ||
 		address.Origin.InitialStatePath !=
 			"/agent/sessions/1/interactions/0" {
 		t.Fatalf("child interaction address=%#v kind=%q ok=%v", address, kind, ok)
 	}
 	_, settingsAddress, _, ok := recorder.describeActivity(
-		replay.ActivityEvent{
+		ActivityEvent{
 			Sequence: 2, Type: "session/updateSettings",
 			AgentSessionID: "child-runtime",
 			Payload:        map[string]any{"outcome": "succeeded"},
@@ -415,19 +413,19 @@ func TestCandidateCorrelationCarriesExactObservationIdentity(t *testing.T) {
 		ID:                 "recording-1",
 		RootAgentSessionID: "root-runtime",
 	})
-	position := replay.ProviderUnitPosition{
+	position := ProviderUnitPosition{
 		ConnectionID: "provider-1", ChunkSeq: 1, UnitIndex: 1,
 	}
 	entry, _, ok, err := recorder.buildCandidate(
-		replay.RecordingCursorSnapshot{
+		RecordingCursorSnapshot{
 			ActivityEventSequence: 1,
 		},
 		position,
-		replay.ProviderObservationBatch{
+		ProviderObservationBatch{
 			ConnectionID: position.ConnectionID,
 			ChunkSeq:     position.ChunkSeq, UnitIndex: position.UnitIndex,
-			UnitKind: string(replay.ProviderInputUnitProtocolMessage),
-			Events: []replay.ProviderObservationEvent{{
+			UnitKind: string(ProviderInputUnitProtocolMessage),
+			Events: []ProviderObservationEvent{{
 				EventIndex: 1, Type: "turn.started",
 				AgentSessionID: "root-runtime",
 				TurnID:         "turn-runtime", TurnPhase: "working",
@@ -442,7 +440,7 @@ func TestCandidateCorrelationCarriesExactObservationIdentity(t *testing.T) {
 	observation := entry.Observations[0]
 	if correlation.ObservationPosition != observation.Position ||
 		correlation.ObservationFingerprint != observation.Fingerprint ||
-		!replay.EntityAddressesEqual(
+		!EntityAddressesEqual(
 			correlation.Address,
 			observation.Address,
 		) {
@@ -467,7 +465,7 @@ func TestLateStartInitializationDoesNotOverwriteEarlyProviderState(
 	}
 	addresses, ok := recorder.entities.providerAddresses(
 		providerPosition(1),
-		replay.ProviderObservationEvent{
+		ProviderObservationEvent{
 			EventIndex:     1,
 			Type:           "turn.started",
 			AgentSessionID: "root-runtime",
@@ -479,7 +477,7 @@ func TestLateStartInitializationDoesNotOverwriteEarlyProviderState(
 	}
 	recorder.plan.Checkpoints = append(
 		recorder.plan.Checkpoints,
-		replay.ReplayCheckpoint{ID: "early"},
+		ReplayCheckpoint{ID: "early"},
 	)
 
 	if err := recorder.ensureInitialized(recording, nil); err != nil {
@@ -489,7 +487,7 @@ func TestLateStartInitializationDoesNotOverwriteEarlyProviderState(
 		"root-runtime",
 		"turn-early",
 	)
-	if !ok || !replay.EntityAddressesEqual(addresses[0], reused) ||
+	if !ok || !EntityAddressesEqual(addresses[0], reused) ||
 		len(recorder.plan.Checkpoints) != 2 {
 		t.Fatalf(
 			"late initialization overwrote early state: address=%#v plan=%#v",
@@ -500,33 +498,33 @@ func TestLateStartInitializationDoesNotOverwriteEarlyProviderState(
 }
 
 func TestCompletedFirstTurnBindsBirthAddressFromPlan(t *testing.T) {
-	startedPos := replay.ProviderObservationPosition{
+	startedPos := ProviderObservationPosition{
 		ConnectionID: "connection-1",
 		ChunkSeq:     21,
 		UnitIndex:    1,
 		EventIndex:   1,
 	}
-	completedPos := replay.ProviderObservationPosition{
+	completedPos := ProviderObservationPosition{
 		ConnectionID: "connection-1",
 		ChunkSeq:     30,
 		UnitIndex:    1,
 		EventIndex:   1,
 	}
-	plan := replay.NewCheckpointPlan([]replay.ReplayCheckpoint{
+	plan := NewCheckpointPlan([]ReplayCheckpoint{
 		{
 			ID:    "checkpoint-0001",
 			Index: 0,
 			Kind:  "turn.working",
-			Trigger: replay.CheckpointTrigger{
-				Source:   replay.CheckpointTriggerProviderObservation,
+			Trigger: CheckpointTrigger{
+				Source:   CheckpointTriggerProviderObservation,
 				Position: &startedPos,
-				UnitKind: replay.ProviderInputUnitProtocolMessage,
+				UnitKind: ProviderInputUnitProtocolMessage,
 				Type:     "root_provider_turn.started",
 			},
-			Subjects: []replay.EntityAddress{{
-				Kind: replay.EntityKindTurn,
-				Origin: replay.EntityOrigin{
-					Source:              replay.EntityOriginProviderObservation,
+			Subjects: []EntityAddress{{
+				Kind: EntityKindTurn,
+				Origin: EntityOrigin{
+					Source:              EntityOriginProviderObservation,
 					ProviderObservation: &startedPos,
 				},
 			}},
@@ -535,16 +533,16 @@ func TestCompletedFirstTurnBindsBirthAddressFromPlan(t *testing.T) {
 			ID:    "checkpoint-0003",
 			Index: 1,
 			Kind:  "turn.terminal",
-			Trigger: replay.CheckpointTrigger{
-				Source:   replay.CheckpointTriggerProviderObservation,
+			Trigger: CheckpointTrigger{
+				Source:   CheckpointTriggerProviderObservation,
 				Position: &completedPos,
-				UnitKind: replay.ProviderInputUnitProtocolMessage,
+				UnitKind: ProviderInputUnitProtocolMessage,
 				Type:     "root_provider_turn.completed",
 			},
-			Subjects: []replay.EntityAddress{{
-				Kind: replay.EntityKindTurn,
-				Origin: replay.EntityOrigin{
-					Source:              replay.EntityOriginProviderObservation,
+			Subjects: []EntityAddress{{
+				Kind: EntityKindTurn,
+				Origin: EntityOrigin{
+					Source:              EntityOriginProviderObservation,
 					ProviderObservation: &startedPos,
 				},
 			}},
@@ -554,7 +552,7 @@ func TestCompletedFirstTurnBindsBirthAddressFromPlan(t *testing.T) {
 	registry := newReplayEntityRegistry("session-1")
 	completedAddresses, ok := registry.providerAddressesForPlan(
 		completedPos,
-		replay.ProviderObservationEvent{
+		ProviderObservationEvent{
 			EventIndex:     1,
 			Type:           "root_provider_turn.completed",
 			AgentSessionID: "session-1",
@@ -567,8 +565,8 @@ func TestCompletedFirstTurnBindsBirthAddressFromPlan(t *testing.T) {
 	if !ok || len(completedAddresses) != 1 {
 		t.Fatalf("completed bind failed: %#v ok=%v", completedAddresses, ok)
 	}
-	wantAddress := providerAddress(replay.EntityKindTurn, startedPos, "")
-	if !replay.EntityAddressesEqual(completedAddresses[0], wantAddress) {
+	wantAddress := replayProviderAddress(EntityKindTurn, startedPos, "")
+	if !EntityAddressesEqual(completedAddresses[0], wantAddress) {
 		t.Fatalf(
 			"completed-first address=%#v want birth %#v",
 			completedAddresses[0],
@@ -576,8 +574,8 @@ func TestCompletedFirstTurnBindsBirthAddressFromPlan(t *testing.T) {
 		)
 	}
 
-	startedFP, err := replay.ObservationFingerprint(replay.ProviderObservation{
-		SchemaVersion: replay.ObservationSchemaVersion,
+	startedFP, err := ObservationFingerprint(ProviderObservation{
+		SchemaVersion: ObservationSchemaVersion,
 		Type:          "root_provider_turn.completed",
 		Address:       wantAddress,
 		Stable: map[string]any{
@@ -588,8 +586,8 @@ func TestCompletedFirstTurnBindsBirthAddressFromPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	actualFP, err := replay.ObservationFingerprint(replay.ProviderObservation{
-		SchemaVersion: replay.ObservationSchemaVersion,
+	actualFP, err := ObservationFingerprint(ProviderObservation{
+		SchemaVersion: ObservationSchemaVersion,
 		Type:          "root_provider_turn.completed",
 		Address:       completedAddresses[0],
 		Stable: map[string]any{
@@ -613,8 +611,8 @@ func TestQueuedSubmitActivityBoundaryWaitsForDrainEffect(t *testing.T) {
 		t.Fatal("activation/requested still requires an effect")
 	}
 	var recorder checkpointRecorder
-	queued := replay.ActivityEvent{
-		Kind:           replay.ActivityEventKindIntent,
+	queued := ActivityEvent{
+		Kind:           ActivityEventKindIntent,
 		Type:           "submit/requested",
 		EventID:        "submit-queued",
 		AgentSessionID: "session-1",
@@ -622,17 +620,17 @@ func TestQueuedSubmitActivityBoundaryWaitsForDrainEffect(t *testing.T) {
 			"submitDiagnostics": map[string]any{"queued": true},
 		},
 	}
-	if got := recorder.completeActivityBoundary([]replay.ActivityEvent{queued}); got != nil {
+	if got := recorder.completeActivityBoundary([]ActivityEvent{queued}); got != nil {
 		t.Fatalf("queued submit without drain effect must suppress boundary: %#v", got)
 	}
-	drain := replay.ActivityEvent{
-		Kind:            replay.ActivityEventKindEffect,
+	drain := ActivityEvent{
+		Kind:            ActivityEventKindEffect,
 		Type:            "queue/sendPrompt",
 		EventID:         "send-1",
 		CausedByEventID: "submit-queued",
 		AgentSessionID:  "session-1",
 	}
-	got := recorder.completeActivityBoundary([]replay.ActivityEvent{drain})
+	got := recorder.completeActivityBoundary([]ActivityEvent{drain})
 	if len(got) != 2 {
 		t.Fatalf("drain should complete queued submit boundary: %#v", got)
 	}

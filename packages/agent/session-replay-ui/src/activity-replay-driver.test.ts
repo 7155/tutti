@@ -5,12 +5,12 @@ import type {
   EngineExternalCommand,
   EngineIntent
 } from "@tutti-os/agent-activity-core";
-import type { AgentSessionActivityEvent } from "./agentSessionActivityEventRecorder.ts";
+import type { AgentSessionActivityEvent } from "./activity-event.ts";
 import {
   installAgentSessionActivityReplayDriver,
   rebaseReplayIntentPayload,
   type AgentSessionActivityReplayDriver
-} from "./agentSessionActivityReplayDriver.ts";
+} from "./activity-replay-driver.ts";
 
 const defaultCassetteID = "cassette-default";
 

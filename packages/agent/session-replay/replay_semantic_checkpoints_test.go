@@ -1,4 +1,4 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"context"
@@ -6,16 +6,14 @@ import (
 	"testing"
 
 	agenthost "github.com/tutti-os/tutti/packages/agent/host"
-	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
 	storesqlite "github.com/tutti-os/tutti/packages/agent/store-sqlite"
-	replaybiz "github.com/tutti-os/tutti/services/tuttid/biz/agentsessionreplay"
 )
 
 func TestProviderPositionReachedIncludesTriggerUnit(t *testing.T) {
-	position := &replay.ProviderObservationPosition{
+	position := &ProviderObservationPosition{
 		ConnectionID: "connection-1", ChunkSeq: 56, UnitIndex: 1, EventIndex: 1,
 	}
-	handled := map[string]replay.ProviderUnitPosition{
+	handled := map[string]ProviderUnitPosition{
 		"connection-1": {
 			ConnectionID: "connection-1", ChunkSeq: 56, UnitIndex: 1,
 		},
@@ -26,7 +24,7 @@ func TestProviderPositionReachedIncludesTriggerUnit(t *testing.T) {
 	if providerPositionPassed(handled, position) {
 		t.Fatal("handled at trigger unit must not count as passed")
 	}
-	handled["connection-1"] = replay.ProviderUnitPosition{
+	handled["connection-1"] = ProviderUnitPosition{
 		ConnectionID: "connection-1", ChunkSeq: 57, UnitIndex: 1,
 	}
 	if !providerPositionReached(handled, position) ||
@@ -38,19 +36,19 @@ func TestProviderPositionReachedIncludesTriggerUnit(t *testing.T) {
 func TestHandledLaneClosesProviderObservationTriggerWithoutStamp(
 	t *testing.T,
 ) {
-	position := replay.ProviderObservationPosition{
+	position := ProviderObservationPosition{
 		ConnectionID: "connection-1",
 		ChunkSeq:     56,
 		UnitIndex:    1,
 		EventIndex:   1,
 	}
-	fingerprint, err := replay.ObservationFingerprint(replay.ProviderObservation{
-		SchemaVersion: replay.ObservationSchemaVersion,
+	fingerprint, err := ObservationFingerprint(ProviderObservation{
+		SchemaVersion: ObservationSchemaVersion,
 		Type:          "root_provider_turn.started",
-		Address: replay.EntityAddress{
-			Kind: replay.EntityKindTurn,
-			Origin: replay.EntityOrigin{
-				Source:              replay.EntityOriginProviderObservation,
+		Address: EntityAddress{
+			Kind: EntityKindTurn,
+			Origin: EntityOrigin{
+				Source:              EntityOriginProviderObservation,
 				ProviderObservation: &position,
 			},
 		},
@@ -67,28 +65,28 @@ func TestHandledLaneClosesProviderObservationTriggerWithoutStamp(
 				WorkspaceID: "workspace-1",
 			},
 		},
-		plans: map[string]replay.CheckpointPlan{
-			"cassette-1": replay.NewCheckpointPlan(
-				[]replay.ReplayCheckpoint{{
+		plans: map[string]CheckpointPlan{
+			"cassette-1": NewCheckpointPlan(
+				[]ReplayCheckpoint{{
 					ID: "checkpoint-0004", Index: 0,
 					Kind: "turn.working", Tags: []string{"turn.working"},
-					Trigger: replay.CheckpointTrigger{
-						Source:      replay.CheckpointTriggerProviderObservation,
+					Trigger: CheckpointTrigger{
+						Source:      CheckpointTriggerProviderObservation,
 						Position:    &position,
-						UnitKind:    replay.ProviderInputUnitProtocolMessage,
+						UnitKind:    ProviderInputUnitProtocolMessage,
 						Type:        "root_provider_turn.started",
 						Fingerprint: fingerprint,
 					},
 					// Empty readiness isolates the handled-lane trigger path
 					// from Host canonical lookups.
-					Readiness: replay.CheckpointReadiness{All: []replay.ReadinessPredicate{}},
+					Readiness: CheckpointReadiness{All: []ReadinessPredicate{}},
 				}},
 			),
 		},
 		observations: map[string]*semanticObservationState{
 			"cassette-1": {
 				matched: map[int]bool{},
-				handled: map[string]replay.ProviderUnitPosition{},
+				handled: map[string]ProviderUnitPosition{},
 			},
 		},
 	}
@@ -98,7 +96,7 @@ func TestHandledLaneClosesProviderObservationTriggerWithoutStamp(
 	if err != nil || state.TriggerMatched {
 		t.Fatalf("before handled lane: state=%#v err=%v", state, err)
 	}
-	runtime.NoteHandledProviderUnits("cassette-1", map[string]replay.ProviderUnitPosition{
+	runtime.NoteHandledProviderUnits("cassette-1", map[string]ProviderUnitPosition{
 		"connection-1": {
 			ConnectionID: "connection-1", ChunkSeq: 56, UnitIndex: 1,
 		},
@@ -116,7 +114,7 @@ func TestHandledLaneClosesProviderObservationTriggerWithoutStamp(
 }
 
 func TestHandledLanePastTriggerWithoutMatchIsOutOfOrder(t *testing.T) {
-	position := replay.ProviderObservationPosition{
+	position := ProviderObservationPosition{
 		ConnectionID: "connection-1",
 		ChunkSeq:     56,
 		UnitIndex:    1,
@@ -130,22 +128,22 @@ func TestHandledLanePastTriggerWithoutMatchIsOutOfOrder(t *testing.T) {
 				WorkspaceID: "workspace-1",
 			},
 		},
-		plans: map[string]replay.CheckpointPlan{
-			"cassette-1": replay.NewCheckpointPlan(
-				[]replay.ReplayCheckpoint{{
+		plans: map[string]CheckpointPlan{
+			"cassette-1": NewCheckpointPlan(
+				[]ReplayCheckpoint{{
 					ID: "checkpoint-0004", Index: 0,
 					Kind: "turn.working",
-					Trigger: replay.CheckpointTrigger{
-						Source:   replay.CheckpointTriggerProviderObservation,
+					Trigger: CheckpointTrigger{
+						Source:   CheckpointTriggerProviderObservation,
 						Position: &position,
-						UnitKind: replay.ProviderInputUnitProtocolMessage,
+						UnitKind: ProviderInputUnitProtocolMessage,
 						Type:     "root_provider_turn.started",
 						Fingerprint: "sha256:" +
 							"0123456789abcdef0123456789abcdef" +
 							"0123456789abcdef0123456789abcdef",
 					},
-					Readiness: replay.CheckpointReadiness{
-						All: []replay.ReadinessPredicate{},
+					Readiness: CheckpointReadiness{
+						All: []ReadinessPredicate{},
 					},
 				}},
 			),
@@ -153,11 +151,11 @@ func TestHandledLanePastTriggerWithoutMatchIsOutOfOrder(t *testing.T) {
 		observations: map[string]*semanticObservationState{
 			"cassette-1": {
 				matched: map[int]bool{},
-				handled: map[string]replay.ProviderUnitPosition{},
+				handled: map[string]ProviderUnitPosition{},
 			},
 		},
 	}
-	runtime.NoteHandledProviderUnits("cassette-1", map[string]replay.ProviderUnitPosition{
+	runtime.NoteHandledProviderUnits("cassette-1", map[string]ProviderUnitPosition{
 		"connection-1": {
 			ConnectionID: "connection-1", ChunkSeq: 57, UnitIndex: 1,
 		},
@@ -171,16 +169,16 @@ func TestHandledLanePastTriggerWithoutMatchIsOutOfOrder(t *testing.T) {
 
 func TestNeutralBootstrapCheckpointNeedsNoCanonicalSession(t *testing.T) {
 	runtime := &SemanticRuntime{
-		plans: map[string]replay.CheckpointPlan{
-			"cassette-1": replay.NewCheckpointPlan(
-				[]replay.ReplayCheckpoint{{
+		plans: map[string]CheckpointPlan{
+			"cassette-1": NewCheckpointPlan(
+				[]ReplayCheckpoint{{
 					ID: "checkpoint-0000", Index: 0,
 					Kind: "replay.bootstrap", Tags: []string{"replay.bootstrap"},
-					Trigger: replay.CheckpointTrigger{
-						Source: replay.CheckpointTriggerBootstrap,
+					Trigger: CheckpointTrigger{
+						Source: CheckpointTriggerBootstrap,
 					},
-					Readiness: replay.CheckpointReadiness{
-						All: []replay.ReadinessPredicate{},
+					Readiness: CheckpointReadiness{
+						All: []ReadinessPredicate{},
 					},
 				}},
 			),
@@ -348,16 +346,16 @@ func TestProjectBindingReadinessResolvesPortableExpectedState(t *testing.T) {
 			ID:              "session-1",
 			AgentTargetID:   "local:codex",
 			Provider:        "codex",
-			Cwd:             replay.PortableReplayCWDToken,
+			Cwd:             PortableReplayCWDToken,
 			RailSectionKind: storesqlite.RailSectionKindProject,
-			RailProjectPath: replay.PortableReplayCWDToken,
-			RailSectionKey:  "project:" + replay.PortableReplayCWDToken,
+			RailProjectPath: PortableReplayCWDToken,
+			RailSectionKey:  "project:" + PortableReplayCWDToken,
 		}},
 	}
 	if projectBindingMatches(actual, portable.Sessions[0]) {
 		t.Fatal("portable expected binding must not match a canonical Session")
 	}
-	resolved, err := replaybiz.ResolvePortableAgentState(portable, replayCWD)
+	resolved, err := ResolvePortableAgentState(portable, replayCWD)
 	if err != nil {
 		t.Fatal(err)
 	}

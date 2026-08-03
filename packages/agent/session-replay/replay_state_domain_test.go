@@ -1,4 +1,4 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"path/filepath"
@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	agenthost "github.com/tutti-os/tutti/packages/agent/host"
-	sessionreplay "github.com/tutti-os/tutti/packages/agent/session-replay"
 	storesqlite "github.com/tutti-os/tutti/packages/agent/store-sqlite"
 )
 
@@ -29,11 +28,11 @@ func TestProjectAndResolvePortableAgentSessionBinding(t *testing.T) {
 
 	portable := ProjectPortableAgentState(agent, t.TempDir())
 	session := portable.Sessions[0]
-	if session.Cwd != sessionreplay.PortableReplayCWDToken ||
+	if session.Cwd != PortableReplayCWDToken ||
 		session.RailProjectPath !=
-			sessionreplay.PortableReplayCWDToken+"/packages/agent" ||
+			PortableReplayCWDToken+"/packages/agent" ||
 		session.RailSectionKey !=
-			"project:"+sessionreplay.PortableReplayCWDToken+"/packages/agent" {
+			"project:"+PortableReplayCWDToken+"/packages/agent" {
 		t.Fatalf("portable binding = %#v", session)
 	}
 	if agent.Sessions[0].Cwd != recordedRoot {
@@ -77,14 +76,14 @@ func TestProjectPortableAgentStateNormalizesSymlinkEquivalentPaths(t *testing.T)
 
 	portable := ProjectPortableAgentState(agent, t.TempDir())
 	session := portable.Sessions[0]
-	if session.Cwd != sessionreplay.PortableReplayCWDToken {
+	if session.Cwd != PortableReplayCWDToken {
 		t.Fatalf("portable cwd = %q", session.Cwd)
 	}
-	if session.RailProjectPath != sessionreplay.PortableReplayCWDToken {
+	if session.RailProjectPath != PortableReplayCWDToken {
 		t.Fatalf("portable railProjectPath = %q", session.RailProjectPath)
 	}
 	if session.RailSectionKey !=
-		"project:"+sessionreplay.PortableReplayCWDToken {
+		"project:"+PortableReplayCWDToken {
 		t.Fatalf("portable railSectionKey = %q", session.RailSectionKey)
 	}
 	if filepath.IsAbs(session.RailProjectPath) || filepath.IsAbs(session.Cwd) {
@@ -110,7 +109,7 @@ func TestResolvePortableAgentStateRejectsPathEscape(t *testing.T) {
 		RootSessionID: "session-1",
 		Sessions: []agenthost.HistoricalSession{{
 			ID:  "session-1",
-			Cwd: sessionreplay.PortableReplayCWDToken + "/../outside",
+			Cwd: PortableReplayCWDToken + "/../outside",
 		}},
 	}
 	if _, err := ResolvePortableAgentState(agent, "/runtime/replay"); err == nil {
@@ -155,7 +154,7 @@ func TestProjectPortableAgentStateProjectsTurnFileChangePaths(t *testing.T) {
 	files, _ := portable.Sessions[0].Turns[0].FileChanges["files"].([]any)
 	file, _ := files[0].(map[string]any)
 	if file["path"] !=
-		sessionreplay.PortableReplayCWDToken+"/.tmp/agent-session-replay-r09/delete-me.txt" {
+		PortableReplayCWDToken+"/.tmp/agent-session-replay-r09/delete-me.txt" {
 		t.Fatalf("portable fileChanges path = %#v", file["path"])
 	}
 	if agent.Sessions[0].Turns[0].FileChanges["files"].([]any)[0].(map[string]any)["path"] !=
@@ -213,7 +212,7 @@ func TestProjectPortableAgentStateProjectsGeneratedImagePaths(t *testing.T) {
 
 	projected := ProjectPortableAgentState(agent, stateDirectory)
 	output := projected.Sessions[0].Messages[0].Payload["output"].(map[string]any)
-	want := sessionreplay.PortableReplayHomeToken +
+	want := PortableReplayHomeToken +
 		"/generated_images/call-1/image.png"
 	if output["savedPath"] != want ||
 		output["savedPaths"].([]any)[0] != want {

@@ -1,4 +1,4 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"context"
@@ -6,13 +6,12 @@ import (
 	"strings"
 
 	agenthost "github.com/tutti-os/tutti/packages/agent/host"
-	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
 )
 
 func (s *Service) ObserveReplayCommitted(
 	ctx context.Context,
 	delta agenthost.CommittedDelta,
-	replayContext replay.ProviderObservationCommitContext,
+	replayContext ProviderObservationCommitContext,
 ) error {
 	if s == nil || s.Workflow == nil || strings.TrimSpace(delta.TransactionID) == "" {
 		return nil
@@ -27,17 +26,17 @@ func (s *Service) ObserveReplayCommitted(
 		if !s.Workflow.HasRecordingCaptureForScope(workspaceID) {
 			return nil
 		}
-		return replay.ErrInvalidState
+		return ErrInvalidState
 	}
 	snapshot, admitted :=
 		s.Workflow.RecordingCursorSnapshotForCapture(recordingID)
 	if !admitted || snapshot.Recording.ScopeID != workspaceID {
 		return nil
 	}
-	if err := replay.ValidateProviderObservationCommitContext(
+	if err := ValidateProviderObservationCommitContext(
 		replayContext,
 	); err != nil {
-		return replay.ErrInvalidState
+		return ErrInvalidState
 	}
 	if err := s.ensureCheckpointRecorder(
 		snapshot.Recording,
@@ -47,7 +46,7 @@ func (s *Service) ObserveReplayCommitted(
 	s.checkpoints.mu.Lock()
 	defer s.checkpoints.mu.Unlock()
 	for _, batch := range batches {
-		position := replay.ProviderUnitPosition{
+		position := ProviderUnitPosition{
 			ConnectionID: batch.ConnectionID, ChunkSeq: batch.ChunkSeq,
 			UnitIndex: batch.UnitIndex,
 		}
@@ -67,7 +66,7 @@ func (s *Service) ObserveReplayCommitted(
 				continue
 			}
 			for _, event := range batch.Events {
-				eventPosition := replay.ProviderObservationPosition{
+				eventPosition := ProviderObservationPosition{
 					ConnectionID: position.ConnectionID,
 					ChunkSeq:     position.ChunkSeq,
 					UnitIndex:    position.UnitIndex,
@@ -147,9 +146,9 @@ func (s *Service) ObserveCommitted(
 
 func (s *Service) materializeCommittedCandidatesLocked(
 	ctx context.Context,
-	snapshot replay.RecordingCursorSnapshot,
-	position replay.ProviderUnitPosition,
-	batch replay.ProviderObservationBatch,
+	snapshot RecordingCursorSnapshot,
+	position ProviderUnitPosition,
+	batch ProviderObservationBatch,
 ) error {
 	existing, hasExisting := s.checkpoints.pending[position]
 	seen := make(map[uint64]struct{}, len(existing.Observations))
@@ -157,7 +156,7 @@ func (s *Service) materializeCommittedCandidatesLocked(
 		seen[observation.Position.EventIndex] = struct{}{}
 	}
 	missing := batch
-	missing.Events = make([]replay.ProviderObservationEvent, 0, len(batch.Events))
+	missing.Events = make([]ProviderObservationEvent, 0, len(batch.Events))
 	for _, event := range batch.Events {
 		if _, ok := seen[event.EventIndex]; !ok {
 			missing.Events = append(missing.Events, event)
@@ -178,7 +177,7 @@ func (s *Service) materializeCommittedCandidatesLocked(
 	checkpointIndex := -1
 	for index := len(s.checkpoints.plan.Checkpoints) - 1; index >= 0; index-- {
 		trigger := s.checkpoints.plan.Checkpoints[index].Trigger
-		if trigger.Source == replay.CheckpointTriggerProviderObservation &&
+		if trigger.Source == CheckpointTriggerProviderObservation &&
 			trigger.Position != nil &&
 			trigger.Position.ConnectionID == position.ConnectionID &&
 			trigger.Position.ChunkSeq == position.ChunkSeq &&
@@ -189,12 +188,12 @@ func (s *Service) materializeCommittedCandidatesLocked(
 	}
 	if checkpointIndex >= 0 {
 		s.checkpoints.plan.Checkpoints[checkpointIndex] =
-			replay.MergeCheckpointCandidate(
+			MergeCheckpointCandidate(
 				s.checkpoints.plan.Checkpoints[checkpointIndex],
 				checkpoint,
 			)
 	} else {
-		replay.AppendCheckpoint(&s.checkpoints.plan, checkpoint)
+		AppendCheckpoint(&s.checkpoints.plan, checkpoint)
 	}
 	s.checkpoints.pending[position] = entry
 	return s.Workflow.RecordCheckpointCandidate(
@@ -240,20 +239,20 @@ func (s *Service) recordGoalCheckpointLocked(
 	if !ok {
 		return nil
 	}
-	checkpoint := replay.ReplayCheckpoint{
+	checkpoint := ReplayCheckpoint{
 		Kind: kind, Tags: []string{kind},
-		Cursor: replay.ReplayCursor{
+		Cursor: ReplayCursor{
 			ActivityEventSequence: snapshot.ActivityEventSequence,
 			ProviderConnections:   s.checkpoints.connectionCursor(),
 		},
-		Trigger: replay.CheckpointTrigger{
-			Source:                     replay.CheckpointTriggerActivityBoundary,
+		Trigger: CheckpointTrigger{
+			Source:                     CheckpointTriggerActivityBoundary,
 			AfterActivityEventSequence: snapshot.ActivityEventSequence,
-			BoundaryKind:               replay.ActivityBoundaryIntentEffects,
+			BoundaryKind:               ActivityBoundaryIntentEffects,
 		},
-		Subjects: []replay.EntityAddress{goalAddress},
-		Readiness: replay.CheckpointReadiness{
-			All: []replay.ReadinessPredicate{{
+		Subjects: []EntityAddress{goalAddress},
+		Readiness: CheckpointReadiness{
+			All: []ReadinessPredicate{{
 				Type: "goal.status", Subject: 0, Equals: status,
 			}},
 		},
@@ -271,12 +270,12 @@ func (s *Service) recordGoalCheckpointLocked(
 			return nil
 		}
 		s.checkpoints.plan.Checkpoints[lastIndex] =
-			replay.MergeCheckpointCandidate(
+			MergeCheckpointCandidate(
 				s.checkpoints.plan.Checkpoints[lastIndex],
 				checkpoint,
 			)
 	} else {
-		replay.AppendCheckpoint(&s.checkpoints.plan, checkpoint)
+		AppendCheckpoint(&s.checkpoints.plan, checkpoint)
 	}
 	return s.Workflow.RecordCheckpointPlan(
 		ctx,
@@ -310,7 +309,7 @@ func goalCheckpointForCommitted(
 	}
 }
 
-func replayCursorsEqual(left, right replay.ReplayCursor) bool {
+func replayCursorsEqual(left, right ReplayCursor) bool {
 	if left.ActivityEventSequence != right.ActivityEventSequence ||
 		len(left.ProviderConnections) != len(right.ProviderConnections) {
 		return false
@@ -332,7 +331,7 @@ func containsString(values []string, expected string) bool {
 	return false
 }
 
-func stableObservationFields(event replay.ProviderObservationEvent) map[string]any {
+func stableObservationFields(event ProviderObservationEvent) map[string]any {
 	stable := map[string]any{}
 	for key, value := range map[string]string{
 		"turnPhase": event.TurnPhase, "turnOutcome": event.TurnOutcome,
@@ -353,11 +352,11 @@ func stableObservationFields(event replay.ProviderObservationEvent) map[string]a
 }
 
 func correlationID(
-	position replay.ProviderUnitPosition,
-	event replay.ProviderObservationEvent,
-	address replay.EntityAddress,
+	position ProviderUnitPosition,
+	event ProviderObservationEvent,
+	address EntityAddress,
 ) string {
-	addressKey, _ := replay.EntityAddressKey(address)
+	addressKey, _ := EntityAddressKey(address)
 	return fmt.Sprintf("%s:%d:%d:%d:%s:%s:%s", position.ConnectionID,
 		position.ChunkSeq, position.UnitIndex, event.EventIndex,
 		event.Type, addressKey, correlationExpected(event))
@@ -365,20 +364,20 @@ func correlationID(
 
 func committedObservationMatches(
 	delta agenthost.CommittedDelta,
-	correlation replay.CheckpointCommitCorrelation,
-	event replay.ProviderObservationEvent,
-	address replay.EntityAddress,
-	position replay.ProviderObservationPosition,
+	correlation CheckpointCommitCorrelation,
+	event ProviderObservationEvent,
+	address EntityAddress,
+	position ProviderObservationPosition,
 ) bool {
-	if !replay.EntityAddressesEqual(correlation.Address, address) {
+	if !EntityAddressesEqual(correlation.Address, address) {
 		return false
 	}
 	if correlation.ObservationPosition != position {
 		return false
 	}
-	fingerprint, err := replay.ObservationFingerprint(
-		replay.ProviderObservation{
-			SchemaVersion: replay.ObservationSchemaVersion,
+	fingerprint, err := ObservationFingerprint(
+		ProviderObservation{
+			SchemaVersion: ObservationSchemaVersion,
 			Type:          event.Type,
 			Address:       address,
 			Stable:        stableObservationFields(event),
@@ -572,7 +571,7 @@ func hasCommittedMutation(
 	return false
 }
 
-func correlationKind(event replay.ProviderObservationEvent) string {
+func correlationKind(event ProviderObservationEvent) string {
 	if strings.HasPrefix(event.Type, "session.") {
 		return "session"
 	}
@@ -611,7 +610,7 @@ func canonicalAttachmentCount(value any) uint64 {
 	return count
 }
 
-func correlationExpected(event replay.ProviderObservationEvent) string {
+func correlationExpected(event ProviderObservationEvent) string {
 	switch event.Type {
 	case "turn.completed", "turn.failed", "turn.canceled",
 		"root_provider_turn.completed":
@@ -621,8 +620,8 @@ func correlationExpected(event replay.ProviderObservationEvent) string {
 }
 
 func mergeCheckpointJournalEntry(
-	left, right replay.ObservationJournalEntry,
-) replay.ObservationJournalEntry {
+	left, right ObservationJournalEntry,
+) ObservationJournalEntry {
 	seen := make(map[string]struct{}, len(left.Correlations))
 	for _, item := range left.Correlations {
 		seen[item.ID] = struct{}{}
@@ -632,7 +631,7 @@ func mergeCheckpointJournalEntry(
 			left.Correlations = append(left.Correlations, item)
 		}
 	}
-	positions := make(map[replay.ProviderObservationPosition]struct{}, len(left.Observations))
+	positions := make(map[ProviderObservationPosition]struct{}, len(left.Observations))
 	for _, item := range left.Observations {
 		positions[item.Position] = struct{}{}
 	}

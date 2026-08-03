@@ -1,4 +1,4 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"context"
@@ -11,9 +11,6 @@ import (
 	"time"
 
 	agenthost "github.com/tutti-os/tutti/packages/agent/host"
-	sessionreplay "github.com/tutti-os/tutti/packages/agent/session-replay"
-	replaybiz "github.com/tutti-os/tutti/services/tuttid/biz/agentsessionreplay"
-	workspacebiz "github.com/tutti-os/tutti/services/tuttid/biz/workspace"
 )
 
 type SemanticRegistration struct {
@@ -22,27 +19,27 @@ type SemanticRegistration struct {
 	WorkspaceID   string
 }
 
-type SemanticCassetteReader interface {
+type SemanticCassetteSource interface {
 	ReadSemanticCassette(
 		context.Context,
 		string,
-	) (replaybiz.SemanticCassetteArtifact, error)
+	) (SemanticCassetteArtifact, error)
 }
 
 type SemanticWorkspaceStore interface {
 	ReplayWorkspaceExists(context.Context, string) (bool, error)
-	Create(context.Context, workspacebiz.Summary) error
-	PutWorkbenchSnapshot(context.Context, workspacebiz.WorkbenchSnapshot) error
+	Create(context.Context, ReplayScopeSummary) error
+	PutWorkbenchSnapshot(context.Context, ReplayWorkbenchSnapshot) error
 	RestoreTuttiReplayProductState(
 		context.Context,
 		string,
-		replaybiz.TuttiReplayMergedState,
+		TuttiReplayMergedState,
 	) error
 	CaptureTuttiReplayStateWithAgent(
 		context.Context,
 		string,
 		agenthost.HistoricalSessionGraph,
-	) (replaybiz.TuttiReplayState, error)
+	) (TuttiReplayState, error)
 }
 
 type SemanticRuntime struct {
@@ -50,8 +47,8 @@ type SemanticRuntime struct {
 	store         SemanticWorkspaceStore
 	workspaceID   string
 	registrations map[string]SemanticRegistration
-	plans         map[string]sessionreplay.CheckpointPlan
-	expected      map[string]replaybiz.TuttiReplayState
+	plans         map[string]CheckpointPlan
+	expected      map[string]TuttiReplayState
 	// expectedBindings holds the expected Agent graphs with portable Session
 	// binding paths (cwd, rail project path, rail section key) resolved against
 	// the replay runtime cwd. Checkpoint readiness compares them against
@@ -66,7 +63,7 @@ func PrepareSemanticRuntime(
 	ctx context.Context,
 	store SemanticWorkspaceStore,
 	host *agenthost.Host,
-	reader SemanticCassetteReader,
+	reader SemanticCassetteSource,
 	registrations []SemanticRegistration,
 ) (*SemanticRuntime, error) {
 	if len(registrations) == 0 {
@@ -76,9 +73,9 @@ func PrepareSemanticRuntime(
 		return nil, errors.New("agent session replay semantic runtime is unavailable")
 	}
 	byID := make(map[string]SemanticRegistration, len(registrations))
-	plans := make(map[string]sessionreplay.CheckpointPlan, len(registrations))
+	plans := make(map[string]CheckpointPlan, len(registrations))
 	expectedStates := make(
-		map[string]replaybiz.TuttiReplayState,
+		map[string]TuttiReplayState,
 		len(registrations),
 	)
 	expectedBindings := make(
@@ -104,7 +101,7 @@ func PrepareSemanticRuntime(
 			return nil, fmt.Errorf("resolve Replay runtime cwd: %w", err)
 		}
 	}
-	initialStates := make([]replaybiz.TuttiReplayState, 0, len(registrations))
+	initialStates := make([]TuttiReplayState, 0, len(registrations))
 	workspaceID := ""
 	for _, registration := range registrations {
 		registration.CassetteID = strings.TrimSpace(registration.CassetteID)
@@ -136,7 +133,7 @@ func PrepareSemanticRuntime(
 				registration.CassetteID,
 			)
 		}
-		if manifest.Mode == sessionreplay.ScenarioModeContinueSession {
+		if manifest.Mode == ScenarioModeContinueSession {
 			if artifact.InitialState == nil {
 				return nil, fmt.Errorf(
 					"replay Cassette %q is missing initial state",
@@ -163,7 +160,7 @@ func PrepareSemanticRuntime(
 		// expected Sessions against canonical Sessions whose binding paths are
 		// absolute, so resolve the portable form once per Cassette here.
 		expectedBindings[registration.CassetteID], err =
-			replaybiz.ResolvePortableAgentState(expected.Agent, replayCWD)
+			ResolvePortableAgentState(expected.Agent, replayCWD)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"resolve Replay Cassette %q expected binding: %w",
@@ -185,12 +182,12 @@ func PrepareSemanticRuntime(
 		}
 		observationStates[registration.CassetteID] = observationState
 	}
-	merged, err := replaybiz.MergeTuttiReplayStates(initialStates)
+	merged, err := MergeTuttiReplayStates(initialStates)
 	if err != nil {
 		return nil, fmt.Errorf("merge Agent Session Replay initial states: %w", err)
 	}
 	for index := range merged.Agents {
-		merged.Agents[index], err = replaybiz.ResolvePortableAgentState(
+		merged.Agents[index], err = ResolvePortableAgentState(
 			merged.Agents[index],
 			replayCWD,
 		)
@@ -208,7 +205,7 @@ func PrepareSemanticRuntime(
 	if exists {
 		return nil, fmt.Errorf("agent session replay Workspace %q already exists", workspaceID)
 	}
-	if err := store.Create(ctx, workspacebiz.Summary{
+	if err := store.Create(ctx, ReplayScopeSummary{
 		ID: workspaceID, Name: "Agent Session Replay",
 	}); err != nil {
 		return nil, fmt.Errorf("create Agent Session Replay Workspace: %w", err)
@@ -241,7 +238,7 @@ func PrepareSemanticRuntime(
 func replayWorkbenchSnapshot(
 	workspaceID string,
 	autoOpenedAt time.Time,
-) workspacebiz.WorkbenchSnapshot {
+) ReplayWorkbenchSnapshot {
 	snapshot := map[string]any{
 		"schemaVersion": 1,
 		"nodes":         []any{},
@@ -259,7 +256,7 @@ func replayWorkbenchSnapshot(
 	if err != nil {
 		panic(err)
 	}
-	return workspacebiz.WorkbenchSnapshot{
+	return ReplayWorkbenchSnapshot{
 		WorkspaceID:   workspaceID,
 		SchemaVersion: 1,
 		JSON:          raw,
@@ -298,5 +295,5 @@ func (r *SemanticRuntime) Verify(
 	if err != nil {
 		return err
 	}
-	return replaybiz.CompareTuttiReplayState(expected, actual)
+	return CompareTuttiReplayState(expected, actual)
 }

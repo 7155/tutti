@@ -1,4 +1,4 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"context"
@@ -8,14 +8,13 @@ import (
 	"strings"
 
 	agenthost "github.com/tutti-os/tutti/packages/agent/host"
-	sessionreplay "github.com/tutti-os/tutti/packages/agent/session-replay"
 	storesqlite "github.com/tutti-os/tutti/packages/agent/store-sqlite"
 )
 
 func (r *SemanticRuntime) checkpointReadinessSatisfied(
 	ctx context.Context,
 	cassetteID string,
-	checkpoint sessionreplay.ReplayCheckpoint,
+	checkpoint ReplayCheckpoint,
 ) (bool, error) {
 	reader := semanticCanonicalReader{
 		ctx:         ctx,
@@ -32,7 +31,7 @@ func (r *SemanticRuntime) checkpointReadinessSatisfied(
 	r.mu.Unlock()
 	for _, address := range checkpoint.Subjects {
 		if address.Origin.Source ==
-			sessionreplay.EntityOriginActivityEvent &&
+			EntityOriginActivityEvent &&
 			!reader.entities.bindActivityAddress(address) {
 			return false, fmt.Errorf(
 				"checkpoint_identity_unresolved: activity entity",
@@ -61,13 +60,13 @@ type semanticCanonicalReader struct {
 	host        *agenthost.Host
 	workspaceID string
 	rootID      string
-	subjects    []sessionreplay.EntityAddress
+	subjects    []EntityAddress
 	entities    replayEntityRegistry
 	expected    agenthost.HistoricalSessionGraph
 }
 
 func (r semanticCanonicalReader) predicateSatisfied(
-	predicate sessionreplay.ReadinessPredicate,
+	predicate ReadinessPredicate,
 ) (bool, error) {
 	subject := r.subjects[predicate.Subject]
 	session, found, err := r.session(subject)
@@ -156,9 +155,9 @@ func (r semanticCanonicalReader) predicateSatisfied(
 		}
 		return false, nil
 	case "child-session.status":
-		if subject.Kind != sessionreplay.EntityKindSession ||
+		if subject.Kind != EntityKindSession ||
 			subject.Origin.Source ==
-				sessionreplay.EntityOriginRecordingRoot {
+				EntityOriginRecordingRoot {
 			return false, nil
 		}
 		actual := "running"
@@ -167,7 +166,7 @@ func (r semanticCanonicalReader) predicateSatisfied(
 		}
 		return actual == predicate.Equals, nil
 	case "goal.status":
-		if subject.Kind != sessionreplay.EntityKindGoal {
+		if subject.Kind != EntityKindGoal {
 			return false, nil
 		}
 		result, err := r.host.GetGoalState(r.ctx, agenthost.SessionRef{
@@ -309,7 +308,7 @@ func semanticGoalStatus(state storesqlite.SessionGoalState) string {
 }
 
 func (r semanticCanonicalReader) session(
-	address sessionreplay.EntityAddress,
+	address EntityAddress,
 ) (storesqlite.Session, bool, error) {
 	sessionID := ""
 	if binding, ok := r.entities.binding(address); ok {
@@ -319,9 +318,9 @@ func (r semanticCanonicalReader) session(
 	// so turn.phase readiness can fall back to ActiveTurnID after a lost
 	// observation stamp (see turn()).
 	if sessionID == "" &&
-		address.Kind == sessionreplay.EntityKindTurn &&
+		address.Kind == EntityKindTurn &&
 		address.Origin.Source ==
-			sessionreplay.EntityOriginProviderObservation {
+			EntityOriginProviderObservation {
 		sessionID = strings.TrimSpace(r.rootID)
 	}
 	if sessionID == "" {
@@ -338,7 +337,7 @@ func (r semanticCanonicalReader) session(
 }
 
 func (r semanticCanonicalReader) turn(
-	address sessionreplay.EntityAddress,
+	address EntityAddress,
 	session storesqlite.Session,
 ) (storesqlite.Turn, bool, error) {
 	binding, ok := r.entities.binding(address)
@@ -356,9 +355,9 @@ func (r semanticCanonicalReader) turn(
 	// stamp never bound the subject (compact turn/started is the known case),
 	// the session's active Turn is the entity that observation would have
 	// introduced at the barrier park point.
-	if address.Kind == sessionreplay.EntityKindTurn &&
+	if address.Kind == EntityKindTurn &&
 		address.Origin.Source ==
-			sessionreplay.EntityOriginProviderObservation &&
+			EntityOriginProviderObservation &&
 		strings.TrimSpace(session.ActiveTurnID) != "" &&
 		strings.TrimSpace(session.ID) != "" {
 		return r.host.GetTurn(
@@ -374,7 +373,7 @@ func (r semanticCanonicalReader) turn(
 }
 
 func (r semanticCanonicalReader) interaction(
-	address sessionreplay.EntityAddress,
+	address EntityAddress,
 	_ storesqlite.Session,
 ) (storesqlite.Interaction, bool, error) {
 	binding, ok := r.entities.binding(address)
@@ -393,7 +392,7 @@ func (r semanticCanonicalReader) interaction(
 }
 
 func (r semanticCanonicalReader) call(
-	address sessionreplay.EntityAddress,
+	address EntityAddress,
 	_ storesqlite.Session,
 ) (storesqlite.Message, bool, error) {
 	binding, ok := r.entities.binding(address)
@@ -414,7 +413,7 @@ func (r semanticCanonicalReader) call(
 }
 
 func (r semanticCanonicalReader) message(
-	address sessionreplay.EntityAddress,
+	address EntityAddress,
 	_ storesqlite.Session,
 ) (storesqlite.Message, bool, error) {
 	binding, ok := r.entities.binding(address)
@@ -469,11 +468,11 @@ func (r semanticCanonicalReader) messages(
 }
 
 func resolveLogicalSession(
-	address sessionreplay.EntityAddress,
+	address EntityAddress,
 	graph agenthost.HistoricalSessionGraph,
 	entities replayEntityRegistry,
 ) (agenthost.HistoricalSession, bool) {
-	if address.Origin.Source == sessionreplay.EntityOriginRecordingRoot {
+	if address.Origin.Source == EntityOriginRecordingRoot {
 		for _, session := range graph.Sessions {
 			if session.ID == graph.RootSessionID ||
 				session.Kind == "root" {

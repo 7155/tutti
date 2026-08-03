@@ -1,4 +1,4 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	agenthost "github.com/tutti-os/tutti/packages/agent/host"
-	sessionreplay "github.com/tutti-os/tutti/packages/agent/session-replay"
 )
 
 type SemanticCheckpointState struct {
@@ -20,18 +19,18 @@ type SemanticCheckpointState struct {
 type semanticObservationState struct {
 	projector checkpointRecorder
 	matched   map[int]bool
-	handled   map[string]sessionreplay.ProviderUnitPosition
+	handled   map[string]ProviderUnitPosition
 	failure   error
 }
 
 func newSemanticObservationState(
-	plan sessionreplay.CheckpointPlan,
+	plan CheckpointPlan,
 	rootSessionID string,
 	initialState []byte,
 ) *semanticObservationState {
 	state := &semanticObservationState{
 		matched: make(map[int]bool),
-		handled: make(map[string]sessionreplay.ProviderUnitPosition),
+		handled: make(map[string]ProviderUnitPosition),
 	}
 	state.projector.reset(Recording{
 		ID:                 "semantic-replay",
@@ -68,7 +67,7 @@ func (r *SemanticRuntime) VerifyCheckpoint(
 	r.mu.Lock()
 	observation := r.observations[cassetteID]
 	triggerMatched := checkpoint.Trigger.Source !=
-		sessionreplay.CheckpointTriggerProviderObservation
+		CheckpointTriggerProviderObservation
 	if observation != nil {
 		if observation.failure != nil {
 			err := observation.failure
@@ -93,7 +92,7 @@ func (r *SemanticRuntime) VerifyCheckpoint(
 		// close against canonical state instead of deadlocking the barrier.
 		if !triggerMatched &&
 			checkpoint.Trigger.Source ==
-				sessionreplay.CheckpointTriggerProviderObservation &&
+				CheckpointTriggerProviderObservation &&
 			providerPositionReached(
 				observation.handled,
 				checkpoint.Trigger.Position,

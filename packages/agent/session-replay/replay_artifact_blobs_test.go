@@ -1,4 +1,4 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"crypto/sha256"
@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
 )
 
 func TestExportFixtureBlobsWritesContentAddressedAttachmentContract(t *testing.T) {
@@ -38,12 +36,12 @@ func TestExportFixtureBlobsWritesContentAddressedAttachmentContract(t *testing.T
 	}
 	manifestPath := filepath.Join(recordingDirectory, "blobs", "manifest.json")
 	if err := writeJSONAtomic(manifestPath, blobManifest{
-		SchemaVersion: replay.BlobManifestSchemaVersion,
+		SchemaVersion: BlobManifestSchemaVersion,
 		Blobs:         []blobManifestEntry{},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	statePath := filepath.Join(recordingDirectory, replay.ExpectedStateFile)
+	statePath := filepath.Join(recordingDirectory, ExpectedStateFile)
 	state := map[string]any{
 		"agent": map[string]any{
 			"sessions": []any{map[string]any{
@@ -83,7 +81,7 @@ func TestExportFixtureBlobsWritesContentAddressedAttachmentContract(t *testing.T
 	digestBytes := sha256.Sum256(data)
 	digest := hex.EncodeToString(digestBytes[:])
 	entry := manifest.Blobs[0]
-	if entry.Kind != replay.BlobKindAgentPromptAttachment ||
+	if entry.Kind != BlobKindAgentPromptAttachment ||
 		entry.SHA256 != digest ||
 		entry.SizeBytes != int64(len(data)) ||
 		entry.AgentSessionID != sessionID ||

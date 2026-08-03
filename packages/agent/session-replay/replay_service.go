@@ -1,4 +1,4 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"context"
@@ -7,23 +7,22 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
 )
 
 type Service struct {
-	Workflow    *replay.Workflow
+	Workflow    *Workflow
 	checkpoints checkpointRecorder
 }
 
 func (s *Service) Start(ctx context.Context, input StartInput) (Recording, error) {
 	agentTargetID := strings.TrimSpace(input.AgentTargetID)
-	if _, ok := replay.FindProviderReplayByTarget(agentTargetID); !ok {
+	if _, ok := FindProviderReplayByTarget(agentTargetID); !ok {
 		return Recording{}, ErrUnsupportedTarget
 	}
 	if s == nil || s.Workflow == nil {
 		return Recording{}, errors.New("agent session recording service is unavailable")
 	}
-	recording, err := s.Workflow.Start(ctx, replay.StartRecordingInput{
+	recording, err := s.Workflow.Start(ctx, StartRecordingInput{
 		ScopeID:             strings.TrimSpace(input.WorkspaceID),
 		AgentTargetID:       agentTargetID,
 		AgentSessionID:      strings.TrimSpace(input.AgentSessionID),
@@ -44,7 +43,7 @@ func (s *Service) Bind(ctx context.Context, input BindInput) (Recording, error) 
 	if s == nil || s.Workflow == nil {
 		return Recording{}, errors.New("agent session recording service is unavailable")
 	}
-	recording, err := s.Workflow.Bind(ctx, replay.BindRecordingInput{
+	recording, err := s.Workflow.Bind(ctx, BindRecordingInput{
 		RecordingID:    strings.TrimSpace(input.RecordingID),
 		ScopeID:        strings.TrimSpace(input.WorkspaceID),
 		AgentTargetID:  strings.TrimSpace(input.AgentTargetID),
@@ -65,7 +64,7 @@ func (s *Service) ensureCheckpointRecorder(
 	recording Recording,
 ) error {
 	var initialState []byte
-	if recording.Mode == replay.ScenarioModeContinueSession {
+	if recording.Mode == ScenarioModeContinueSession {
 		var found bool
 		initialState, found =
 			s.Workflow.InitialReplayStateSnapshot(recording.ID)
@@ -78,7 +77,7 @@ func (s *Service) ensureCheckpointRecorder(
 	return s.checkpoints.ensureInitialized(recording, initialState)
 }
 
-func (s *Service) RecordActivityEvent(ctx context.Context, input ActivityEvent) error {
+func (s *Service) RecordActivityEvent(ctx context.Context, input RecordingActivityEvent) error {
 	if s == nil || s.Workflow == nil {
 		return errors.New("agent session recording service is unavailable")
 	}
@@ -92,23 +91,23 @@ func (s *Service) RecordActivityEvent(ctx context.Context, input ActivityEvent) 
 	}
 	accepted, found := s.Workflow.AcceptedActivityEvent(event.EventID)
 	if !found {
-		return replay.ErrInvalidState
+		return ErrInvalidState
 	}
 	return s.recordActivityBoundary(
 		ctx,
 		snapshot,
-		[]replay.ActivityEvent{accepted},
+		[]ActivityEvent{accepted},
 	)
 }
 
 func (s *Service) RecordActivityEvents(
 	ctx context.Context,
-	inputs []ActivityEvent,
+	inputs []RecordingActivityEvent,
 ) (uint64, error) {
 	if s == nil || s.Workflow == nil {
 		return 0, errors.New("agent session recording service is unavailable")
 	}
-	events := make([]replay.ActivityEvent, 0, len(inputs))
+	events := make([]ActivityEvent, 0, len(inputs))
 	for _, input := range inputs {
 		events = append(events, sharedActivityEvent(input))
 	}
@@ -118,12 +117,12 @@ func (s *Service) RecordActivityEvents(
 	}
 	snapshot, active := s.Workflow.RecordingCursorSnapshot()
 	if active {
-		accepted := make([]replay.ActivityEvent, 0, len(events))
+		accepted := make([]ActivityEvent, 0, len(events))
 		for _, event := range events {
 			canonical, found :=
 				s.Workflow.AcceptedActivityEvent(event.EventID)
 			if !found {
-				return acceptedThrough, replay.ErrInvalidState
+				return acceptedThrough, ErrInvalidState
 			}
 			accepted = append(accepted, canonical)
 		}
@@ -132,8 +131,8 @@ func (s *Service) RecordActivityEvents(
 	return acceptedThrough, err
 }
 
-func sharedActivityEvent(input ActivityEvent) replay.ActivityEvent {
-	return replay.ActivityEvent{
+func sharedActivityEvent(input RecordingActivityEvent) ActivityEvent {
+	return ActivityEvent{
 		SchemaVersion:   input.SchemaVersion,
 		Sequence:        input.Sequence,
 		Kind:            input.Kind,
@@ -191,7 +190,7 @@ func (s *Service) List(ctx context.Context, workspaceID string) ([]Recording, er
 }
 
 type cassetteImporter interface {
-	Import(context.Context, string) (replay.Artifact, error)
+	Import(context.Context, string) (Artifact, error)
 	DiscardCassette(context.Context, string) error
 }
 
@@ -235,7 +234,7 @@ func (s *Service) Import(
 		artifact, err := importer.Import(ctx, sourceDirectory)
 		if err != nil {
 			code := "invalid"
-			if errors.Is(err, replay.ErrInvalidState) {
+			if errors.Is(err, ErrInvalidState) {
 				code = "conflict"
 			}
 			fail(sourceDirectory, code)
@@ -251,7 +250,7 @@ func (s *Service) Import(
 			_ = importer.DiscardCassette(ctx, cassette.ID)
 			fail(sourceDirectory, "conflict")
 			continue
-		} else if !errors.Is(err, replay.ErrCassetteNotFound) {
+		} else if !errors.Is(err, ErrCassetteNotFound) {
 			_ = importer.DiscardCassette(ctx, cassette.ID)
 			fail(sourceDirectory, "failed")
 			continue
@@ -260,7 +259,7 @@ func (s *Service) Import(
 			_ = importer.DiscardCassette(ctx, cassette.ID)
 			fail(sourceDirectory, "conflict")
 			continue
-		} else if !errors.Is(err, replay.ErrRecordingNotFound) {
+		} else if !errors.Is(err, ErrRecordingNotFound) {
 			_ = importer.DiscardCassette(ctx, cassette.ID)
 			fail(sourceDirectory, "failed")
 			continue
@@ -301,7 +300,7 @@ func validImportedCassette(cassette Cassette) bool {
 	if _, err := uuid.Parse(cassette.SourceRecordingID); err != nil {
 		return false
 	}
-	_, supported := replay.FindProviderReplayByTarget(cassette.AgentTargetID)
+	_, supported := FindProviderReplayByTarget(cassette.AgentTargetID)
 	return supported
 }
 
@@ -320,7 +319,7 @@ func (s *Service) PrepareReplayWorkspace(
 	if s == nil || s.Workflow == nil {
 		return ReplayWorkspaceRequest{}, errors.New("agent session replay service is unavailable")
 	}
-	prepared, err := s.Workflow.PrepareReplayBatch(ctx, replay.PrepareReplayBatchInput{
+	prepared, err := s.Workflow.PrepareReplayBatch(ctx, PrepareReplayBatchInput{
 		CassetteIDs: cassetteIDs,
 	})
 	if err != nil {

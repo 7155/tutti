@@ -1,4 +1,4 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"context"
@@ -10,8 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
 )
 
 var ErrCassetteAlreadyExists = errors.New("agent session cassette already exists")
@@ -21,70 +19,70 @@ const maxCassetteManifestBytes = 1 << 20
 func (s *Store) Import(
 	ctx context.Context,
 	sourceDirectory string,
-) (replay.Artifact, error) {
+) (Artifact, error) {
 	sourceDirectory = filepath.Clean(strings.TrimSpace(sourceDirectory))
 	if sourceDirectory == "." || !filepath.IsAbs(sourceDirectory) {
-		return replay.Artifact{}, errors.New("cassette import directory must be absolute")
+		return Artifact{}, errors.New("cassette import directory must be absolute")
 	}
 	info, err := os.Stat(sourceDirectory)
 	if err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	if !info.IsDir() {
-		return replay.Artifact{}, errors.New("cassette import source is not a directory")
+		return Artifact{}, errors.New("cassette import source is not a directory")
 	}
 	manifest, err := readImportCassetteManifest(sourceDirectory)
 	if err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	destination := s.cassetteLayout(manifest.ID)
 	if _, err := os.Lstat(destination.StorageKey); err == nil {
-		return replay.Artifact{}, errors.Join(replay.ErrInvalidState, ErrCassetteAlreadyExists)
+		return Artifact{}, errors.Join(ErrInvalidState, ErrCassetteAlreadyExists)
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	parent := filepath.Dir(destination.StorageKey)
 	if err := os.MkdirAll(parent, 0o700); err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	staging, err := os.MkdirTemp(parent, ".import-*")
 	if err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	defer func() { _ = os.RemoveAll(staging) }()
 	if err := copyCassetteDirectory(sourceDirectory, staging); err != nil {
-		return replay.Artifact{}, err
+		return Artifact{}, err
 	}
 	if err := os.Rename(staging, destination.StorageKey); err != nil {
 		if errors.Is(err, fs.ErrExist) {
-			return replay.Artifact{}, errors.Join(replay.ErrInvalidState, ErrCassetteAlreadyExists)
+			return Artifact{}, errors.Join(ErrInvalidState, ErrCassetteAlreadyExists)
 		}
-		return replay.Artifact{}, fmt.Errorf("commit cassette import: %w", err)
+		return Artifact{}, fmt.Errorf("commit cassette import: %w", err)
 	}
-	artifact, err := s.Resolve(ctx, replay.Cassette{ID: manifest.ID})
+	artifact, err := s.Resolve(ctx, Cassette{ID: manifest.ID})
 	if err != nil {
 		_ = os.RemoveAll(destination.StorageKey)
-		return replay.Artifact{}, fmt.Errorf("validate imported cassette: %w", err)
+		return Artifact{}, fmt.Errorf("validate imported cassette: %w", err)
 	}
 	return artifact, nil
 }
 
 func readImportCassetteManifest(
 	sourceDirectory string,
-) (replay.CassetteManifest, error) {
-	path := filepath.Join(sourceDirectory, replay.CassetteManifestFile)
+) (CassetteManifest, error) {
+	path := filepath.Join(sourceDirectory, CassetteManifestFile)
 	file, err := os.Open(path)
 	if err != nil {
-		return replay.CassetteManifest{}, err
+		return CassetteManifest{}, err
 	}
 	defer file.Close()
-	var manifest replay.CassetteManifest
+	var manifest CassetteManifest
 	decoder := json.NewDecoder(io.LimitReader(file, maxCassetteManifestBytes))
 	if err := decoder.Decode(&manifest); err != nil {
-		return replay.CassetteManifest{}, fmt.Errorf("decode cassette manifest: %w", err)
+		return CassetteManifest{}, fmt.Errorf("decode cassette manifest: %w", err)
 	}
 	if strings.TrimSpace(manifest.ID) == "" {
-		return replay.CassetteManifest{}, errors.New("cassette manifest identity is required")
+		return CassetteManifest{}, errors.New("cassette manifest identity is required")
 	}
 	return manifest, nil
 }
@@ -121,7 +119,7 @@ func copyCassetteDirectory(sourceDirectory, destinationDirectory string) error {
 			return fmt.Errorf("cassette import file %q is not regular", relative)
 		}
 		copiedBytes += info.Size()
-		if copiedBytes > replay.MaxCassetteBytes+maxCassetteManifestBytes {
+		if copiedBytes > MaxCassetteBytes+maxCassetteManifestBytes {
 			return errors.New("cassette import exceeds the size limit")
 		}
 		source, err := os.Open(sourcePath)

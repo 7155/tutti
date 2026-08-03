@@ -1,16 +1,14 @@
-package agentsessionreplay
+package sessionreplay
 
 import (
 	"context"
 	"strings"
-
-	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
 )
 
 func (s *Service) recordActivityBoundary(
 	ctx context.Context,
-	snapshot replay.RecordingCursorSnapshot,
-	events []replay.ActivityEvent,
+	snapshot RecordingCursorSnapshot,
+	events []ActivityEvent,
 ) error {
 	if len(events) == 0 || snapshot.ActivityEventSequence == 0 {
 		return nil
@@ -35,7 +33,7 @@ func (s *Service) recordActivityBoundary(
 					sessionID,
 					events,
 				)
-				readiness = replay.ReadinessPredicate{
+				readiness = ReadinessPredicate{
 					Type: "goal.status", Equals: status,
 				}
 			}
@@ -48,44 +46,44 @@ func (s *Service) recordActivityBoundary(
 	if snapshot.ActivityEventSequence <= r.lastActivity {
 		return nil
 	}
-	boundaryKind := replay.ActivityBoundarySingleEvent
+	boundaryKind := ActivityBoundarySingleEvent
 	for _, event := range events {
-		if event.Kind == replay.ActivityEventKindIntent ||
-			event.Kind == replay.ActivityEventKindEffect {
-			boundaryKind = replay.ActivityBoundaryIntentEffects
+		if event.Kind == ActivityEventKindIntent ||
+			event.Kind == ActivityEventKindEffect {
+			boundaryKind = ActivityBoundaryIntentEffects
 		}
 	}
-	checkpoint := replay.ReplayCheckpoint{
+	checkpoint := ReplayCheckpoint{
 		Kind: kind, Tags: []string{kind},
-		Cursor: replay.ReplayCursor{
+		Cursor: ReplayCursor{
 			ActivityEventSequence: snapshot.ActivityEventSequence,
 			ProviderConnections:   r.activityBoundaryCursor(),
 		},
-		Trigger: replay.CheckpointTrigger{
-			Source:                     replay.CheckpointTriggerActivityBoundary,
+		Trigger: CheckpointTrigger{
+			Source:                     CheckpointTriggerActivityBoundary,
 			AfterActivityEventSequence: snapshot.ActivityEventSequence,
 			BoundaryKind:               boundaryKind,
 		},
-		Subjects: []replay.EntityAddress{subject},
-		Readiness: replay.CheckpointReadiness{All: []replay.ReadinessPredicate{{
+		Subjects: []EntityAddress{subject},
+		Readiness: CheckpointReadiness{All: []ReadinessPredicate{{
 			Type: readiness.Type, Subject: 0, Equals: readiness.Equals,
 		}}},
 	}
 	if activityHasProjectBinding(events) {
-		checkpoint = replay.MergeCheckpointCandidate(
+		checkpoint = MergeCheckpointCandidate(
 			checkpoint,
-			replay.ReplayCheckpoint{
+			ReplayCheckpoint{
 				Kind:   "project.binding-ready",
 				Tags:   []string{"project.binding-ready"},
 				Cursor: checkpoint.Cursor,
-				Trigger: replay.CheckpointTrigger{
-					Source:                     replay.CheckpointTriggerActivityBoundary,
+				Trigger: CheckpointTrigger{
+					Source:                     CheckpointTriggerActivityBoundary,
 					AfterActivityEventSequence: snapshot.ActivityEventSequence,
 					BoundaryKind:               boundaryKind,
 				},
-				Subjects: []replay.EntityAddress{subject},
-				Readiness: replay.CheckpointReadiness{
-					All: []replay.ReadinessPredicate{{
+				Subjects: []EntityAddress{subject},
+				Readiness: CheckpointReadiness{
+					All: []ReadinessPredicate{{
 						Type: "project.binding", Subject: 0,
 						Equals: "recorded",
 					}},
@@ -93,14 +91,14 @@ func (s *Service) recordActivityBoundary(
 			},
 		)
 	}
-	replay.AppendCheckpoint(&r.plan, checkpoint)
+	AppendCheckpoint(&r.plan, checkpoint)
 	r.lastActivity = snapshot.ActivityEventSequence
 	return s.Workflow.RecordCheckpointPlan(ctx, snapshot.Recording.ID, r.plan)
 }
 
-func activityHasProjectBinding(events []replay.ActivityEvent) bool {
+func activityHasProjectBinding(events []ActivityEvent) bool {
 	for _, event := range events {
-		if event.Kind != replay.ActivityEventKindEffect ||
+		if event.Kind != ActivityEventKindEffect ||
 			event.Type != "session/activate" {
 			continue
 		}
@@ -115,9 +113,9 @@ func activityHasProjectBinding(events []replay.ActivityEvent) bool {
 	return false
 }
 
-func goalEffectSessionID(events []replay.ActivityEvent) string {
+func goalEffectSessionID(events []ActivityEvent) string {
 	for _, event := range events {
-		if event.Kind == replay.ActivityEventKindEffect &&
+		if event.Kind == ActivityEventKindEffect &&
 			event.Type == "goal/control" {
 			return strings.TrimSpace(event.AgentSessionID)
 		}
@@ -126,20 +124,20 @@ func goalEffectSessionID(events []replay.ActivityEvent) string {
 }
 
 func (r *checkpointRecorder) completeActivityBoundary(
-	events []replay.ActivityEvent,
-) []replay.ActivityEvent {
+	events []ActivityEvent,
+) []ActivityEvent {
 	if r.pendingActivityIntents == nil {
-		r.pendingActivityIntents = make(map[string]replay.ActivityEvent)
+		r.pendingActivityIntents = make(map[string]ActivityEvent)
 	}
-	result := append([]replay.ActivityEvent(nil), events...)
+	result := append([]ActivityEvent(nil), events...)
 	for _, event := range events {
-		if event.Kind == replay.ActivityEventKindIntent &&
+		if event.Kind == ActivityEventKindIntent &&
 			activityIntentRequiresEffect(event.Type) {
 			r.pendingActivityIntents[event.EventID] = event
 		}
 	}
 	for _, event := range events {
-		if event.Kind != replay.ActivityEventKindEffect {
+		if event.Kind != ActivityEventKindEffect {
 			continue
 		}
 		intent, ok := r.pendingActivityIntents[event.CausedByEventID]
@@ -147,12 +145,12 @@ func (r *checkpointRecorder) completeActivityBoundary(
 			continue
 		}
 		if !activityEventsContainID(result, intent.EventID) {
-			result = append([]replay.ActivityEvent{intent}, result...)
+			result = append([]ActivityEvent{intent}, result...)
 		}
 		delete(r.pendingActivityIntents, intent.EventID)
 	}
 	for _, event := range result {
-		if event.Kind == replay.ActivityEventKindIntent &&
+		if event.Kind == ActivityEventKindIntent &&
 			activityIntentRequiresEffect(event.Type) &&
 			!activityEventsContainCause(result, event.EventID) {
 			return nil
@@ -178,7 +176,7 @@ func activityIntentRequiresEffect(eventType string) bool {
 	}
 }
 
-func activityEventsContainID(events []replay.ActivityEvent, eventID string) bool {
+func activityEventsContainID(events []ActivityEvent, eventID string) bool {
 	for _, event := range events {
 		if event.EventID == eventID {
 			return true
@@ -187,9 +185,9 @@ func activityEventsContainID(events []replay.ActivityEvent, eventID string) bool
 	return false
 }
 
-func activityEventsContainCause(events []replay.ActivityEvent, eventID string) bool {
+func activityEventsContainCause(events []ActivityEvent, eventID string) bool {
 	for _, event := range events {
-		if event.Kind == replay.ActivityEventKindEffect &&
+		if event.Kind == ActivityEventKindEffect &&
 			event.CausedByEventID == eventID {
 			return true
 		}
@@ -198,33 +196,33 @@ func activityEventsContainCause(events []replay.ActivityEvent, eventID string) b
 }
 
 func (r *checkpointRecorder) describeActivityEvents(
-	events []replay.ActivityEvent,
-) (string, replay.EntityAddress, replay.ReadinessPredicate, bool) {
+	events []ActivityEvent,
+) (string, EntityAddress, ReadinessPredicate, bool) {
 	for _, event := range events {
 		if event.Type == "plan/feedbackRequested" {
 			session, ok := r.entities.sessionAddress(
 				event.AgentSessionID,
 			)
 			if !ok {
-				return "", replay.EntityAddress{},
-					replay.ReadinessPredicate{}, false
+				return "", EntityAddress{},
+					ReadinessPredicate{}, false
 			}
 			return "plan.feedback-submitted",
 				session,
-				replay.ReadinessPredicate{
+				ReadinessPredicate{
 					Type: "session.status", Equals: "working",
 				}, true
 		}
 	}
 	if len(events) == 0 {
-		return "", replay.EntityAddress{}, replay.ReadinessPredicate{}, false
+		return "", EntityAddress{}, ReadinessPredicate{}, false
 	}
 	return r.describeActivity(events[len(events)-1])
 }
 
 func (r *checkpointRecorder) describeActivity(
-	event replay.ActivityEvent,
-) (string, replay.EntityAddress, replay.ReadinessPredicate, bool) {
+	event ActivityEvent,
+) (string, EntityAddress, ReadinessPredicate, bool) {
 	stringPayload := func(key string) string {
 		value, _ := event.Payload[key].(string)
 		return strings.TrimSpace(value)
@@ -234,47 +232,47 @@ func (r *checkpointRecorder) describeActivity(
 	switch event.Type {
 	case "session/activate":
 		if stringPayload("outcome") != "succeeded" {
-			return "", replay.EntityAddress{},
-				replay.ReadinessPredicate{}, false
+			return "", EntityAddress{},
+				ReadinessPredicate{}, false
 		}
 		if !sessionOK {
-			return "", replay.EntityAddress{},
-				replay.ReadinessPredicate{}, false
+			return "", EntityAddress{},
+				ReadinessPredicate{}, false
 		}
 		return "session.ready",
 			session,
-			replay.ReadinessPredicate{
+			ReadinessPredicate{
 				Type: "session.exists", Equals: "true",
 			}, true
 	case "goal/control":
 		if stringPayload("outcome") != "succeeded" {
-			return "", replay.EntityAddress{},
-				replay.ReadinessPredicate{}, false
+			return "", EntityAddress{},
+				ReadinessPredicate{}, false
 		}
 		kind, status := goalCheckpointForAction(stringPayload("action"))
 		if kind == "" {
-			return "", replay.EntityAddress{},
-				replay.ReadinessPredicate{}, false
+			return "", EntityAddress{},
+				ReadinessPredicate{}, false
 		}
 		goal, ok := r.goalAddress(event)
 		if !ok {
-			return "", replay.EntityAddress{},
-				replay.ReadinessPredicate{}, false
+			return "", EntityAddress{},
+				ReadinessPredicate{}, false
 		}
 		return kind,
 			goal,
-			replay.ReadinessPredicate{
+			ReadinessPredicate{
 				Type: "goal.status", Equals: status,
 			}, true
 	case "interactive.response", "interaction/respond":
 		if event.Type == "interaction/respond" &&
 			stringPayload("outcome") != "succeeded" {
-			return "", replay.EntityAddress{},
-				replay.ReadinessPredicate{}, false
+			return "", EntityAddress{},
+				ReadinessPredicate{}, false
 		}
 		if !sessionOK {
-			return "", replay.EntityAddress{},
-				replay.ReadinessPredicate{}, false
+			return "", EntityAddress{},
+				ReadinessPredicate{}, false
 		}
 		turnID := stringPayload("turnId")
 		requestID := stringPayload("requestId")
@@ -285,86 +283,86 @@ func (r *checkpointRecorder) describeActivity(
 			requestID,
 		)
 		if !ok {
-			return "", replay.EntityAddress{},
-				replay.ReadinessPredicate{}, false
+			return "", EntityAddress{},
+				ReadinessPredicate{}, false
 		}
 		return "interaction.resolved", subject,
-			replay.ReadinessPredicate{Type: "interaction.status", Equals: "answered"}, true
+			ReadinessPredicate{Type: "interaction.status", Equals: "answered"}, true
 	case "turn.cancel", "turn/cancel":
 		if event.Type == "turn/cancel" &&
 			stringPayload("outcome") != "succeeded" {
-			return "", replay.EntityAddress{},
-				replay.ReadinessPredicate{}, false
+			return "", EntityAddress{},
+				ReadinessPredicate{}, false
 		}
 		if !sessionOK {
-			return "", replay.EntityAddress{},
-				replay.ReadinessPredicate{}, false
+			return "", EntityAddress{},
+				ReadinessPredicate{}, false
 		}
 		subject, ok := r.entities.turnAddress(
 			sessionID,
 			stringPayload("turnId"),
 		)
 		if !ok {
-			return "", replay.EntityAddress{},
-				replay.ReadinessPredicate{}, false
+			return "", EntityAddress{},
+				ReadinessPredicate{}, false
 		}
 		return "turn.canceled", subject,
-			replay.ReadinessPredicate{Type: "turn.status", Equals: "canceled"}, true
+			ReadinessPredicate{Type: "turn.status", Equals: "canceled"}, true
 	case "session.settings.update", "session/updateSettings":
 		if event.Type == "session/updateSettings" &&
 			stringPayload("outcome") != "succeeded" {
-			return "", replay.EntityAddress{},
-				replay.ReadinessPredicate{}, false
+			return "", EntityAddress{},
+				ReadinessPredicate{}, false
 		}
 		if !sessionOK {
-			return "", replay.EntityAddress{},
-				replay.ReadinessPredicate{}, false
+			return "", EntityAddress{},
+				ReadinessPredicate{}, false
 		}
 		return "settings.applied",
 			session,
-			replay.ReadinessPredicate{Type: "settings.equal", Equals: "recorded"}, true
+			ReadinessPredicate{Type: "settings.equal", Equals: "recorded"}, true
 	case "session.send", "submit/requested":
 		if !sessionOK {
-			return "", replay.EntityAddress{},
-				replay.ReadinessPredicate{}, false
+			return "", EntityAddress{},
+				ReadinessPredicate{}, false
 		}
 		return "submission.accepted",
 			session,
-			replay.ReadinessPredicate{Type: "session.status", Equals: "working"}, true
+			ReadinessPredicate{Type: "session.status", Equals: "working"}, true
 	case "plan.decision", "plan/submitDecision":
 		if event.Type == "plan/submitDecision" &&
 			stringPayload("outcome") != "succeeded" {
-			return "", replay.EntityAddress{},
-				replay.ReadinessPredicate{}, false
+			return "", EntityAddress{},
+				ReadinessPredicate{}, false
 		}
 		if !sessionOK {
-			return "", replay.EntityAddress{},
-				replay.ReadinessPredicate{}, false
+			return "", EntityAddress{},
+				ReadinessPredicate{}, false
 		}
 		return "plan.confirmed",
 			session,
-			replay.ReadinessPredicate{
+			ReadinessPredicate{
 				Type:   "session.status",
 				Equals: "working",
 			}, true
 	default:
-		return "", replay.EntityAddress{}, replay.ReadinessPredicate{}, false
+		return "", EntityAddress{}, ReadinessPredicate{}, false
 	}
 }
 
 func (r *checkpointRecorder) goalAddress(
-	event replay.ActivityEvent,
-) (replay.EntityAddress, bool) {
+	event ActivityEvent,
+) (EntityAddress, bool) {
 	sessionID := strings.TrimSpace(event.AgentSessionID)
 	if sessionID == "" {
 		sessionID = r.entities.rootSessionID
 	}
 	if sessionID == "" || event.Sequence == 0 {
-		return replay.EntityAddress{}, false
+		return EntityAddress{}, false
 	}
 	sessionAddress, ok := r.entities.sessionAddress(sessionID)
 	if !ok {
-		return replay.EntityAddress{}, false
+		return EntityAddress{}, false
 	}
 	key := goalRuntimeKey(sessionID)
 	if existing, ok := r.entities.byRuntime[key]; ok {
@@ -372,8 +370,8 @@ func (r *checkpointRecorder) goalAddress(
 	}
 	return r.entities.bind(
 		key,
-		activityAddress(
-			replay.EntityKindGoal,
+		replayActivityAddress(
+			EntityKindGoal,
 			event.Sequence,
 			entityParentDiscriminator(sessionAddress),
 		),
@@ -386,8 +384,8 @@ func (r *checkpointRecorder) goalAddress(
 
 func (r *checkpointRecorder) goalAddressForActivity(
 	sessionID string,
-	events []replay.ActivityEvent,
-) (replay.EntityAddress, bool) {
+	events []ActivityEvent,
+) (EntityAddress, bool) {
 	key := goalRuntimeKey(sessionID)
 	if address, ok := r.entities.byRuntime[key]; ok {
 		return address, true
@@ -398,7 +396,7 @@ func (r *checkpointRecorder) goalAddressForActivity(
 			return r.goalAddress(event)
 		}
 	}
-	return replay.EntityAddress{}, false
+	return EntityAddress{}, false
 }
 
 func goalCheckpointForAction(action string) (kind, status string) {

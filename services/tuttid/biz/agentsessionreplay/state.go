@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 
@@ -114,8 +113,8 @@ type TuttiReplayMergedState struct {
 
 // ProjectPortableAgentState removes provider runtime context that is not part
 // of Tutti's semantic replay contract. Tool-owned nested arguments remain
-// untouched; only canceled-Turn completion watermarks and normalized
-// tool-message and Interaction envelopes are projected.
+// untouched; canceled-Turn completion watermarks, durable turn.fileChanges
+// paths, and normalized tool-message / Interaction envelopes are projected.
 func ProjectPortableAgentState(
 	agent TuttiReplayAgent,
 	stateDirectory string,
@@ -147,6 +146,7 @@ func ProjectPortableAgentState(
 			projectPortableCanceledTurnCompletionWatermark(
 				&session.Turns[turnIndex],
 			)
+			projectPortableTurnFileChanges(&session.Turns[turnIndex], rootCWD)
 		}
 		session.Messages = make([]TuttiReplayMessage, len(session.Messages))
 		copy(session.Messages, sourceSession.Messages)
@@ -157,13 +157,12 @@ func ProjectPortableAgentState(
 			if message.Kind != "tool_call" {
 				continue
 			}
-			input, ok := message.Payload["input"].(map[string]any)
-			if !ok {
-				continue
-			}
 			payload := cloneReplayMap(message.Payload)
-			payload["input"] = projectPortableApprovalInput(input)
-			message.Payload = payload
+			if input, ok := payload["input"].(map[string]any); ok {
+				payload["input"] = projectPortableToolCallInput(input, rootCWD)
+			}
+			projectedPayload, _ := projectPortablePathFields(payload, rootCWD).(map[string]any)
+			message.Payload = projectedPayload
 		}
 		session.Interactions = make(
 			[]TuttiReplayInteraction,
@@ -172,7 +171,10 @@ func ProjectPortableAgentState(
 		copy(session.Interactions, sourceSession.Interactions)
 		for interactionIndex := range session.Interactions {
 			interaction := &session.Interactions[interactionIndex]
-			interaction.Input = projectPortableApprovalInput(interaction.Input)
+			interaction.Input = projectPortableToolCallInput(
+				interaction.Input,
+				rootCWD,
+			)
 		}
 	}
 	return projected
@@ -270,8 +272,33 @@ func projectPortableCanceledTurnCompletionWatermark(turn *TuttiReplayTurn) {
 	turn.CompletedCommand = completedCommand
 }
 
-// ResolvePortableAgentState materializes only the typed Session binding fields
-// relative to the replay runtime root. User-authored payloads remain untouched.
+func projectPortableTurnFileChanges(turn *TuttiReplayTurn, rootCWD string) {
+	if len(turn.FileChanges) == 0 {
+		return
+	}
+	projected, _ := projectPortablePathFields(turn.FileChanges, rootCWD).(map[string]any)
+	turn.FileChanges = projected
+}
+
+func resolvePortableTurnFileChanges(
+	turn *TuttiReplayTurn,
+	replayCWD string,
+) error {
+	if len(turn.FileChanges) == 0 {
+		return nil
+	}
+	resolved, err := resolvePortablePathFields(turn.FileChanges, replayCWD)
+	if err != nil {
+		return err
+	}
+	resolvedChanges, _ := resolved.(map[string]any)
+	turn.FileChanges = resolvedChanges
+	return nil
+}
+
+// ResolvePortableAgentState materializes Session binding fields and durable
+// turn.fileChanges paths relative to the replay runtime root. User-authored
+// payloads remain untouched.
 func ResolvePortableAgentState(
 	agent TuttiReplayAgent,
 	replayCWD string,
@@ -307,6 +334,59 @@ func ResolvePortableAgentState(
 				return TuttiReplayAgent{}, err
 			}
 			session.RailSectionKey = storesqlite.RailSectionKeyForProject(projectPath)
+		}
+		sourceTurns := session.Turns
+		session.Turns = make([]TuttiReplayTurn, len(sourceTurns))
+		copy(session.Turns, sourceTurns)
+		for turnIndex := range session.Turns {
+			if err := resolvePortableTurnFileChanges(
+				&session.Turns[turnIndex],
+				replayCWD,
+			); err != nil {
+				return TuttiReplayAgent{}, err
+			}
+		}
+		sourceMessages := session.Messages
+		session.Messages = make([]TuttiReplayMessage, len(sourceMessages))
+		copy(session.Messages, sourceMessages)
+		for messageIndex := range session.Messages {
+			message := &session.Messages[messageIndex]
+			if message.Kind != "tool_call" {
+				continue
+			}
+			payload := cloneReplayMap(message.Payload)
+			if input, ok := payload["input"].(map[string]any); ok {
+				resolvedInput, err := resolvePortableToolCallInput(
+					input,
+					replayCWD,
+				)
+				if err != nil {
+					return TuttiReplayAgent{}, err
+				}
+				payload["input"] = resolvedInput
+			}
+			resolvedPayload, err := resolvePortablePathFields(payload, replayCWD)
+			if err != nil {
+				return TuttiReplayAgent{}, err
+			}
+			message.Payload, _ = resolvedPayload.(map[string]any)
+		}
+		sourceInteractions := session.Interactions
+		session.Interactions = make(
+			[]TuttiReplayInteraction,
+			len(sourceInteractions),
+		)
+		copy(session.Interactions, sourceInteractions)
+		for interactionIndex := range session.Interactions {
+			interaction := &session.Interactions[interactionIndex]
+			resolvedInput, err := resolvePortableToolCallInput(
+				interaction.Input,
+				replayCWD,
+			)
+			if err != nil {
+				return TuttiReplayAgent{}, err
+			}
+			interaction.Input = resolvedInput
 		}
 	}
 	return resolved, nil
@@ -408,6 +488,97 @@ func projectPortableApprovalInput(input map[string]any) map[string]any {
 		projectedInput["toolCall"] = projectedToolCall
 	}
 	return projectedInput
+}
+
+func projectPortableToolCallInput(
+	input map[string]any,
+	rootCWD string,
+) map[string]any {
+	projectedInput := projectPortableApprovalInput(input)
+	projected, _ := projectPortablePathFields(projectedInput, rootCWD).(map[string]any)
+	return projected
+}
+
+func resolvePortableToolCallInput(
+	input map[string]any,
+	replayCWD string,
+) (map[string]any, error) {
+	if input == nil {
+		return nil, nil
+	}
+	resolved, err := resolvePortablePathFields(input, replayCWD)
+	if err != nil {
+		return nil, err
+	}
+	resolvedInput, _ := resolved.(map[string]any)
+	return resolvedInput, nil
+}
+
+func projectPortablePathFields(value any, rootCWD string) any {
+	switch value := value.(type) {
+	case map[string]any:
+		projected := make(map[string]any, len(value))
+		for key, child := range value {
+			lowerKey := strings.ToLower(key)
+			// cwd stripping stays in projectPortableApprovalInput; here we only
+			// rewrite path-bearing strings so tool-owned nested cwd can remain.
+			if childPath, ok := child.(string); ok &&
+				strings.Contains(lowerKey, "path") {
+				projected[key] = portableReplayPath(childPath, rootCWD)
+				continue
+			}
+			projected[key] = projectPortablePathFields(child, rootCWD)
+		}
+		return projected
+	case []any:
+		projected := make([]any, len(value))
+		for index, child := range value {
+			projected[index] = projectPortablePathFields(child, rootCWD)
+		}
+		return projected
+	default:
+		return value
+	}
+}
+
+func resolvePortablePathFields(value any, replayCWD string) (any, error) {
+	switch value := value.(type) {
+	case map[string]any:
+		resolved := make(map[string]any, len(value))
+		for key, child := range value {
+			lowerKey := strings.ToLower(key)
+			if childPath, ok := child.(string); ok &&
+				strings.Contains(lowerKey, "path") {
+				resolvedPath, err := resolvePortableReplayPath(
+					childPath,
+					replayCWD,
+				)
+				if err != nil {
+					return nil, err
+				}
+				resolved[key] = resolvedPath
+				continue
+			}
+			resolvedChild, err := resolvePortablePathFields(child, replayCWD)
+			if err != nil {
+				return nil, err
+			}
+			resolved[key] = resolvedChild
+		}
+		return resolved, nil
+	case []any:
+		resolved := make([]any, len(value))
+		for index, child := range value {
+			resolvedChild, err := resolvePortablePathFields(child, replayCWD)
+			if err != nil {
+				return nil, err
+			}
+			resolved[index] = resolvedChild
+		}
+		return resolved, nil
+	default:
+		return value, nil
+	}
 }
 
 func projectPortableCommandField(input map[string]any, key string) {
@@ -631,221 +802,4 @@ func CompareTuttiReplayState(expected, actual TuttiReplayState) error {
 		return &TuttiReplayStateConflictError{Path: mismatch}
 	}
 	return nil
-}
-
-// normalizeReplayStateForComparison preserves relationships while replacing
-// runtime-generated identifiers with stable structural names. Historical
-// restore still receives the original identifiers; only final-state
-// verification treats alpha-equivalent graphs as the same semantic state.
-func normalizeReplayStateForComparison(state TuttiReplayState) TuttiReplayState {
-	raw, _ := json.Marshal(state)
-	var value map[string]any
-	_ = json.Unmarshal(raw, &value)
-
-	replacements := map[string]string{}
-	registerReplayIDs(replacements, value)
-	replaceReplayIDs(value, replacements)
-
-	normalized, _ := json.Marshal(value)
-	var result TuttiReplayState
-	_ = json.Unmarshal(normalized, &result)
-	return result
-}
-
-func registerReplayIDs(replacements map[string]string, value map[string]any) {
-	agent, _ := value["agent"].(map[string]any)
-	sessions, _ := agent["sessions"].([]any)
-	for sessionIndex, item := range sessions {
-		session, _ := item.(map[string]any)
-		registerReplayID(replacements, session["id"], fmt.Sprintf("session:%d", sessionIndex))
-		turns, _ := session["turns"].([]any)
-		for turnIndex, turnItem := range turns {
-			turn, _ := turnItem.(map[string]any)
-			registerReplayID(
-				replacements,
-				turn["id"],
-				fmt.Sprintf("session:%d/turn:%d", sessionIndex, turnIndex),
-			)
-		}
-		messages, _ := session["messages"].([]any)
-		for messageIndex, messageItem := range messages {
-			message, _ := messageItem.(map[string]any)
-			registerReplayID(
-				replacements,
-				message["id"],
-				fmt.Sprintf("session:%d/message:%d", sessionIndex, messageIndex),
-			)
-			if payload, ok := message["payload"].(map[string]any); ok {
-				delete(payload, "seq")
-				// Goal-control audit rows and similar durable notices mint a
-				// fresh operationId on every run; treat it as alpha-equivalent
-				// like attachment/session IDs so record→replay can compare.
-				registerReplayID(
-					replacements,
-					payload["operationId"],
-					fmt.Sprintf(
-						"session:%d/message:%d/operation",
-						sessionIndex,
-						messageIndex,
-					),
-				)
-				content, _ := payload["content"].([]any)
-				for contentIndex, contentItem := range content {
-					block, _ := contentItem.(map[string]any)
-					registerReplayID(
-						replacements,
-						block["attachmentId"],
-						fmt.Sprintf(
-							"session:%d/message:%d/attachment:%d",
-							sessionIndex,
-							messageIndex,
-							contentIndex,
-						),
-					)
-				}
-			}
-		}
-		interactions, _ := session["interactions"].([]any)
-		for interactionIndex, interactionItem := range interactions {
-			interaction, _ := interactionItem.(map[string]any)
-			registerReplayID(
-				replacements,
-				interaction["requestId"],
-				fmt.Sprintf("session:%d/interaction:%d", sessionIndex, interactionIndex),
-			)
-		}
-	}
-	tuttiMode, _ := value["tuttiMode"].(map[string]any)
-	registerReplayArrayIDs(replacements, tuttiMode["activations"], "activation")
-	registerReplayArrayIDs(replacements, value["workflows"], "workflow")
-	registerReplayArrayIDs(replacements, value["issues"], "issue")
-	if issues, ok := value["issues"].([]any); ok {
-		for issueIndex, item := range issues {
-			issue, _ := item.(map[string]any)
-			tasks, _ := issue["tasks"].([]any)
-			for taskIndex, taskItem := range tasks {
-				task, _ := taskItem.(map[string]any)
-				registerReplayID(
-					replacements,
-					task["id"],
-					fmt.Sprintf("issue:%d/task:%d", issueIndex, taskIndex),
-				)
-			}
-		}
-	}
-}
-
-func registerReplayArrayIDs(
-	replacements map[string]string,
-	value any,
-	prefix string,
-) {
-	items, _ := value.([]any)
-	for index, item := range items {
-		object, _ := item.(map[string]any)
-		registerReplayID(replacements, object["id"], fmt.Sprintf("%s:%d", prefix, index))
-	}
-}
-
-func registerReplayID(replacements map[string]string, value any, replacement string) {
-	id, ok := value.(string)
-	if ok && id != "" {
-		replacements[id] = replacement
-	}
-}
-
-func replaceReplayIDs(value any, replacements map[string]string) {
-	switch value := value.(type) {
-	case map[string]any:
-		for key, child := range value {
-			if text, ok := child.(string); ok {
-				if replacement, exists := replacements[text]; exists {
-					value[key] = replacement
-				}
-				continue
-			}
-			replaceReplayIDs(child, replacements)
-		}
-	case []any:
-		for _, child := range value {
-			replaceReplayIDs(child, replacements)
-		}
-	}
-}
-
-func firstReplayStateMismatch(path string, expected, actual any) string {
-	expectedValue := replayComparableValue(expected)
-	actualValue := replayComparableValue(actual)
-	if expectedValue == nil || actualValue == nil {
-		if expectedValue == nil && actualValue == nil {
-			return ""
-		}
-		return path
-	}
-	expectedType := reflect.TypeOf(expectedValue)
-	actualType := reflect.TypeOf(actualValue)
-	if expectedType != actualType {
-		return path
-	}
-	switch expectedValue := expectedValue.(type) {
-	case map[string]any:
-		actualValue := actualValue.(map[string]any)
-		keys := make([]string, 0, len(expectedValue)+len(actualValue))
-		seen := map[string]struct{}{}
-		for key := range expectedValue {
-			keys = append(keys, key)
-			seen[key] = struct{}{}
-		}
-		for key := range actualValue {
-			if _, ok := seen[key]; !ok {
-				keys = append(keys, key)
-			}
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			expectedChild, expectedOK := expectedValue[key]
-			actualChild, actualOK := actualValue[key]
-			if !expectedOK || !actualOK {
-				return path + "." + key
-			}
-			if mismatch := firstReplayStateMismatch(
-				path+"."+key,
-				expectedChild,
-				actualChild,
-			); mismatch != "" {
-				return mismatch
-			}
-		}
-	case []any:
-		actualValue := actualValue.([]any)
-		if len(expectedValue) != len(actualValue) {
-			return path
-		}
-		for index := range expectedValue {
-			if mismatch := firstReplayStateMismatch(
-				fmt.Sprintf("%s[%d]", path, index),
-				expectedValue[index],
-				actualValue[index],
-			); mismatch != "" {
-				return mismatch
-			}
-		}
-	default:
-		if !reflect.DeepEqual(expectedValue, actualValue) {
-			return path
-		}
-	}
-	return ""
-}
-
-func replayComparableValue(value any) any {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return value
-	}
-	var decoded any
-	if err := json.Unmarshal(raw, &decoded); err != nil {
-		return value
-	}
-	return decoded
 }

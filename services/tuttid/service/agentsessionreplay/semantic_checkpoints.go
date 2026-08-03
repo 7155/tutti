@@ -86,6 +86,20 @@ func (r *SemanticRuntime) VerifyCheckpoint(
 				checkpoint.ID,
 			)
 		}
+		// The input barrier parks after completing the trigger unit. When the
+		// observation stamp for that unit was lost, matched stays false, but
+		// the handled lane (fed from transport completion) still reaches the
+		// trigger position. Treat that as triggerMatched so readiness can
+		// close against canonical state instead of deadlocking the barrier.
+		if !triggerMatched &&
+			checkpoint.Trigger.Source ==
+				sessionreplay.CheckpointTriggerProviderObservation &&
+			providerPositionReached(
+				observation.handled,
+				checkpoint.Trigger.Position,
+			) {
+			triggerMatched = true
+		}
 	}
 	r.mu.Unlock()
 	if !triggerMatched {

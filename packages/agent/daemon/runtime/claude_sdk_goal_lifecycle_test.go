@@ -96,7 +96,7 @@ func TestClaudeSDKAdapterKeepsCanonicalLifecycleLiveAtProviderCompletion(t *test
 		"provider-turn-1",
 	)
 
-	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+	_ = adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
 		Type: "approval_requested",
 		Payload: map[string]any{
 			"turnId":    "turn-1",
@@ -115,7 +115,7 @@ func TestClaudeSDKAdapterKeepsCanonicalLifecycleLiveAtProviderCompletion(t *test
 	}
 
 	emitted = nil
-	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+	_ = adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
 		Type: "approval_resolved",
 		Payload: map[string]any{
 			"turnId":    "turn-1",
@@ -129,7 +129,7 @@ func TestClaudeSDKAdapterKeepsCanonicalLifecycleLiveAtProviderCompletion(t *test
 	}
 
 	emitted = nil
-	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+	_ = adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
 		Type: "turn_completed",
 		Payload: map[string]any{
 			"turnId":         "turn-1",
@@ -226,7 +226,7 @@ func TestClaudeSDKCancelAfterSettleIsIdempotent(t *testing.T) {
 	session, adapterSession := newClaudeSDKLifecycleTestSession(t, adapter, conn)
 
 	adapter.registerClaudeSDKTurn(adapterSession, "turn-1", nil)
-	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+	_ = adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
 		Type:    "turn_completed",
 		Payload: map[string]any{"turnId": "turn-1"},
 	})
@@ -1253,7 +1253,7 @@ func TestClaudeSDKGoalLateProviderIdentityPublishesOnceAndSettles(t *testing.T) 
 		"sourceGoalOperationId": "goal-late-identity", "sourceGoalRevision": float64(11), "sourceGoalRepairEpoch": float64(2),
 	}
 
-	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+	_ = adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
 		Type: "turn_started", Payload: provenance,
 	})
 	if len(emitted) != 0 {
@@ -1261,7 +1261,7 @@ func TestClaudeSDKGoalLateProviderIdentityPublishesOnceAndSettles(t *testing.T) 
 	}
 	identityPayload := clonePayload(provenance)
 	identityPayload["providerTurnId"] = "provider-goal-late-identity"
-	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+	_ = adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
 		Type: "provider_turn_identity_resolved", Payload: identityPayload,
 	})
 	started := activityEventsWithType(emitted, activityshared.EventRootProviderTurnStarted)
@@ -1270,7 +1270,7 @@ func TestClaudeSDKGoalLateProviderIdentityPublishesOnceAndSettles(t *testing.T) 
 		t.Fatalf("late identity start events=%#v", emitted)
 	}
 
-	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+	_ = adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
 		Type: "turn_completed",
 		Payload: map[string]any{
 			"turnId": "goal-turn-late-identity", "providerTurnId": "provider-goal-late-identity", "stopReason": "end_turn",
@@ -1300,7 +1300,7 @@ func TestClaudeSDKFencedUnboundGoalLateIdentityCleansAliases(t *testing.T) {
 		"turnId": "goal-turn-fenced-unbound", "turnOrigin": "goal_continuation",
 		"sourceGoalOperationId": "goal-fenced-unbound", "sourceGoalRevision": float64(12), "sourceGoalRepairEpoch": float64(3),
 	}
-	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+	_ = adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
 		Type: "turn_started", Payload: provenance,
 	})
 	if err := adapter.FenceGoalGeneration(context.Background(), session, GoalGenerationFenceInput{
@@ -1310,10 +1310,10 @@ func TestClaudeSDKFencedUnboundGoalLateIdentityCleansAliases(t *testing.T) {
 	}
 	identityPayload := clonePayload(provenance)
 	identityPayload["providerTurnId"] = "provider-goal-fenced-unbound"
-	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+	_ = adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
 		Type: "provider_turn_identity_resolved", Payload: identityPayload,
 	})
-	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+	_ = adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
 		Type: "turn_canceled",
 		Payload: map[string]any{
 			"turnId": "goal-turn-fenced-unbound", "providerTurnId": "provider-goal-fenced-unbound",
@@ -1335,7 +1335,7 @@ func TestClaudeSDKFencedUnboundGoalLateIdentityCleansAliases(t *testing.T) {
 		"turnId": "goal-turn-next", "providerTurnId": "provider-goal-next", "turnOrigin": "goal_continuation",
 		"sourceGoalOperationId": "goal-next", "sourceGoalRevision": float64(13), "sourceGoalRepairEpoch": float64(0),
 	}
-	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+	_ = adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
 		Type: "provider_turn_identity_resolved", Payload: nextIdentity,
 	})
 	started := activityEventsWithType(emitted, activityshared.EventRootProviderTurnStarted)
@@ -1357,7 +1357,7 @@ func TestClaudeSDKGoalFenceFlushesPublishedStartBeforeReturning(t *testing.T) {
 	session, adapterSession := newClaudeSDKLifecycleTestSession(t, adapter, conn)
 	controller.store(session)
 
-	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+	_ = adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
 		Type: "provider_turn_identity_resolved",
 		Payload: map[string]any{
 			"turnId": "goal-turn-flush", "providerTurnId": "provider-goal-turn-flush", "turnOrigin": "goal_continuation",
@@ -1393,7 +1393,7 @@ func TestClaudeSDKGoalFenceFlushesPublishedStartBeforeReturning(t *testing.T) {
 		t.Fatal("Fence did not return after the start report became durable")
 	}
 
-	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+	_ = adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
 		Type: "turn_canceled",
 		Payload: map[string]any{
 			"turnId": "goal-turn-flush", "providerTurnId": "provider-goal-turn-flush",

@@ -32,6 +32,7 @@ type ClaudeCodeSDKAdapter struct {
 	eventSink                  SessionEventSink
 	promptImageMaterializer    providerPromptImageMaterializer
 	interactiveAckTimeout      time.Duration
+	inputUnits                 *providerInputUnitTracker
 }
 
 type claudeSDKAdapterSession struct {
@@ -160,10 +161,16 @@ type claudeSDKTurnResult struct {
 type claudeSDKLineReader struct {
 	conn   ProcessConnection
 	buffer string
+	lines  []claudeSDKBufferedLine
 	// stderrTail keeps only a bounded, sanitized classification of sidecar
 	// diagnostics. Raw stderr may contain prompts, paths, credentials, or stack
 	// traces and must never enter durable activity or user-visible errors.
 	stderrTail []byte
+}
+
+type claudeSDKBufferedLine struct {
+	value string
+	unit  ProviderInputUnit
 }
 
 func NewClaudeCodeSDKAdapter(transport ProcessTransport) *ClaudeCodeSDKAdapter {
@@ -171,6 +178,7 @@ func NewClaudeCodeSDKAdapter(transport ProcessTransport) *ClaudeCodeSDKAdapter {
 		transport:             transport,
 		sessions:              make(map[string]*claudeSDKAdapterSession),
 		interactiveAckTimeout: claudeSDKInteractiveAckTimeout,
+		inputUnits:            providerInputUnitTrackerForTransport(transport),
 	}
 }
 

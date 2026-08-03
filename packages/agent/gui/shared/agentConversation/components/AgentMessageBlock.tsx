@@ -73,6 +73,8 @@ interface AgentMessageBlockProps {
   showParticipantHeader?: boolean;
   isActiveTurn?: boolean;
   footerAction?: ReactNode;
+  leadingToolExpandedById?: Readonly<Record<string, boolean>>;
+  onLeadingToolExpandedChange?: (key: string, expanded: boolean) => void;
 }
 
 export function AgentMessageBlock({
@@ -92,7 +94,9 @@ export function AgentMessageBlock({
   participantPresentation,
   showParticipantHeader = true,
   isActiveTurn = false,
-  footerAction
+  footerAction,
+  leadingToolExpandedById,
+  onLeadingToolExpandedChange
 }: AgentMessageBlockProps): JSX.Element {
   "use memo";
   const agentHostApi = useOptionalAgentHostApi();
@@ -178,17 +182,31 @@ export function AgentMessageBlock({
 
   const leadingToolContent =
     !isUser && row.leadingToolRows && row.leadingToolRows.length > 0
-      ? row.leadingToolRows.map((toolRow) => (
-          <AgentToolGroupRow
-            key={toolRow.id}
-            row={toolRow}
-            label={toolCallsLabel}
-            thinkingLabel={thinkingLabel}
-            onLinkClick={handleLinkClick}
-            showRawTimelineJson={showRawTimelineJson}
-            rawTimelineJsonLabel={rawTimelineJsonLabel}
-          />
-        ))
+      ? row.leadingToolRows.map((toolRow) => {
+          const expansionKey = `leading:${toolRow.id}`;
+          const controlled =
+            toolRow.grouped && Boolean(onLeadingToolExpandedChange);
+          return (
+            <AgentToolGroupRow
+              key={toolRow.id}
+              row={toolRow}
+              label={toolCallsLabel}
+              thinkingLabel={thinkingLabel}
+              onLinkClick={handleLinkClick}
+              showRawTimelineJson={showRawTimelineJson}
+              rawTimelineJsonLabel={rawTimelineJsonLabel}
+              expanded={
+                controlled
+                  ? leadingToolExpandedById?.[expansionKey] === true
+                  : undefined
+              }
+              expansionKey={controlled ? expansionKey : undefined}
+              onExpandedChange={
+                controlled ? onLeadingToolExpandedChange : undefined
+              }
+            />
+          );
+        })
       : null;
 
   const messageContent = row.messages.map((message, messageIndex) => {

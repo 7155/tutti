@@ -311,13 +311,25 @@ func semanticGoalStatus(state storesqlite.SessionGoalState) string {
 func (r semanticCanonicalReader) session(
 	address sessionreplay.EntityAddress,
 ) (storesqlite.Session, bool, error) {
-	binding, ok := r.entities.binding(address)
-	if !ok || strings.TrimSpace(binding.SessionID) == "" {
+	sessionID := ""
+	if binding, ok := r.entities.binding(address); ok {
+		sessionID = strings.TrimSpace(binding.SessionID)
+	}
+	// Unbound provider-observation turn subjects still need the root Session
+	// so turn.phase readiness can fall back to ActiveTurnID after a lost
+	// observation stamp (see turn()).
+	if sessionID == "" &&
+		address.Kind == sessionreplay.EntityKindTurn &&
+		address.Origin.Source ==
+			sessionreplay.EntityOriginProviderObservation {
+		sessionID = strings.TrimSpace(r.rootID)
+	}
+	if sessionID == "" {
 		return storesqlite.Session{}, false, nil
 	}
 	result, err := r.host.GetSession(r.ctx, agenthost.SessionRef{
 		WorkspaceID:    r.workspaceID,
-		AgentSessionID: binding.SessionID,
+		AgentSessionID: sessionID,
 	})
 	if errors.Is(err, agenthost.ErrSessionNotFound) {
 		return storesqlite.Session{}, false, nil
@@ -327,20 +339,38 @@ func (r semanticCanonicalReader) session(
 
 func (r semanticCanonicalReader) turn(
 	address sessionreplay.EntityAddress,
-	_ storesqlite.Session,
+	session storesqlite.Session,
 ) (storesqlite.Turn, bool, error) {
 	binding, ok := r.entities.binding(address)
-	if !ok || binding.SessionID == "" || binding.TurnID == "" {
-		return storesqlite.Turn{}, false, nil
+	if ok && binding.SessionID != "" && binding.TurnID != "" {
+		return r.host.GetTurn(
+			r.ctx,
+			agenthost.SessionRef{
+				WorkspaceID:    r.workspaceID,
+				AgentSessionID: binding.SessionID,
+			},
+			binding.TurnID,
+		)
 	}
-	return r.host.GetTurn(
-		r.ctx,
-		agenthost.SessionRef{
-			WorkspaceID:    r.workspaceID,
-			AgentSessionID: binding.SessionID,
-		},
-		binding.TurnID,
-	)
+	// When a provider-observation trigger unit completed but its observation
+	// stamp never bound the subject (compact turn/started is the known case),
+	// the session's active Turn is the entity that observation would have
+	// introduced at the barrier park point.
+	if address.Kind == sessionreplay.EntityKindTurn &&
+		address.Origin.Source ==
+			sessionreplay.EntityOriginProviderObservation &&
+		strings.TrimSpace(session.ActiveTurnID) != "" &&
+		strings.TrimSpace(session.ID) != "" {
+		return r.host.GetTurn(
+			r.ctx,
+			agenthost.SessionRef{
+				WorkspaceID:    r.workspaceID,
+				AgentSessionID: session.ID,
+			},
+			session.ActiveTurnID,
+		)
+	}
+	return storesqlite.Turn{}, false, nil
 }
 
 func (r semanticCanonicalReader) interaction(

@@ -38,6 +38,7 @@ interface AgentTranscriptItemViewProps {
   toolGroupExpanded?: boolean;
   toolGroupExpansionKey?: string;
   onToolGroupExpandedChange?: (key: string, expanded: boolean) => void;
+  leadingToolExpandedById?: Readonly<Record<string, boolean>>;
   footerAction?: ReactNode;
 }
 
@@ -60,6 +61,7 @@ export const AgentTranscriptItemView = memo(function AgentTranscriptItemView({
   toolGroupExpanded,
   toolGroupExpansionKey,
   onToolGroupExpandedChange,
+  leadingToolExpandedById,
   footerAction
 }: AgentTranscriptItemViewProps): JSX.Element {
   "use memo";
@@ -109,6 +111,8 @@ export const AgentTranscriptItemView = memo(function AgentTranscriptItemView({
           showParticipantHeader={showParticipantHeader}
           isActiveTurn={isActiveTurn}
           footerAction={footerAction}
+          leadingToolExpandedById={leadingToolExpandedById}
+          onLeadingToolExpandedChange={onToolGroupExpandedChange}
         />
       );
     case "tool-group":

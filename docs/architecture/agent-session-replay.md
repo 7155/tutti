@@ -98,7 +98,8 @@ The shared core owns:
 
 Tutti owns:
 
-- Workspace scope and the controlled `local:codex` recording target policy
+- Workspace scope and the controlled `local:codex` / `local:claude-code`
+  recording target policy
 - exclusive creation of the transient Replay Workspace during semantic runtime
   preparation; the developer runner supplies identity and artifacts but does
   not pre-create that Workspace in SQLite
@@ -319,6 +320,10 @@ tape.
 
 Projection is protocol-aware and stateful:
 
+- Codex uses the `json-rpc` tape codec. Claude Code uses the distinct
+  `claude-sidecar-ndjson-v7` codec for versioned sidecar envelopes; both retain
+  the original process chunk boundaries and decode complete protocol messages
+  before matching or checkpointing;
 - a correlated `account/read` response replaces only
   `result.account.email` with `replay-user@example.invalid`;
 - recognized path fields equal to or below the recorded working directory use
@@ -331,6 +336,16 @@ Projection is protocol-aware and stateful:
   `clientUserMessageId` to `plan-decision:<runtime-operation>`; replay applies
   the same projection before matching, while ordinary submit identities remain
   exact;
+- Claude `start.payload.env` is excluded as a whole. It contains credentials
+  and machine-local launch preparation, while isolated Replay replaces the
+  process transport and must not compare or restore those values. The replay
+  runtime supplies a per-Session `CLAUDE_CONFIG_DIR` under `${REPLAY_HOME}`;
+- Claude envelope IDs and runtime-generated Session, Turn, prompt-correlation,
+  and goal-operation identities are matched structurally. Recorded inbound
+  values are rewritten only when the product creates the corresponding replay
+  identity. `providerSessionId` is match-only on the outbound `start` request:
+  the recorded `session_started` value remains the Provider-owned semantic
+  Session identity;
 - credential-bearing login/token-refresh methods, remaining structured
   credentials/account identifiers, and unclassified absolute paths fail
   recording closed;
@@ -808,10 +823,20 @@ multiple Cassettes and Surfaces; they are never merged into one scenario contrac
 
 ### Provider support
 
-The shared core is provider-neutral. Tutti accepts `local:codex` for developer
-recording. Adding another provider requires evidence that its process protocol
-can be captured and deterministically replayed under the same fail-closed
-contract.
+The shared core is provider-neutral. Tutti accepts `local:codex` and
+`local:claude-code` for developer recording. Codex is replayed through its
+JSON-RPC adapter; Claude Code is replayed through the version-7 sidecar NDJSON
+adapter. Both require projected-tape publication audit, exact outbound
+verification, decoded Provider Input Unit barriers, isolated Provider homes,
+and no fallback to a live Provider after a mismatch.
+
+Claude permission mode, model, reasoning effort, and speed remain strict
+composer prerequisites or sidecar request fields. Resume cursors remain strict
+Provider data. Tool calls, approval requests, cancel, and background-task
+events use the same ordered NDJSON tape, but each new qualified scenario must
+still prove its own semantic checkpoints before its Cassette is accepted.
+Adding any further provider requires equivalent capture, portability, audit,
+input-unit, and deterministic fail-closed playback evidence.
 
 ### Productization
 

@@ -428,7 +428,14 @@ func (a *ClaudeCodeSDKAdapter) runClaudeSDKReader(agentSessionID string, adapter
 			a.failClaudeSDKReader(agentSessionID, adapterSession, err)
 			return
 		}
-		a.dispatchClaudeSDKEvent(agentSessionID, adapterSession, event)
+		if err := a.dispatchClaudeSDKEvent(
+			agentSessionID,
+			adapterSession,
+			event,
+		); err != nil {
+			a.failClaudeSDKReader(agentSessionID, adapterSession, err)
+			return
+		}
 	}
 }
 
@@ -485,14 +492,28 @@ func (a *ClaudeCodeSDKAdapter) stampTurnLifecycleSnapshots(adapterSession *claud
 	return events
 }
 
-func (a *ClaudeCodeSDKAdapter) dispatchClaudeSDKEvent(agentSessionID string, adapterSession *claudeSDKAdapterSession, event claudeSDKSidecarEvent) {
+func (a *ClaudeCodeSDKAdapter) dispatchClaudeSDKEvent(
+	agentSessionID string,
+	adapterSession *claudeSDKAdapterSession,
+	event claudeSDKSidecarEvent,
+) error {
 	if a == nil || adapterSession == nil {
-		return
+		return nil
 	}
+	eventCtx := context.Background()
+	if event.inputUnit != nil {
+		eventCtx = contextWithProviderInputUnit(eventCtx, *event.inputUnit)
+	}
+	endInputUnit := a.inputUnits.begin(eventCtx, agentSessionID)
+	defer endInputUnit()
 	a.logClaudeSDKLifecycleEvent(agentSessionID, adapterSession, event)
 	if response := a.takeClaudeSDKResponseWaiter(adapterSession, event); response != nil {
 		response <- event
-		return
+		return completeClaudeSDKProviderInputUnit(
+			context.Background(),
+			adapterSession.conn,
+			event,
+		)
 	}
 	turnID := payloadString(event.Payload, "turnId")
 	if turnID == "" {
@@ -507,7 +528,11 @@ func (a *ClaudeCodeSDKAdapter) dispatchClaudeSDKEvent(agentSessionID string, ada
 		known := a.consumeClaudeSDKRootProviderTurn(adapterSession, providerTurnID)
 		goalClearControlTurn := a.isGoalClearControlTurn(adapterSession, turnID)
 		if waiter == nil && !known && !goalClearControlTurn {
-			return
+			return completeClaudeSDKProviderInputUnit(
+				context.Background(),
+				adapterSession.conn,
+				event,
+			)
 		}
 	}
 	session := a.claudeSDKSessionSnapshot(adapterSession)
@@ -516,12 +541,17 @@ func (a *ClaudeCodeSDKAdapter) dispatchClaudeSDKEvent(agentSessionID string, ada
 	}
 	next, terminal, err := a.sidecarTurnEvents(adapterSession, session, turnID, event)
 	next = a.stampTurnLifecycleSnapshots(adapterSession, next)
+	next = a.inputUnits.stamp(agentSessionID, next)
 	if len(next) > 0 {
 		a.updateClaudeSDKSessionSnapshot(adapterSession, next)
 	}
 	if waiter != nil {
 		a.completeClaudeSDKWaiterEvent(adapterSession, waiter, turnID, next, terminal, err)
-		return
+		return completeClaudeSDKProviderInputUnit(
+			context.Background(),
+			adapterSession.conn,
+			event,
+		)
 	}
 	if err != nil {
 		next = append(next, newSessionActivityEvent(session, EventSessionFailed, SessionStatusFailed, map[string]any{
@@ -530,6 +560,11 @@ func (a *ClaudeCodeSDKAdapter) dispatchClaudeSDKEvent(agentSessionID string, ada
 	}
 	a.emitClaudeSDKSessionEvents(agentSessionID, next)
 	a.finishClaudeSDKGoalTurnPublication(adapterSession, next)
+	return completeClaudeSDKProviderInputUnit(
+		context.Background(),
+		adapterSession.conn,
+		event,
+	)
 }
 
 func (a *ClaudeCodeSDKAdapter) logClaudeSDKLifecycleEvent(agentSessionID string, adapterSession *claudeSDKAdapterSession, event claudeSDKSidecarEvent) {
@@ -764,69 +799,4 @@ func (a *ClaudeCodeSDKAdapter) failAllClaudeSDKRootProviderTurns(
 		))
 	}
 	return events
-}
-
-func (a *ClaudeCodeSDKAdapter) takeClaudeSDKResponseWaiter(adapterSession *claudeSDKAdapterSession, event claudeSDKSidecarEvent) chan claudeSDKSidecarEvent {
-	if a == nil || adapterSession == nil || strings.TrimSpace(event.ID) == "" {
-		return nil
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	response := adapterSession.pendingResponses[strings.TrimSpace(event.ID)]
-	if response != nil {
-		delete(adapterSession.pendingResponses, strings.TrimSpace(event.ID))
-	}
-	return response
-}
-
-func (a *ClaudeCodeSDKAdapter) registerClaudeSDKResponse(adapterSession *claudeSDKAdapterSession, requestID string) chan claudeSDKSidecarEvent {
-	response := make(chan claudeSDKSidecarEvent, 1)
-	a.mu.Lock()
-	if adapterSession.pendingResponses == nil {
-		adapterSession.pendingResponses = make(map[string]chan claudeSDKSidecarEvent)
-	}
-	adapterSession.pendingResponses[strings.TrimSpace(requestID)] = response
-	a.mu.Unlock()
-	return response
-}
-
-func (a *ClaudeCodeSDKAdapter) unregisterClaudeSDKResponse(adapterSession *claudeSDKAdapterSession, requestID string, response chan claudeSDKSidecarEvent) {
-	if a == nil || adapterSession == nil || response == nil {
-		return
-	}
-	a.mu.Lock()
-	if current := adapterSession.pendingResponses[strings.TrimSpace(requestID)]; current == response {
-		delete(adapterSession.pendingResponses, strings.TrimSpace(requestID))
-	}
-	a.mu.Unlock()
-}
-
-func (a *ClaudeCodeSDKAdapter) claudeSDKSessionSnapshot(adapterSession *claudeSDKAdapterSession) Session {
-	if a == nil || adapterSession == nil {
-		return Session{}
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return adapterSession.session
-}
-
-func (a *ClaudeCodeSDKAdapter) updateClaudeSDKSessionSnapshot(adapterSession *claudeSDKAdapterSession, events []activityshared.Event) {
-	if a == nil || adapterSession == nil || len(events) == 0 {
-		return
-	}
-	a.mu.Lock()
-	adapterSession.session = applySessionEvents(adapterSession.session, eventsOwnedBySession(events, adapterSession.session.AgentSessionID))
-	a.mu.Unlock()
-}
-
-func (a *ClaudeCodeSDKAdapter) emitClaudeSDKSessionEvents(agentSessionID string, events []activityshared.Event) {
-	if a == nil || len(events) == 0 {
-		return
-	}
-	a.mu.Lock()
-	sink := a.eventSink
-	a.mu.Unlock()
-	if sink != nil {
-		sink(agentSessionID, events)
-	}
 }

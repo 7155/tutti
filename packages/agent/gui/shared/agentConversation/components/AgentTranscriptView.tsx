@@ -569,6 +569,9 @@ export const AgentTranscriptView = memo(function AgentTranscriptView({
           }
           toolGroupExpansionKey={row.kind === "tool-group" ? rowKey : undefined}
           onToolGroupExpandedChange={handleToolGroupExpandedChange}
+          leadingToolExpandedById={
+            row.kind === "message" ? expandedToolRows : undefined
+          }
           footerAction={footerAction}
         />
       </div>

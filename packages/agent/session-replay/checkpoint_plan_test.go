@@ -1,6 +1,7 @@
 package sessionreplay
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -249,6 +250,145 @@ func TestMergeCheckpointCandidateDeduplicatesEntityAddresses(t *testing.T) {
 		checkpoint.Readiness.All[0].Subject != 0 ||
 		checkpoint.Readiness.All[1].Subject != 1 {
 		t.Fatalf("coalesced checkpoint=%#v", checkpoint)
+	}
+}
+
+func TestMergeCheckpointCandidatePrefersTerminalOverToolCompleted(t *testing.T) {
+	cursor := ReplayCursor{
+		ActivityEventSequence: 1,
+		ProviderConnections: []ProviderUnitPosition{{
+			ConnectionID: "connection-1", ChunkSeq: 60, UnitIndex: 1,
+		}},
+	}
+	turnPosition := ProviderObservationPosition{
+		ConnectionID: "connection-1", ChunkSeq: 60, UnitIndex: 1, EventIndex: 2,
+	}
+	call := providerAddress(EntityKindToolCall, ProviderObservationPosition{
+		ConnectionID: "connection-1", ChunkSeq: 60, UnitIndex: 1, EventIndex: 1,
+	})
+	turn := providerAddress(EntityKindTurn, turnPosition)
+	fingerprint, err := ObservationFingerprint(ProviderObservation{
+		SchemaVersion: ObservationSchemaVersion,
+		Type:          "root_provider_turn.completed",
+		Address:       turn,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := NewCheckpointPlan(nil)
+	AppendCheckpoint(&plan, ReplayCheckpoint{
+		Kind: "tool.completed", Tags: []string{"tool.completed"},
+		Cursor: cursor,
+		Trigger: CheckpointTrigger{
+			Source: CheckpointTriggerProviderObservation,
+			Position: &ProviderObservationPosition{
+				ConnectionID: "connection-1", ChunkSeq: 60, UnitIndex: 1,
+				EventIndex: 1,
+			},
+			UnitKind:    ProviderInputUnitProtocolMessage,
+			Type:        "call.failed",
+			Fingerprint: "sha256:" + strings.Repeat("b", 64),
+		},
+		Subjects: []EntityAddress{call},
+		Readiness: CheckpointReadiness{All: []ReadinessPredicate{{
+			Type: "call.status", Subject: 0, Equals: "failed",
+		}}},
+	})
+	AppendCheckpoint(&plan, ReplayCheckpoint{
+		Kind: "turn.terminal", Tags: []string{"turn.terminal"},
+		Cursor: cursor,
+		Trigger: CheckpointTrigger{
+			Source:      CheckpointTriggerProviderObservation,
+			Position:    &turnPosition,
+			UnitKind:    ProviderInputUnitProtocolMessage,
+			Type:        "root_provider_turn.completed",
+			Fingerprint: fingerprint,
+		},
+		Subjects: []EntityAddress{turn},
+		Readiness: CheckpointReadiness{All: []ReadinessPredicate{{
+			Type: "turn.status", Subject: 0, Equals: "completed",
+		}}},
+	})
+	if len(plan.Checkpoints) != 1 {
+		t.Fatalf("checkpoints=%#v, want one coalesced terminal", plan.Checkpoints)
+	}
+	checkpoint := plan.Checkpoints[0]
+	if checkpoint.Kind != "turn.terminal" ||
+		!slices.Contains(checkpoint.Tags, "tool.completed") ||
+		!slices.Contains(checkpoint.Tags, "turn.terminal") {
+		t.Fatalf("terminal merge=%#v", checkpoint)
+	}
+	if err := ValidatePublishedCheckpointPlan(plan); err != nil {
+		t.Fatalf("published plan error=%v", err)
+	}
+}
+
+func TestAppendCheckpointFoldsInteractionResolvedIntoTerminal(t *testing.T) {
+	terminalCursor := ReplayCursor{
+		ActivityEventSequence: 1,
+		ProviderConnections: []ProviderUnitPosition{{
+			ConnectionID: "connection-1", ChunkSeq: 60, UnitIndex: 1,
+		}},
+	}
+	resolvedCursor := ReplayCursor{
+		ActivityEventSequence: 4,
+		ProviderConnections: []ProviderUnitPosition{{
+			ConnectionID: "connection-1", ChunkSeq: 60, UnitIndex: 1,
+		}},
+	}
+	turnPosition := ProviderObservationPosition{
+		ConnectionID: "connection-1", ChunkSeq: 60, UnitIndex: 1, EventIndex: 1,
+	}
+	turn := providerAddress(EntityKindTurn, turnPosition)
+	interaction := activityAddress(EntityKindInteraction, 4)
+	fingerprint, err := ObservationFingerprint(ProviderObservation{
+		SchemaVersion: ObservationSchemaVersion,
+		Type:          "root_provider_turn.completed",
+		Address:       turn,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := NewCheckpointPlan(nil)
+	AppendCheckpoint(&plan, ReplayCheckpoint{
+		Kind: "turn.terminal", Tags: []string{"turn.terminal"},
+		Cursor: terminalCursor,
+		Trigger: CheckpointTrigger{
+			Source:      CheckpointTriggerProviderObservation,
+			Position:    &turnPosition,
+			UnitKind:    ProviderInputUnitProtocolMessage,
+			Type:        "root_provider_turn.completed",
+			Fingerprint: fingerprint,
+		},
+		Subjects: []EntityAddress{turn},
+		Readiness: CheckpointReadiness{All: []ReadinessPredicate{{
+			Type: "turn.status", Subject: 0, Equals: "completed",
+		}}},
+	})
+	AppendCheckpoint(&plan, ReplayCheckpoint{
+		Kind: "interaction.resolved", Tags: []string{"interaction.resolved"},
+		Cursor: resolvedCursor,
+		Trigger: CheckpointTrigger{
+			Source:                     CheckpointTriggerActivityBoundary,
+			AfterActivityEventSequence: 4,
+			BoundaryKind:               ActivityBoundaryIntentEffects,
+		},
+		Subjects: []EntityAddress{interaction},
+		Readiness: CheckpointReadiness{All: []ReadinessPredicate{{
+			Type: "interaction.status", Subject: 0, Equals: "answered",
+		}}},
+	})
+	if len(plan.Checkpoints) != 1 {
+		t.Fatalf("checkpoints=%#v, want folded terminal", plan.Checkpoints)
+	}
+	checkpoint := plan.Checkpoints[0]
+	if checkpoint.Kind != "turn.terminal" ||
+		checkpoint.Cursor.ActivityEventSequence != 4 ||
+		!slices.Contains(checkpoint.Tags, "interaction.resolved") {
+		t.Fatalf("folded terminal=%#v", checkpoint)
+	}
+	if err := ValidatePublishedCheckpointPlan(plan); err != nil {
+		t.Fatalf("published plan error=%v", err)
 	}
 }
 

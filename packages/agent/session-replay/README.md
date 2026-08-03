@@ -41,6 +41,15 @@ so artifact adapters validate a tape without importing a Provider runtime.
 Replay uses a separate product runtime composition; it must not toggle real
 provider preparation through a `ProcessSpec` replay flag.
 
+The registry currently declares two complete adapters: Codex JSON-RPC and
+Claude Code version-7 sidecar NDJSON. A descriptor selects its codec, outbound
+matcher, input observer, projection, audit policy, generated identity fields,
+and isolated Provider home. Claude launch environment is never persisted or
+matched; Replay provides an isolated `CLAUDE_CONFIG_DIR`. Claude
+`providerSessionId` is accepted as a generated outbound start identity while
+the recorded inbound value remains the Provider-owned semantic identity.
+Unregistered providers fail closed.
+
 Recording portability is applied before candidate bytes are persisted.
 Product-owned Activity Event storage replaces only the structural
 Engine `session/activate` effect CWD and in-tree rail project path with

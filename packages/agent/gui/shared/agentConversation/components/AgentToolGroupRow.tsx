@@ -120,7 +120,11 @@ export const AgentToolGroupRow = memo(function AgentToolGroupRow({
                     entry.call,
                     onLinkClick,
                     showRawTimelineJson,
-                    rawTimelineJsonLabel
+                    rawTimelineJsonLabel,
+                    // Mount tool detail open when the group expands so command /
+                    // output / file-change evidence is visible without a second
+                    // click (important for multi-tool evidence screenshots).
+                    true
                   )}
                 </div>
               )
@@ -161,7 +165,8 @@ function renderToolCard(
   call: AgentToolCallVM,
   onLinkClick?: (href: string) => void,
   showRawTimelineJson = false,
-  rawTimelineJsonLabel = ""
+  rawTimelineJsonLabel = "",
+  defaultExpanded = false
 ): JSX.Element {
   const props = { call, onLinkClick };
   // A delegated sub-agent renders as its own first-class card - no tool-row
@@ -184,7 +189,7 @@ function renderToolCard(
       card = <AgentTaskCallCard {...props} />;
       break;
     default:
-      card = <AgentToolCallCard {...props} />;
+      card = <AgentToolCallCard {...props} defaultExpanded={defaultExpanded} />;
   }
   return (
     <>

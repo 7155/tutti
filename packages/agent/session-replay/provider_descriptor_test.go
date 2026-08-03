@@ -29,10 +29,32 @@ func TestCodexProviderReplayDescriptorDeclaresCompleteAdapter(t *testing.T) {
 	}
 }
 
-func TestProviderReplayRegistryRejectsUnregisteredProviders(t *testing.T) {
-	if _, ok := FindProviderReplayByTarget("local:claude-code"); ok {
-		t.Fatal("Claude Code must not be replay-eligible without an adapter")
+func TestClaudeCodeProviderReplayDescriptorDeclaresCompleteAdapter(t *testing.T) {
+	descriptor, ok := FindProviderReplayByTarget(" local:CLAUDE-code ")
+	if !ok {
+		t.Fatal("Claude Code replay descriptor is missing")
 	}
+	if descriptor.ProviderID != "claude-code" ||
+		descriptor.Tape.Codec != ProviderTapeCodecClaudeSidecarV7 ||
+		descriptor.Tape.RequestMatcher != ProviderRequestMatcherClaudeSidecarV7 ||
+		descriptor.Tape.InputObserver != ProviderInputObserverClaudeSidecarV7 ||
+		descriptor.Tape.ProjectionCodec != ProviderProjectionCodecClaudeSidecarV7Portable ||
+		descriptor.Tape.AuditCodec != ProviderAuditCodecClaudeSidecarV7Portable ||
+		!descriptor.SupportsFormat(
+			ProcessCassetteSchemaVersion,
+			ProcessCassetteProjectionVersion,
+		) ||
+		!descriptor.Tape.ExcludeEnvironment ||
+		!descriptor.IsGeneratedIdentityField("turnID") ||
+		!descriptor.IsMatchedIdentityField("providerSessionID") ||
+		descriptor.IsGeneratedIdentityField("providerSessionID") ||
+		!descriptor.IsHomeEnvVar("claude_config_dir") ||
+		descriptor.PortableRuntime.SessionHomeDirectory != "claude-home" {
+		t.Fatalf("Claude Code replay descriptor = %#v", descriptor)
+	}
+}
+
+func TestProviderReplayRegistryRejectsUnregisteredProviders(t *testing.T) {
 	if _, ok := FindProviderReplayByProvider("cursor"); ok {
 		t.Fatal("Cursor must not be replay-eligible without an adapter")
 	}

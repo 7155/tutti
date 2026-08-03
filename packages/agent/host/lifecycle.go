@@ -113,7 +113,6 @@ func (h *Host) CreateSession(ctx context.Context, workspaceID string, input Crea
 		}
 		return errors.Join(cleanupErrs...)
 	}
-
 	startedAt := h.now()
 	release, err := h.acquireStartup(ctx, input.Provider)
 	if err != nil {
@@ -214,8 +213,24 @@ func (h *Host) CreateSession(ctx context.Context, workspaceID string, input Crea
 	})
 	if err != nil {
 		h.observeStep(ctx, "session_create", "runtime_exec", session.ID, session.Provider, startedAt, err)
-		if execResult.ProviderDispatch.Disposition == RuntimeDispatchDispositionApplied ||
-			execResult.ProviderDispatch.Disposition == RuntimeDispatchDispositionOutcomeUnknown {
+		disposition := execResult.ProviderDispatch.Disposition
+		if disposition == RuntimeDispatchDispositionRejected ||
+			disposition == RuntimeDispatchDispositionApplied ||
+			disposition == RuntimeDispatchDispositionOutcomeUnknown {
+			if persistErr := h.persistRuntimeSubmitOutcome(
+				ctx, SessionRef{WorkspaceID: workspaceID, AgentSessionID: session.ID}, execResult,
+				firstNonEmpty(claim.ClientSubmitID, input.ClientSubmitID, legacyClientSubmitID(metadata)),
+				claim.CreatedAtUnixMS, preparedContent, displayPrompt, input.CapabilityRefs,
+				input.TuttiModeSnapshot,
+			); persistErr != nil {
+				claimPending = false
+				return CreateSessionResult{}, errors.Join(ErrSubmitDeliveryUnknown, err, persistErr)
+			}
+			if disposition == RuntimeDispatchDispositionRejected {
+				// A definitive rejection keeps the visible Session/failed Turn. Do
+				// not close the runtime before its terminal report is projected.
+				return CreateSessionResult{}, h.cleanupPreparedRuntime(ctx, err, workspaceID, input.AgentSessionID, input.Provider)
+			}
 			claimPending = false
 			return CreateSessionResult{}, errors.Join(ErrSubmitDeliveryUnknown, err)
 		}
@@ -496,6 +511,17 @@ func (h *Host) sendInputSerialized(
 	}()
 	if err != nil {
 		h.observeStep(ctx, "message_send", "runtime_exec", ref.AgentSessionID, session.Provider, startedAt, err)
+		if !input.Guidance && strings.TrimSpace(execResult.TurnID) != "" {
+			if persistErr := h.persistRuntimeSubmitOutcome(
+				ctx, ref, execResult,
+				firstNonEmpty(claim.ClientSubmitID, input.ClientSubmitID, legacyClientSubmitID(metadata)),
+				claim.CreatedAtUnixMS, preparedContent, displayPrompt, input.CapabilityRefs,
+				input.TuttiModeSnapshot,
+			); persistErr != nil {
+				claimPending = false
+				return SendInputResult{}, errors.Join(ErrSubmitDeliveryUnknown, err, persistErr)
+			}
+		}
 		if input.Guidance ||
 			execResult.ProviderDispatch.Disposition == RuntimeDispatchDispositionApplied ||
 			execResult.ProviderDispatch.Disposition == RuntimeDispatchDispositionOutcomeUnknown {
@@ -616,35 +642,6 @@ func (h *Host) acceptedSubmitResult(ctx context.Context, ref SessionRef, claim s
 	return SendInputResult{
 		Session: live, Canonical: canonicalSession, Turn: &turn, TurnID: claim.TurnID,
 		TurnLifecycle: lifecycleFromTurn(turn), SubmitAvailability: availability,
-	}, nil
-}
-
-type preparedPromptContent struct {
-	Persisted   []PromptContentBlock
-	Hydrated    []PromptContentBlock
-	DisplayText string
-}
-
-func (h *Host) prepareContent(workspaceID, sessionID string, content []PromptContentBlock) (preparedPromptContent, error) {
-	if h.attachments == nil {
-		cloned := append([]PromptContentBlock(nil), content...)
-		return preparedPromptContent{
-			Persisted: cloned,
-			Hydrated:  append([]PromptContentBlock(nil), cloned...),
-		}, nil
-	}
-	persisted, err := h.attachments.PersistRequestContent(workspaceID, sessionID, content)
-	if err != nil {
-		return preparedPromptContent{}, err
-	}
-	hydrated, err := h.attachments.HydrateRuntimeContent(workspaceID, sessionID, persisted)
-	if err != nil {
-		return preparedPromptContent{}, err
-	}
-	return preparedPromptContent{
-		Persisted:   append([]PromptContentBlock(nil), persisted...),
-		Hydrated:    append([]PromptContentBlock(nil), hydrated...),
-		DisplayText: imageOnlyDisplayText(persisted),
 	}, nil
 }
 

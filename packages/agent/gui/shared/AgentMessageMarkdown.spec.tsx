@@ -572,6 +572,42 @@ describe("AgentMessageMarkdown", () => {
     });
   });
 
+  it("decodes percent-encoded workspace markdown image paths before reading files", async () => {
+    const readFile = vi.fn().mockResolvedValue({
+      bytes: new Uint8Array([137, 80, 78, 71])
+    });
+    window.agentHostApi = {
+      ...(window.agentHostApi ?? {}),
+      workspace: {
+        ...(window.agentHostApi?.workspace ?? {}),
+        readFile
+      }
+    } as typeof window.agentHostApi;
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => "blob:tsh-markdown-image")
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: vi.fn()
+    });
+
+    render(
+      <AgentMessageMarkdown
+        content={"![generated image](/workspace/可爱小狗.png)"}
+      />
+    );
+
+    expect(
+      await screen.findByRole("img", {
+        name: "generated image"
+      })
+    ).toHaveAttribute("src", "blob:tsh-markdown-image");
+    expect(readFile).toHaveBeenCalledWith({
+      path: "/workspace/可爱小狗.png"
+    });
+  });
+
   it("renders workspace markdown videos from workspace file bytes", async () => {
     const readFile = vi.fn().mockResolvedValue({
       bytes: new Uint8Array([0, 0, 0, 24])

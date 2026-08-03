@@ -68,7 +68,7 @@ func (h *Host) CreateSession(ctx context.Context, workspaceID string, input Crea
 		return CreateSessionResult{}, err
 	}
 	if claim.ClientSubmitID != "" && !claimPending {
-		if claim.Status != "accepted" {
+		if claim.Status != "accepted" && claim.Status != "rejected" {
 			return CreateSessionResult{}, ErrSubmitDeliveryUnknown
 		}
 		canonicalSession, _, readErr := h.store.GetSession(ctx, workspaceID, input.AgentSessionID)
@@ -228,7 +228,15 @@ func (h *Host) CreateSession(ctx context.Context, workspaceID string, input Crea
 			}
 			if disposition == RuntimeDispatchDispositionRejected {
 				// A definitive rejection keeps the visible Session/failed Turn. Do
-				// not close the runtime before its terminal report is projected.
+				// not close the runtime before its terminal report is projected. Keep
+				// the claim as a terminal idempotency fence so a retry can render the
+				// same failed Turn without invoking the provider again.
+				if strings.TrimSpace(execResult.TurnID) != "" {
+					claimPending = false
+					if rejectErr := h.finalizeRejectedSubmitClaim(ref, firstNonEmpty(claim.ClientSubmitID, input.ClientSubmitID, legacyClientSubmitID(metadata)), execResult.TurnID); rejectErr != nil {
+						return CreateSessionResult{}, errors.Join(ErrSubmitDeliveryUnknown, err, rejectErr)
+					}
+				}
 				return CreateSessionResult{}, h.cleanupPreparedRuntime(ctx, err, workspaceID, input.AgentSessionID, input.Provider)
 			}
 			claimPending = false
@@ -448,10 +456,10 @@ func (h *Host) sendInputSerialized(
 		return SendInputResult{}, err
 	}
 	if claim.ClientSubmitID != "" && !claimPending {
-		if claim.Status != "accepted" {
+		if claim.Status != "accepted" && claim.Status != "rejected" {
 			return SendInputResult{}, ErrSubmitDeliveryUnknown
 		}
-		return h.acceptedSubmitResult(ctx, ref, claim)
+		return h.replayedSubmitResult(ctx, ref, claim)
 	}
 	defer func() {
 		if claimPending {
@@ -520,6 +528,18 @@ func (h *Host) sendInputSerialized(
 			); persistErr != nil {
 				claimPending = false
 				return SendInputResult{}, errors.Join(ErrSubmitDeliveryUnknown, err, persistErr)
+			}
+		}
+		if !input.Guidance &&
+			execResult.ProviderDispatch.Disposition == RuntimeDispatchDispositionRejected {
+			// The failed Turn and prompt are already durable. Resolve the claim to
+			// a terminal rejected state before the deferred cleanup can run.
+			if strings.TrimSpace(execResult.TurnID) != "" {
+				claimPending = false
+				if rejectErr := h.finalizeRejectedSubmitClaim(ref, firstNonEmpty(claim.ClientSubmitID, input.ClientSubmitID, legacyClientSubmitID(metadata)), execResult.TurnID); rejectErr != nil {
+					return SendInputResult{}, errors.Join(ErrSubmitDeliveryUnknown, err, rejectErr)
+				}
+				return SendInputResult{}, err
 			}
 		}
 		if input.Guidance ||
@@ -615,34 +635,6 @@ func (h *Host) UpdateTitle(ctx context.Context, input UpdateTitleInput) (UpdateT
 	}
 	result.Session = runtimeSession
 	return result, nil
-}
-
-func (h *Host) acceptedSubmitResult(ctx context.Context, ref SessionRef, claim storesqlite.SubmitClaim) (SendInputResult, error) {
-	canonicalSession, ok, err := h.store.GetSession(ctx, ref.WorkspaceID, ref.AgentSessionID)
-	if err != nil {
-		return SendInputResult{}, err
-	}
-	if !ok {
-		if _, live := h.runtime.Session(ref.WorkspaceID, ref.AgentSessionID); !live {
-			return SendInputResult{}, ErrSessionNotFound
-		}
-	}
-	turn, ok, err := h.store.GetTurn(ctx, ref.WorkspaceID, ref.AgentSessionID, claim.TurnID)
-	if err != nil {
-		return SendInputResult{}, err
-	}
-	if !ok {
-		return SendInputResult{}, ErrSubmitDeliveryUnknown
-	}
-	live, _ := h.runtime.Session(ref.WorkspaceID, ref.AgentSessionID)
-	availability := SubmitAvailability{State: "available"}
-	if strings.TrimSpace(canonicalSession.ActiveTurnID) != "" {
-		availability = SubmitAvailability{State: "blocked", Reason: "active_turn"}
-	}
-	return SendInputResult{
-		Session: live, Canonical: canonicalSession, Turn: &turn, TurnID: claim.TurnID,
-		TurnLifecycle: lifecycleFromTurn(turn), SubmitAvailability: availability,
-	}, nil
 }
 
 func (h *Host) recordTurnSubmission(

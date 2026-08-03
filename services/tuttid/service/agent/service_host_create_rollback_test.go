@@ -122,11 +122,15 @@ func TestHostCreateRetainsVisibleFailedTurnAfterExplicitProviderRejection(t *tes
 	service := newTestService(runtime)
 	service.SessionReader = projection
 	service.SessionInitializer = projection
+	service.SubmitClaimStore = store
+	service.TurnStore = store
 
-	_, err := service.Create(ctx, "ws-rejected", CreateSessionInput{
+	input := CreateSessionInput{
 		AgentSessionID: "session-rejected", AgentTargetID: agenttargetbiz.IDLocalClaudeCode,
 		InitialContent: TextPromptContent("start atomically"),
-	})
+		ClientSubmitID: "submit-rejected",
+	}
+	_, err := service.Create(ctx, "ws-rejected", input)
 	if !errors.Is(err, execErr) {
 		t.Fatalf("Create() error=%v, want %v", err, execErr)
 	}
@@ -158,6 +162,18 @@ func TestHostCreateRetainsVisibleFailedTurnAfterExplicitProviderRejection(t *tes
 	}
 	if len(publisher.events) == 0 {
 		t.Fatal("rejected visible create did not publish canonical updates")
+	}
+	claim, found, err := store.GetSubmitClaim(ctx, "ws-rejected", input.AgentSessionID, input.ClientSubmitID)
+	if err != nil || !found || claim.Status != "rejected" || claim.TurnID != runtime.execCalls[0].TurnID {
+		t.Fatalf("rejected submit claim=%#v found=%v error=%v", claim, found, err)
+	}
+	startCalls, execCalls, provenanceCalls := len(runtime.startCalls), len(runtime.execCalls), len(runtime.provenanceCalls)
+	replayed, retryErr := service.CreateWithResult(ctx, "ws-rejected", input)
+	if retryErr != nil || replayed.TurnID != claim.TurnID {
+		t.Fatalf("replayed CreateWithResult=%#v error=%v, want terminal failed Turn %q", replayed, retryErr, claim.TurnID)
+	}
+	if len(runtime.startCalls) != startCalls || len(runtime.execCalls) != execCalls || len(runtime.provenanceCalls) != provenanceCalls {
+		t.Fatalf("replayed rejected submit touched runtime: starts=%d exec=%d provenance=%d, want %d/%d/%d", len(runtime.startCalls), len(runtime.execCalls), len(runtime.provenanceCalls), startCalls, execCalls, provenanceCalls)
 	}
 }
 

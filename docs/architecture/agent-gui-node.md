@@ -2021,6 +2021,9 @@ home composer submit
 ```
 
 Initial content is one user-owned submit flow, but provider acceptance is not the prompt's durability boundary. Once the submitted Turn and prompt are durably recorded, a deterministic provider rejection keeps the visible Session, failed Turn, and user prompt so the failure can be rendered and retried. Only a pre-dispatch startup/validation failure may compensate an empty provisional shell; an outcome-unknown delivery keeps its recovery claim instead of guessing whether the provider ran.
+The rejected submit claim is terminal and remains bound to that failed Turn, so
+retrying the same `clientSubmitId` reuses the persisted failure and never
+dispatches a second provider Turn.
 The initiating composer snapshots Tutti activation plus effect and speed with
 that submit. An explicit active or inactive submit snapshot is authoritative
 over a later read of mutable home-draft state; non-composer callers may fall

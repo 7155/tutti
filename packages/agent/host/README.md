@@ -61,7 +61,9 @@ The acceptance barrier does not decide whether the user's prompt is durable.
 After `Exec` returns an explicit rejection or an outcome-unknown timeout, Host
 records the submit provenance and lossless replay envelope on a
 cancellation-independent context. An explicit rejection settles an existing
-canonical Turn as failed; an outcome-unknown result retains the submit claim
+canonical Turn as failed and transitions its submit claim to terminal
+`rejected`; replaying the same `ClientSubmitID` returns that failed Turn without
+provider dispatch. An outcome-unknown result retains the prepared submit claim
 for reconciliation and never blindly redispatches. Only a new provisional
 Session with no visible message or provider identity may be compensated away.
 

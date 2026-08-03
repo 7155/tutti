@@ -159,9 +159,10 @@ type claudeSDKTurnResult struct {
 }
 
 type claudeSDKLineReader struct {
-	conn   ProcessConnection
-	buffer string
-	lines  []claudeSDKBufferedLine
+	conn            ProcessConnection
+	buffer          string
+	trackInputUnits bool
+	lines           []claudeSDKBufferedLine
 	// stderrTail keeps only a bounded, sanitized classification of sidecar
 	// diagnostics. Raw stderr may contain prompts, paths, credentials, or stack
 	// traces and must never enter durable activity or user-visible errors.
@@ -171,6 +172,21 @@ type claudeSDKLineReader struct {
 type claudeSDKBufferedLine struct {
 	value string
 	unit  ProviderInputUnit
+}
+
+func providerInputUnitsEnabled(conn ProcessConnection) bool {
+	_, ok := conn.(ProviderInputUnitCompletion)
+	return ok
+}
+
+func newClaudeSDKLineReader(
+	conn ProcessConnection,
+	trackInputUnits bool,
+) *claudeSDKLineReader {
+	return &claudeSDKLineReader{
+		conn:            conn,
+		trackInputUnits: trackInputUnits,
+	}
 }
 
 func NewClaudeCodeSDKAdapter(transport ProcessTransport) *ClaudeCodeSDKAdapter {

@@ -102,7 +102,7 @@ func claudeSDKRoundTripResponseError(event claudeSDKSidecarEvent) error {
 
 func (r *claudeSDKLineReader) next(ctx context.Context) (claudeSDKSidecarEvent, error) {
 	for {
-		if len(r.lines) > 0 {
+		if r.trackInputUnits && len(r.lines) > 0 {
 			line := r.lines[0]
 			r.lines = r.lines[1:]
 			var event claudeSDKSidecarEvent
@@ -114,6 +114,18 @@ func (r *claudeSDKLineReader) next(ctx context.Context) (claudeSDKSidecarEvent, 
 			}
 			event.inputUnit = &line.unit
 			return event, nil
+		}
+		if !r.trackInputUnits {
+			if line, ok := nextBufferedLine(&r.buffer); ok {
+				var event claudeSDKSidecarEvent
+				if err := json.Unmarshal([]byte(line), &event); err != nil {
+					return claudeSDKSidecarEvent{}, err
+				}
+				if err := event.validate(); err != nil {
+					return claudeSDKSidecarEvent{}, err
+				}
+				return event, nil
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -143,6 +155,9 @@ func (r *claudeSDKLineReader) next(ctx context.Context) (claudeSDKSidecarEvent, 
 		}
 		if len(frame.Stdout) > 0 {
 			r.buffer += string(frame.Stdout)
+			if !r.trackInputUnits {
+				continue
+			}
 			var unitIndex uint64
 			for {
 				index := strings.IndexByte(r.buffer, '\n')
@@ -181,6 +196,19 @@ func completeClaudeSDKProviderInputUnit(
 		return nil
 	}
 	return completion.CompleteProviderInputUnit(ctx, *event.inputUnit)
+}
+
+func nextBufferedLine(buffer *string) (string, bool) {
+	if buffer == nil {
+		return "", false
+	}
+	index := strings.IndexByte(*buffer, '\n')
+	if index < 0 {
+		return "", false
+	}
+	line := strings.TrimSpace((*buffer)[:index])
+	*buffer = (*buffer)[index+1:]
+	return line, line != ""
 }
 
 func (r *claudeSDKLineReader) appendStderrTail(content []byte) {

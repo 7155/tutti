@@ -126,11 +126,12 @@ func (a *ClaudeCodeSDKAdapter) statelessClaudeSDKForkRequest(
 		cleanupPreparedLaunch(cleanup)
 		return claudeSDKSidecarEvent{}, false, err
 	}
+	trackInputUnits := providerInputUnitsEnabled(conn)
 	conn = wrapProviderLaunchCleanup(conn, cleanup)
 	defer conn.Close()
 	adapterSession := &claudeSDKAdapterSession{
 		conn:   conn,
-		reader: &claudeSDKLineReader{conn: conn},
+		reader: newClaudeSDKLineReader(conn, trackInputUnits),
 	}
 	if err := adapterSession.send(request); err != nil {
 		return claudeSDKSidecarEvent{}, false, err

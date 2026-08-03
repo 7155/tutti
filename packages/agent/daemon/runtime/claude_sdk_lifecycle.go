@@ -39,10 +39,11 @@ func (a *ClaudeCodeSDKAdapter) Start(ctx context.Context, session Session) ([]ac
 		cleanupPreparedLaunch(cleanup)
 		return nil, err
 	}
+	trackInputUnits := providerInputUnitsEnabled(conn)
 	conn = wrapProviderLaunchCleanup(conn, cleanup)
 	adapterSession := &claudeSDKAdapterSession{
 		conn:              conn,
-		reader:            &claudeSDKLineReader{conn: conn},
+		reader:            newClaudeSDKLineReader(conn, trackInputUnits),
 		session:           session,
 		providerSessionID: providerSessionID,
 		resumeCursor:      claudeSDKResumeCursorFromSession(session),

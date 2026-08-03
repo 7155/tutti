@@ -37,6 +37,10 @@ The main constraints are also explicit:
 - The JavaScript runner is a temporary, development-checkout-only Electron
   adapter. It builds an isolated daemon and drives the replay surface through
   CDP.
+- Screenshot evidence is interaction-driven: replay scenarios use CDP to click
+  the real disclosure buttons in the rendered AgentGUI. Shared transcript
+  components do not receive replay-only expansion state or default-open tool
+  cards, so ordinary sessions retain their local disclosure state and cost.
 - Protocol matching is intentionally strict. Benign changes in startup probes,
   message ordering, or serialized protocol shape can invalidate existing
   Cassettes.
@@ -310,6 +314,11 @@ The checkpoint is part of Host historical-state capture/restore so every Host
 consumer resumes with the same provider-neutral recovery contract. Full
 provider runtime context remains excluded because it contains diagnostics,
 account state, quotas, and machine-local paths.
+
+Claude SDK input-unit buffering is enabled only for process connections that
+provide the recording/replay completion barrier. A normal live connection
+continues to decode complete NDJSON messages directly from its bounded byte
+buffer without allocating the Replay input-unit queue.
 
 ### Recording portability projection
 

@@ -530,7 +530,7 @@ func TestClaudeSDKLineReaderTracksNDJSONInputUnitsAtCompletionChunk(t *testing.T
 			),
 		},
 	}}
-	reader := &claudeSDKLineReader{conn: conn}
+	reader := newClaudeSDKLineReader(conn, true)
 
 	first, err := reader.next(context.Background())
 	if err != nil {

@@ -12,6 +12,21 @@ import (
 	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
 )
 
+func processCassetteReplayAdapterSupported(
+	descriptor replay.ProviderReplayDescriptor,
+) bool {
+	switch descriptor.Tape.Codec {
+	case replay.ProviderTapeCodecJSONRPC:
+		return descriptor.Tape.RequestMatcher == replay.ProviderRequestMatcherJSONRPC &&
+			descriptor.Tape.InputObserver == replay.ProviderInputObserverACPJSON
+	case replay.ProviderTapeCodecClaudeSidecarV7:
+		return descriptor.Tape.RequestMatcher == replay.ProviderRequestMatcherClaudeSidecarV7 &&
+			descriptor.Tape.InputObserver == replay.ProviderInputObserverClaudeSidecarV7
+	default:
+		return false
+	}
+}
+
 func processCassetteJSONMatch(
 	descriptor replay.ProviderReplayDescriptor,
 	expected []byte,
@@ -19,18 +34,22 @@ func processCassetteJSONMatch(
 	recordedCWD string,
 	replayCWD string,
 	replayHome string,
-) (map[string]any, bool) {
+	knownIdentityValues map[string]string,
+) (map[string]any, map[string]string, bool) {
 	expectedValues, ok := decodeProcessCassetteJSONValues(expected)
 	if !ok {
-		return nil, false
+		return nil, nil, false
 	}
 	actualValues, ok := decodeProcessCassetteJSONValues(actual)
 	if !ok || len(expectedValues) != len(actualValues) {
-		return nil, false
+		return nil, nil, false
 	}
 	projectProcessCassetteRuntimeGeneratedFields(expectedValues, descriptor)
 	projectProcessCassetteRuntimeGeneratedFields(actualValues, descriptor)
+	projectProcessCassetteEnvironment(expectedValues, descriptor)
+	projectProcessCassetteEnvironment(actualValues, descriptor)
 	responseIDs := map[string]any{}
+	identityValues := map[string]string{}
 	for index := range expectedValues {
 		expectedValues[index] = mapProcessCassettePathFields(
 			expectedValues[index],
@@ -45,22 +64,156 @@ func processCassetteJSONMatch(
 		expectedMessage, expectedIsMessage := expectedValues[index].(map[string]any)
 		actualMessage, actualIsMessage := actualValues[index].(map[string]any)
 		if expectedIsMessage && actualIsMessage &&
-			expectedMessage["method"] != nil && actualMessage["method"] != nil {
+			processCassetteMessagesAreRequests(
+				descriptor,
+				expectedMessage,
+				actualMessage,
+			) {
 			expectedID, expectedHasID := expectedMessage["id"]
 			actualID, actualHasID := actualMessage["id"]
 			if expectedHasID != actualHasID {
-				return nil, false
+				return nil, nil, false
 			}
 			if expectedHasID {
 				responseIDs[processCassetteJSONRPCID(expectedID)] = actualID
 				expectedMessage["id"] = actualID
 			}
 		}
+		if !alignProcessCassetteGeneratedIdentityValues(
+			expectedValues[index],
+			actualValues[index],
+			descriptor,
+			knownIdentityValues,
+			identityValues,
+		) {
+			return nil, nil, false
+		}
 		if !reflect.DeepEqual(expectedValues[index], actualValues[index]) {
-			return nil, false
+			return nil, nil, false
 		}
 	}
-	return responseIDs, true
+	return responseIDs, identityValues, true
+}
+
+func processCassetteMessagesAreRequests(
+	descriptor replay.ProviderReplayDescriptor,
+	expected map[string]any,
+	actual map[string]any,
+) bool {
+	switch descriptor.Tape.RequestMatcher {
+	case replay.ProviderRequestMatcherJSONRPC:
+		return expected["method"] != nil && actual["method"] != nil
+	case replay.ProviderRequestMatcherClaudeSidecarV7:
+		return expected["type"] != nil && actual["type"] != nil
+	default:
+		return false
+	}
+}
+
+func alignProcessCassetteGeneratedIdentityValues(
+	expected any,
+	actual any,
+	descriptor replay.ProviderReplayDescriptor,
+	known map[string]string,
+	learned map[string]string,
+) bool {
+	switch expectedValue := expected.(type) {
+	case map[string]any:
+		actualValue, ok := actual.(map[string]any)
+		if !ok {
+			return false
+		}
+		for key, child := range expectedValue {
+			actualChild, exists := actualValue[key]
+			if !exists {
+				return false
+			}
+			if descriptor.IsMatchedIdentityField(key) {
+				expectedID, expectedOK := child.(string)
+				actualID, actualOK := actualChild.(string)
+				if expectedOK != actualOK {
+					return false
+				}
+				if expectedOK && expectedID != "" && actualID != "" {
+					if mapped := firstNonEmptyString(
+						learned[expectedID],
+						known[expectedID],
+					); mapped != "" && mapped != actualID {
+						return false
+					}
+					learned[expectedID] = actualID
+					expectedValue[key] = actualID
+					continue
+				}
+			}
+			if !alignProcessCassetteGeneratedIdentityValues(
+				child,
+				actualChild,
+				descriptor,
+				known,
+				learned,
+			) {
+				return false
+			}
+		}
+		return true
+	case []any:
+		actualValue, ok := actual.([]any)
+		if !ok || len(expectedValue) != len(actualValue) {
+			return false
+		}
+		for index := range expectedValue {
+			if !alignProcessCassetteGeneratedIdentityValues(
+				expectedValue[index],
+				actualValue[index],
+				descriptor,
+				known,
+				learned,
+			) {
+				return false
+			}
+		}
+		return true
+	default:
+		return true
+	}
+}
+
+func mapProcessCassetteGeneratedIdentityValues(
+	value any,
+	descriptor replay.ProviderReplayDescriptor,
+	identityValues map[string]string,
+) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			if descriptor.IsGeneratedIdentityField(key) {
+				if recorded, ok := child.(string); ok {
+					if mapped := identityValues[recorded]; mapped != "" {
+						typed[key] = mapped
+						continue
+					}
+				}
+			}
+			typed[key] = mapProcessCassetteGeneratedIdentityValues(
+				child,
+				descriptor,
+				identityValues,
+			)
+		}
+		return typed
+	case []any:
+		for index := range typed {
+			typed[index] = mapProcessCassetteGeneratedIdentityValues(
+				typed[index],
+				descriptor,
+				identityValues,
+			)
+		}
+		return typed
+	default:
+		return value
+	}
 }
 
 func processCassetteJSONRPCRequest(
@@ -73,6 +226,12 @@ func processCassetteJSONRPCRequest(
 	if err != nil {
 		return "", "", false
 	}
+	return processCassetteJSONRPCRequestBytes(data)
+}
+
+func processCassetteJSONRPCRequestBytes(
+	data []byte,
+) (method string, responseID string, ok bool) {
 	values, ok := decodeProcessCassetteJSONValues(data)
 	if !ok || len(values) != 1 {
 		return "", "", false
@@ -156,7 +315,9 @@ func mapProcessCassetteResponseIDs(data []byte, responseIDs map[string]any) []by
 		}
 		_, hasResult := message["result"]
 		_, hasError := message["error"]
-		if !hasResult && !hasError {
+		typeName, _ := message["type"].(string)
+		isSidecarResponse := typeName == "ok" || typeName == "error"
+		if !hasResult && !hasError && !isSidecarResponse {
 			continue
 		}
 		recordedID := processCassetteJSONRPCID(message["id"])

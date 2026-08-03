@@ -108,6 +108,23 @@ func AppendCheckpoint(plan *CheckpointPlan, checkpoint ReplayCheckpoint) {
 			)
 			return
 		}
+		// Deny/cancel activity boundaries can arrive after a provider turn
+		// terminal already closed the plan. Fold interaction.resolved into
+		// that terminal so the published final stays a true terminal kind.
+		if isPublishedTerminalKind(plan.Checkpoints[last].Kind) &&
+			isPostTerminalInteractionKind(checkpoint.Kind) {
+			merged := MergeCheckpointCandidate(
+				plan.Checkpoints[last],
+				checkpoint,
+			)
+			merged.Kind = plan.Checkpoints[last].Kind
+			merged.Trigger = plan.Checkpoints[last].Trigger
+			if !slices.Contains(merged.Tags, merged.Kind) {
+				merged.Tags = append(merged.Tags, merged.Kind)
+			}
+			plan.Checkpoints[last] = merged
+			return
+		}
 	}
 	checkpoint.Index = len(plan.Checkpoints)
 	checkpoint.ID = fmt.Sprintf("checkpoint-%04d", checkpoint.Index)
@@ -154,6 +171,14 @@ func replayCursorEqual(left, right ReplayCursor) bool {
 
 func checkpointKindPriority(kind string) int {
 	switch kind {
+	// Published terminals outrank co-located tool/interaction kinds so a
+	// deny/cancel unit that carries both call.failed and turn.completed
+	// keeps turn.terminal as the primary kind (ValidatePublishedCheckpointPlan).
+	case "turn.terminal", "turn.canceled",
+		"goal.completed", "goal.cleared",
+		"child-session.completed",
+		"compaction.completed", "compaction.canceled":
+		return 60
 	case "interaction.pending", "interaction.superseded":
 		return 50
 	case "plan.waiting":
@@ -162,14 +187,32 @@ func checkpointKindPriority(kind string) int {
 		return 40
 	case "tool.started":
 		return 30
-	case "turn.terminal", "turn.canceled":
-		return 20
 	case "turn.working":
 		return 10
 	case "project.binding-ready":
 		return 5
 	default:
 		return 0
+	}
+}
+
+func isPublishedTerminalKind(kind string) bool {
+	switch kind {
+	case "turn.terminal", "turn.canceled", "goal.completed", "goal.cleared",
+		"child-session.completed", "compaction.completed",
+		"compaction.canceled":
+		return true
+	default:
+		return false
+	}
+}
+
+func isPostTerminalInteractionKind(kind string) bool {
+	switch kind {
+	case "interaction.resolved", "interaction.superseded":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -473,17 +516,13 @@ func ValidatePublishedCheckpointPlan(plan CheckpointPlan) error {
 		return errors.New("checkpoint plan has no checkpoints")
 	}
 	last := plan.Checkpoints[len(plan.Checkpoints)-1]
-	switch last.Kind {
-	case "turn.terminal", "turn.canceled", "goal.completed", "goal.cleared",
-		"child-session.completed", "compaction.completed",
-		"compaction.canceled":
+	if isPublishedTerminalKind(last.Kind) {
 		return nil
-	default:
-		return fmt.Errorf(
-			"checkpoint_plan_invalid: final checkpoint %q is not terminal",
-			last.ID,
-		)
 	}
+	return fmt.Errorf(
+		"checkpoint_plan_invalid: final checkpoint %q is not terminal",
+		last.ID,
+	)
 }
 
 func validateReplayCursor(

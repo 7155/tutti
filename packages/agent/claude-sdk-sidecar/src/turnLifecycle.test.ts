@@ -118,6 +118,29 @@ test("turn lifecycle never treats the outbound correlation UUID as provider iden
   ]);
 });
 
+test("turn lifecycle confirms provider identity from the first durable checkpoint", () => {
+  const { lifecycle, events } = createLifecycle();
+  lifecycle.enqueue({
+    turnId: "turn-checkpoint",
+    promptUuid: "outbound-correlation-id",
+    settled: false
+  });
+
+  lifecycle.expectProviderTurnIdentity("turn-checkpoint");
+  lifecycle.ensureActive("assistant");
+  lifecycle.confirmProviderTurnStarted("outbound-correlation-id");
+
+  assert.deepEqual(events, [
+    {
+      type: "provider_turn_identity_resolved",
+      payload: {
+        turnId: "turn-checkpoint",
+        providerTurnId: "outbound-correlation-id"
+      }
+    }
+  ]);
+});
+
 test("goal activation carries its immutable command identity", () => {
   const { lifecycle, events } = createLifecycle();
   lifecycle.enqueue({

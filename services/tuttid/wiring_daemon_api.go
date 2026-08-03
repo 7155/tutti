@@ -814,7 +814,7 @@ func buildDaemonAPI(
 		AgentSessionService:          agentSessionService,
 		AgentSessionRecordingService: agentSessionRecordingService,
 		AgentSessionReplayVerifier:   agentSessionReplayVerifier,
-		AgentStatusService:           &agentStatusService,
+		AgentStatusService:           replayAgentProviderStatusAPI(replayComposition, &agentStatusService),
 		TuttiAgentReadiness:          tuttiAgentReadiness,
 		TerminalService:              terminalService,
 		IssueService:                 issueService,

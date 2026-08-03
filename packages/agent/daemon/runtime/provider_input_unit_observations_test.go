@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	activityshared "github.com/tutti-os/tutti/packages/agent/daemon/activity/events"
+	"github.com/tutti-os/tutti/packages/agent/daemon/liveprotocol"
 	replay "github.com/tutti-os/tutti/packages/agent/session-replay"
 )
 
@@ -273,5 +274,73 @@ func TestChildObservationCarriesExactCanonicalLineageFacts(t *testing.T) {
 		observation.ParentTurnID != "root-turn" ||
 		observation.ParentToolCallID != "call-runtime" {
 		t.Fatalf("child observation=%#v", observation)
+	}
+}
+
+func TestToolOutputDeltaCallStartedDoesNotMintCheckpointObservation(
+	t *testing.T,
+) {
+	session := Session{
+		RoomID: "workspace-1", AgentSessionID: "session-1",
+		Provider: "codex",
+	}
+	started := newTurnActivityEventWithID(
+		session,
+		"command-1",
+		EventCallStarted,
+		"turn-1",
+		messageStreamStateStreaming,
+		"",
+		"printf hello",
+		map[string]any{
+			"toolCallId": "command-1",
+			"status":     "running",
+		},
+	)
+	started.ProviderInputUnit = &activityshared.ProviderInputUnitContext{
+		RecordingID: "recording-1", ConnectionID: "connection-1",
+		ChunkSeq: 42, UnitIndex: 1, EventIndex: 1,
+		UnitKind: string(replay.ProviderInputUnitProtocolMessage),
+	}
+	delta := newTurnActivityEventWithID(
+		session,
+		"command-1",
+		EventCallStarted,
+		"turn-1",
+		messageStreamStateStreaming,
+		"",
+		"printf hello",
+		map[string]any{
+			"toolCallId": "command-1",
+			"status":     "running",
+			"output":     map[string]any{"text": "hello"},
+		},
+	)
+	attachToolOutputLiveOperation(&delta, &liveprotocol.MessageToolOutputOperation{
+		Operation: "set",
+		Text:      "hello",
+	})
+	delta.ProviderInputUnit = &activityshared.ProviderInputUnitContext{
+		RecordingID: "recording-1", ConnectionID: "connection-1",
+		ChunkSeq: 43, UnitIndex: 1, EventIndex: 1,
+		UnitKind: string(replay.ProviderInputUnitProtocolMessage),
+	}
+
+	startReport := reportActivityInput(session, []activityshared.Event{started})
+	if len(startReport.ProviderObservations) != 1 ||
+		len(startReport.ProviderObservations[0].Events) != 1 ||
+		startReport.ProviderObservations[0].Events[0].Type != "call.started" {
+		t.Fatalf("start observations=%#v", startReport.ProviderObservations)
+	}
+
+	deltaReport := reportActivityInput(session, []activityshared.Event{delta})
+	if len(deltaReport.ProviderObservations) != 0 {
+		t.Fatalf(
+			"outputDelta observations=%#v, want none",
+			deltaReport.ProviderObservations,
+		)
+	}
+	if len(deltaReport.MessageUpdates) == 0 {
+		t.Fatal("outputDelta should still project a durable message update")
 	}
 }

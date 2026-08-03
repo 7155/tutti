@@ -72,6 +72,9 @@ importers:
       "@tutti-os/agent-activity-core":
         specifier: workspace:*
         version: link:../../packages/agent/activity-core
+      "@tutti-os/agent-session-replay":
+        specifier: workspace:*
+        version: link:../../packages/agent/session-replay-ui
       "@tutti-os/agent-activity-tuttid-adapter":
         specifier: workspace:*
         version: link:../../packages/agent/activity-tuttid-adapter

@@ -35,6 +35,7 @@ export interface AgentQuickPromptLabels {
   editTitle: string;
   empty: string;
   finishSorting: string;
+  insertionError: string;
   loadError: string;
   loading: string;
   moreActions: string;
@@ -113,6 +114,7 @@ export function agentQuickPromptLabels(t: TranslateFn): AgentQuickPromptLabels {
     editTitle: t("agentHost.agentGui.quickPrompts.editTitle"),
     empty: t("agentHost.agentGui.quickPrompts.empty"),
     finishSorting: t("agentHost.agentGui.quickPrompts.finishSorting"),
+    insertionError: t("agentHost.agentGui.quickPrompts.insertionError"),
     loadError: t("agentHost.agentGui.quickPrompts.loadError"),
     loading: t("agentHost.agentGui.quickPrompts.loading"),
     moreActions: t("agentHost.agentGui.quickPrompts.moreActions"),

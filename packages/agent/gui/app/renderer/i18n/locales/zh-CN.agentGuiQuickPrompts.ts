@@ -23,6 +23,7 @@ export const zhCNAgentGuiQuickPrompts = {
   editTitle: "编辑快捷提示词",
   empty: "暂无快捷提示词",
   finishSorting: "完成",
+  insertionError: "未能填入输入框，请从快捷提示词列表中重试",
   loadError: "快捷提示词加载失败",
   loading: "正在加载快捷提示词…",
   moreActions: "更多提示词操作",
@@ -69,7 +70,7 @@ export const zhCNAgentGuiQuickPrompts = {
     }
   },
   recommendedTemplatesDescription:
-    "选择后会预填到编辑窗口，保存前不会创建或发送提示词",
+    "选择后会预填到编辑窗口，保存时会添加为快捷提示词并填入输入框",
   recommendedTemplatesTitle: "推荐模板",
   returnToPrompts: "我的提示词",
   save: "保存",

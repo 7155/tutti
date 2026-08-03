@@ -19,6 +19,8 @@ const labels = new Proxy(
     searchPlaceholder: "Search quick prompts",
     startSorting: "Reorder",
     finishSorting: "Done",
+    insertionError:
+      "Could not insert into the Composer. Try again from the quick prompt list.",
     reorderDisabledMinimum:
       "At least two quick prompts are required to adjust their order",
     reorderDisabledPending:
@@ -36,7 +38,7 @@ const labels = new Proxy(
     noResults: "No matching quick prompts",
     recommendedTemplatesTitle: "Recommended templates",
     recommendedTemplatesDescription:
-      "Choose one to prefill the editor. It will not be saved or sent until you choose Save.",
+      "Choose one to prefill the editor. Saving adds it as a quick prompt and inserts it into the Composer.",
     returnToPrompts: "My prompts",
     useTemplate: "Use template",
     recommendedTemplates: [
@@ -102,6 +104,7 @@ function controller(
     isInteractionLocked: false,
     isReordering: false,
     initialDraft: null,
+    insertionError: false,
     labels,
     mode: "popover",
     mutationError: null,
@@ -282,6 +285,55 @@ describe("AgentQuickPromptPopover", () => {
     expect(screen.getByRole("button", { name: "Done" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(screen.getByRole("button", { name: "Reorder" })).toBeInTheDocument();
+  });
+
+  it("reports a Composer insertion failure without reporting a save failure", () => {
+    render(
+      <TooltipProvider>
+        <AgentQuickPromptPopover
+          controller={controller({ insertionError: true })}
+          disabled={false}
+        />
+      </TooltipProvider>
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Could not insert into the Composer. Try again from the quick prompt list."
+    );
+  });
+
+  it("returns to the prompt list when insertion fails from the template view", () => {
+    const rendered = render(
+      <TooltipProvider>
+        <AgentQuickPromptPopover controller={controller()} disabled={false} />
+      </TooltipProvider>
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Recommended templates" })
+    );
+    expect(
+      screen.getByRole("heading", { name: "Recommended templates", level: 2 })
+    ).toBeInTheDocument();
+
+    rendered.rerender(
+      <TooltipProvider>
+        <AgentQuickPromptPopover
+          controller={controller({ insertionError: true })}
+          disabled={false}
+        />
+      </TooltipProvider>
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Quick prompts", level: 2 })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Could not insert into the Composer. Try again from the quick prompt list."
+    );
+    expect(
+      screen.getByRole("button", { name: /^Review/u })
+    ).toBeInTheDocument();
   });
 
   it("explains why reordering is unavailable with stable reason priority", () => {
@@ -496,10 +548,13 @@ describe("AgentQuickPromptPopover", () => {
     });
     fireEvent.pointerDown(summaryTemplate, { button: 0 });
     fireEvent.click(summaryTemplate, { detail: 1 });
-    expect(subject.openCreate).toHaveBeenCalledWith({
-      title: "Summarize common prompts",
-      content: "Summarize my common prompts"
-    });
+    expect(subject.openCreate).toHaveBeenCalledWith(
+      {
+        title: "Summarize common prompts",
+        content: "Summarize my common prompts"
+      },
+      { insertIntoComposerAfterSave: true }
+    );
     expect(subject.openCreate).toHaveBeenCalledOnce();
     expect(subject.saveDraft).not.toHaveBeenCalled();
   });
@@ -540,19 +595,27 @@ describe("AgentQuickPromptPopover", () => {
       name: /Summarize common prompts.*Use template/u
     });
     fireEvent.click(summaryTemplate);
-    expect(subject.openCreate).toHaveBeenNthCalledWith(1, {
-      title: "Summarize common prompts",
-      content: "Summarize my common prompts"
-    });
+    expect(subject.openCreate).toHaveBeenNthCalledWith(
+      1,
+      {
+        title: "Summarize common prompts",
+        content: "Summarize my common prompts"
+      },
+      { insertIntoComposerAfterSave: true }
+    );
 
     const createTemplate = screen.getByRole("button", {
       name: /Understand the situation.*Use template/u
     });
     fireEvent.click(createTemplate);
-    expect(subject.openCreate).toHaveBeenNthCalledWith(2, {
-      title: "Understand the situation",
-      content: "Summarize the situation"
-    });
+    expect(subject.openCreate).toHaveBeenNthCalledWith(
+      2,
+      {
+        title: "Understand the situation",
+        content: "Summarize the situation"
+      },
+      { insertIntoComposerAfterSave: true }
+    );
     expect(subject.openCreate).toHaveBeenCalledTimes(2);
   });
 

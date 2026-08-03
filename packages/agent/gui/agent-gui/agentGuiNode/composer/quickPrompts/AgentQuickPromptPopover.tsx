@@ -46,6 +46,11 @@ export function AgentQuickPromptPopover({
   const firstTemplateRef = useRef<HTMLButtonElement | null>(null);
   const preserveExternalFocusRef = useRef(false);
   const [view, setView] = useState<"prompts" | "templates">("prompts");
+  let activeView = view;
+  if (controller.insertionError && activeView !== "prompts") {
+    activeView = "prompts";
+    setView("prompts");
+  }
   const [sortingState, setSortingState] = useState({
     isPopoverOpen: controller.isPopoverOpen,
     isSorting: false
@@ -102,9 +107,12 @@ export function AgentQuickPromptPopover({
         : null;
   const requestTemplate = (template: AgentQuickPromptTemplate): void => {
     preserveExternalFocusRef.current = true;
-    controller.openCreate({ title: template.title, content: template.content });
+    controller.openCreate(
+      { title: template.title, content: template.content },
+      { insertIntoComposerAfterSave: true }
+    );
   };
-  const isTemplateView = view === "templates";
+  const isTemplateView = activeView === "templates";
   const reorderDisabledMessage = resolveReorderDisabledMessage(controller);
   const startSortingButton = (
     <Button
@@ -315,6 +323,14 @@ export function AgentQuickPromptPopover({
               >
                 {labels.retry}
               </Button>
+            </div>
+          ) : null}
+          {!isTemplateView && controller.insertionError ? (
+            <div
+              className="shrink-0 px-3 pb-2 text-[12px] text-[var(--state-danger)]"
+              role="alert"
+            >
+              {labels.insertionError}
             </div>
           ) : null}
           <ScrollArea

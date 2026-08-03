@@ -24,6 +24,8 @@ export const enAgentGuiQuickPrompts = {
   editTitle: "Edit quick prompt",
   empty: "No quick prompts yet",
   finishSorting: "Done",
+  insertionError:
+    "Could not insert into the Composer. Try again from the quick prompt list.",
   loadError: "Quick prompts could not be loaded",
   loading: "Loading quick prompts…",
   moreActions: "More prompt actions",
@@ -73,7 +75,7 @@ export const enAgentGuiQuickPrompts = {
     }
   },
   recommendedTemplatesDescription:
-    "Choose one to prefill the editor. It will not be saved or sent until you choose Save.",
+    "Choose one to prefill the editor. Saving adds it as a quick prompt and inserts it into the Composer.",
   recommendedTemplatesTitle: "Recommended templates",
   returnToPrompts: "My prompts",
   save: "Save",

@@ -45,6 +45,7 @@ import {
   enableAgentSessionRecordingTarget,
   initializeCleanDatabase,
   managedDesktopLaunch,
+  measureTiming,
   preparedDesktopLaunch,
   removeRuntime,
   replayListenerInfoPath,
@@ -52,13 +53,18 @@ import {
 } from "./agent-session-replay-runner/runtime.mjs";
 import {
   assertForbiddenPathAbsent,
+  resolveAgentSessionReplayProjectRoot,
   resolveRecordScenarioProject,
   seedRecordingUserProject,
   verifyRecordedProjectBindingArtifacts
 } from "./agent-session-replay-runner/recording.mjs";
+import { bindManagedReplayShutdown } from "./agent-session-replay-runner/desktop-shutdown.mjs";
+import { uiDriveScenario } from "./agent-session-replay-runner/ui-drive.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = resolve(scriptDirectory, "..", "..");
+/** Agent user-project root; equals Tutti checkout unless PROJECT_ROOT env is set. */
+const projectRoot = resolveAgentSessionReplayProjectRoot(workspaceRoot);
 const defaultTimeoutMs = 180_000;
 const defaultStallTimeoutMs = 60_000;
 export const managedReplayReadyPrefix = "[tutti-agent-session-replay-ready] ";
@@ -116,352 +122,402 @@ export async function main(argv) {
     await recordCassette(options);
   } else if (options.mode === "replay-workspace") {
     await replayWorkspace(options);
+  } else if (options.mode === "ui-drive") {
+    await uiDriveScenario({
+      ...options,
+      artifactDirectory: options.cassetteDirectory,
+      workspaceRoot
+    });
   } else {
     await replayCassette(options);
   }
 }
 
 async function recordCassette(options) {
-  await ensureEmptyDirectory(options.cassetteDirectory);
-  const runtime = await createRuntime(workspaceRoot, "record");
-  const databasePath = join(runtime.stateDirectory, "tuttid.db");
-  const scenarioFixturePaths = [];
-  let succeeded = false;
-  try {
-    const workspaceId = "11111111-1111-4111-8111-111111111111";
-    const agentTargetId = options.agentTargetId ?? "local:codex";
-    const recordScenario = await loadRecordScenario(options);
-    await initializeCleanDatabase(workspaceRoot, runtime, workspaceId);
-    await enableAgentSessionRecordingFeature(databasePath, workspaceRoot);
-    await enableAgentSessionRecordingTarget(
-      databasePath,
-      agentTargetId,
-      workspaceRoot
-    );
-    let replayComposerDefaults = null;
-    let projectSelection = null;
-    const scenarioState = await recordScenario.prepare({
-      agentTargetId,
-      async createFixture(name, contents) {
-        if (!name || basename(name) !== name) {
-          throw new Error(
-            `record scenario ${recordScenario.id} fixture name is invalid`
-          );
-        }
-        const path = join(
-          workspaceRoot,
-          ".tmp",
-          "agent-session-replay-scenario-fixtures",
-          recordScenario.id,
-          name
-        );
-        await mkdir(dirname(path), { recursive: true });
-        await writeFile(path, contents);
-        scenarioFixturePaths.push(path);
-        return relative(workspaceRoot, path).split("\\").join("/");
-      },
-      async removePath(path) {
-        await rm(path, { force: true });
-      },
-      async selectProject(project) {
-        if (projectSelection) {
-          throw new Error(
-            `record scenario ${recordScenario.id} selected more than one project`
-          );
-        }
-        projectSelection = resolveRecordScenarioProject(project, workspaceRoot);
-        await seedRecordingUserProject(databasePath, projectSelection);
-        return projectSelection;
-      },
-      async setComposerDefaults(defaults) {
-        replayComposerDefaults = defaults;
-        await setAgentComposerDefaults(
+  return measureTiming(
+    "record-cassette",
+    async () => {
+      await ensureEmptyDirectory(options.cassetteDirectory);
+      const runtime = await createRuntime(workspaceRoot, "record");
+      const databasePath = join(runtime.stateDirectory, "tuttid.db");
+      const scenarioFixturePaths = [];
+      let succeeded = false;
+      try {
+        const workspaceId = "11111111-1111-4111-8111-111111111111";
+        const agentTargetId = options.agentTargetId ?? "local:codex";
+        const recordScenario = await loadRecordScenario(options);
+        await initializeCleanDatabase(workspaceRoot, runtime, workspaceId);
+        await enableAgentSessionRecordingFeature(databasePath, workspaceRoot);
+        await enableAgentSessionRecordingTarget(
           databasePath,
           agentTargetId,
-          defaults,
           workspaceRoot
         );
-      },
-      workspaceRoot
-    });
-    if (!replayComposerDefaults) {
-      throw new Error(
-        `record scenario ${recordScenario.id} did not set composer defaults`
-      );
-    }
-    const action = {
-      schemaVersion: 1,
-      type: "create-session",
-      workspaceId,
-      agentTargetId,
-      cassetteName: recordScenario.cassetteName,
-      scenario: recordScenario,
-      scenarioState
-    };
-    const result = await runDesktopAction({
-      action,
-      artifactDirectory: join(runtime.directory, "artifacts"),
-      cassetteDirectory: options.cassetteDirectory,
-      daemonPath: runtime.daemonPath,
-      desktopLaunch: preparedDesktopLaunch(),
-      headless: resolveDesktopHeadless(options),
-      logPath: join(runtime.directory, "logs", "desktop.log"),
-      mode: "record",
-      runtime,
-      timeoutMs: options.timeoutMs
-    });
-    if (result.recordingMode !== recordScenario.expectedRecordingMode) {
-      throw new Error(
-        `record scenario ${recordScenario.id} produced ${result.recordingMode} mode, ` +
-          `want ${recordScenario.expectedRecordingMode}`
-      );
-    }
-    await waitForCompleteManifest(
-      join(result.recordingDirectory, providerManifestName),
-      15_000
-    );
-    await recordScenario.assert({
-      phase: "recorded",
-      scenarioState,
-      async verifyProjectBinding() {
-        if (!projectSelection) {
+        let replayComposerDefaults = null;
+        let projectSelection = null;
+        const scenarioState = await measureTiming(
+          "record.scenario-prepare",
+          () =>
+            recordScenario.prepare({
+              agentTargetId,
+              async createFixture(name, contents) {
+                if (!name || basename(name) !== name) {
+                  throw new Error(
+                    `record scenario ${recordScenario.id} fixture name is invalid`
+                  );
+                }
+                const path = join(
+                  projectRoot,
+                  ".tmp",
+                  "agent-session-replay-scenario-fixtures",
+                  recordScenario.id,
+                  name
+                );
+                await mkdir(dirname(path), { recursive: true });
+                await writeFile(path, contents);
+                scenarioFixturePaths.push(path);
+                return relative(projectRoot, path).split("\\").join("/");
+              },
+              async removePath(path) {
+                await rm(path, { force: true });
+              },
+              async selectProject(project) {
+                if (projectSelection) {
+                  throw new Error(
+                    `record scenario ${recordScenario.id} selected more than one project`
+                  );
+                }
+                projectSelection = resolveRecordScenarioProject(
+                  project,
+                  projectRoot
+                );
+                await seedRecordingUserProject(databasePath, projectSelection);
+                return projectSelection;
+              },
+              async setComposerDefaults(defaults) {
+                replayComposerDefaults = defaults;
+                await setAgentComposerDefaults(
+                  databasePath,
+                  agentTargetId,
+                  defaults,
+                  workspaceRoot
+                );
+              },
+              // Scenarios treat workspaceRoot as the bound Agent project tree.
+              workspaceRoot: projectRoot
+            }),
+          { scenario: recordScenario.id }
+        );
+        if (!replayComposerDefaults) {
           throw new Error(
-            `record scenario ${recordScenario.id} has no selected project`
+            `record scenario ${recordScenario.id} did not set composer defaults`
           );
         }
-        await verifyRecordedProjectBindingArtifacts(
-          result.recordingDirectory,
-          projectSelection.portablePath
+        const action = {
+          schemaVersion: 1,
+          type: "create-session",
+          workspaceId,
+          agentTargetId,
+          cassetteName: recordScenario.cassetteName,
+          scenario: recordScenario,
+          scenarioState
+        };
+        const result = await measureTiming("record.desktop-action", () =>
+          runDesktopAction({
+            action,
+            artifactDirectory: join(runtime.directory, "artifacts"),
+            cassetteDirectory: options.cassetteDirectory,
+            daemonPath: runtime.daemonPath,
+            desktopLaunch: preparedDesktopLaunch(),
+            headless: resolveDesktopHeadless(options),
+            logPath: join(runtime.directory, "logs", "desktop.log"),
+            mode: "record",
+            runtime,
+            timeoutMs: options.timeoutMs
+          })
         );
+        if (result.recordingMode !== recordScenario.expectedRecordingMode) {
+          throw new Error(
+            `record scenario ${recordScenario.id} produced ${result.recordingMode} mode, ` +
+              `want ${recordScenario.expectedRecordingMode}`
+          );
+        }
+        await waitForCompleteManifest(
+          join(result.recordingDirectory, providerManifestName),
+          15_000
+        );
+        await measureTiming("record.scenario-assert", () =>
+          recordScenario.assert({
+            phase: "recorded",
+            scenarioState,
+            async verifyProjectBinding() {
+              if (!projectSelection) {
+                throw new Error(
+                  `record scenario ${recordScenario.id} has no selected project`
+                );
+              }
+              await verifyRecordedProjectBindingArtifacts(
+                result.recordingDirectory,
+                projectSelection.portablePath
+              );
+            }
+          })
+        );
+        for (const name of [
+          activityEventsName,
+          checkpointPlanName,
+          "provider",
+          "blobs",
+          expectedStateName,
+          "cassette.json"
+        ]) {
+          const source = join(result.recordingDirectory, name);
+          await cp(source, join(options.cassetteDirectory, name), {
+            force: true,
+            recursive: true
+          });
+        }
+        try {
+          await cp(
+            join(result.recordingDirectory, initialStateName),
+            join(options.cassetteDirectory, initialStateName),
+            { force: true }
+          );
+        } catch (error) {
+          if (error?.code !== "ENOENT") throw error;
+        }
+        succeeded = true;
+        log(`recorded ${basename(options.cassetteDirectory)}`);
+        log(`assistant: ${result.assistantText}`);
+      } finally {
+        await Promise.all(
+          scenarioFixturePaths.map((path) => rm(path, { force: true }))
+        );
+        if (!succeeded) {
+          await logFailureDiagnostics(runtime);
+        }
+        if (!options.keepRuntime) {
+          await removeRuntime(runtime.directory);
+        } else {
+          log(`runtime kept: ${runtime.directory}`);
+        }
+        if (!succeeded) {
+          log(`incomplete cassette kept: ${options.cassetteDirectory}`);
+        }
       }
-    });
-    for (const name of [
-      activityEventsName,
-      checkpointPlanName,
-      "provider",
-      "blobs",
-      expectedStateName,
-      "cassette.json"
-    ]) {
-      const source = join(result.recordingDirectory, name);
-      await cp(source, join(options.cassetteDirectory, name), {
-        force: true,
-        recursive: true
-      });
-    }
-    try {
-      await cp(
-        join(result.recordingDirectory, initialStateName),
-        join(options.cassetteDirectory, initialStateName),
-        { force: true }
-      );
-    } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
-    }
-    succeeded = true;
-    log(`recorded ${basename(options.cassetteDirectory)}`);
-    log(`assistant: ${result.assistantText}`);
-  } finally {
-    await Promise.all(
-      scenarioFixturePaths.map((path) => rm(path, { force: true }))
-    );
-    if (!succeeded) {
-      await logFailureDiagnostics(runtime);
-    }
-    if (!options.keepRuntime) {
-      await removeRuntime(runtime.directory);
-    } else {
-      log(`runtime kept: ${runtime.directory}`);
-    }
-    if (!succeeded) {
-      log(`incomplete cassette kept: ${options.cassetteDirectory}`);
-    }
-  }
+    },
+    { cassetteDirectory: options.cassetteDirectory }
+  );
 }
 
 async function replayCassette(options) {
-  const manifest = await verifyCassette(options.cassetteDirectory);
-  await Promise.all([
-    access(join(options.cassetteDirectory, activityEventsName)),
-    access(join(options.cassetteDirectory, checkpointPlanName)),
-    access(join(options.cassetteDirectory, providerManifestName)),
-    access(join(options.cassetteDirectory, expectedStateName)),
-    access(join(options.cassetteDirectory, blobManifestName)),
-    access(join(options.cassetteDirectory, cassetteManifestName))
-  ]);
-  const workspaceId = randomUUID();
-  const activityEvents = parseActivityEvents(
-    await readFile(join(options.cassetteDirectory, activityEventsName), "utf8")
-  );
-  const checkpoints = await loadReplayCheckpointPlan(
-    options.cassetteDirectory,
-    activityEvents
-  );
-  const replayCassetteId = options.cassetteId ?? manifest.id;
-  const action = replayActionFromManifest(
-    manifest,
-    activityEvents,
-    workspaceId
-  );
-  action.turnIdentityPlan = await loadReplayTurnIdentityPlan(
-    options.cassetteDirectory,
-    manifest.mode
-  );
-  const runtime = await createRuntime(workspaceRoot, "replay");
-  const desktopLogPath = join(runtime.directory, "logs", "desktop.log");
-  const statusPath = join(runtime.directory, "replay-status.json");
-  const controlPath = join(runtime.directory, "replay-control.json");
-  const databasePath = join(runtime.stateDirectory, "tuttid.db");
-  let succeeded = false;
-  try {
-    await mkdir(dirname(desktopLogPath), { recursive: true });
-    // Do not pre-insert the workspace: SemanticRuntime creates it and writes the
-    // onboarding-suppressed workbench snapshot. Pre-seeding races that path with
-    // "Workspace already exists".
-    await initializeCleanDatabase(workspaceRoot, runtime, workspaceId, {
-      seedWorkspace: false
-    });
-    // Activation intents can omit composer settings. Restore the values that
-    // the cassette itself recorded so provider startup RPCs stay deterministic.
-    await setAgentComposerDefaults(
-      databasePath,
-      manifest.agentTargetId,
-      manifest.replayPrerequisites.composerDefaults,
-      workspaceRoot
-    );
-    // Project sessions render under a project rail section. The section only
-    // exists when the project is present in user_projects, so replay must
-    // re-seed the same project the recording prepared; otherwise the
-    // conversation rail never shows the restored session and surface focus
-    // stalls forever.
-    const replayProject = await loadReplayProject(
-      options.cassetteDirectory,
-      manifest.rootAgentSessionId
-    );
-    if (replayProject) {
-      await seedRecordingUserProject(databasePath, replayProject);
-      action.replayProject = replayProject;
-    }
-    await materializeReplayWorkspaceBlobs(
-      [{ cassetteDirectory: options.cassetteDirectory }],
-      runtime.stateDirectory
-    );
-    const result = await runDesktopAction({
-      action,
-      artifactDirectory: join(runtime.directory, "artifacts"),
-      cassetteDirectory: options.cassetteDirectory,
-      checkpoints,
-      controlPath,
-      daemonPath: runtime.daemonPath,
-      desktopLaunch: options.managed
-        ? managedDesktopLaunch()
-        : preparedDesktopLaunch(),
-      headless: resolveDesktopHeadless(options),
-      keepDesktopOpen: options.managed,
-      logPath: desktopLogPath,
-      mode: "replay",
-      cassetteId: replayCassetteId,
-      replayRegistrations: [
-        {
-          cassetteId: replayCassetteId,
-          rootAgentSessionId: manifest.rootAgentSessionId,
-          cassetteDirectory: join(options.cassetteDirectory, "provider"),
-          artifactDirectory: options.cassetteDirectory,
-          workspaceId
-        }
-      ],
-      initialTargetCheckpoint: options.targetCheckpoint,
-      screenshotCheckpoints: options.screenshotCheckpoints === true,
-      onCheckpoint: options.managed
-        ? (checkpoint) => {
-            process.stdout.write(
-              `${managedReplayCheckpointPrefix}${JSON.stringify({
-                checkpoint,
-                cassetteId: options.cassetteId
-              })}\n`
-            );
-          }
-        : undefined,
-      onCompleted: options.managed
-        ? () => {
-            process.stdout.write(
-              `${managedReplayCompletePrefix}${JSON.stringify({
-                cassetteId: options.cassetteId
-              })}\n`
-            );
-          }
-        : undefined,
-      onFailed: options.managed
-        ? (error) => {
-            process.stdout.write(
-              `${managedReplayFailedPrefix}${JSON.stringify(
-                managedReplayFailure(options.cassetteId, error)
-              )}\n`
-            );
-          }
-        : undefined,
-      onSurfaceReady: options.managed
-        ? () => {
-            process.stdout.write(
-              `${managedReplayReadyPrefix}${JSON.stringify({
-                cassetteId: options.cassetteId,
-                runtimeDirectory: runtime.directory
-              })}\n`
-            );
-          }
-        : undefined,
-      onReplacement: options.managed
-        ? (replacement) => {
-            process.stdout.write(
-              `${managedReplayReplacePrefix}${JSON.stringify({
-                ...replacement,
-                cassetteId: options.cassetteId
-              })}\n`
-            );
-          }
-        : undefined,
-      runtime,
-      statusPath,
-      timeoutMs: options.timeoutMs,
-      verifyResult: async () => {
-        await verifyReplayTransport(
-          runtime.stateDirectory,
-          replayCassetteId,
-          options.timeoutMs
+  return measureTiming(
+    "replay-cassette",
+    async () => {
+      const manifest = await verifyCassette(options.cassetteDirectory);
+      await Promise.all([
+        access(join(options.cassetteDirectory, activityEventsName)),
+        access(join(options.cassetteDirectory, checkpointPlanName)),
+        access(join(options.cassetteDirectory, providerManifestName)),
+        access(join(options.cassetteDirectory, expectedStateName)),
+        access(join(options.cassetteDirectory, blobManifestName)),
+        access(join(options.cassetteDirectory, cassetteManifestName))
+      ]);
+      const workspaceId = randomUUID();
+      const activityEvents = parseActivityEvents(
+        await readFile(
+          join(options.cassetteDirectory, activityEventsName),
+          "utf8"
+        )
+      );
+      const replayProviders = await readReplayProviderIDs(
+        options.cassetteDirectory
+      );
+      const checkpoints = await loadReplayCheckpointPlan(
+        options.cassetteDirectory,
+        activityEvents
+      );
+      const replayCassetteId = options.cassetteId ?? manifest.id;
+      const action = replayActionFromManifest(
+        manifest,
+        activityEvents,
+        workspaceId
+      );
+      action.turnIdentityPlan = await loadReplayTurnIdentityPlan(
+        options.cassetteDirectory,
+        manifest.mode
+      );
+      const runtime = await createRuntime(workspaceRoot, "replay");
+      const desktopLogPath = join(runtime.directory, "logs", "desktop.log");
+      const statusPath = join(runtime.directory, "replay-status.json");
+      const controlPath = join(runtime.directory, "replay-control.json");
+      const databasePath = join(runtime.stateDirectory, "tuttid.db");
+      let succeeded = false;
+      try {
+        await mkdir(dirname(desktopLogPath), { recursive: true });
+        // Do not pre-insert the workspace: SemanticRuntime creates it and writes the
+        // onboarding-suppressed workbench snapshot. Pre-seeding races that path with
+        // "Workspace already exists".
+        await initializeCleanDatabase(workspaceRoot, runtime, workspaceId, {
+          seedWorkspace: false
+        });
+        await enableAgentSessionRecordingFeature(databasePath, workspaceRoot);
+        // Activation intents can omit composer settings. Restore the values that
+        // the cassette itself recorded so provider startup RPCs stay deterministic.
+        await setAgentComposerDefaults(
+          databasePath,
+          manifest.agentTargetId,
+          manifest.replayPrerequisites.composerDefaults,
+          workspaceRoot
         );
-        const replayLog = await readFile(desktopLogPath, "utf8");
-        const failureLine = replayLog
-          .split("\n")
-          .find(
-            (line) =>
-              line.includes("process cassette outbound mismatch") ||
-              line.includes("process_transport.finalize_failed")
-          );
-        if (failureLine) {
-          throw new Error(`replay transport failed: ${failureLine.trim()}`);
+        // Project sessions render under a project rail section. The section only
+        // exists when the project is present in user_projects, so replay must
+        // re-seed the same project the recording prepared; otherwise the
+        // conversation rail never shows the restored session and surface focus
+        // stalls forever.
+        const replayProject = await loadReplayProject(
+          options.cassetteDirectory,
+          manifest.rootAgentSessionId
+        );
+        if (replayProject) {
+          await seedRecordingUserProject(databasePath, replayProject);
+          action.replayProject = replayProject;
+        }
+        await materializeReplayWorkspaceBlobs(
+          [{ cassetteDirectory: options.cassetteDirectory }],
+          runtime.stateDirectory
+        );
+        const settleScenario =
+          options.scenario && options.scenarioFile
+            ? await loadRecordScenario(options)
+            : null;
+        const result = await measureTiming("replay.desktop-action", () =>
+          runDesktopAction({
+            action,
+            artifactDirectory: join(runtime.directory, "artifacts"),
+            cassetteDirectory: options.cassetteDirectory,
+            checkpoints,
+            controlPath,
+            daemonPath: runtime.daemonPath,
+            desktopLaunch: options.managed
+              ? managedDesktopLaunch()
+              : preparedDesktopLaunch(),
+            headless: resolveDesktopHeadless(options),
+            keepDesktopOpen: options.managed,
+            logPath: desktopLogPath,
+            mode: "replay",
+            cassetteId: replayCassetteId,
+            screenshotLabel: screenshotEvidenceLabel(options.scenario),
+            settleScenario,
+            replayRegistrations: [
+              {
+                cassetteId: replayCassetteId,
+                rootAgentSessionId: manifest.rootAgentSessionId,
+                cassetteDirectory: join(options.cassetteDirectory, "provider"),
+                artifactDirectory: options.cassetteDirectory,
+                workspaceId,
+                providers: replayProviders,
+                frozenModel: manifest.replayPrerequisites.composerDefaults.model
+              }
+            ],
+            initialTargetCheckpoint: options.targetCheckpoint,
+            screenshotCheckpoints: options.screenshotCheckpoints === true,
+            onCheckpoint: options.managed
+              ? (checkpoint) => {
+                  process.stdout.write(
+                    `${managedReplayCheckpointPrefix}${JSON.stringify({
+                      checkpoint,
+                      cassetteId: options.cassetteId
+                    })}\n`
+                  );
+                }
+              : undefined,
+            onCompleted: options.managed
+              ? () => {
+                  process.stdout.write(
+                    `${managedReplayCompletePrefix}${JSON.stringify({
+                      cassetteId: options.cassetteId
+                    })}\n`
+                  );
+                }
+              : undefined,
+            onFailed: options.managed
+              ? (error) => {
+                  process.stdout.write(
+                    `${managedReplayFailedPrefix}${JSON.stringify(
+                      managedReplayFailure(options.cassetteId, error)
+                    )}\n`
+                  );
+                }
+              : undefined,
+            onSurfaceReady: options.managed
+              ? () => {
+                  process.stdout.write(
+                    `${managedReplayReadyPrefix}${JSON.stringify({
+                      cassetteId: options.cassetteId,
+                      runtimeDirectory: runtime.directory
+                    })}\n`
+                  );
+                }
+              : undefined,
+            onReplacement: options.managed
+              ? (replacement) => {
+                  process.stdout.write(
+                    `${managedReplayReplacePrefix}${JSON.stringify({
+                      ...replacement,
+                      cassetteId: options.cassetteId
+                    })}\n`
+                  );
+                }
+              : undefined,
+            runtime,
+            statusPath,
+            timeoutMs: options.timeoutMs,
+            verifyResult: async () => {
+              await verifyReplayTransport(
+                runtime.stateDirectory,
+                replayCassetteId,
+                options.timeoutMs
+              );
+              const replayLog = await readFile(desktopLogPath, "utf8");
+              const failureLine = replayLog
+                .split("\n")
+                .find(
+                  (line) =>
+                    line.includes("process cassette outbound mismatch") ||
+                    line.includes("process_transport.finalize_failed")
+                );
+              if (failureLine) {
+                throw new Error(
+                  `replay transport failed: ${failureLine.trim()}`
+                );
+              }
+            }
+          })
+        );
+        if (result.replaced) {
+          succeeded = true;
+          return;
+        }
+        succeeded = true;
+        log(`replay passed: ${basename(options.cassetteDirectory)}`);
+        log(`assistant: ${result.assistantText}`);
+      } finally {
+        if (!succeeded) {
+          await logFailureDiagnostics(runtime);
+        }
+        if (!options.keepRuntime) {
+          await removeRuntime(runtime.directory);
+        } else {
+          log(`runtime kept: ${runtime.directory}`);
+        }
+        if (!succeeded) {
+          log("replay failed; cassette was left unchanged");
         }
       }
-    });
-    if (result.replaced) {
-      succeeded = true;
-      return;
-    }
-    succeeded = true;
-    log(`replay passed: ${basename(options.cassetteDirectory)}`);
-    log(`assistant: ${result.assistantText}`);
-  } finally {
-    if (!succeeded) {
-      await logFailureDiagnostics(runtime);
-    }
-    if (!options.keepRuntime) {
-      await removeRuntime(runtime.directory);
-    } else {
-      log(`runtime kept: ${runtime.directory}`);
-    }
-    if (!succeeded) {
-      log("replay failed; cassette was left unchanged");
-    }
-  }
+    },
+    { cassetteDirectory: options.cassetteDirectory }
+  );
 }
 
 async function replayWorkspace(options) {
@@ -529,16 +585,15 @@ async function runReplayWorkspaceOrchestration(bootstrap, options) {
       ),
       // Keep the daemon's portable-path anchor identical to the runner's
       // activity-event resolution root; the daemon process cwd is unreliable.
-      TUTTI_AGENT_SESSION_REPLAY_CWD: workspaceRoot,
+      // When PROJECT_ROOT is set, ${REPLAY_CWD} remaps into that project tree.
+      TUTTI_AGENT_SESSION_REPLAY_CWD: projectRoot,
       TUTTI_AGENT_SESSION_REPLAY_CONTROL_PATH: controlPath
     },
     headless: resolveDesktopHeadless(options),
     stateDirectory: bootstrap.runtime.stateDirectory,
     userDataDirectory: bootstrap.runtime.userDataDirectory
   });
-  const disposeManagedShutdown = options.managed
-    ? bindManagedReplayShutdown(desktop)
-    : () => {};
+  const disposeManagedShutdown = bindManagedReplayShutdown(desktop);
   let client = null;
   try {
     const pageWebSocket = await waitForPageWebSocket(
@@ -553,8 +608,9 @@ async function runReplayWorkspaceOrchestration(bootstrap, options) {
       bootstrap.cassettes,
       options.timeoutMs
     );
-    const reportSurfaceReady = createReplayWorkspaceSurfaceReadyQueue(
-      async (cassette) => {
+    const runDesktopUi = createSerialAsyncQueue();
+    const reportSurfaceReady = (cassette) =>
+      runDesktopUi(async () => {
         await activateRendererReplayWorkspaceCassette(
           client,
           cassette.cassetteId,
@@ -566,8 +622,7 @@ async function runReplayWorkspaceOrchestration(bootstrap, options) {
             runtimeDirectory: bootstrap.runtime.directory
           })}\n`
         );
-      }
-    );
+      });
     const workspaceArtifactDirectory = join(
       bootstrap.runtime.directory,
       "artifacts"
@@ -583,6 +638,10 @@ async function runReplayWorkspaceOrchestration(bootstrap, options) {
           surfaceReadyReported = true;
           await reportSurfaceReady(cassette);
         };
+        const settleAgentSessionId =
+          cassette.rootAgentSessionId ||
+          cassette.action?.agentSessionId ||
+          null;
         try {
           await replayStimuli(
             bootstrap.runtime.stateDirectory,
@@ -597,12 +656,32 @@ async function runReplayWorkspaceOrchestration(bootstrap, options) {
                   : initialTargetCheckpoint,
               async onCheckpoint(checkpoint) {
                 if (options.screenshotCheckpoints) {
-                  await captureCheckpointScreenshot({
-                    artifactDirectory: workspaceArtifactDirectory,
-                    cassetteId: cassette.cassetteId,
-                    checkpointIndex: checkpoint,
-                    checkpoints: cassette.checkpoints,
-                    client
+                  const checkpointPlan = cassette.checkpoints[checkpoint];
+                  await runDesktopUi(async () => {
+                    await activateRendererReplayWorkspaceCassette(
+                      client,
+                      cassette.cassetteId,
+                      options.timeoutMs
+                    );
+                    await maybeSettleForScreenshot(
+                      cassette.settleScenario,
+                      client,
+                      options.timeoutMs,
+                      checkpointPlan,
+                      settleAgentSessionId
+                    );
+                    await captureCheckpointScreenshot({
+                      agentSessionId: settleAgentSessionId,
+                      artifactDirectory: workspaceArtifactDirectory,
+                      cassetteId: cassette.cassetteId,
+                      checkpointIndex: checkpoint,
+                      checkpoints: cassette.checkpoints,
+                      client,
+                      label: screenshotEvidenceLabel(cassette),
+                      prepareToolEvidence:
+                        scenarioPreparesToolEvidence(cassette.settleScenario) &&
+                        checkpointNeedsToolSettle(checkpointPlan)
+                    });
                   });
                 }
                 process.stdout.write(
@@ -641,10 +720,12 @@ async function runReplayWorkspaceOrchestration(bootstrap, options) {
                 ) {
                   return;
                 }
-                await activateRendererReplayWorkspaceCassette(
-                  client,
-                  cassette.cassetteId,
-                  options.timeoutMs
+                await runDesktopUi(() =>
+                  activateRendererReplayWorkspaceCassette(
+                    client,
+                    cassette.cassetteId,
+                    options.timeoutMs
+                  )
                 );
               }
             }
@@ -687,13 +768,18 @@ async function runReplayWorkspaceOrchestration(bootstrap, options) {
   }
 }
 
-export function createReplayWorkspaceSurfaceReadyQueue(activate) {
+export function createSerialAsyncQueue() {
   let tail = Promise.resolve();
-  return (cassette) => {
-    const current = tail.then(() => activate(cassette));
+  return (task) => {
+    const current = tail.then(() => task());
     tail = current.catch(() => undefined);
     return current;
   };
+}
+
+export function createReplayWorkspaceSurfaceReadyQueue(activate) {
+  const enqueue = createSerialAsyncQueue();
+  return (cassette) => enqueue(() => activate(cassette));
 }
 
 export function assertReplayWorkspaceSucceeded(results, managed) {
@@ -880,7 +966,20 @@ export function validateReplayWorkspaceManifest(value) {
   const cassetteIds = new Set();
   const rootIds = new Set();
   const cassettes = value.cassettes.map((cassette) => {
+    const scenario =
+      typeof cassette?.scenario === "string" ? cassette.scenario.trim() : "";
+    const scenarioFile =
+      typeof cassette?.scenarioFile === "string" && cassette.scenarioFile.trim()
+        ? resolve(cassette.scenarioFile)
+        : "";
+    if ((scenario && !scenarioFile) || (!scenario && scenarioFile)) {
+      throw new Error(
+        "Replay Workspace cassette scenario and scenarioFile must be provided together"
+      );
+    }
     const normalized = {
+      caseId:
+        typeof cassette?.caseId === "string" ? cassette.caseId.trim() : "",
       cassetteId:
         typeof cassette?.cassetteId === "string"
           ? cassette.cassetteId.trim()
@@ -893,7 +992,9 @@ export function validateReplayWorkspaceManifest(value) {
       rootAgentSessionId:
         typeof cassette?.rootAgentSessionId === "string"
           ? cassette.rootAgentSessionId.trim()
-          : ""
+          : "",
+      scenario,
+      scenarioFile
     };
     if (!normalized.cassetteDirectory) {
       throw new Error("Replay Workspace cassette registration is invalid");
@@ -945,10 +1046,15 @@ export async function bootstrapReplayWorkspace(
   const manifest = validateReplayWorkspaceManifest(manifestValue);
   const dependencies = {
     createRuntime: () => createRuntime(workspaceRoot, "replay-workspace"),
-    initializeDatabase: (runtime, workspaceId) =>
-      initializeCleanDatabase(workspaceRoot, runtime, workspaceId, {
+    initializeDatabase: async (runtime, workspaceId) => {
+      await initializeCleanDatabase(workspaceRoot, runtime, workspaceId, {
         seedWorkspace: false
-      }),
+      });
+      await enableAgentSessionRecordingFeature(
+        join(runtime.stateDirectory, "tuttid.db"),
+        workspaceRoot
+      );
+    },
     loadCassette: loadReplayWorkspaceCassette,
     materializeBlobs: materializeReplayWorkspaceBlobs,
     removeRuntime,
@@ -1050,6 +1156,7 @@ async function loadReplayWorkspaceCassette(cassette, workspaceId) {
     activityEvents,
     workspaceId
   );
+  const providers = await readReplayProviderIDs(cassette.cassetteDirectory);
   action.replayProject = await loadReplayProject(
     cassette.cassetteDirectory,
     rootAgentSessionId
@@ -1058,16 +1165,26 @@ async function loadReplayWorkspaceCassette(cassette, workspaceId) {
     cassette.cassetteDirectory,
     cassetteManifest.mode
   );
+  const settleScenario =
+    cassette.scenario && cassette.scenarioFile
+      ? await loadRecordScenario({
+          scenario: cassette.scenario,
+          scenarioFile: cassette.scenarioFile
+        })
+      : null;
   return {
     ...cassette,
     cassetteId,
     rootAgentSessionId,
+    providers,
+    replayPrerequisites: cassetteManifest.replayPrerequisites,
     action,
     activityEvents,
     checkpoints: await loadReplayCheckpointPlan(
       cassette.cassetteDirectory,
       activityEvents
     ),
+    settleScenario,
     totalDurationMs,
     mode: cassetteManifest.mode
   };
@@ -1080,7 +1197,7 @@ async function loadReplayProject(cassetteDirectory, rootAgentSessionId) {
   return resolveReplayProjectFromExpectedState(
     expectedState,
     rootAgentSessionId,
-    workspaceRoot
+    projectRoot
   );
 }
 
@@ -1146,13 +1263,44 @@ export async function readReplayTotalDurationMs(
 }
 
 export function replayWorkspaceTransportRegistrations(cassettes) {
-  return cassettes.map((cassette) => ({
-    cassetteId: cassette.cassetteId,
-    rootAgentSessionId: cassette.rootAgentSessionId,
-    cassetteDirectory: join(cassette.cassetteDirectory, "provider"),
-    artifactDirectory: cassette.cassetteDirectory,
-    workspaceId: cassette.action.workspaceId
-  }));
+  return cassettes.map((cassette) => {
+    const registration = {
+      cassetteId: cassette.cassetteId,
+      rootAgentSessionId: cassette.rootAgentSessionId,
+      cassetteDirectory: join(cassette.cassetteDirectory, "provider"),
+      artifactDirectory: cassette.cassetteDirectory,
+      workspaceId: cassette.action.workspaceId
+    };
+    if (Array.isArray(cassette.providers) && cassette.providers.length > 0) {
+      registration.providers = cassette.providers;
+    }
+    const frozenModel = cassette.replayPrerequisites?.composerDefaults?.model;
+    if (typeof frozenModel === "string" && frozenModel.trim()) {
+      registration.frozenModel = frozenModel.trim();
+    }
+    return registration;
+  });
+}
+
+async function readReplayProviderIDs(cassetteDirectory) {
+  const manifest = JSON.parse(
+    await readFile(join(cassetteDirectory, providerManifestName), "utf8")
+  );
+  const providers = [
+    ...new Set(
+      (Array.isArray(manifest.connections) ? manifest.connections : [])
+        .map((connection) =>
+          typeof connection?.provider === "string"
+            ? connection.provider.trim()
+            : ""
+        )
+        .filter(Boolean)
+    )
+  ];
+  if (providers.length === 0) {
+    throw new Error("Replay provider manifest has no providers");
+  }
+  return providers;
 }
 
 async function loadReplayTurnIdentityPlan(cassetteDirectory, mode) {
@@ -1253,7 +1401,11 @@ async function runDesktopAction(input) {
           currentCheckpoint: 0,
           totalCheckpoints: input.checkpoints.length,
           paused: false,
-          timingMode: "realtime",
+          timingMode:
+            process.env.TUTTI_AGENT_SESSION_REPLAY_TIMING_MODE?.trim() ===
+            "realtime"
+              ? "realtime"
+              : "fast-forward",
           targetCheckpoint: null
         }
       : {})
@@ -1279,7 +1431,8 @@ async function runDesktopAction(input) {
             // anchor. Its process cwd is not reliable (the desktop launcher
             // may start it from `apps/desktop`), so pin the same root the
             // runner uses to resolve portable activity-event payloads.
-            TUTTI_AGENT_SESSION_REPLAY_CWD: workspaceRoot,
+            // When PROJECT_ROOT is set, that root is the Agent user-project.
+            TUTTI_AGENT_SESSION_REPLAY_CWD: projectRoot,
             ...(input.controlPath
               ? { TUTTI_AGENT_SESSION_REPLAY_CONTROL_PATH: input.controlPath }
               : {})
@@ -1379,11 +1532,24 @@ async function runDesktopAction(input) {
           cassetteId: input.cassetteId,
           async onCheckpoint(checkpoint) {
             if (input.screenshotCheckpoints) {
+              const checkpointPlan = input.checkpoints[checkpoint];
+              await maybeSettleForScreenshot(
+                input.settleScenario,
+                pageClient,
+                input.timeoutMs,
+                checkpointPlan,
+                input.action.agentSessionId
+              );
               await captureCheckpointScreenshot({
+                agentSessionId: input.action.agentSessionId,
                 artifactDirectory: input.artifactDirectory,
                 checkpointIndex: checkpoint,
                 checkpoints: input.checkpoints,
-                client: pageClient
+                client: pageClient,
+                label: input.screenshotLabel,
+                prepareToolEvidence:
+                  scenarioPreparesToolEvidence(input.settleScenario) &&
+                  checkpointNeedsToolSettle(checkpointPlan)
               });
             }
             await input.onCheckpoint?.(checkpoint);
@@ -1455,7 +1621,17 @@ async function runDesktopAction(input) {
       );
     }
     if (input.mode === "record") {
+      async function captureEvidence(name) {
+        if (!/^[a-z0-9][a-z0-9-]*$/u.test(name)) {
+          throw new Error(`invalid scenario evidence name: ${name}`);
+        }
+        await captureScreenshot(
+          pageClient,
+          join(input.artifactDirectory, `${name}.png`)
+        );
+      }
       await input.action.scenario.drive({
+        captureEvidence,
         client: pageClient,
         scenarioState: input.action.scenarioState,
         timeoutMs: input.timeoutMs
@@ -1463,21 +1639,22 @@ async function runDesktopAction(input) {
       settled = await input.action.scenario.assert({
         assertPathAbsent: (path) =>
           assertForbiddenPathAbsent(path, input.action.scenario.id),
-        async captureEvidence(name) {
-          if (!/^[a-z0-9][a-z0-9-]*$/u.test(name)) {
-            throw new Error(`invalid scenario evidence name: ${name}`);
-          }
-          await captureScreenshot(
-            pageClient,
-            join(input.artifactDirectory, `${name}.png`)
-          );
-        },
+        captureEvidence,
         client: pageClient,
         phase: "terminal",
         scenarioState: input.action.scenarioState,
         timeoutMs: input.timeoutMs
       });
     }
+    const settleScenario =
+      input.mode === "record" ? input.action.scenario : input.settleScenario;
+    await maybeSettleForScreenshot(
+      settleScenario,
+      pageClient,
+      input.timeoutMs,
+      null,
+      input.action.agentSessionId
+    );
     await captureScreenshot(
       pageClient,
       join(input.artifactDirectory, `${input.mode}-agent-gui.png`)
@@ -1756,6 +1933,7 @@ async function verifyReplayTransport(stateDirectory, cassetteId, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   const transportPath = `/v1/agent-session-replay/cassettes/${encodeURIComponent(cassetteId)}/transport`;
   let latestPlayback = null;
+  let nextHardFailureCheckAt = 0;
   while (Date.now() < deadline) {
     const playbackResponse = await fetch(
       `${baseURL}${transportPath}/playback`,
@@ -1774,11 +1952,34 @@ async function verifyReplayTransport(stateDirectory, cassetteId, timeoutMs) {
     if (latestPlayback.drained === true) {
       break;
     }
+    // Fail fast on hard outbound faults instead of waiting out the full
+    // drain timeout while playback.drained stays false.
+    if (Date.now() >= nextHardFailureCheckAt) {
+      nextHardFailureCheckAt = Date.now() + 500;
+      const earlyFailure = await readReplayTransportHardFailure(
+        baseURL,
+        headers,
+        cassetteId,
+        timeoutMs
+      );
+      if (earlyFailure) {
+        throw new Error(
+          `replay transport failed before drain: ${earlyFailure}; playback=${JSON.stringify(latestPlayback)}`
+        );
+      }
+    }
     await delay(50);
   }
   if (latestPlayback?.drained !== true) {
+    const lateFailure = await readReplayTransportHardFailure(
+      baseURL,
+      headers,
+      cassetteId,
+      timeoutMs
+    );
     throw new Error(
-      `replay transport did not drain before verification: ${JSON.stringify(latestPlayback)}`
+      `replay transport did not drain before verification: ${JSON.stringify(latestPlayback)}` +
+        (lateFailure ? `; transport=${lateFailure}` : "")
     );
   }
   const response = await fetch(`${baseURL}${transportPath}/verify`, {
@@ -1793,61 +1994,45 @@ async function verifyReplayTransport(stateDirectory, cassetteId, timeoutMs) {
   }
 }
 
-export function bindManagedReplayShutdown(
-  desktop,
-  {
-    clearInterval: clearIntervalFn = clearInterval,
-    isProcessAlive = defaultIsProcessAlive,
-    parentPid = process.env.TUTTI_AGENT_SESSION_REPLAY_PARENT_PID,
-    processRuntime = process,
-    setInterval: setIntervalFn = setInterval,
-    stopDesktop = stopProcessTree
-  } = {}
-) {
-  let stopping = false;
-  const stop = () => {
-    if (stopping) return;
-    stopping = true;
-    void Promise.resolve(stopDesktop(desktop)).catch(() => undefined);
-  };
-  const onOutputError = (error) => {
-    if (error?.code === "EPIPE") {
-      stop();
-    }
-  };
-  const parsedParentPid = Number.parseInt(parentPid?.trim() ?? "", 10);
-  const parentCheckInterval =
-    Number.isSafeInteger(parsedParentPid) && parsedParentPid > 0
-      ? setIntervalFn(() => {
-          if (!isProcessAlive(parsedParentPid)) {
-            stop();
-          }
-        }, 500)
-      : null;
-  parentCheckInterval?.unref?.();
-  processRuntime.once("SIGINT", stop);
-  processRuntime.once("SIGTERM", stop);
-  processRuntime.stdout?.on("error", onOutputError);
-  processRuntime.stderr?.on("error", onOutputError);
-  return () => {
-    if (parentCheckInterval) {
-      clearIntervalFn(parentCheckInterval);
-    }
-    processRuntime.off("SIGINT", stop);
-    processRuntime.off("SIGTERM", stop);
-    processRuntime.stdout?.off("error", onOutputError);
-    processRuntime.stderr?.off("error", onOutputError);
-  };
+export function replayTransportHardFailureMessage(status, body) {
+  if (status !== 409 || typeof body !== "string" || body.trim() === "") {
+    return "";
+  }
+  if (
+    body.includes("outbound mismatch") ||
+    body.includes("unexpected outbound bytes after cassette end")
+  ) {
+    return body.trim();
+  }
+  return "";
 }
 
-function defaultIsProcessAlive(pid) {
+async function readReplayTransportHardFailure(
+  baseURL,
+  headers,
+  cassetteId,
+  timeoutMs
+) {
   try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return error?.code !== "ESRCH";
+    const response = await fetch(
+      `${baseURL}/v1/agent-session-replay/cassettes/${encodeURIComponent(cassetteId)}/transport/verify`,
+      {
+        method: "POST",
+        headers,
+        signal: AbortSignal.timeout(timeoutMs)
+      }
+    );
+    if (response.ok) return "";
+    return replayTransportHardFailureMessage(
+      response.status,
+      await response.text()
+    );
+  } catch {
+    return "";
   }
 }
+
+export { bindManagedReplayShutdown } from "./agent-session-replay-runner/desktop-shutdown.mjs";
 
 export async function replayStimuli(
   stateDirectory,
@@ -2448,6 +2633,14 @@ export function createReplayPlaybackController(input) {
     : input.targetCheckpoint;
   let targetDeadline = null;
   let activityEventSequence = 0;
+  const timingModeEnv =
+    process.env.TUTTI_AGENT_SESSION_REPLAY_TIMING_MODE?.trim() || "";
+  // preferFastForward: opt-in batch mode that keeps FF even after landing a
+  // checkpoint (env === "fast-forward"). Default seeking still uses FF via
+  // setFastForward, then setRealtime restores realtime on land — unless the
+  // operator explicitly requested realtime seeking for busy-queue visuals.
+  const preferFastForward = timingModeEnv === "fast-forward";
+  const forceRealtimeSeek = timingModeEnv === "realtime";
   let timingMode = "realtime";
   const transportPlaybackPath = `/v1/agent-session-replay/cassettes/${encodeURIComponent(cassetteId)}/transport/playback`;
   const checkpointVerificationPath = (checkpointIndex) =>
@@ -2503,12 +2696,37 @@ export function createReplayPlaybackController(input) {
   };
 
   const setRealtime = async () => {
+    if (preferFastForward) {
+      if (timingMode === "fast-forward") return;
+      await setTransport({
+        command: "set-timing-mode",
+        timingMode: "fast-forward"
+      });
+      timingMode = "fast-forward";
+      return;
+    }
     if (timingMode === "realtime") return;
     await setTransport({
       command: "set-timing-mode",
       timingMode: "realtime"
     });
     timingMode = "realtime";
+  };
+
+  const setFastForward = async () => {
+    // Explicit realtime keeps seeking in realtime. Forcing FF here lets the
+    // provider finish a long busy turn before queued submit/requested intents
+    // are dispatched, so the composer queue never becomes visible.
+    if (forceRealtimeSeek) {
+      await setRealtime();
+      return;
+    }
+    if (timingMode === "fast-forward") return;
+    await setTransport({
+      command: "set-timing-mode",
+      timingMode: "fast-forward"
+    });
+    timingMode = "fast-forward";
   };
 
   const installProviderTarget = async (checkpointIndex) => {
@@ -2606,6 +2824,7 @@ export function createReplayPlaybackController(input) {
     if (automatic && currentCheckpoint < input.checkpoints.length - 1) {
       targetCheckpoint = currentCheckpoint + 1;
       await installProviderTarget(targetCheckpoint);
+      await setFastForward();
       paused = false;
     } else if (automatic || input.resumeAfterTarget) {
       await setTransport({ command: "clear-provider-cursor" });
@@ -2694,11 +2913,7 @@ export function createReplayPlaybackController(input) {
           );
           if (targetCheckpoint > currentCheckpoint) {
             await installProviderTarget(targetCheckpoint);
-            await setTransport({
-              command: "set-timing-mode",
-              timingMode: "fast-forward"
-            });
-            timingMode = "fast-forward";
+            await setFastForward();
             await setTransport({ command: "resume" });
             paused = false;
           } else {
@@ -2760,13 +2975,7 @@ export function createReplayPlaybackController(input) {
         await reachBootstrap();
       } else if (targetCheckpoint !== null) {
         await installProviderTarget(targetCheckpoint);
-        if (!automatic) {
-          await setTransport({
-            command: "set-timing-mode",
-            timingMode: "fast-forward"
-          });
-          timingMode = "fast-forward";
-        }
+        await setFastForward();
         await setTransport({ command: "resume" });
       }
       await updateStatus();
@@ -3519,16 +3728,467 @@ async function ensureReplayConversationRailExpanded(client, timeoutMs) {
   );
 }
 
-async function captureScreenshot(client, outputPath) {
-  const result = await client.send("Page.captureScreenshot", {
-    format: "png",
-    fromSurface: true
-  });
-  if (!result.data) {
-    throw new Error("CDP screenshot returned no data");
+export function normalizeScreenshotClip(rect) {
+  if (!rect || typeof rect !== "object") return null;
+  const x = Math.max(0, Math.floor(Number(rect.x)));
+  const y = Math.max(0, Math.floor(Number(rect.y)));
+  const width = Math.floor(Number(rect.width));
+  const height = Math.floor(Number(rect.height));
+  if (
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width < 8 ||
+    height < 8
+  ) {
+    return null;
   }
-  await mkdir(dirname(outputPath), { recursive: true });
-  await writeFile(outputPath, Buffer.from(result.data, "base64"));
+  return { x, y, width, height, scale: 1 };
+}
+
+export function screenshotEvidenceLabel(source) {
+  if (typeof source === "string") {
+    return source.trim();
+  }
+  if (!source || typeof source !== "object") return "";
+  for (const key of ["caseId", "screenshotLabel", "scenario", "label"]) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+export async function resolveAgentSessionScreenshotClip(
+  client,
+  agentSessionId
+) {
+  const pinned =
+    typeof agentSessionId === "string" ? agentSessionId.trim() : "";
+  if (!pinned) return null;
+  const rect = await evaluate(
+    client,
+    `(() => {
+      const id = ${JSON.stringify(pinned)};
+      const detail = [...document.querySelectorAll('main[data-agent-session-id]')].find(
+        (candidate) => candidate.getAttribute('data-agent-session-id') === id
+      );
+      if (!(detail instanceof HTMLElement)) return null;
+      const shell =
+        detail.closest('[data-workbench-window-id]') instanceof HTMLElement
+          ? detail.closest('[data-workbench-window-id]')
+          : detail;
+      const box = shell.getBoundingClientRect();
+      const x = Math.max(0, box.left);
+      const y = Math.max(0, box.top);
+      const right = Math.min(window.innerWidth, box.right);
+      const bottom = Math.min(window.innerHeight, box.bottom);
+      return {
+        x,
+        y,
+        width: right - x,
+        height: bottom - y
+      };
+    })()`
+  );
+  return normalizeScreenshotClip(rect);
+}
+
+async function installEvidenceBadge(client, { agentSessionId, label }) {
+  const text = screenshotEvidenceLabel(label);
+  if (!text) return false;
+  const pinned =
+    typeof agentSessionId === "string" ? agentSessionId.trim() : "";
+  await evaluate(
+    client,
+    `(() => {
+      const text = ${JSON.stringify(text)};
+      const id = ${JSON.stringify(pinned)};
+      document
+        .querySelectorAll('[data-tutti-replay-evidence-badge="true"]')
+        .forEach((node) => node.remove());
+      const detail = id
+        ? [...document.querySelectorAll('main[data-agent-session-id]')].find(
+            (candidate) => candidate.getAttribute('data-agent-session-id') === id
+          )
+        : null;
+      const host =
+        (detail instanceof HTMLElement &&
+          detail.closest('[data-workbench-window-id]')) ||
+        detail ||
+        document.documentElement;
+      if (!(host instanceof HTMLElement)) return false;
+      if (getComputedStyle(host).position === 'static') {
+        host.style.position = 'relative';
+      }
+      const badge = document.createElement('div');
+      badge.setAttribute('data-tutti-replay-evidence-badge', 'true');
+      badge.textContent = text;
+      badge.style.cssText = [
+        'position:absolute',
+        'top:8px',
+        'left:8px',
+        'z-index:2147483647',
+        'pointer-events:none',
+        'box-sizing:border-box',
+        'padding:4px 10px',
+        'border-radius:4px',
+        'background:#111827',
+        'color:#f8fafc',
+        'font:700 14px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace',
+        'letter-spacing:0.02em',
+        'box-shadow:0 1px 4px rgba(0,0,0,.45)'
+      ].join(';');
+      host.appendChild(badge);
+      return true;
+    })()`
+  );
+  return true;
+}
+
+async function removeEvidenceBadge(client) {
+  try {
+    await evaluate(
+      client,
+      `(() => {
+        document
+          .querySelectorAll('[data-tutti-replay-evidence-badge="true"]')
+          .forEach((node) => node.remove());
+        return true;
+      })()`
+    );
+  } catch {
+    // Best-effort cleanup; capture already completed or page is gone.
+  }
+}
+
+const PINNED_PAINTED_DETAIL_EXPRESSION = `(function resolvePinnedPaintedDetail(sessionId) {
+  const isPaintedAtCenter = (candidate) => {
+    if (!(candidate instanceof HTMLElement) || candidate.offsetParent === null) {
+      return false;
+    }
+    const rect = candidate.getBoundingClientRect();
+    if (
+      rect.width <= 0 ||
+      rect.height <= 0 ||
+      rect.right <= 0 ||
+      rect.bottom <= 0 ||
+      rect.left >= window.innerWidth ||
+      rect.top >= window.innerHeight
+    ) {
+      return false;
+    }
+    const x = Math.min(window.innerWidth - 1, Math.max(0, rect.left + rect.width / 2));
+    const y = Math.min(window.innerHeight - 1, Math.max(0, rect.top + rect.height / 2));
+    return document.elementsFromPoint(x, y).some(
+      (element) => element === candidate || candidate.contains(element)
+    );
+  };
+  const matches = [...document.querySelectorAll('main[data-agent-session-id]')].filter(
+    (candidate) => candidate.getAttribute('data-agent-session-id') === sessionId
+  );
+  return (
+    matches.find((candidate) => isPaintedAtCenter(candidate)) ||
+    matches.find((candidate) => {
+      if (!(candidate instanceof HTMLElement) || candidate.offsetParent === null) {
+        return false;
+      }
+      const rect = candidate.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    }) ||
+    null
+  );
+})`;
+
+async function startToolEvidenceExpandKeepAlive(client, agentSessionId) {
+  const pinned =
+    typeof agentSessionId === "string" ? agentSessionId.trim() : "";
+  if (!pinned) return false;
+  // Runner-injected only: keep re-clicking collapsed chrome every frame so
+  // virtualizer remounts cannot leave a collapsed frame for the PNG.
+  return evaluate(
+    client,
+    `(() => {
+      const id = ${JSON.stringify(pinned)};
+      const resolvePinnedPaintedDetail = ${PINNED_PAINTED_DETAIL_EXPRESSION};
+      globalThis.__tuttiToolEvidenceExpandKeepAlive = true;
+      globalThis.__tuttiToolEvidenceExpandSessionId = id;
+      if (globalThis.__tuttiToolEvidenceExpandRaf != null) {
+        return true;
+      }
+      const clickCollapsed = (nodes) => {
+        for (const node of nodes) {
+          if (!(node instanceof HTMLButtonElement)) continue;
+          if (node.getAttribute('aria-expanded') === 'true') continue;
+          node.click();
+        }
+      };
+      const tick = () => {
+        if (globalThis.__tuttiToolEvidenceExpandKeepAlive !== true) {
+          globalThis.__tuttiToolEvidenceExpandRaf = null;
+          return;
+        }
+        const detail = resolvePinnedPaintedDetail(
+          globalThis.__tuttiToolEvidenceExpandSessionId
+        );
+        if (detail instanceof HTMLElement) {
+          clickCollapsed([
+            ...detail.querySelectorAll(
+              '[data-agent-turn-work-header] button[aria-expanded]'
+            )
+          ]);
+          clickCollapsed([
+            ...detail.querySelectorAll(
+              'button.workspace-agents-status-panel__detail-tool-count[aria-expanded]'
+            )
+          ]);
+          clickCollapsed([
+            ...detail.querySelectorAll(
+              'button.workspace-agents-status-panel__detail-tool-row-head--button'
+            )
+          ]);
+        }
+        globalThis.__tuttiToolEvidenceExpandRaf = requestAnimationFrame(tick);
+      };
+      globalThis.__tuttiToolEvidenceExpandRaf = requestAnimationFrame(tick);
+      return true;
+    })()`
+  );
+}
+
+async function stopToolEvidenceExpandKeepAlive(client) {
+  try {
+    await evaluate(
+      client,
+      `(() => {
+        globalThis.__tuttiToolEvidenceExpandKeepAlive = false;
+        if (globalThis.__tuttiToolEvidenceExpandRaf != null) {
+          cancelAnimationFrame(globalThis.__tuttiToolEvidenceExpandRaf);
+          globalThis.__tuttiToolEvidenceExpandRaf = null;
+        }
+        delete globalThis.__tuttiToolEvidenceExpandSessionId;
+        return true;
+      })()`
+    );
+  } catch {
+    // Best-effort cleanup after capture.
+  }
+}
+
+export async function captureScreenshot(client, outputPath, options = {}) {
+  const agentSessionId =
+    typeof options.agentSessionId === "string"
+      ? options.agentSessionId.trim()
+      : "";
+  const label = screenshotEvidenceLabel(options.label ?? options);
+  const expandToolEvidence = Boolean(
+    options.expandToolEvidence && agentSessionId
+  );
+  const captureOnce = async (clip) => {
+    const result = await client.send("Page.captureScreenshot", {
+      format: "png",
+      fromSurface: true,
+      ...(clip ? { clip } : {})
+    });
+    if (!result.data) {
+      throw new Error("CDP screenshot returned no data");
+    }
+    return { clip, data: result.data };
+  };
+
+  if (!expandToolEvidence) {
+    const badgeInstalled = await installEvidenceBadge(client, {
+      agentSessionId,
+      label
+    });
+    try {
+      const clip = agentSessionId
+        ? await resolveAgentSessionScreenshotClip(client, agentSessionId)
+        : null;
+      const { data } = await captureOnce(clip);
+      await mkdir(dirname(outputPath), { recursive: true });
+      await writeFile(outputPath, Buffer.from(data, "base64"));
+      return { clip, outputPath };
+    } finally {
+      if (badgeInstalled) {
+        await removeEvidenceBadge(client);
+      }
+    }
+  }
+
+  // Expand → capture → verify. Remounts can collapse between settle and PNG;
+  // a runner-side rAF keep-alive re-opens chrome without touching AGUI source.
+  await startToolEvidenceExpandKeepAlive(client, agentSessionId);
+  try {
+    await prepareToolEvidenceForScreenshot(client, agentSessionId);
+    const badgeInstalled = await installEvidenceBadge(client, {
+      agentSessionId,
+      label
+    });
+    try {
+      const clip = await resolveAgentSessionScreenshotClip(
+        client,
+        agentSessionId
+      );
+      const deadline = Date.now() + 5_000;
+      let lastInspect = null;
+      while (Date.now() < deadline) {
+        // Expand + paint-check in one evaluate, then capture with no other awaits.
+        lastInspect = await evaluate(
+          client,
+          `(() => {
+            const id = ${JSON.stringify(agentSessionId)};
+            const resolvePinnedPaintedDetail = ${PINNED_PAINTED_DETAIL_EXPRESSION};
+            const detail = resolvePinnedPaintedDetail(id);
+            if (!(detail instanceof HTMLElement)) {
+              return { ready: false, reason: 'pinned-detail-missing' };
+            }
+            const clickCollapsed = (nodes) => {
+              for (const node of nodes) {
+                if (!(node instanceof HTMLElement)) continue;
+                if (node.getAttribute('aria-expanded') === 'true') continue;
+                if (typeof node.click === 'function') node.click();
+              }
+            };
+            clickCollapsed([
+              ...detail.querySelectorAll(
+                '[data-agent-turn-work-header] button[aria-expanded], [data-agent-turn-work-header] [aria-expanded]'
+              )
+            ]);
+            clickCollapsed([
+              ...detail.querySelectorAll(
+                'button.workspace-agents-status-panel__detail-tool-count[aria-expanded]'
+              )
+            ]);
+            clickCollapsed([
+              ...detail.querySelectorAll(
+                'button.workspace-agents-status-panel__detail-tool-row-head--button'
+              )
+            ]);
+            const groups = [
+              ...detail.querySelectorAll(
+                'button.workspace-agents-status-panel__detail-tool-count[aria-expanded]'
+              )
+            ];
+            const heads = [
+              ...detail.querySelectorAll(
+                'button.workspace-agents-status-panel__detail-tool-row-head--button'
+              )
+            ];
+            // No tool chrome yet (or this turn has none): do not block capture.
+            if (groups.length === 0 && heads.length === 0) {
+              return {
+                ready: true,
+                reason: 'no-tool-chrome',
+                commandVisible: false,
+                commandText: '',
+                commandRect: null,
+                toolDetailTextVisible: false,
+                openToolRevealCount: 0,
+                groupExpanded: [],
+                headExpanded: [],
+                dpr: window.devicePixelRatio,
+                viewport: { width: window.innerWidth, height: window.innerHeight }
+              };
+            }
+            const isPaintedElement = (element) => {
+              if (!(element instanceof HTMLElement) || element.offsetParent === null) {
+                return false;
+              }
+              const rect = element.getBoundingClientRect();
+              if (rect.height < 8 || rect.width < 8) return false;
+              if (
+                rect.bottom <= 0 ||
+                rect.top >= window.innerHeight ||
+                rect.right <= 0 ||
+                rect.left >= window.innerWidth
+              ) {
+                return false;
+              }
+              const x = Math.min(
+                window.innerWidth - 1,
+                Math.max(0, rect.left + rect.width / 2)
+              );
+              const y = Math.min(
+                window.innerHeight - 1,
+                Math.max(0, rect.top + rect.height / 2)
+              );
+              return document.elementsFromPoint(x, y).some(
+                (node) =>
+                  node === element ||
+                  element.contains(node) ||
+                  node.contains?.(element)
+              );
+            };
+            const openRowReveals = [
+              ...detail.querySelectorAll(
+                '.workspace-agents-status-panel__detail-tool-row .agent-collapsible-reveal[data-expanded="true"]'
+              )
+            ].filter((reveal) => isPaintedElement(reveal));
+            const commands = [
+              ...detail.querySelectorAll('[data-agent-terminal-command="true"]')
+            ];
+            const visibleCommand = commands.find((element) => {
+              if (!isPaintedElement(element)) return false;
+              return (element.textContent ?? '').trim().length > 0;
+            });
+            const commandVisible = Boolean(visibleCommand);
+            const toolDetailTextVisible = openRowReveals.some((reveal) => {
+              const text = (reveal.textContent ?? '').trim();
+              return text.length > 12;
+            });
+            return {
+              ready: commandVisible || toolDetailTextVisible,
+              reason:
+                commandVisible || toolDetailTextVisible
+                  ? 'tool-body-painted'
+                  : 'tool-body-not-painted',
+              commandVisible,
+              commandText: (visibleCommand?.textContent ?? '').trim().slice(0, 80),
+              commandRect: visibleCommand
+                ? (() => {
+                    const rect = visibleCommand.getBoundingClientRect();
+                    return {
+                      x: rect.x,
+                      y: rect.y,
+                      width: rect.width,
+                      height: rect.height
+                    };
+                  })()
+                : null,
+              toolDetailTextVisible,
+              openToolRevealCount: openRowReveals.length,
+              groupExpanded: groups.map((group) =>
+                group.getAttribute('aria-expanded')
+              ),
+              headExpanded: heads.map((head) =>
+                head.getAttribute('aria-expanded')
+              ),
+              dpr: window.devicePixelRatio,
+              viewport: { width: window.innerWidth, height: window.innerHeight }
+            };
+          })()`
+        );
+        if (!lastInspect?.ready) {
+          await delay(25);
+          continue;
+        }
+        const { data } = await captureOnce(clip);
+        await mkdir(dirname(outputPath), { recursive: true });
+        await writeFile(outputPath, Buffer.from(data, "base64"));
+        return { clip, outputPath };
+      }
+      throw new Error(
+        `timed out capturing expanded tool evidence: ${JSON.stringify(lastInspect)}`
+      );
+    } finally {
+      if (badgeInstalled) {
+        await removeEvidenceBadge(client);
+      }
+    }
+  } finally {
+    await stopToolEvidenceExpandKeepAlive(client);
+  }
 }
 
 export function replayCheckpointScreenshotPath({
@@ -3564,12 +4224,15 @@ export function replayCheckpointScreenshotPath({
     : join(artifactDirectory, `${id}.png`);
 }
 
-async function captureCheckpointScreenshot({
+export async function captureCheckpointScreenshot({
+  agentSessionId,
   artifactDirectory,
   cassetteId,
   checkpointIndex,
   checkpoints,
-  client
+  client,
+  label,
+  prepareToolEvidence = false
 }) {
   const outputPath = replayCheckpointScreenshotPath({
     artifactDirectory,
@@ -3577,7 +4240,12 @@ async function captureCheckpointScreenshot({
     checkpointIndex,
     checkpoints
   });
-  await captureScreenshot(client, outputPath);
+  const expandToolEvidence = Boolean(prepareToolEvidence && agentSessionId);
+  await captureScreenshot(client, outputPath, {
+    agentSessionId,
+    expandToolEvidence,
+    label
+  });
   log(`checkpoint screenshot: ${outputPath}`);
   return outputPath;
 }
@@ -3642,6 +4310,8 @@ export function parseArgs(argv) {
       options.help = true;
     } else if (arg === "--record") {
       setMode(options, "record", requiredValue(argv, (index += 1), arg));
+    } else if (arg === "--ui-drive") {
+      setMode(options, "ui-drive", requiredValue(argv, (index += 1), arg));
     } else if (arg === "--replay") {
       setMode(options, "replay", requiredValue(argv, (index += 1), arg));
     } else if (arg === "--replay-workspace-manifest") {
@@ -3688,7 +4358,7 @@ export function parseArgs(argv) {
     }
   }
   if (!options.help && !options.mode) {
-    throw new Error("choose exactly one of --record or --replay");
+    throw new Error("choose exactly one of --record, --replay, or --ui-drive");
   }
   if (
     options.screenshotCheckpoints &&
@@ -3715,20 +4385,54 @@ export function parseArgs(argv) {
       "--target-checkpoint is not supported with a Replay Workspace"
     );
   }
-  if (options.agentTargetId && options.mode !== "record") {
-    throw new Error("--agent-target-id is only supported with record");
+  if (
+    options.agentTargetId &&
+    options.mode !== "record" &&
+    options.mode !== "ui-drive"
+  ) {
+    throw new Error(
+      "--agent-target-id is only supported with record or --ui-drive"
+    );
   }
-  if (options.scenario && options.mode !== "record") {
-    throw new Error("--scenario is only supported with record");
+  if (
+    options.scenario &&
+    options.mode !== "record" &&
+    options.mode !== "replay" &&
+    options.mode !== "replay-workspace" &&
+    options.mode !== "ui-drive"
+  ) {
+    throw new Error(
+      "--scenario is only supported with record, replay, replay-workspace, or --ui-drive"
+    );
   }
-  if (options.scenarioFile && options.mode !== "record") {
-    throw new Error("--scenario-file is only supported with record");
+  if (
+    options.scenarioFile &&
+    options.mode !== "record" &&
+    options.mode !== "replay" &&
+    options.mode !== "replay-workspace" &&
+    options.mode !== "ui-drive"
+  ) {
+    throw new Error(
+      "--scenario-file is only supported with record, replay, replay-workspace, or --ui-drive"
+    );
+  }
+  if (
+    (options.scenario && !options.scenarioFile) ||
+    (!options.scenario && options.scenarioFile)
+  ) {
+    throw new Error("--scenario and --scenario-file must be provided together");
   }
   if (options.mode === "record" && !options.scenario) {
     throw new Error("--scenario is required with --record");
   }
   if (options.mode === "record" && !options.scenarioFile) {
     throw new Error("--scenario-file is required with --record");
+  }
+  if (options.mode === "ui-drive" && !options.scenario) {
+    throw new Error("--scenario is required with --ui-drive");
+  }
+  if (options.mode === "ui-drive" && !options.scenarioFile) {
+    throw new Error("--scenario-file is required with --ui-drive");
   }
   return options;
 }
@@ -3747,12 +4451,269 @@ export async function loadRecordScenario(options) {
       `record scenario file does not export scenario ${options.scenario}: ${options.scenarioFile}`
     );
   }
+  if (
+    scenario.settleForScreenshot !== undefined &&
+    typeof scenario.settleForScreenshot !== "function"
+  ) {
+    throw new Error(
+      `record scenario ${options.scenario} has invalid settleForScreenshot`
+    );
+  }
   return scenario;
+}
+
+export function checkpointNeedsToolSettle(checkpoint) {
+  if (!checkpoint) return false;
+  const kind = String(checkpoint.kind ?? "");
+  const tags = Array.isArray(checkpoint.tags) ? checkpoint.tags : [];
+  // Forced expanded-tool PNG capture is only meaningful once a tool has
+  // completed. tool.started often has no painted body yet (I10/L06 Agent
+  // tool); requiring it hard-fails replay with tool-body-not-painted.
+  return [kind, ...tags].some((token) =>
+    /(?:^|[.])tool\.completed$/u.test(String(token))
+  );
+}
+
+export function checkpointNeedsScreenshotSettle(checkpoint) {
+  if (!checkpoint) return true;
+  const kind = String(checkpoint.kind ?? "");
+  const tags = Array.isArray(checkpoint.tags) ? checkpoint.tags : [];
+  return [kind, ...tags].some((token) =>
+    /(?:^|[.])(?:tool\.completed|tool\.started|turn\.terminal|turn\.completed)$/u.test(
+      String(token)
+    )
+  );
+}
+
+export function checkpointAllowsOptionalScreenshotSettle(checkpoint) {
+  if (!checkpoint) return false;
+  const kind = String(checkpoint.kind ?? "");
+  const tags = Array.isArray(checkpoint.tags) ? checkpoint.tags : [];
+  // Queue cases soft-wait for the composer blue bar on busy-queue submits.
+  // Do not fold this into checkpointNeedsScreenshotSettle: tool-evidence
+  // settlers (I10/L06/R*) would hang for the full timeout when no tool chrome
+  // exists yet at submission.accepted.
+  return [kind, ...tags].some((token) =>
+    /(?:^|[.])submission\.accepted$/u.test(String(token))
+  );
+}
+
+export function scenarioPreparesToolEvidence(scenario) {
+  return typeof scenario?.settleForScreenshot === "function";
+}
+
+export async function maybeSettleForScreenshot(
+  scenario,
+  client,
+  timeoutMs,
+  checkpoint = null,
+  agentSessionId = null
+) {
+  if (!scenario || typeof scenario.settleForScreenshot !== "function") {
+    return;
+  }
+  if (
+    checkpoint &&
+    !checkpointNeedsScreenshotSettle(checkpoint) &&
+    !checkpointAllowsOptionalScreenshotSettle(checkpoint)
+  ) {
+    return;
+  }
+  const pinned =
+    typeof agentSessionId === "string" && agentSessionId.trim()
+      ? agentSessionId.trim()
+      : null;
+  if (pinned) {
+    await evaluate(
+      client,
+      `globalThis.__tuttiSettleAgentSessionId = ${JSON.stringify(pinned)}; true`
+    );
+  }
+  try {
+    await scenario.settleForScreenshot({
+      agentSessionId: pinned,
+      client,
+      timeoutMs,
+      checkpoint
+    });
+  } finally {
+    if (pinned) {
+      await evaluate(
+        client,
+        "delete globalThis.__tuttiSettleAgentSessionId; true"
+      );
+    }
+  }
+}
+
+export async function prepareToolEvidenceForScreenshot(
+  client,
+  agentSessionId,
+  timeoutMs = 5_000
+) {
+  const pinned =
+    typeof agentSessionId === "string" && agentSessionId.trim()
+      ? agentSessionId.trim()
+      : null;
+  if (!pinned) return null;
+  await evaluate(
+    client,
+    `globalThis.__tuttiSettleAgentSessionId = ${JSON.stringify(pinned)}; true`
+  );
+  try {
+    await waitForEvaluation(
+      client,
+      `(() => {
+        const resolvePinnedPaintedDetail = ${PINNED_PAINTED_DETAIL_EXPRESSION};
+        const detail = resolvePinnedPaintedDetail(
+          globalThis.__tuttiSettleAgentSessionId
+        );
+        if (!(detail instanceof HTMLElement)) {
+          return { ready: false, reason: 'pinned-detail-missing' };
+        }
+        const clickCollapsed = (nodes) => {
+          for (const node of nodes) {
+            if (!(node instanceof HTMLElement)) continue;
+            if (node.getAttribute('aria-expanded') === 'true') continue;
+            if (typeof node.click === 'function') node.click();
+          }
+        };
+        const workToggles = [
+          ...detail.querySelectorAll(
+            '[data-agent-turn-work-header] button[aria-expanded], [data-agent-turn-work-header] [aria-expanded]'
+          )
+        ];
+        const workCollapsed = workToggles.some(
+          (toggle) => toggle.getAttribute('aria-expanded') !== 'true'
+        );
+        clickCollapsed(workToggles);
+        // Collapsed turn-work unmounts tool rows; wait a poll after expanding.
+        if (workCollapsed) {
+          return { ready: false, reason: 'expanding-work' };
+        }
+        const groups = [
+          ...detail.querySelectorAll(
+            'button.workspace-agents-status-panel__detail-tool-count[aria-expanded]'
+          )
+        ];
+        const heads = [
+          ...detail.querySelectorAll(
+            'button.workspace-agents-status-panel__detail-tool-row-head--button'
+          )
+        ];
+        const groupsCollapsed = groups.some(
+          (group) => group.getAttribute('aria-expanded') !== 'true'
+        );
+        clickCollapsed(groups);
+        if (groupsCollapsed) {
+          return { ready: false, reason: 'expanding-groups' };
+        }
+        // Heads may mount only after the group reveal opens.
+        const headsNow = [
+          ...detail.querySelectorAll(
+            'button.workspace-agents-status-panel__detail-tool-row-head--button'
+          )
+        ];
+        const headsCollapsed = headsNow.some(
+          (head) => head.getAttribute('aria-expanded') !== 'true'
+        );
+        clickCollapsed(headsNow);
+        if (headsCollapsed) {
+          return { ready: false, reason: 'expanding-heads' };
+        }
+        const hasToolChrome = groups.length > 0 || headsNow.length > 0;
+        // Text/queue turns never mount tool chrome. Do not wait forever here —
+        // that breaks C04 and other non-tool terminal screenshots.
+        if (!hasToolChrome) {
+          return { ready: true, reason: 'no-tool-chrome', hasToolChrome: false };
+        }
+        const openRowReveals = [
+          ...detail.querySelectorAll(
+            '.workspace-agents-status-panel__detail-tool-row .agent-collapsible-reveal[data-expanded="true"]'
+          )
+        ].filter((reveal) => {
+          if (!(reveal instanceof HTMLElement) || reveal.offsetParent === null) {
+            return false;
+          }
+          const rect = reveal.getBoundingClientRect();
+          if (rect.height < 8 || rect.width < 8) return false;
+          const x = Math.min(
+            window.innerWidth - 1,
+            Math.max(0, rect.left + rect.width / 2)
+          );
+          const y = Math.min(
+            window.innerHeight - 1,
+            Math.max(0, rect.top + rect.height / 2)
+          );
+          return document.elementsFromPoint(x, y).some(
+            (node) =>
+              node === reveal || reveal.contains(node) || node.contains?.(reveal)
+          );
+        });
+        const commands = [
+          ...detail.querySelectorAll('[data-agent-terminal-command="true"]')
+        ];
+        const commandVisible = commands.some((element) => {
+          if (!(element instanceof HTMLElement) || element.offsetParent === null) {
+            return false;
+          }
+          const rect = element.getBoundingClientRect();
+          if (rect.height < 8 || rect.width < 8) return false;
+          if (
+            rect.bottom <= 0 ||
+            rect.top >= window.innerHeight ||
+            rect.right <= 0 ||
+            rect.left >= window.innerWidth
+          ) {
+            return false;
+          }
+          const x = Math.min(
+            window.innerWidth - 1,
+            Math.max(0, rect.left + rect.width / 2)
+          );
+          const y = Math.min(
+            window.innerHeight - 1,
+            Math.max(0, rect.top + rect.height / 2)
+          );
+          const painted = document.elementsFromPoint(x, y).some(
+            (node) =>
+              node === element ||
+              element.contains(node) ||
+              node.contains?.(element)
+          );
+          if (!painted) return false;
+          return (element.textContent ?? '').trim().length > 0;
+        });
+        const toolDetailTextVisible = openRowReveals.some((reveal) => {
+          const text = (reveal.textContent ?? '').trim();
+          return text.length > 12;
+        });
+        return {
+          ready: commandVisible || toolDetailTextVisible,
+          openToolRevealCount: openRowReveals.length,
+          commandVisible,
+          toolDetailTextVisible,
+          hasToolChrome,
+          groupExpanded: groups.map((group) => group.getAttribute('aria-expanded')),
+          headExpanded: headsNow.map((head) => head.getAttribute('aria-expanded'))
+        };
+      })()`,
+      timeoutMs,
+      "pre-screenshot tool evidence",
+      25
+    );
+  } finally {
+    await evaluate(
+      client,
+      "delete globalThis.__tuttiSettleAgentSessionId; true"
+    );
+  }
+  return null;
 }
 
 function setMode(options, mode, directory) {
   if (options.mode) {
-    throw new Error("choose exactly one of --record or --replay");
+    throw new Error("choose exactly one of --record, --replay, or --ui-drive");
   }
   options.mode = mode;
   options.cassetteDirectory = resolve(directory);
@@ -3816,18 +4777,20 @@ async function logFailureDiagnostics(runtime, tailLines = 15) {
 
 function printUsage() {
   process.stdout.write(
-    `Record and replay an AgentGUI Codex SessionGraph scenario.\n\n` +
+    `Record and replay an AgentGUI SessionGraph scenario.\n\n` +
       `Usage:\n` +
       `  pnpm e2e:agent-gui -- --record .tmp/cassettes/c01_codex --scenario c01 --scenario-file ../tutti-agent-session-replay-cases/cases/c01/scenario.mjs\n` +
       `  pnpm e2e:agent-gui -- --replay .tmp/cassettes/c01_codex\n` +
+      `  pnpm e2e:agent-gui -- --ui-drive .tmp/ui-drive/u01 --scenario u01 --scenario-file ../tutti-agent-session-replay-cases/cases/u01/scenarios/u01.mjs\n` +
       `  pnpm e2e:agent-gui -- --replay-workspace-manifest .tmp/replay-workspace.json\n\n` +
       `Options:\n` +
       `  --record <directory>   Record the required named scenario into a new empty cassette directory\n` +
+      `  --ui-drive <directory>  Run a pure-UI scenario with step checkpoints/screenshots (no cassette)\n` +
       `  --replay <directory>   Replay an existing complete cassette\n` +
       `  --replay-workspace-manifest <path> Bootstrap one fixed multi-Cassette Replay Workspace\n` +
-      `  --scenario <id>        Required with --record. Must match the loaded scenario id\n` +
-      `  --scenario-file <path> Required with --record. ES module exporting the scenario as default\n` +
-      `  --agent-target-id <id> Agent Target used for recording. Default: local:codex\n` +
+      `  --scenario <id>        Required with --record/--ui-drive; optional with replay to settle UI before screenshots\n` +
+      `  --scenario-file <path> Required with --record/--ui-drive; optional with replay. ES module exporting the scenario as default\n` +
+      `  --agent-target-id <id> Agent Target used for recording/ui-drive. Default: local:codex\n` +
       `  --timeout-ms <n>       Desktop/action timeout. Default: ${defaultTimeoutMs}\n` +
       `  --stall-timeout-ms <n> Fail a wait when its observed value stops changing for n ms; 0 disables. Default: ${defaultStallTimeoutMs}\n` +
       `  --headless             Hide the Electron window (default: show the window)\n` +

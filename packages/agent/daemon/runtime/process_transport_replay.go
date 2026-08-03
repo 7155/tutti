@@ -78,9 +78,7 @@ func NewReplayProcessTransport(directory string) (*ReplayProcessTransport, error
 		if !descriptor.SupportsFormat(
 			manifest.SchemaVersion,
 			manifest.ProjectionVersion,
-		) || descriptor.Tape.Codec != sessionreplay.ProviderTapeCodecJSONRPC ||
-			descriptor.Tape.RequestMatcher != sessionreplay.ProviderRequestMatcherJSONRPC ||
-			descriptor.Tape.InputObserver != sessionreplay.ProviderInputObserverACPJSON {
+		) || !processCassetteReplayAdapterSupported(descriptor) {
 			return nil, fmt.Errorf(
 				"process cassette provider %q has an incompatible replay adapter",
 				record.Provider,
@@ -296,10 +294,11 @@ func (t *ReplayProcessTransport) Start(
 			spec,
 			descriptor,
 		),
-		playback:     t.playback.newCursor(),
-		inputBarrier: t.inputBarrier,
-		skippedRPCs:  map[string]struct{}{},
-		responseIDs:  map[string]any{},
+		playback:       t.playback.newCursor(),
+		inputBarrier:   t.inputBarrier,
+		skippedRPCs:    map[string]struct{}{},
+		responseIDs:    map[string]any{},
+		identityValues: map[string]string{},
 	}
 	t.started = append(t.started, connection)
 	return connection, nil
@@ -434,6 +433,7 @@ type replayProcessConnection struct {
 	inputBarrier             *replayProviderInputBarrier
 	skippedRPCs              map[string]struct{}
 	responseIDs              map[string]any
+	identityValues           map[string]string
 	skippingOptionalProbeRun bool
 }
 
@@ -452,6 +452,13 @@ func (c *replayProcessConnection) Send(data []byte) error {
 			return io.ErrClosedPipe
 		}
 		if c.cursor >= len(c.chunks) {
+			// Extra observational probes (for example child-nickname
+			// thread/read retries) may fire after the tape ends. Absorb them
+			// instead of failing the connection and blocking drain.
+			if c.isOptionalProbeOutboundLocked(data) {
+				c.mu.Unlock()
+				return nil
+			}
 			err := c.failLocked(fmt.Errorf(
 				"connection %s received unexpected outbound bytes after cassette end",
 				c.connectionID,
@@ -461,6 +468,13 @@ func (c *replayProcessConnection) Send(data []byte) error {
 		}
 		chunk := c.chunks[c.cursor]
 		if chunk.Kind != "outbound" {
+			// Don't queue optional probes behind inbound delivery — the client
+			// will time out waiting for a synthetic response, but the cassette
+			// connection stays healthy for required traffic.
+			if c.isOptionalProbeOutboundLocked(data) {
+				c.mu.Unlock()
+				return nil
+			}
 			changed := c.changed
 			c.mu.Unlock()
 			select {
@@ -476,13 +490,14 @@ func (c *replayProcessConnection) Send(data []byte) error {
 			c.mu.Unlock()
 			return err
 		}
-		responseIDs, matches := processCassetteJSONMatch(
+		responseIDs, identityValues, matches := processCassetteJSONMatch(
 			c.descriptor,
 			expected,
 			data,
 			c.recordedCWD,
 			c.replayCWD,
 			c.replayHome,
+			c.identityValues,
 		)
 		if !bytes.Equal(data, expected) && !matches {
 			if method, responseID, ok := processCassetteJSONRPCRequest(chunk); ok &&
@@ -494,12 +509,19 @@ func (c *replayProcessConnection) Send(data []byte) error {
 				c.mu.Unlock()
 				continue
 			}
+			if c.isOptionalProbeOutboundLocked(data) {
+				c.mu.Unlock()
+				return nil
+			}
 			err = c.failLocked(processCassetteOutboundMismatch(chunk, expected, data))
 			c.mu.Unlock()
 			return err
 		}
 		for recordedID, replayID := range responseIDs {
 			c.responseIDs[recordedID] = replayID
+		}
+		for recordedValue, replayValue := range identityValues {
+			c.identityValues[recordedValue] = replayValue
 		}
 		c.skippingOptionalProbeRun = false
 		c.playback.advanceTo(chunk.ElapsedMS)
@@ -508,6 +530,11 @@ func (c *replayProcessConnection) Send(data []byte) error {
 		c.mu.Unlock()
 		return nil
 	}
+}
+
+func (c *replayProcessConnection) isOptionalProbeOutboundLocked(data []byte) bool {
+	method, _, ok := processCassetteJSONRPCRequestBytes(data)
+	return ok && c.descriptor.IsOptionalProbeMethod(method)
 }
 
 func (c *replayProcessConnection) failLocked(err error) error {
@@ -623,12 +650,16 @@ func (c *replayProcessConnection) recvContext(ctx context.Context) (ProcessFrame
 			c.recordedCWD,
 			c.replayCWD,
 			c.replayHome,
+			c.descriptor,
+			c.identityValues,
 		)
 		frame.Stderr = mapProcessCassetteFrameJSON(
 			frame.Stderr,
 			c.recordedCWD,
 			c.replayCWD,
 			c.replayHome,
+			c.descriptor,
+			c.identityValues,
 		)
 		frame.Stdout = suppressSkippedProcessCassetteResponses(frame.Stdout, c.skippedRPCs)
 		frame.Stdout = mapProcessCassetteResponseIDs(frame.Stdout, c.responseIDs)
@@ -674,6 +705,8 @@ func mapProcessCassetteFrameJSON(
 	recordedCWD string,
 	replayCWD string,
 	replayHome string,
+	descriptor sessionreplay.ProviderReplayDescriptor,
+	identityValues map[string]string,
 ) []byte {
 	if len(data) == 0 {
 		return data
@@ -690,6 +723,11 @@ func mapProcessCassetteFrameJSON(
 			value,
 			portableProcessCassetteHomeToken,
 			replayHome,
+		)
+		value = mapProcessCassetteGeneratedIdentityValues(
+			value,
+			descriptor,
+			identityValues,
 		)
 		if err := encoder.Encode(value); err != nil {
 			return data

@@ -214,9 +214,11 @@ func TestClaudeCodeSDKAdapterSidecarRejectsInteractiveSubmission(t *testing.T) {
 	}()
 	waitForCondition(t, func() bool { return len(conn.sentRequests()) == 1 })
 	request := conn.sentRequests()[0]
-	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+	if err := adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
 		ID: request.ID, Type: "error", Payload: map[string]any{"error": "interactive request is no longer live"},
-	})
+	}); err != nil {
+		t.Fatalf("dispatch submit error: %v", err)
+	}
 	if err := <-done; err == nil || !strings.Contains(err.Error(), "no longer live") {
 		t.Fatalf("SubmitInteractive error = %v, want sidecar rejection", err)
 	}
@@ -284,9 +286,11 @@ func TestClaudeCodeSDKAdapterRecoversAnsweredDispositionAfterLostSubmitAck(t *te
 	if requests[0].Payload["turnId"] != "provider-turn-approval" || requests[1].Payload["turnId"] != "provider-turn-approval" {
 		t.Fatalf("sidecar turn ids = (%v, %v), want provider-turn-approval", requests[0].Payload["turnId"], requests[1].Payload["turnId"])
 	}
-	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+	if err := adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
 		ID: requests[1].ID, Type: "ok", Payload: map[string]any{"disposition": "answered"},
-	})
+	}); err != nil {
+		t.Fatalf("dispatch disposition: %v", err)
+	}
 
 	submitted := <-done
 	if submitted.err != nil || !submitted.result.Accepted || submitted.result.Disposition != InteractiveDispositionAnswered {
@@ -302,9 +306,11 @@ func TestClaudeCodeSDKAdapterDispositionQueryErrorRemainsResolving(t *testing.T)
 	adapter, session, adapterSession, conn, done := startClaudeSDKLostAckTest(t)
 	waitForCondition(t, func() bool { return len(conn.sentRequests()) >= 2 })
 	query := conn.sentRequests()[1]
-	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+	if err := adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
 		ID: query.ID, Type: "error", Payload: map[string]any{"error": "query handler failed"},
-	})
+	}); err != nil {
+		t.Fatalf("dispatch query error: %v", err)
+	}
 	result := <-done
 	if result.err == nil || !strings.Contains(result.err.Error(), "query handler failed") {
 		t.Fatalf("SubmitInteractive error = %v, want query failure", result.err)
@@ -321,7 +327,7 @@ func TestClaudeCodeSDKAdapterPendingDispositionQueryReturnsForRetry(t *testing.T
 	adapter, session, adapterSession, conn, done := startClaudeSDKLostAckTest(t)
 	waitForCondition(t, func() bool { return len(conn.sentRequests()) >= 2 })
 	query := conn.sentRequests()[1]
-	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+	_ = adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
 		ID: query.ID, Type: "ok", Payload: map[string]any{"disposition": "pending"},
 	})
 	select {

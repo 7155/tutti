@@ -137,6 +137,21 @@ export class TurnLifecycle {
     }
   }
 
+  confirmProviderTurnStarted(providerTurnId: string): void {
+    const normalizedProviderTurnId = providerTurnId.trim();
+    const turn = this.active;
+    if (
+      !turn ||
+      turn.settled ||
+      turn.synthetic ||
+      turn.providerTurnStarted ||
+      !normalizedProviderTurnId
+    ) {
+      return;
+    }
+    this.bindProviderTurnId(turn, normalizedProviderTurnId);
+  }
+
   activateForUserMessage(promptUuid: string): void {
     const normalizedPromptUuid = promptUuid.trim();
     if (!normalizedPromptUuid) {

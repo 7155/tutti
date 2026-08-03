@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
@@ -25,6 +25,25 @@ const cassetteManifestName = cassettePolicy.files.cassetteManifest.path;
 const initialStateName = cassettePolicy.files.initialState.path;
 const maxCassetteBytes = cassettePolicy.limits.maxCassetteBytes;
 export const portableReplayCWDToken = "${REPLAY_CWD}";
+
+/**
+ * Bound Agent user-project root for session-replay record/replay.
+ * When `TUTTI_AGENT_SESSION_REPLAY_PROJECT_ROOT` is set (absolute), portable
+ * `${REPLAY_CWD}` remaps there instead of the Tutti checkout. Set the same
+ * env on replay so cassette remapping lands in the same project tree.
+ */
+export function resolveAgentSessionReplayProjectRoot(
+  fallbackRoot = workspaceRoot
+) {
+  const fromEnv = process.env.TUTTI_AGENT_SESSION_REPLAY_PROJECT_ROOT?.trim();
+  if (!fromEnv) return resolve(fallbackRoot);
+  if (!isAbsolute(fromEnv)) {
+    throw new Error(
+      "TUTTI_AGENT_SESSION_REPLAY_PROJECT_ROOT must be an absolute path"
+    );
+  }
+  return resolve(fromEnv);
+}
 
 export async function verifyCassette(directory) {
   const manifest = JSON.parse(
@@ -231,11 +250,12 @@ export function replayActionFromManifest(
   if (activityEvents.length === 0) {
     throw new Error("cassette has no replayable activity events");
   }
+  const replayCWD = resolveAgentSessionReplayProjectRoot();
   const productActivityEvents = activityEvents.map((event) => ({
     ...event,
     payload: resolvePortableActivityEventPayload(
       event,
-      workspaceRoot,
+      replayCWD,
       manifest.mode === "create-session"
         ? manifest.replayPrerequisites.composerDefaults
         : null

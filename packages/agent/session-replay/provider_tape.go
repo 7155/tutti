@@ -106,7 +106,8 @@ func AuditProjectedProcessCassetteFrames(
 				connection.Provider,
 			)
 		}
-		if descriptor.Tape.AuditCodec != ProviderAuditCodecJSONRPCPortable {
+		if descriptor.Tape.AuditCodec != ProviderAuditCodecJSONRPCPortable &&
+			descriptor.Tape.AuditCodec != ProviderAuditCodecClaudeSidecarV7Portable {
 			return fmt.Errorf(
 				"projected process cassette provider %q has unsupported audit codec %q",
 				connection.Provider,

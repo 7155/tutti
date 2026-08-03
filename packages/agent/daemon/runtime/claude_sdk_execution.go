@@ -169,6 +169,7 @@ func (a *ClaudeCodeSDKAdapter) ExecWithProviderAcceptance(
 		}
 		observedAcceptance := false
 		explicitRejection := false
+		providerTurnID := ""
 		for _, event := range events {
 			if event.Type == activityshared.EventTurnFailed &&
 				strings.EqualFold(
@@ -181,7 +182,7 @@ func (a *ClaudeCodeSDKAdapter) ExecWithProviderAcceptance(
 				strings.TrimSpace(event.Payload.TurnID) != strings.TrimSpace(turnID) {
 				continue
 			}
-			providerTurnID := strings.TrimSpace(event.Payload.ProviderTurnID)
+			providerTurnID = strings.TrimSpace(event.Payload.ProviderTurnID)
 			if providerTurnID == "" {
 				continue
 			}

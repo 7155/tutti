@@ -381,6 +381,35 @@ test("resolveManagedDaemonProcessEnv passes the shared desktop app version", () 
   }
 });
 
+test("resolveManagedDaemonProcessEnv injects one desktop admission identity", () => {
+  const got = resolveManagedDaemonProcessEnv({
+    desktopUpdateAdmission: {
+      architecture: "arm64",
+      currentVersion: "1.2.3",
+      managed: true,
+      packaged: true,
+      platform: "macos"
+    },
+    endpoint: {
+      accessToken: "token",
+      boundAddr: null,
+      listenerInfoPath: "/tmp/tuttid.listener.json",
+      pidPath: "/tmp/tuttid.pid",
+      requestedAddr: "127.0.0.1:4545"
+    },
+    logDir: "/tmp/tutti-logs",
+    logOutput: "file",
+    parentPID: 123,
+    sessionID: "session-1"
+  });
+
+  assert.equal(got.TUTTI_DESKTOP_UPDATE_ADMISSION_MANAGED, "1");
+  assert.equal(got.TUTTI_DESKTOP_UPDATE_ADMISSION_PACKAGED, "1");
+  assert.equal(got.TUTTI_DESKTOP_UPDATE_ADMISSION_CURRENT_VERSION, "1.2.3");
+  assert.equal(got.TUTTI_DESKTOP_UPDATE_ADMISSION_PLATFORM, "macos");
+  assert.equal(got.TUTTI_DESKTOP_UPDATE_ADMISSION_ARCHITECTURE, "arm64");
+});
+
 function restoreEnv(previousEnv: NodeJS.ProcessEnv): void {
   for (const key of Object.keys(process.env)) {
     if (!(key in previousEnv)) {

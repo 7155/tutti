@@ -3,7 +3,7 @@ import type {
   DesktopPlatform,
   DesktopProduct,
   MinimumVersionCheckRequest,
-  MinimumVersionCheckResponse
+  MinimumVersionCheckResult
 } from "../contracts/index.ts";
 
 type ManagedVersion = {
@@ -97,40 +97,14 @@ export function resolveMinimumVersionRuntimeTarget(
   };
 }
 
-export function shouldCheckMinimumVersionAfterForeground(input: {
-  disposed: boolean;
-  checksEnabled: boolean;
-  foregroundCheckIntervalMs: number;
-  foregroundPrompted: boolean;
-  startupBlocked: boolean;
-  lastCheckAt: number;
-  now: number;
-}): boolean {
-  return !(
-    input.disposed ||
-    !input.checksEnabled ||
-    input.foregroundPrompted ||
-    input.startupBlocked ||
-    input.now - input.lastCheckAt < input.foregroundCheckIntervalMs
-  );
-}
-
 export function validateMinimumVersionResponse<TProduct extends DesktopProduct>(
   value: unknown,
   request: MinimumVersionCheckRequest<TProduct>
-): MinimumVersionCheckResponse<TProduct> {
+): MinimumVersionCheckResult<TProduct> {
   if (!value || typeof value !== "object") {
     throw new Error("minimum version response must be an object");
   }
   const response = value as Record<string, unknown>;
-  if (
-    response.product !== request.product ||
-    response.platform !== request.platform ||
-    response.architecture !== request.architecture ||
-    response.currentVersion !== request.currentVersion
-  ) {
-    throw new Error("minimum version response identity does not match request");
-  }
   if (
     typeof response.policyRevision !== "string" ||
     response.policyRevision.trim() === ""
@@ -141,29 +115,54 @@ export function validateMinimumVersionResponse<TProduct extends DesktopProduct>(
     if (
       response.decision !== "notApplicable" ||
       response.reason !== "unmanagedPrerelease" ||
-      response.minimumVersion !== "" ||
-      response.policySource !== ""
+      "minimumVersion" in response
     ) {
       throw new Error("minimum version response has invalid unmanaged policy");
     }
-    return response as unknown as MinimumVersionCheckResponse<TProduct>;
+    return {
+      ...request,
+      channel: response.channel,
+      decision: response.decision,
+      policyRevision: response.policyRevision,
+      reason: response.reason
+    };
   }
   if (response.channel !== "stable" && response.channel !== "rc") {
     throw new Error("minimum version response has invalid channel");
   }
   if (response.decision === "notApplicable") {
     if (
-      !["productDisabled", "unsupportedRelease"].includes(
-        String(response.reason)
-      ) ||
-      response.minimumVersion !== "" ||
-      response.policySource !== ""
+      response.reason !== "unsupportedRelease" ||
+      "minimumVersion" in response
     ) {
       throw new Error(
         "minimum version response has invalid non-applicable policy"
       );
     }
-    return response as unknown as MinimumVersionCheckResponse<TProduct>;
+    return {
+      ...request,
+      channel: response.channel,
+      decision: response.decision,
+      policyRevision: response.policyRevision,
+      reason: response.reason
+    };
+  }
+  if (
+    response.decision === "allowed" &&
+    response.reason === "minimumNotConfigured"
+  ) {
+    if ("minimumVersion" in response) {
+      throw new Error(
+        "minimum version response has invalid unconfigured policy"
+      );
+    }
+    return {
+      ...request,
+      channel: response.channel,
+      decision: response.decision,
+      policyRevision: response.policyRevision,
+      reason: response.reason
+    };
   }
   if (
     response.decision !== "allowed" &&
@@ -180,12 +179,16 @@ export function validateMinimumVersionResponse<TProduct extends DesktopProduct>(
   if (
     typeof response.minimumVersion !== "string" ||
     !pattern.test(response.minimumVersion) ||
-    !["defaultMinimum", "platformOverride"].includes(
-      String(response.policySource)
-    ) ||
     response.reason !== expectedReason
   ) {
     throw new Error("minimum version response has invalid managed policy");
   }
-  return response as unknown as MinimumVersionCheckResponse<TProduct>;
+  return {
+    ...request,
+    channel: response.channel,
+    decision: response.decision,
+    minimumVersion: response.minimumVersion,
+    policyRevision: response.policyRevision,
+    reason: response.reason
+  } as MinimumVersionCheckResult<TProduct>;
 }

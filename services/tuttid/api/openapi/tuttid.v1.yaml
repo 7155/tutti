@@ -359,6 +359,71 @@ paths:
           $ref: "#/components/responses/PreferencesOperationError"
         "503":
           $ref: "#/components/responses/ServiceUnavailableError"
+  /v1/desktop-update-admission:
+    get:
+      operationId: getDesktopUpdateAdmissionSnapshot
+      tags:
+        - desktop-update-admission
+      summary: Read the daemon-owned desktop update admission snapshot
+      responses:
+        "200":
+          description: Current desktop update admission snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DesktopUpdateAdmissionSnapshot"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowedError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+  /v1/desktop-update-admission/startup:
+    get:
+      operationId: getDesktopUpdateAdmissionStartup
+      tags:
+        - desktop-update-admission
+      summary: Wait for the daemon-initiated startup admission check
+      responses:
+        "200":
+          description: Completed startup admission snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DesktopUpdateAdmissionSnapshot"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowedError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+  /v1/desktop-update-admission/refresh:
+    post:
+      operationId: refreshDesktopUpdateAdmission
+      tags:
+        - desktop-update-admission
+      summary: Ask the daemon to refresh admission for a lifecycle trigger
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DesktopUpdateAdmissionRefreshRequest"
+      responses:
+        "200":
+          description: Desktop update admission refresh result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DesktopUpdateAdmissionRefreshResult"
+        "400":
+          $ref: "#/components/responses/InvalidRequestError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowedError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
   /v1/agent-maintenance/deleted-conversations/purge:
     post:
       operationId: purgeDeletedAgentConversations
@@ -7895,6 +7960,235 @@ components:
       properties:
         preferences:
           $ref: "#/components/schemas/DesktopPreferences"
+    DesktopUpdateAdmissionProduct:
+      type: string
+      enum:
+        - tsh-desktop
+        - tutti-desktop
+      x-enum-varnames:
+        - DesktopUpdateAdmissionProductTshDesktop
+        - DesktopUpdateAdmissionProductTuttiDesktop
+    DesktopUpdateAdmissionPlatform:
+      type: string
+      enum:
+        - macos
+        - windows
+        - linux
+      x-enum-varnames:
+        - DesktopUpdateAdmissionPlatformMacos
+        - DesktopUpdateAdmissionPlatformWindows
+        - DesktopUpdateAdmissionPlatformLinux
+    DesktopUpdateAdmissionArchitecture:
+      type: string
+      enum:
+        - arm64
+        - x64
+      x-enum-varnames:
+        - DesktopUpdateAdmissionArchitectureArm64
+        - DesktopUpdateAdmissionArchitectureX64
+    DesktopUpdateAdmissionIdentity:
+      type: object
+      additionalProperties: false
+      required:
+        - product
+        - platform
+        - architecture
+        - currentVersion
+      properties:
+        product:
+          $ref: "#/components/schemas/DesktopUpdateAdmissionProduct"
+        platform:
+          $ref: "#/components/schemas/DesktopUpdateAdmissionPlatform"
+        architecture:
+          $ref: "#/components/schemas/DesktopUpdateAdmissionArchitecture"
+        currentVersion:
+          type: string
+          minLength: 1
+    DesktopUpdateAdmissionPolicyResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - channel
+        - decision
+        - reason
+        - policyRevision
+      properties:
+        channel:
+          type: string
+          enum:
+            - stable
+            - rc
+            - unmanaged
+          x-enum-varnames:
+            - DesktopUpdateAdmissionPolicyResponseChannelStable
+            - DesktopUpdateAdmissionPolicyResponseChannelRc
+            - DesktopUpdateAdmissionPolicyResponseChannelUnmanaged
+        minimumVersion:
+          type: string
+          minLength: 1
+        decision:
+          type: string
+          enum:
+            - allowed
+            - upgradeRequired
+            - notApplicable
+          x-enum-varnames:
+            - DesktopUpdateAdmissionPolicyResponseDecisionAllowed
+            - DesktopUpdateAdmissionPolicyResponseDecisionUpgradeRequired
+            - DesktopUpdateAdmissionPolicyResponseDecisionNotApplicable
+        reason:
+          type: string
+          enum:
+            - belowMinimum
+            - meetsMinimum
+            - minimumNotConfigured
+            - unmanagedPrerelease
+            - unsupportedRelease
+          x-enum-varnames:
+            - DesktopUpdateAdmissionPolicyResponseReasonBelowMinimum
+            - DesktopUpdateAdmissionPolicyResponseReasonMeetsMinimum
+            - DesktopUpdateAdmissionPolicyResponseReasonMinimumNotConfigured
+            - DesktopUpdateAdmissionPolicyResponseReasonUnmanagedPrerelease
+            - DesktopUpdateAdmissionPolicyResponseReasonUnsupportedRelease
+        policyRevision:
+          type: string
+          minLength: 1
+    DesktopUpdateAdmissionPolicyFailure:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+      properties:
+        kind:
+          type: string
+          enum:
+            - timeout
+            - transport
+            - invalidResponse
+          x-enum-varnames:
+            - DesktopUpdateAdmissionPolicyFailureKindTimeout
+            - DesktopUpdateAdmissionPolicyFailureKindTransport
+            - DesktopUpdateAdmissionPolicyFailureKindInvalidResponse
+    DesktopUpdateAdmissionPolicySnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - checking
+            - resolved
+            - failedOpen
+            - skipped
+          x-enum-varnames:
+            - DesktopUpdateAdmissionPolicySnapshotStatusChecking
+            - DesktopUpdateAdmissionPolicySnapshotStatusResolved
+            - DesktopUpdateAdmissionPolicySnapshotStatusFailedOpen
+            - DesktopUpdateAdmissionPolicySnapshotStatusSkipped
+        response:
+          $ref: "#/components/schemas/DesktopUpdateAdmissionPolicyResponse"
+        failure:
+          $ref: "#/components/schemas/DesktopUpdateAdmissionPolicyFailure"
+        reason:
+          type: string
+          enum:
+            - checksDisabled
+          x-enum-varnames:
+            - DesktopUpdateAdmissionPolicySnapshotReasonChecksDisabled
+    DesktopUpdateAdmissionFeatureAvailability:
+      type: object
+      additionalProperties: false
+      required:
+        - keys
+        - source
+        - policyRevision
+        - fetchedAt
+      properties:
+        keys:
+          type: array
+          maxItems: 256
+          items:
+            type: string
+        source:
+          type: string
+          enum:
+            - remote
+            - cache
+            - empty
+          x-enum-varnames:
+            - DesktopUpdateAdmissionFeatureAvailabilitySourceRemote
+            - DesktopUpdateAdmissionFeatureAvailabilitySourceCache
+            - DesktopUpdateAdmissionFeatureAvailabilitySourceEmpty
+        policyRevision:
+          type: string
+          nullable: true
+        fetchedAt:
+          type: string
+          format: date-time
+          nullable: true
+    DesktopUpdateAdmissionSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - identity
+        - policy
+        - featureAvailability
+        - lastAttemptAt
+        - nextForegroundCheckAt
+      properties:
+        identity:
+          $ref: "#/components/schemas/DesktopUpdateAdmissionIdentity"
+        policy:
+          $ref: "#/components/schemas/DesktopUpdateAdmissionPolicySnapshot"
+        featureAvailability:
+          $ref: "#/components/schemas/DesktopUpdateAdmissionFeatureAvailability"
+        lastAttemptAt:
+          type: string
+          format: date-time
+          nullable: true
+        nextForegroundCheckAt:
+          type: string
+          format: date-time
+          nullable: true
+    DesktopUpdateAdmissionRefreshTrigger:
+      type: string
+      enum:
+        - foreground
+        - retry
+      x-enum-varnames:
+        - DesktopUpdateAdmissionRefreshTriggerForeground
+        - DesktopUpdateAdmissionRefreshTriggerRetry
+    DesktopUpdateAdmissionRefreshRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - trigger
+      properties:
+        trigger:
+          $ref: "#/components/schemas/DesktopUpdateAdmissionRefreshTrigger"
+    DesktopUpdateAdmissionRefreshResult:
+      type: object
+      additionalProperties: false
+      required:
+        - performed
+        - snapshot
+      properties:
+        performed:
+          type: boolean
+        skipReason:
+          type: string
+          enum:
+            - checksDisabled
+            - throttled
+            - requestInFlight
+          x-enum-varnames:
+            - DesktopUpdateAdmissionRefreshResultSkipReasonChecksDisabled
+            - DesktopUpdateAdmissionRefreshResultSkipReasonThrottled
+            - DesktopUpdateAdmissionRefreshResultSkipReasonRequestInFlight
+        snapshot:
+          $ref: "#/components/schemas/DesktopUpdateAdmissionSnapshot"
     AgentTargetProvider:
       type: string
       minLength: 1

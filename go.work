@@ -6,9 +6,13 @@ use ./services/tuttid
 
 use ./packages/events/stream-go
 
+use ./packages/clients/device-authority-go
+
 use ./packages/analytics/reporter-go
 
 use ./packages/device-link
+
+use ./packages/desktop/update-admission
 
 use ./apps/cli
 

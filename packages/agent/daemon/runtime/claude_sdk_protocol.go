@@ -15,10 +15,11 @@ type claudeSDKSidecarRequest struct {
 }
 
 type claudeSDKSidecarEvent struct {
-	Version int            `json:"version"`
-	ID      string         `json:"id,omitempty"`
-	Type    string         `json:"type"`
-	Payload map[string]any `json:"payload,omitempty"`
+	Version   int            `json:"version"`
+	ID        string         `json:"id,omitempty"`
+	Type      string         `json:"type"`
+	Payload   map[string]any `json:"payload,omitempty"`
+	inputUnit *ProviderInputUnit
 }
 
 func (request *claudeSDKSidecarRequest) normalize() error {

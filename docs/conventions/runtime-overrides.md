@@ -72,13 +72,14 @@ TSH Desktop. See the package
 variables, policy sequences, named scenarios, updater outcomes, foreground
 interval overrides, and the loopback mock-server transport.
 
-Packaged applications ignore the entire environment family before parsing it.
-Enabled invalid development scenarios terminate startup with an explicit
-configuration error. In loopback mode the desktop client owns current-version
-and updater variables, while the mock-server process exclusively owns policy,
-minimum-version, feature-key, policy-sequence, and named-policy variables. A
-loopback client rejects server-owned policy variables instead of creating a
-second policy source.
+Packaged daemons ignore the entire environment family before parsing it.
+Enabled invalid development scenarios terminate daemon startup with an explicit
+configuration error. Electron resolves only the shared current version and
+updater simulation; `tuttid` or `desktopd` owns in-process policy, feature,
+timeout, sequence, and foreground-interval parsing. In loopback mode the
+mock-server process exclusively owns policy, minimum-version, feature-key,
+policy-sequence, and named-policy variables. A loopback client daemon rejects
+server-owned policy variables instead of creating a second policy source.
 
 ## Analytics
 

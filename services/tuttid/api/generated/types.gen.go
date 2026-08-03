@@ -1606,6 +1606,252 @@ func (e DesktopThemeSource) Valid() bool {
 	}
 }
 
+// Defines values for DesktopUpdateAdmissionArchitecture.
+const (
+	DesktopUpdateAdmissionArchitectureArm64 DesktopUpdateAdmissionArchitecture = "arm64"
+	DesktopUpdateAdmissionArchitectureX64   DesktopUpdateAdmissionArchitecture = "x64"
+)
+
+// Valid indicates whether the value is a known member of the DesktopUpdateAdmissionArchitecture enum.
+func (e DesktopUpdateAdmissionArchitecture) Valid() bool {
+	switch e {
+	case DesktopUpdateAdmissionArchitectureArm64:
+		return true
+	case DesktopUpdateAdmissionArchitectureX64:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DesktopUpdateAdmissionFeatureAvailabilitySource.
+const (
+	DesktopUpdateAdmissionFeatureAvailabilitySourceCache  DesktopUpdateAdmissionFeatureAvailabilitySource = "cache"
+	DesktopUpdateAdmissionFeatureAvailabilitySourceEmpty  DesktopUpdateAdmissionFeatureAvailabilitySource = "empty"
+	DesktopUpdateAdmissionFeatureAvailabilitySourceRemote DesktopUpdateAdmissionFeatureAvailabilitySource = "remote"
+)
+
+// Valid indicates whether the value is a known member of the DesktopUpdateAdmissionFeatureAvailabilitySource enum.
+func (e DesktopUpdateAdmissionFeatureAvailabilitySource) Valid() bool {
+	switch e {
+	case DesktopUpdateAdmissionFeatureAvailabilitySourceCache:
+		return true
+	case DesktopUpdateAdmissionFeatureAvailabilitySourceEmpty:
+		return true
+	case DesktopUpdateAdmissionFeatureAvailabilitySourceRemote:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DesktopUpdateAdmissionPlatform.
+const (
+	DesktopUpdateAdmissionPlatformLinux   DesktopUpdateAdmissionPlatform = "linux"
+	DesktopUpdateAdmissionPlatformMacos   DesktopUpdateAdmissionPlatform = "macos"
+	DesktopUpdateAdmissionPlatformWindows DesktopUpdateAdmissionPlatform = "windows"
+)
+
+// Valid indicates whether the value is a known member of the DesktopUpdateAdmissionPlatform enum.
+func (e DesktopUpdateAdmissionPlatform) Valid() bool {
+	switch e {
+	case DesktopUpdateAdmissionPlatformLinux:
+		return true
+	case DesktopUpdateAdmissionPlatformMacos:
+		return true
+	case DesktopUpdateAdmissionPlatformWindows:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DesktopUpdateAdmissionPolicyFailureKind.
+const (
+	DesktopUpdateAdmissionPolicyFailureKindInvalidResponse DesktopUpdateAdmissionPolicyFailureKind = "invalidResponse"
+	DesktopUpdateAdmissionPolicyFailureKindTimeout         DesktopUpdateAdmissionPolicyFailureKind = "timeout"
+	DesktopUpdateAdmissionPolicyFailureKindTransport       DesktopUpdateAdmissionPolicyFailureKind = "transport"
+)
+
+// Valid indicates whether the value is a known member of the DesktopUpdateAdmissionPolicyFailureKind enum.
+func (e DesktopUpdateAdmissionPolicyFailureKind) Valid() bool {
+	switch e {
+	case DesktopUpdateAdmissionPolicyFailureKindInvalidResponse:
+		return true
+	case DesktopUpdateAdmissionPolicyFailureKindTimeout:
+		return true
+	case DesktopUpdateAdmissionPolicyFailureKindTransport:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DesktopUpdateAdmissionPolicyResponseChannel.
+const (
+	DesktopUpdateAdmissionPolicyResponseChannelRc        DesktopUpdateAdmissionPolicyResponseChannel = "rc"
+	DesktopUpdateAdmissionPolicyResponseChannelStable    DesktopUpdateAdmissionPolicyResponseChannel = "stable"
+	DesktopUpdateAdmissionPolicyResponseChannelUnmanaged DesktopUpdateAdmissionPolicyResponseChannel = "unmanaged"
+)
+
+// Valid indicates whether the value is a known member of the DesktopUpdateAdmissionPolicyResponseChannel enum.
+func (e DesktopUpdateAdmissionPolicyResponseChannel) Valid() bool {
+	switch e {
+	case DesktopUpdateAdmissionPolicyResponseChannelRc:
+		return true
+	case DesktopUpdateAdmissionPolicyResponseChannelStable:
+		return true
+	case DesktopUpdateAdmissionPolicyResponseChannelUnmanaged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DesktopUpdateAdmissionPolicyResponseDecision.
+const (
+	DesktopUpdateAdmissionPolicyResponseDecisionAllowed         DesktopUpdateAdmissionPolicyResponseDecision = "allowed"
+	DesktopUpdateAdmissionPolicyResponseDecisionNotApplicable   DesktopUpdateAdmissionPolicyResponseDecision = "notApplicable"
+	DesktopUpdateAdmissionPolicyResponseDecisionUpgradeRequired DesktopUpdateAdmissionPolicyResponseDecision = "upgradeRequired"
+)
+
+// Valid indicates whether the value is a known member of the DesktopUpdateAdmissionPolicyResponseDecision enum.
+func (e DesktopUpdateAdmissionPolicyResponseDecision) Valid() bool {
+	switch e {
+	case DesktopUpdateAdmissionPolicyResponseDecisionAllowed:
+		return true
+	case DesktopUpdateAdmissionPolicyResponseDecisionNotApplicable:
+		return true
+	case DesktopUpdateAdmissionPolicyResponseDecisionUpgradeRequired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DesktopUpdateAdmissionPolicyResponseReason.
+const (
+	DesktopUpdateAdmissionPolicyResponseReasonBelowMinimum         DesktopUpdateAdmissionPolicyResponseReason = "belowMinimum"
+	DesktopUpdateAdmissionPolicyResponseReasonMeetsMinimum         DesktopUpdateAdmissionPolicyResponseReason = "meetsMinimum"
+	DesktopUpdateAdmissionPolicyResponseReasonMinimumNotConfigured DesktopUpdateAdmissionPolicyResponseReason = "minimumNotConfigured"
+	DesktopUpdateAdmissionPolicyResponseReasonUnmanagedPrerelease  DesktopUpdateAdmissionPolicyResponseReason = "unmanagedPrerelease"
+	DesktopUpdateAdmissionPolicyResponseReasonUnsupportedRelease   DesktopUpdateAdmissionPolicyResponseReason = "unsupportedRelease"
+)
+
+// Valid indicates whether the value is a known member of the DesktopUpdateAdmissionPolicyResponseReason enum.
+func (e DesktopUpdateAdmissionPolicyResponseReason) Valid() bool {
+	switch e {
+	case DesktopUpdateAdmissionPolicyResponseReasonBelowMinimum:
+		return true
+	case DesktopUpdateAdmissionPolicyResponseReasonMeetsMinimum:
+		return true
+	case DesktopUpdateAdmissionPolicyResponseReasonMinimumNotConfigured:
+		return true
+	case DesktopUpdateAdmissionPolicyResponseReasonUnmanagedPrerelease:
+		return true
+	case DesktopUpdateAdmissionPolicyResponseReasonUnsupportedRelease:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DesktopUpdateAdmissionPolicySnapshotReason.
+const (
+	DesktopUpdateAdmissionPolicySnapshotReasonChecksDisabled DesktopUpdateAdmissionPolicySnapshotReason = "checksDisabled"
+)
+
+// Valid indicates whether the value is a known member of the DesktopUpdateAdmissionPolicySnapshotReason enum.
+func (e DesktopUpdateAdmissionPolicySnapshotReason) Valid() bool {
+	switch e {
+	case DesktopUpdateAdmissionPolicySnapshotReasonChecksDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DesktopUpdateAdmissionPolicySnapshotStatus.
+const (
+	DesktopUpdateAdmissionPolicySnapshotStatusChecking   DesktopUpdateAdmissionPolicySnapshotStatus = "checking"
+	DesktopUpdateAdmissionPolicySnapshotStatusFailedOpen DesktopUpdateAdmissionPolicySnapshotStatus = "failedOpen"
+	DesktopUpdateAdmissionPolicySnapshotStatusResolved   DesktopUpdateAdmissionPolicySnapshotStatus = "resolved"
+	DesktopUpdateAdmissionPolicySnapshotStatusSkipped    DesktopUpdateAdmissionPolicySnapshotStatus = "skipped"
+)
+
+// Valid indicates whether the value is a known member of the DesktopUpdateAdmissionPolicySnapshotStatus enum.
+func (e DesktopUpdateAdmissionPolicySnapshotStatus) Valid() bool {
+	switch e {
+	case DesktopUpdateAdmissionPolicySnapshotStatusChecking:
+		return true
+	case DesktopUpdateAdmissionPolicySnapshotStatusFailedOpen:
+		return true
+	case DesktopUpdateAdmissionPolicySnapshotStatusResolved:
+		return true
+	case DesktopUpdateAdmissionPolicySnapshotStatusSkipped:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DesktopUpdateAdmissionProduct.
+const (
+	DesktopUpdateAdmissionProductTshDesktop   DesktopUpdateAdmissionProduct = "tsh-desktop"
+	DesktopUpdateAdmissionProductTuttiDesktop DesktopUpdateAdmissionProduct = "tutti-desktop"
+)
+
+// Valid indicates whether the value is a known member of the DesktopUpdateAdmissionProduct enum.
+func (e DesktopUpdateAdmissionProduct) Valid() bool {
+	switch e {
+	case DesktopUpdateAdmissionProductTshDesktop:
+		return true
+	case DesktopUpdateAdmissionProductTuttiDesktop:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DesktopUpdateAdmissionRefreshResultSkipReason.
+const (
+	DesktopUpdateAdmissionRefreshResultSkipReasonChecksDisabled  DesktopUpdateAdmissionRefreshResultSkipReason = "checksDisabled"
+	DesktopUpdateAdmissionRefreshResultSkipReasonRequestInFlight DesktopUpdateAdmissionRefreshResultSkipReason = "requestInFlight"
+	DesktopUpdateAdmissionRefreshResultSkipReasonThrottled       DesktopUpdateAdmissionRefreshResultSkipReason = "throttled"
+)
+
+// Valid indicates whether the value is a known member of the DesktopUpdateAdmissionRefreshResultSkipReason enum.
+func (e DesktopUpdateAdmissionRefreshResultSkipReason) Valid() bool {
+	switch e {
+	case DesktopUpdateAdmissionRefreshResultSkipReasonChecksDisabled:
+		return true
+	case DesktopUpdateAdmissionRefreshResultSkipReasonRequestInFlight:
+		return true
+	case DesktopUpdateAdmissionRefreshResultSkipReasonThrottled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DesktopUpdateAdmissionRefreshTrigger.
+const (
+	DesktopUpdateAdmissionRefreshTriggerForeground DesktopUpdateAdmissionRefreshTrigger = "foreground"
+	DesktopUpdateAdmissionRefreshTriggerRetry      DesktopUpdateAdmissionRefreshTrigger = "retry"
+)
+
+// Valid indicates whether the value is a known member of the DesktopUpdateAdmissionRefreshTrigger enum.
+func (e DesktopUpdateAdmissionRefreshTrigger) Valid() bool {
+	switch e {
+	case DesktopUpdateAdmissionRefreshTriggerForeground:
+		return true
+	case DesktopUpdateAdmissionRefreshTriggerRetry:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DesktopUpdateChannel.
 const (
 	Rc     DesktopUpdateChannel = "rc"
@@ -5667,6 +5913,101 @@ type DesktopSleepPreventionMode string
 // DesktopThemeSource defines model for DesktopThemeSource.
 type DesktopThemeSource string
 
+// DesktopUpdateAdmissionArchitecture defines model for DesktopUpdateAdmissionArchitecture.
+type DesktopUpdateAdmissionArchitecture string
+
+// DesktopUpdateAdmissionFeatureAvailability defines model for DesktopUpdateAdmissionFeatureAvailability.
+type DesktopUpdateAdmissionFeatureAvailability struct {
+	FetchedAt      *time.Time                                      `json:"fetchedAt"`
+	Keys           []string                                        `json:"keys"`
+	PolicyRevision *string                                         `json:"policyRevision"`
+	Source         DesktopUpdateAdmissionFeatureAvailabilitySource `json:"source"`
+}
+
+// DesktopUpdateAdmissionFeatureAvailabilitySource defines model for DesktopUpdateAdmissionFeatureAvailability.Source.
+type DesktopUpdateAdmissionFeatureAvailabilitySource string
+
+// DesktopUpdateAdmissionIdentity defines model for DesktopUpdateAdmissionIdentity.
+type DesktopUpdateAdmissionIdentity struct {
+	Architecture   DesktopUpdateAdmissionArchitecture `json:"architecture"`
+	CurrentVersion string                             `json:"currentVersion"`
+	Platform       DesktopUpdateAdmissionPlatform     `json:"platform"`
+	Product        DesktopUpdateAdmissionProduct      `json:"product"`
+}
+
+// DesktopUpdateAdmissionPlatform defines model for DesktopUpdateAdmissionPlatform.
+type DesktopUpdateAdmissionPlatform string
+
+// DesktopUpdateAdmissionPolicyFailure defines model for DesktopUpdateAdmissionPolicyFailure.
+type DesktopUpdateAdmissionPolicyFailure struct {
+	Kind DesktopUpdateAdmissionPolicyFailureKind `json:"kind"`
+}
+
+// DesktopUpdateAdmissionPolicyFailureKind defines model for DesktopUpdateAdmissionPolicyFailure.Kind.
+type DesktopUpdateAdmissionPolicyFailureKind string
+
+// DesktopUpdateAdmissionPolicyResponse defines model for DesktopUpdateAdmissionPolicyResponse.
+type DesktopUpdateAdmissionPolicyResponse struct {
+	Channel        DesktopUpdateAdmissionPolicyResponseChannel  `json:"channel"`
+	Decision       DesktopUpdateAdmissionPolicyResponseDecision `json:"decision"`
+	MinimumVersion *string                                      `json:"minimumVersion,omitempty"`
+	PolicyRevision string                                       `json:"policyRevision"`
+	Reason         DesktopUpdateAdmissionPolicyResponseReason   `json:"reason"`
+}
+
+// DesktopUpdateAdmissionPolicyResponseChannel defines model for DesktopUpdateAdmissionPolicyResponse.Channel.
+type DesktopUpdateAdmissionPolicyResponseChannel string
+
+// DesktopUpdateAdmissionPolicyResponseDecision defines model for DesktopUpdateAdmissionPolicyResponse.Decision.
+type DesktopUpdateAdmissionPolicyResponseDecision string
+
+// DesktopUpdateAdmissionPolicyResponseReason defines model for DesktopUpdateAdmissionPolicyResponse.Reason.
+type DesktopUpdateAdmissionPolicyResponseReason string
+
+// DesktopUpdateAdmissionPolicySnapshot defines model for DesktopUpdateAdmissionPolicySnapshot.
+type DesktopUpdateAdmissionPolicySnapshot struct {
+	Failure  *DesktopUpdateAdmissionPolicyFailure        `json:"failure,omitempty"`
+	Reason   *DesktopUpdateAdmissionPolicySnapshotReason `json:"reason,omitempty"`
+	Response *DesktopUpdateAdmissionPolicyResponse       `json:"response,omitempty"`
+	Status   DesktopUpdateAdmissionPolicySnapshotStatus  `json:"status"`
+}
+
+// DesktopUpdateAdmissionPolicySnapshotReason defines model for DesktopUpdateAdmissionPolicySnapshot.Reason.
+type DesktopUpdateAdmissionPolicySnapshotReason string
+
+// DesktopUpdateAdmissionPolicySnapshotStatus defines model for DesktopUpdateAdmissionPolicySnapshot.Status.
+type DesktopUpdateAdmissionPolicySnapshotStatus string
+
+// DesktopUpdateAdmissionProduct defines model for DesktopUpdateAdmissionProduct.
+type DesktopUpdateAdmissionProduct string
+
+// DesktopUpdateAdmissionRefreshRequest defines model for DesktopUpdateAdmissionRefreshRequest.
+type DesktopUpdateAdmissionRefreshRequest struct {
+	Trigger DesktopUpdateAdmissionRefreshTrigger `json:"trigger"`
+}
+
+// DesktopUpdateAdmissionRefreshResult defines model for DesktopUpdateAdmissionRefreshResult.
+type DesktopUpdateAdmissionRefreshResult struct {
+	Performed  bool                                           `json:"performed"`
+	SkipReason *DesktopUpdateAdmissionRefreshResultSkipReason `json:"skipReason,omitempty"`
+	Snapshot   DesktopUpdateAdmissionSnapshot                 `json:"snapshot"`
+}
+
+// DesktopUpdateAdmissionRefreshResultSkipReason defines model for DesktopUpdateAdmissionRefreshResult.SkipReason.
+type DesktopUpdateAdmissionRefreshResultSkipReason string
+
+// DesktopUpdateAdmissionRefreshTrigger defines model for DesktopUpdateAdmissionRefreshTrigger.
+type DesktopUpdateAdmissionRefreshTrigger string
+
+// DesktopUpdateAdmissionSnapshot defines model for DesktopUpdateAdmissionSnapshot.
+type DesktopUpdateAdmissionSnapshot struct {
+	FeatureAvailability   DesktopUpdateAdmissionFeatureAvailability `json:"featureAvailability"`
+	Identity              DesktopUpdateAdmissionIdentity            `json:"identity"`
+	LastAttemptAt         *time.Time                                `json:"lastAttemptAt"`
+	NextForegroundCheckAt *time.Time                                `json:"nextForegroundCheckAt"`
+	Policy                DesktopUpdateAdmissionPolicySnapshot      `json:"policy"`
+}
+
 // DesktopUpdateChannel defines model for DesktopUpdateChannel.
 type DesktopUpdateChannel string
 
@@ -9063,6 +9404,9 @@ type SetSystemAgentTargetEnabledJSONRequestBody = SetSystemAgentTargetEnabledReq
 
 // InvokeCliCommandJSONRequestBody defines body for InvokeCliCommand for application/json ContentType.
 type InvokeCliCommandJSONRequestBody = CliInvokeRequest
+
+// RefreshDesktopUpdateAdmissionJSONRequestBody defines body for RefreshDesktopUpdateAdmission for application/json ContentType.
+type RefreshDesktopUpdateAdmissionJSONRequestBody = DesktopUpdateAdmissionRefreshRequest
 
 // PutDesktopPreferencesJSONRequestBody defines body for PutDesktopPreferences for application/json ContentType.
 type PutDesktopPreferencesJSONRequestBody = PutDesktopPreferencesRequest

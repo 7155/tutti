@@ -11,6 +11,164 @@ import (
 	replaybiz "github.com/tutti-os/tutti/services/tuttid/biz/agentsessionreplay"
 )
 
+func TestProviderPositionReachedIncludesTriggerUnit(t *testing.T) {
+	position := &replay.ProviderObservationPosition{
+		ConnectionID: "connection-1", ChunkSeq: 56, UnitIndex: 1, EventIndex: 1,
+	}
+	handled := map[string]replay.ProviderUnitPosition{
+		"connection-1": {
+			ConnectionID: "connection-1", ChunkSeq: 56, UnitIndex: 1,
+		},
+	}
+	if !providerPositionReached(handled, position) {
+		t.Fatal("handled at trigger unit must count as reached")
+	}
+	if providerPositionPassed(handled, position) {
+		t.Fatal("handled at trigger unit must not count as passed")
+	}
+	handled["connection-1"] = replay.ProviderUnitPosition{
+		ConnectionID: "connection-1", ChunkSeq: 57, UnitIndex: 1,
+	}
+	if !providerPositionReached(handled, position) ||
+		!providerPositionPassed(handled, position) {
+		t.Fatal("handled past trigger unit must be reached and passed")
+	}
+}
+
+func TestHandledLaneClosesProviderObservationTriggerWithoutStamp(
+	t *testing.T,
+) {
+	position := replay.ProviderObservationPosition{
+		ConnectionID: "connection-1",
+		ChunkSeq:     56,
+		UnitIndex:    1,
+		EventIndex:   1,
+	}
+	fingerprint, err := replay.ObservationFingerprint(replay.ProviderObservation{
+		SchemaVersion: replay.ObservationSchemaVersion,
+		Type:          "root_provider_turn.started",
+		Address: replay.EntityAddress{
+			Kind: replay.EntityKindTurn,
+			Origin: replay.EntityOrigin{
+				Source:              replay.EntityOriginProviderObservation,
+				ProviderObservation: &position,
+			},
+		},
+		Stable: map[string]any{"turnPhase": "running"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := &SemanticRuntime{
+		workspaceID: "workspace-1",
+		registrations: map[string]SemanticRegistration{
+			"cassette-1": {
+				CassetteID: "cassette-1", RootSessionID: "session-1",
+				WorkspaceID: "workspace-1",
+			},
+		},
+		plans: map[string]replay.CheckpointPlan{
+			"cassette-1": replay.NewCheckpointPlan(
+				[]replay.ReplayCheckpoint{{
+					ID: "checkpoint-0004", Index: 0,
+					Kind: "turn.working", Tags: []string{"turn.working"},
+					Trigger: replay.CheckpointTrigger{
+						Source:      replay.CheckpointTriggerProviderObservation,
+						Position:    &position,
+						UnitKind:    replay.ProviderInputUnitProtocolMessage,
+						Type:        "root_provider_turn.started",
+						Fingerprint: fingerprint,
+					},
+					// Empty readiness isolates the handled-lane trigger path
+					// from Host canonical lookups.
+					Readiness: replay.CheckpointReadiness{All: []replay.ReadinessPredicate{}},
+				}},
+			),
+		},
+		observations: map[string]*semanticObservationState{
+			"cassette-1": {
+				matched: map[int]bool{},
+				handled: map[string]replay.ProviderUnitPosition{},
+			},
+		},
+	}
+	state, err := runtime.VerifyCheckpoint(
+		context.Background(), "cassette-1", 0,
+	)
+	if err != nil || state.TriggerMatched {
+		t.Fatalf("before handled lane: state=%#v err=%v", state, err)
+	}
+	runtime.NoteHandledProviderUnits("cassette-1", map[string]replay.ProviderUnitPosition{
+		"connection-1": {
+			ConnectionID: "connection-1", ChunkSeq: 56, UnitIndex: 1,
+		},
+	})
+	state, err = runtime.VerifyCheckpoint(
+		context.Background(), "cassette-1", 0,
+	)
+	if err != nil || !state.TriggerMatched || !state.ReadinessSatisfied {
+		t.Fatalf(
+			"handled lane should close observation trigger: state=%#v err=%v",
+			state,
+			err,
+		)
+	}
+}
+
+func TestHandledLanePastTriggerWithoutMatchIsOutOfOrder(t *testing.T) {
+	position := replay.ProviderObservationPosition{
+		ConnectionID: "connection-1",
+		ChunkSeq:     56,
+		UnitIndex:    1,
+		EventIndex:   1,
+	}
+	runtime := &SemanticRuntime{
+		workspaceID: "workspace-1",
+		registrations: map[string]SemanticRegistration{
+			"cassette-1": {
+				CassetteID: "cassette-1", RootSessionID: "session-1",
+				WorkspaceID: "workspace-1",
+			},
+		},
+		plans: map[string]replay.CheckpointPlan{
+			"cassette-1": replay.NewCheckpointPlan(
+				[]replay.ReplayCheckpoint{{
+					ID: "checkpoint-0004", Index: 0,
+					Kind: "turn.working",
+					Trigger: replay.CheckpointTrigger{
+						Source:   replay.CheckpointTriggerProviderObservation,
+						Position: &position,
+						UnitKind: replay.ProviderInputUnitProtocolMessage,
+						Type:     "root_provider_turn.started",
+						Fingerprint: "sha256:" +
+							"0123456789abcdef0123456789abcdef" +
+							"0123456789abcdef0123456789abcdef",
+					},
+					Readiness: replay.CheckpointReadiness{
+						All: []replay.ReadinessPredicate{},
+					},
+				}},
+			),
+		},
+		observations: map[string]*semanticObservationState{
+			"cassette-1": {
+				matched: map[int]bool{},
+				handled: map[string]replay.ProviderUnitPosition{},
+			},
+		},
+	}
+	runtime.NoteHandledProviderUnits("cassette-1", map[string]replay.ProviderUnitPosition{
+		"connection-1": {
+			ConnectionID: "connection-1", ChunkSeq: 57, UnitIndex: 1,
+		},
+	})
+	_, err := runtime.VerifyCheckpoint(context.Background(), "cassette-1", 0)
+	if err == nil || err.Error() !=
+		`checkpoint_trigger_out_of_order: checkpoint "checkpoint-0004"` {
+		t.Fatalf("error = %v, want out_of_order", err)
+	}
+}
+
 func TestNeutralBootstrapCheckpointNeedsNoCanonicalSession(t *testing.T) {
 	runtime := &SemanticRuntime{
 		plans: map[string]replay.CheckpointPlan{

@@ -643,18 +643,7 @@ function createUpdateDownloadedInfoFixture(
 function createDevelopmentScenario(): DesktopUpdateDevelopmentScenario {
   return {
     currentVersion: "0.2.0-rc.0",
-    foregroundCheckIntervalMs: 3_000,
     mockServerUrl: null,
-    policy: {
-      featureKeys: [],
-      policySteps: [
-        {
-          minimum: { kind: "configured", version: "0.2.0-rc.1" },
-          outcome: "upgradeRequired",
-          policySource: "defaultMinimum"
-        }
-      ]
-    },
     transport: "in-process",
     updater: {
       check: "available",

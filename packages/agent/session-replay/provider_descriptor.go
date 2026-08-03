@@ -4,23 +4,38 @@ import "strings"
 
 type ProviderTapeCodec string
 
-const ProviderTapeCodecJSONRPC ProviderTapeCodec = "json-rpc"
+const (
+	ProviderTapeCodecJSONRPC         ProviderTapeCodec = "json-rpc"
+	ProviderTapeCodecClaudeSidecarV7 ProviderTapeCodec = "claude-sidecar-ndjson-v7"
+)
 
 type ProviderRequestMatcher string
 
-const ProviderRequestMatcherJSONRPC ProviderRequestMatcher = "json-rpc"
+const (
+	ProviderRequestMatcherJSONRPC         ProviderRequestMatcher = "json-rpc"
+	ProviderRequestMatcherClaudeSidecarV7 ProviderRequestMatcher = "claude-sidecar-ndjson-v7"
+)
 
 type ProviderInputObserver string
 
-const ProviderInputObserverACPJSON ProviderInputObserver = "acp-json-input-units"
+const (
+	ProviderInputObserverACPJSON         ProviderInputObserver = "acp-json-input-units"
+	ProviderInputObserverClaudeSidecarV7 ProviderInputObserver = "claude-sidecar-ndjson-v7-input-units"
+)
 
 type ProviderProjectionCodec string
 
-const ProviderProjectionCodecJSONRPCPortable ProviderProjectionCodec = "json-rpc-portable-v1"
+const (
+	ProviderProjectionCodecJSONRPCPortable         ProviderProjectionCodec = "json-rpc-portable-v1"
+	ProviderProjectionCodecClaudeSidecarV7Portable ProviderProjectionCodec = "claude-sidecar-ndjson-v7-portable-v1"
+)
 
 type ProviderAuditCodec string
 
-const ProviderAuditCodecJSONRPCPortable ProviderAuditCodec = "json-rpc-portable-v1"
+const (
+	ProviderAuditCodecJSONRPCPortable         ProviderAuditCodec = "json-rpc-portable-v1"
+	ProviderAuditCodecClaudeSidecarV7Portable ProviderAuditCodec = "claude-sidecar-ndjson-v7-portable-v1"
+)
 
 type ProviderGeneratedRequestField struct {
 	Method        string
@@ -30,17 +45,20 @@ type ProviderGeneratedRequestField struct {
 }
 
 type ProviderTapeDescriptor struct {
-	Codec                  ProviderTapeCodec
-	RequestMatcher         ProviderRequestMatcher
-	InputObserver          ProviderInputObserver
-	ProjectionCodec        ProviderProjectionCodec
-	AuditCodec             ProviderAuditCodec
-	SchemaVersion          int
-	ProjectionVersion      int
-	CredentialMethods      []string
-	OptionalProbeMethods   []string
-	AccountReadMethod      string
-	GeneratedRequestFields []ProviderGeneratedRequestField
+	Codec                   ProviderTapeCodec
+	RequestMatcher          ProviderRequestMatcher
+	InputObserver           ProviderInputObserver
+	ProjectionCodec         ProviderProjectionCodec
+	AuditCodec              ProviderAuditCodec
+	SchemaVersion           int
+	ProjectionVersion       int
+	CredentialMethods       []string
+	OptionalProbeMethods    []string
+	AccountReadMethod       string
+	GeneratedRequestFields  []ProviderGeneratedRequestField
+	GeneratedIdentityFields []string
+	MatchOnlyIdentityFields []string
+	ExcludeEnvironment      bool
 }
 
 type ProviderPortableRuntimeDescriptor struct {
@@ -83,6 +101,35 @@ var providerReplayDescriptors = []ProviderReplayDescriptor{
 		PortableRuntime: ProviderPortableRuntimeDescriptor{
 			HomeEnvVars:          []string{"CODEX_HOME"},
 			SessionHomeDirectory: "codex-home",
+		},
+	},
+	{
+		ProviderID:    "claude-code",
+		AgentTargetID: "local:claude-code",
+		Tape: ProviderTapeDescriptor{
+			Codec:             ProviderTapeCodecClaudeSidecarV7,
+			RequestMatcher:    ProviderRequestMatcherClaudeSidecarV7,
+			InputObserver:     ProviderInputObserverClaudeSidecarV7,
+			ProjectionCodec:   ProviderProjectionCodecClaudeSidecarV7Portable,
+			AuditCodec:        ProviderAuditCodecClaudeSidecarV7Portable,
+			SchemaVersion:     ProcessCassetteSchemaVersion,
+			ProjectionVersion: ProcessCassetteProjectionVersion,
+			GeneratedIdentityFields: []string{
+				"agentSessionId",
+				"providerTurnId",
+				"turnId",
+				"promptCorrelationId",
+				"goalOperationId",
+			},
+			// The adapter creates this identity before replay starts, but the
+			// recorded session_started response remains the Provider-owned value
+			// used by the semantic cassette state.
+			MatchOnlyIdentityFields: []string{"providerSessionId"},
+			ExcludeEnvironment:      true,
+		},
+		PortableRuntime: ProviderPortableRuntimeDescriptor{
+			HomeEnvVars:          []string{"CLAUDE_CONFIG_DIR"},
+			SessionHomeDirectory: "claude-home",
 		},
 	},
 }
@@ -148,6 +195,15 @@ func (d ProviderReplayDescriptor) IsHomeEnvVar(name string) bool {
 	return containsProviderReplayValue(d.PortableRuntime.HomeEnvVars, name)
 }
 
+func (d ProviderReplayDescriptor) IsGeneratedIdentityField(name string) bool {
+	return containsProviderReplayValue(d.Tape.GeneratedIdentityFields, name)
+}
+
+func (d ProviderReplayDescriptor) IsMatchedIdentityField(name string) bool {
+	return d.IsGeneratedIdentityField(name) ||
+		containsProviderReplayValue(d.Tape.MatchOnlyIdentityFields, name)
+}
+
 func containsProviderReplayValue(values []string, value string) bool {
 	want := normalizeProviderReplayIdentity(value)
 	for _, candidate := range values {
@@ -169,6 +225,14 @@ func cloneProviderReplayDescriptor(source ProviderReplayDescriptor) ProviderRepl
 	cloned.Tape.GeneratedRequestFields = append(
 		[]ProviderGeneratedRequestField(nil),
 		source.Tape.GeneratedRequestFields...,
+	)
+	cloned.Tape.GeneratedIdentityFields = append(
+		[]string(nil),
+		source.Tape.GeneratedIdentityFields...,
+	)
+	cloned.Tape.MatchOnlyIdentityFields = append(
+		[]string(nil),
+		source.Tape.MatchOnlyIdentityFields...,
 	)
 	cloned.PortableRuntime.HomeEnvVars = append(
 		[]string(nil),

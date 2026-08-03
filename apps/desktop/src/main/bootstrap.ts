@@ -18,10 +18,7 @@ import {
   type MutableDesktopFeatureAvailabilityRuntime
 } from "@tutti-os/desktop-update-admission/feature-availability";
 import { resolveMinimumVersionRuntimeTarget } from "@tutti-os/desktop-update-admission/core";
-import {
-  createDevelopmentMinimumVersionChecker,
-  resolveDesktopUpdateAdmissionDevelopment
-} from "@tutti-os/desktop-update-admission/development";
+import { resolveDesktopUpdateAdmissionDevelopment } from "@tutti-os/desktop-update-admission/development";
 import {
   initializeDesktopEnvironment,
   resolveDesktopDevelopmentAppName,
@@ -30,7 +27,11 @@ import {
   resolveDesktopUserDataPath
 } from "./defaults";
 import { registerDesktopAppLifecycle } from "./desktopAppLifecycle";
-import { createDesktopAppServices } from "./desktopAppServices";
+import {
+  createDesktopAppServices,
+  startDesktopDaemonRuntime
+} from "./desktopAppServices";
+import { createDesktopDaemonRuntime } from "./desktopDaemonRuntime.ts";
 import { startDesktopAppUpdateAnalytics } from "./appUpdateAnalytics.ts";
 import { configureApplicationMenu } from "./applicationMenu.ts";
 import { connectAgentPowerSaveBlocker } from "./agentPowerSaveBlocker.ts";
@@ -64,7 +65,7 @@ import { createWorkspaceFileIconCacheStore } from "./host/workspaceFileIconCache
 import { registerWorkspaceFileIconProtocol } from "./host/workspaceFileIconProtocol.ts";
 import { applyDesktopElectronPlatformCompatibility } from "./electronPlatformCompatibility.ts";
 import { createAppUpdateService } from "./update/appUpdateService.ts";
-import { createTuttiMinimumVersionChecker } from "./update/minimumVersionPolicyClient.ts";
+import { createTuttidDesktopUpdateAdmissionBackend } from "./update/desktopUpdateAdmissionBackend.ts";
 import { getWorkspaceWindowKind } from "./windows/workspaceWindow.ts";
 
 function envFlagEnabled(value: string | undefined): boolean {
@@ -202,15 +203,37 @@ export async function bootstrapDesktopApp(): Promise<void> {
     process.platform,
     process.arch
   );
+  const managedAdmissionTarget = featureAvailabilityTarget;
+  const daemonRuntime = await startDesktopDaemonRuntime({
+    daemonRuntime: createDesktopDaemonRuntime({
+      desktopUpdateAdmission: managedAdmissionTarget
+        ? {
+            ...managedAdmissionTarget,
+            currentVersion: desktopUpdateAdmission.runtime.currentVersion,
+            managed: true,
+            packaged: app.isPackaged
+          }
+        : undefined
+    }),
+    logger
+  });
+  let admissionStartupActive = true;
+  let admissionDaemonStopStarted = false;
+  const stopAdmissionDaemonBeforeExit = (event: Electron.Event): void => {
+    if (!admissionStartupActive || admissionDaemonStopStarted) {
+      return;
+    }
+    event.preventDefault();
+    admissionDaemonStopStarted = true;
+    void daemonRuntime.tuttid.stop().finally(() => app.exit(0));
+  };
+  app.on("before-quit", stopAdmissionDaemonBeforeExit);
+
   const featureAvailabilityRuntime: MutableDesktopFeatureAvailabilityRuntime<"tutti-desktop"> | null =
-    featureAvailabilityTarget
-      ? await createDesktopFeatureAvailabilityRuntime({
-          cacheFilePath: join(
-            app.getPath("userData"),
-            "desktop-feature-availability-v1.json"
-          ),
+    managedAdmissionTarget
+      ? createDesktopFeatureAvailabilityRuntime({
           identity: {
-            ...featureAvailabilityTarget,
+            ...managedAdmissionTarget,
             currentVersion: desktopUpdateAdmission.runtime.currentVersion,
             product: "tutti-desktop"
           },
@@ -243,27 +266,15 @@ export async function bootstrapDesktopApp(): Promise<void> {
     currentVersion: desktopUpdateAdmission.runtime.currentVersion,
     developmentScenario: desktopUpdateAdmission.scenario
   });
-  const minimumVersionChecker =
-    desktopUpdateAdmission.scenario?.transport === "in-process"
-      ? createDevelopmentMinimumVersionChecker(
-          desktopUpdateAdmission.scenario.policy,
-          {
-            expectedCurrentVersion:
-              desktopUpdateAdmission.scenario.currentVersion
-          }
-        )
-      : createTuttiMinimumVersionChecker(
-          desktopUpdateAdmission.scenario?.mockServerUrl
-            ? `${desktopUpdateAdmission.scenario.mockServerUrl}/api/desktop/v1`
-            : undefined
-        );
   let desktopAppServices: Awaited<
     ReturnType<typeof createDesktopAppServices>
   > | null = null;
   let releaseStartupGate: (() => void) | null = null;
   let minimumVersionController: DesktopUpdateAdmissionController | null =
     createDesktopUpdateAdmissionController({
-      checkMinimumVersion: minimumVersionChecker,
+      backend: createTuttidDesktopUpdateAdmissionBackend(
+        daemonRuntime.tuttidClient
+      ),
       electron: { app, BrowserWindow, ipcMain, shell },
       featureAvailability: featureAvailabilityRuntime ?? undefined,
       listBusinessWindows: () => BrowserWindow.getAllWindows(),
@@ -311,6 +322,7 @@ export async function bootstrapDesktopApp(): Promise<void> {
     enableDevelopmentReloadShortcut: Boolean(rendererUrl) && !app.isPackaged,
     fallbackLocale: systemLocale,
     browserNodeGuestPreloadPath,
+    startedDaemonRuntime: daemonRuntime,
     isPackaged: app.isPackaged,
     logger,
     preloadPath,
@@ -440,10 +452,10 @@ export async function bootstrapDesktopApp(): Promise<void> {
       agentPowerSaveBlocker,
       {
         async shutdown() {
-          await featureAvailabilityRuntime?.dispose();
+          featureAvailabilityRuntime?.dispose();
         },
         dispose() {
-          void featureAvailabilityRuntime?.dispose();
+          featureAvailabilityRuntime?.dispose();
         }
       },
       {
@@ -469,6 +481,8 @@ export async function bootstrapDesktopApp(): Promise<void> {
     updateService: desktopAppServices.updateService,
     workspaceLaunch: desktopAppServices.workspaceLaunch
   });
+  admissionStartupActive = false;
+  app.removeListener("before-quit", stopAdmissionDaemonBeforeExit);
 
   await updateService.configure({
     channel: desktopAppServices.preferences.getUpdateChannel(),

@@ -45,6 +45,7 @@ import {
   enableAgentSessionRecordingTarget,
   initializeCleanDatabase,
   managedDesktopLaunch,
+  measureTiming,
   preparedDesktopLaunch,
   removeRuntime,
   replayListenerInfoPath,
@@ -52,13 +53,18 @@ import {
 } from "./agent-session-replay-runner/runtime.mjs";
 import {
   assertForbiddenPathAbsent,
+  resolveAgentSessionReplayProjectRoot,
   resolveRecordScenarioProject,
   seedRecordingUserProject,
   verifyRecordedProjectBindingArtifacts
 } from "./agent-session-replay-runner/recording.mjs";
+import { bindManagedReplayShutdown } from "./agent-session-replay-runner/desktop-shutdown.mjs";
+import { uiDriveScenario } from "./agent-session-replay-runner/ui-drive.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = resolve(scriptDirectory, "..", "..");
+/** Agent user-project root; equals Tutti checkout unless PROJECT_ROOT env is set. */
+const projectRoot = resolveAgentSessionReplayProjectRoot(workspaceRoot);
 const defaultTimeoutMs = 180_000;
 const defaultStallTimeoutMs = 60_000;
 export const managedReplayReadyPrefix = "[tutti-agent-session-replay-ready] ";
@@ -116,352 +122,395 @@ export async function main(argv) {
     await recordCassette(options);
   } else if (options.mode === "replay-workspace") {
     await replayWorkspace(options);
+  } else if (options.mode === "ui-drive") {
+    await uiDriveScenario({
+      ...options,
+      artifactDirectory: options.cassetteDirectory,
+      workspaceRoot
+    });
   } else {
     await replayCassette(options);
   }
 }
 
 async function recordCassette(options) {
-  await ensureEmptyDirectory(options.cassetteDirectory);
-  const runtime = await createRuntime(workspaceRoot, "record");
-  const databasePath = join(runtime.stateDirectory, "tuttid.db");
-  const scenarioFixturePaths = [];
-  let succeeded = false;
-  try {
-    const workspaceId = "11111111-1111-4111-8111-111111111111";
-    const agentTargetId = options.agentTargetId ?? "local:codex";
-    const recordScenario = await loadRecordScenario(options);
-    await initializeCleanDatabase(workspaceRoot, runtime, workspaceId);
-    await enableAgentSessionRecordingFeature(databasePath, workspaceRoot);
-    await enableAgentSessionRecordingTarget(
-      databasePath,
-      agentTargetId,
-      workspaceRoot
-    );
-    let replayComposerDefaults = null;
-    let projectSelection = null;
-    const scenarioState = await recordScenario.prepare({
-      agentTargetId,
-      async createFixture(name, contents) {
-        if (!name || basename(name) !== name) {
-          throw new Error(
-            `record scenario ${recordScenario.id} fixture name is invalid`
-          );
-        }
-        const path = join(
-          workspaceRoot,
-          ".tmp",
-          "agent-session-replay-scenario-fixtures",
-          recordScenario.id,
-          name
-        );
-        await mkdir(dirname(path), { recursive: true });
-        await writeFile(path, contents);
-        scenarioFixturePaths.push(path);
-        return relative(workspaceRoot, path).split("\\").join("/");
-      },
-      async removePath(path) {
-        await rm(path, { force: true });
-      },
-      async selectProject(project) {
-        if (projectSelection) {
-          throw new Error(
-            `record scenario ${recordScenario.id} selected more than one project`
-          );
-        }
-        projectSelection = resolveRecordScenarioProject(project, workspaceRoot);
-        await seedRecordingUserProject(databasePath, projectSelection);
-        return projectSelection;
-      },
-      async setComposerDefaults(defaults) {
-        replayComposerDefaults = defaults;
-        await setAgentComposerDefaults(
+  return measureTiming(
+    "record-cassette",
+    async () => {
+      await ensureEmptyDirectory(options.cassetteDirectory);
+      const runtime = await createRuntime(workspaceRoot, "record");
+      const databasePath = join(runtime.stateDirectory, "tuttid.db");
+      const scenarioFixturePaths = [];
+      let succeeded = false;
+      try {
+        const workspaceId = "11111111-1111-4111-8111-111111111111";
+        const agentTargetId = options.agentTargetId ?? "local:codex";
+        const recordScenario = await loadRecordScenario(options);
+        await initializeCleanDatabase(workspaceRoot, runtime, workspaceId);
+        await enableAgentSessionRecordingFeature(databasePath, workspaceRoot);
+        await enableAgentSessionRecordingTarget(
           databasePath,
           agentTargetId,
-          defaults,
           workspaceRoot
         );
-      },
-      workspaceRoot
-    });
-    if (!replayComposerDefaults) {
-      throw new Error(
-        `record scenario ${recordScenario.id} did not set composer defaults`
-      );
-    }
-    const action = {
-      schemaVersion: 1,
-      type: "create-session",
-      workspaceId,
-      agentTargetId,
-      cassetteName: recordScenario.cassetteName,
-      scenario: recordScenario,
-      scenarioState
-    };
-    const result = await runDesktopAction({
-      action,
-      artifactDirectory: join(runtime.directory, "artifacts"),
-      cassetteDirectory: options.cassetteDirectory,
-      daemonPath: runtime.daemonPath,
-      desktopLaunch: preparedDesktopLaunch(),
-      headless: resolveDesktopHeadless(options),
-      logPath: join(runtime.directory, "logs", "desktop.log"),
-      mode: "record",
-      runtime,
-      timeoutMs: options.timeoutMs
-    });
-    if (result.recordingMode !== recordScenario.expectedRecordingMode) {
-      throw new Error(
-        `record scenario ${recordScenario.id} produced ${result.recordingMode} mode, ` +
-          `want ${recordScenario.expectedRecordingMode}`
-      );
-    }
-    await waitForCompleteManifest(
-      join(result.recordingDirectory, providerManifestName),
-      15_000
-    );
-    await recordScenario.assert({
-      phase: "recorded",
-      scenarioState,
-      async verifyProjectBinding() {
-        if (!projectSelection) {
+        let replayComposerDefaults = null;
+        let projectSelection = null;
+        const scenarioState = await measureTiming(
+          "record.scenario-prepare",
+          () =>
+            recordScenario.prepare({
+              agentTargetId,
+              async createFixture(name, contents) {
+                if (!name || basename(name) !== name) {
+                  throw new Error(
+                    `record scenario ${recordScenario.id} fixture name is invalid`
+                  );
+                }
+                const path = join(
+                  projectRoot,
+                  ".tmp",
+                  "agent-session-replay-scenario-fixtures",
+                  recordScenario.id,
+                  name
+                );
+                await mkdir(dirname(path), { recursive: true });
+                await writeFile(path, contents);
+                scenarioFixturePaths.push(path);
+                return relative(projectRoot, path).split("\\").join("/");
+              },
+              async removePath(path) {
+                await rm(path, { force: true });
+              },
+              async selectProject(project) {
+                if (projectSelection) {
+                  throw new Error(
+                    `record scenario ${recordScenario.id} selected more than one project`
+                  );
+                }
+                projectSelection = resolveRecordScenarioProject(
+                  project,
+                  projectRoot
+                );
+                await seedRecordingUserProject(databasePath, projectSelection);
+                return projectSelection;
+              },
+              async setComposerDefaults(defaults) {
+                replayComposerDefaults = defaults;
+                await setAgentComposerDefaults(
+                  databasePath,
+                  agentTargetId,
+                  defaults,
+                  workspaceRoot
+                );
+              },
+              // Scenarios treat workspaceRoot as the bound Agent project tree.
+              workspaceRoot: projectRoot
+            }),
+          { scenario: recordScenario.id }
+        );
+        if (!replayComposerDefaults) {
           throw new Error(
-            `record scenario ${recordScenario.id} has no selected project`
+            `record scenario ${recordScenario.id} did not set composer defaults`
           );
         }
-        await verifyRecordedProjectBindingArtifacts(
-          result.recordingDirectory,
-          projectSelection.portablePath
+        const action = {
+          schemaVersion: 1,
+          type: "create-session",
+          workspaceId,
+          agentTargetId,
+          cassetteName: recordScenario.cassetteName,
+          scenario: recordScenario,
+          scenarioState
+        };
+        const result = await measureTiming("record.desktop-action", () =>
+          runDesktopAction({
+            action,
+            artifactDirectory: join(runtime.directory, "artifacts"),
+            cassetteDirectory: options.cassetteDirectory,
+            daemonPath: runtime.daemonPath,
+            desktopLaunch: preparedDesktopLaunch(),
+            headless: resolveDesktopHeadless(options),
+            logPath: join(runtime.directory, "logs", "desktop.log"),
+            mode: "record",
+            runtime,
+            timeoutMs: options.timeoutMs
+          })
         );
+        if (result.recordingMode !== recordScenario.expectedRecordingMode) {
+          throw new Error(
+            `record scenario ${recordScenario.id} produced ${result.recordingMode} mode, ` +
+              `want ${recordScenario.expectedRecordingMode}`
+          );
+        }
+        await waitForCompleteManifest(
+          join(result.recordingDirectory, providerManifestName),
+          15_000
+        );
+        await measureTiming("record.scenario-assert", () =>
+          recordScenario.assert({
+            phase: "recorded",
+            scenarioState,
+            async verifyProjectBinding() {
+              if (!projectSelection) {
+                throw new Error(
+                  `record scenario ${recordScenario.id} has no selected project`
+                );
+              }
+              await verifyRecordedProjectBindingArtifacts(
+                result.recordingDirectory,
+                projectSelection.portablePath
+              );
+            }
+          })
+        );
+        for (const name of [
+          activityEventsName,
+          checkpointPlanName,
+          "provider",
+          "blobs",
+          expectedStateName,
+          "cassette.json"
+        ]) {
+          const source = join(result.recordingDirectory, name);
+          await cp(source, join(options.cassetteDirectory, name), {
+            force: true,
+            recursive: true
+          });
+        }
+        try {
+          await cp(
+            join(result.recordingDirectory, initialStateName),
+            join(options.cassetteDirectory, initialStateName),
+            { force: true }
+          );
+        } catch (error) {
+          if (error?.code !== "ENOENT") throw error;
+        }
+        succeeded = true;
+        log(`recorded ${basename(options.cassetteDirectory)}`);
+        log(`assistant: ${result.assistantText}`);
+      } finally {
+        await Promise.all(
+          scenarioFixturePaths.map((path) => rm(path, { force: true }))
+        );
+        if (!succeeded) {
+          await logFailureDiagnostics(runtime);
+        }
+        if (!options.keepRuntime) {
+          await removeRuntime(runtime.directory);
+        } else {
+          log(`runtime kept: ${runtime.directory}`);
+        }
+        if (!succeeded) {
+          log(`incomplete cassette kept: ${options.cassetteDirectory}`);
+        }
       }
-    });
-    for (const name of [
-      activityEventsName,
-      checkpointPlanName,
-      "provider",
-      "blobs",
-      expectedStateName,
-      "cassette.json"
-    ]) {
-      const source = join(result.recordingDirectory, name);
-      await cp(source, join(options.cassetteDirectory, name), {
-        force: true,
-        recursive: true
-      });
-    }
-    try {
-      await cp(
-        join(result.recordingDirectory, initialStateName),
-        join(options.cassetteDirectory, initialStateName),
-        { force: true }
-      );
-    } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
-    }
-    succeeded = true;
-    log(`recorded ${basename(options.cassetteDirectory)}`);
-    log(`assistant: ${result.assistantText}`);
-  } finally {
-    await Promise.all(
-      scenarioFixturePaths.map((path) => rm(path, { force: true }))
-    );
-    if (!succeeded) {
-      await logFailureDiagnostics(runtime);
-    }
-    if (!options.keepRuntime) {
-      await removeRuntime(runtime.directory);
-    } else {
-      log(`runtime kept: ${runtime.directory}`);
-    }
-    if (!succeeded) {
-      log(`incomplete cassette kept: ${options.cassetteDirectory}`);
-    }
-  }
+    },
+    { cassetteDirectory: options.cassetteDirectory }
+  );
 }
 
 async function replayCassette(options) {
-  const manifest = await verifyCassette(options.cassetteDirectory);
-  await Promise.all([
-    access(join(options.cassetteDirectory, activityEventsName)),
-    access(join(options.cassetteDirectory, checkpointPlanName)),
-    access(join(options.cassetteDirectory, providerManifestName)),
-    access(join(options.cassetteDirectory, expectedStateName)),
-    access(join(options.cassetteDirectory, blobManifestName)),
-    access(join(options.cassetteDirectory, cassetteManifestName))
-  ]);
-  const workspaceId = randomUUID();
-  const activityEvents = parseActivityEvents(
-    await readFile(join(options.cassetteDirectory, activityEventsName), "utf8")
-  );
-  const checkpoints = await loadReplayCheckpointPlan(
-    options.cassetteDirectory,
-    activityEvents
-  );
-  const replayCassetteId = options.cassetteId ?? manifest.id;
-  const action = replayActionFromManifest(
-    manifest,
-    activityEvents,
-    workspaceId
-  );
-  action.turnIdentityPlan = await loadReplayTurnIdentityPlan(
-    options.cassetteDirectory,
-    manifest.mode
-  );
-  const runtime = await createRuntime(workspaceRoot, "replay");
-  const desktopLogPath = join(runtime.directory, "logs", "desktop.log");
-  const statusPath = join(runtime.directory, "replay-status.json");
-  const controlPath = join(runtime.directory, "replay-control.json");
-  const databasePath = join(runtime.stateDirectory, "tuttid.db");
-  let succeeded = false;
-  try {
-    await mkdir(dirname(desktopLogPath), { recursive: true });
-    // Do not pre-insert the workspace: SemanticRuntime creates it and writes the
-    // onboarding-suppressed workbench snapshot. Pre-seeding races that path with
-    // "Workspace already exists".
-    await initializeCleanDatabase(workspaceRoot, runtime, workspaceId, {
-      seedWorkspace: false
-    });
-    // Activation intents can omit composer settings. Restore the values that
-    // the cassette itself recorded so provider startup RPCs stay deterministic.
-    await setAgentComposerDefaults(
-      databasePath,
-      manifest.agentTargetId,
-      manifest.replayPrerequisites.composerDefaults,
-      workspaceRoot
-    );
-    // Project sessions render under a project rail section. The section only
-    // exists when the project is present in user_projects, so replay must
-    // re-seed the same project the recording prepared; otherwise the
-    // conversation rail never shows the restored session and surface focus
-    // stalls forever.
-    const replayProject = await loadReplayProject(
-      options.cassetteDirectory,
-      manifest.rootAgentSessionId
-    );
-    if (replayProject) {
-      await seedRecordingUserProject(databasePath, replayProject);
-      action.replayProject = replayProject;
-    }
-    await materializeReplayWorkspaceBlobs(
-      [{ cassetteDirectory: options.cassetteDirectory }],
-      runtime.stateDirectory
-    );
-    const result = await runDesktopAction({
-      action,
-      artifactDirectory: join(runtime.directory, "artifacts"),
-      cassetteDirectory: options.cassetteDirectory,
-      checkpoints,
-      controlPath,
-      daemonPath: runtime.daemonPath,
-      desktopLaunch: options.managed
-        ? managedDesktopLaunch()
-        : preparedDesktopLaunch(),
-      headless: resolveDesktopHeadless(options),
-      keepDesktopOpen: options.managed,
-      logPath: desktopLogPath,
-      mode: "replay",
-      cassetteId: replayCassetteId,
-      replayRegistrations: [
-        {
-          cassetteId: replayCassetteId,
-          rootAgentSessionId: manifest.rootAgentSessionId,
-          cassetteDirectory: join(options.cassetteDirectory, "provider"),
-          artifactDirectory: options.cassetteDirectory,
-          workspaceId
-        }
-      ],
-      initialTargetCheckpoint: options.targetCheckpoint,
-      screenshotCheckpoints: options.screenshotCheckpoints === true,
-      onCheckpoint: options.managed
-        ? (checkpoint) => {
-            process.stdout.write(
-              `${managedReplayCheckpointPrefix}${JSON.stringify({
-                checkpoint,
-                cassetteId: options.cassetteId
-              })}\n`
-            );
-          }
-        : undefined,
-      onCompleted: options.managed
-        ? () => {
-            process.stdout.write(
-              `${managedReplayCompletePrefix}${JSON.stringify({
-                cassetteId: options.cassetteId
-              })}\n`
-            );
-          }
-        : undefined,
-      onFailed: options.managed
-        ? (error) => {
-            process.stdout.write(
-              `${managedReplayFailedPrefix}${JSON.stringify(
-                managedReplayFailure(options.cassetteId, error)
-              )}\n`
-            );
-          }
-        : undefined,
-      onSurfaceReady: options.managed
-        ? () => {
-            process.stdout.write(
-              `${managedReplayReadyPrefix}${JSON.stringify({
-                cassetteId: options.cassetteId,
-                runtimeDirectory: runtime.directory
-              })}\n`
-            );
-          }
-        : undefined,
-      onReplacement: options.managed
-        ? (replacement) => {
-            process.stdout.write(
-              `${managedReplayReplacePrefix}${JSON.stringify({
-                ...replacement,
-                cassetteId: options.cassetteId
-              })}\n`
-            );
-          }
-        : undefined,
-      runtime,
-      statusPath,
-      timeoutMs: options.timeoutMs,
-      verifyResult: async () => {
-        await verifyReplayTransport(
-          runtime.stateDirectory,
-          replayCassetteId,
-          options.timeoutMs
+  return measureTiming(
+    "replay-cassette",
+    async () => {
+      const manifest = await verifyCassette(options.cassetteDirectory);
+      await Promise.all([
+        access(join(options.cassetteDirectory, activityEventsName)),
+        access(join(options.cassetteDirectory, checkpointPlanName)),
+        access(join(options.cassetteDirectory, providerManifestName)),
+        access(join(options.cassetteDirectory, expectedStateName)),
+        access(join(options.cassetteDirectory, blobManifestName)),
+        access(join(options.cassetteDirectory, cassetteManifestName))
+      ]);
+      const workspaceId = randomUUID();
+      const activityEvents = parseActivityEvents(
+        await readFile(
+          join(options.cassetteDirectory, activityEventsName),
+          "utf8"
+        )
+      );
+      const checkpoints = await loadReplayCheckpointPlan(
+        options.cassetteDirectory,
+        activityEvents
+      );
+      const replayCassetteId = options.cassetteId ?? manifest.id;
+      const action = replayActionFromManifest(
+        manifest,
+        activityEvents,
+        workspaceId
+      );
+      action.turnIdentityPlan = await loadReplayTurnIdentityPlan(
+        options.cassetteDirectory,
+        manifest.mode
+      );
+      const runtime = await createRuntime(workspaceRoot, "replay");
+      const desktopLogPath = join(runtime.directory, "logs", "desktop.log");
+      const statusPath = join(runtime.directory, "replay-status.json");
+      const controlPath = join(runtime.directory, "replay-control.json");
+      const databasePath = join(runtime.stateDirectory, "tuttid.db");
+      let succeeded = false;
+      try {
+        await mkdir(dirname(desktopLogPath), { recursive: true });
+        // Do not pre-insert the workspace: SemanticRuntime creates it and writes the
+        // onboarding-suppressed workbench snapshot. Pre-seeding races that path with
+        // "Workspace already exists".
+        await initializeCleanDatabase(workspaceRoot, runtime, workspaceId, {
+          seedWorkspace: false
+        });
+        // Activation intents can omit composer settings. Restore the values that
+        // the cassette itself recorded so provider startup RPCs stay deterministic.
+        await setAgentComposerDefaults(
+          databasePath,
+          manifest.agentTargetId,
+          manifest.replayPrerequisites.composerDefaults,
+          workspaceRoot
         );
-        const replayLog = await readFile(desktopLogPath, "utf8");
-        const failureLine = replayLog
-          .split("\n")
-          .find(
-            (line) =>
-              line.includes("process cassette outbound mismatch") ||
-              line.includes("process_transport.finalize_failed")
-          );
-        if (failureLine) {
-          throw new Error(`replay transport failed: ${failureLine.trim()}`);
+        // Project sessions render under a project rail section. The section only
+        // exists when the project is present in user_projects, so replay must
+        // re-seed the same project the recording prepared; otherwise the
+        // conversation rail never shows the restored session and surface focus
+        // stalls forever.
+        const replayProject = await loadReplayProject(
+          options.cassetteDirectory,
+          manifest.rootAgentSessionId
+        );
+        if (replayProject) {
+          await seedRecordingUserProject(databasePath, replayProject);
+          action.replayProject = replayProject;
+        }
+        await materializeReplayWorkspaceBlobs(
+          [{ cassetteDirectory: options.cassetteDirectory }],
+          runtime.stateDirectory
+        );
+        const settleScenario =
+          options.scenario && options.scenarioFile
+            ? await loadRecordScenario(options)
+            : null;
+        const result = await measureTiming("replay.desktop-action", () =>
+          runDesktopAction({
+            action,
+            artifactDirectory: join(runtime.directory, "artifacts"),
+            cassetteDirectory: options.cassetteDirectory,
+            checkpoints,
+            controlPath,
+            daemonPath: runtime.daemonPath,
+            desktopLaunch: options.managed
+              ? managedDesktopLaunch()
+              : preparedDesktopLaunch(),
+            headless: resolveDesktopHeadless(options),
+            keepDesktopOpen: options.managed,
+            logPath: desktopLogPath,
+            mode: "replay",
+            cassetteId: replayCassetteId,
+            settleScenario,
+            replayRegistrations: [
+              {
+                cassetteId: replayCassetteId,
+                rootAgentSessionId: manifest.rootAgentSessionId,
+                cassetteDirectory: join(options.cassetteDirectory, "provider"),
+                artifactDirectory: options.cassetteDirectory,
+                workspaceId
+              }
+            ],
+            initialTargetCheckpoint: options.targetCheckpoint,
+            screenshotCheckpoints: options.screenshotCheckpoints === true,
+            onCheckpoint: options.managed
+              ? (checkpoint) => {
+                  process.stdout.write(
+                    `${managedReplayCheckpointPrefix}${JSON.stringify({
+                      checkpoint,
+                      cassetteId: options.cassetteId
+                    })}\n`
+                  );
+                }
+              : undefined,
+            onCompleted: options.managed
+              ? () => {
+                  process.stdout.write(
+                    `${managedReplayCompletePrefix}${JSON.stringify({
+                      cassetteId: options.cassetteId
+                    })}\n`
+                  );
+                }
+              : undefined,
+            onFailed: options.managed
+              ? (error) => {
+                  process.stdout.write(
+                    `${managedReplayFailedPrefix}${JSON.stringify(
+                      managedReplayFailure(options.cassetteId, error)
+                    )}\n`
+                  );
+                }
+              : undefined,
+            onSurfaceReady: options.managed
+              ? () => {
+                  process.stdout.write(
+                    `${managedReplayReadyPrefix}${JSON.stringify({
+                      cassetteId: options.cassetteId,
+                      runtimeDirectory: runtime.directory
+                    })}\n`
+                  );
+                }
+              : undefined,
+            onReplacement: options.managed
+              ? (replacement) => {
+                  process.stdout.write(
+                    `${managedReplayReplacePrefix}${JSON.stringify({
+                      ...replacement,
+                      cassetteId: options.cassetteId
+                    })}\n`
+                  );
+                }
+              : undefined,
+            runtime,
+            statusPath,
+            timeoutMs: options.timeoutMs,
+            verifyResult: async () => {
+              await verifyReplayTransport(
+                runtime.stateDirectory,
+                replayCassetteId,
+                options.timeoutMs
+              );
+              const replayLog = await readFile(desktopLogPath, "utf8");
+              const failureLine = replayLog
+                .split("\n")
+                .find(
+                  (line) =>
+                    line.includes("process cassette outbound mismatch") ||
+                    line.includes("process_transport.finalize_failed")
+                );
+              if (failureLine) {
+                throw new Error(
+                  `replay transport failed: ${failureLine.trim()}`
+                );
+              }
+            }
+          })
+        );
+        if (result.replaced) {
+          succeeded = true;
+          return;
+        }
+        succeeded = true;
+        log(`replay passed: ${basename(options.cassetteDirectory)}`);
+        log(`assistant: ${result.assistantText}`);
+      } finally {
+        if (!succeeded) {
+          await logFailureDiagnostics(runtime);
+        }
+        if (!options.keepRuntime) {
+          await removeRuntime(runtime.directory);
+        } else {
+          log(`runtime kept: ${runtime.directory}`);
+        }
+        if (!succeeded) {
+          log("replay failed; cassette was left unchanged");
         }
       }
-    });
-    if (result.replaced) {
-      succeeded = true;
-      return;
-    }
-    succeeded = true;
-    log(`replay passed: ${basename(options.cassetteDirectory)}`);
-    log(`assistant: ${result.assistantText}`);
-  } finally {
-    if (!succeeded) {
-      await logFailureDiagnostics(runtime);
-    }
-    if (!options.keepRuntime) {
-      await removeRuntime(runtime.directory);
-    } else {
-      log(`runtime kept: ${runtime.directory}`);
-    }
-    if (!succeeded) {
-      log("replay failed; cassette was left unchanged");
-    }
-  }
+    },
+    { cassetteDirectory: options.cassetteDirectory }
+  );
 }
 
 async function replayWorkspace(options) {
@@ -529,16 +578,15 @@ async function runReplayWorkspaceOrchestration(bootstrap, options) {
       ),
       // Keep the daemon's portable-path anchor identical to the runner's
       // activity-event resolution root; the daemon process cwd is unreliable.
-      TUTTI_AGENT_SESSION_REPLAY_CWD: workspaceRoot,
+      // When PROJECT_ROOT is set, ${REPLAY_CWD} remaps into that project tree.
+      TUTTI_AGENT_SESSION_REPLAY_CWD: projectRoot,
       TUTTI_AGENT_SESSION_REPLAY_CONTROL_PATH: controlPath
     },
     headless: resolveDesktopHeadless(options),
     stateDirectory: bootstrap.runtime.stateDirectory,
     userDataDirectory: bootstrap.runtime.userDataDirectory
   });
-  const disposeManagedShutdown = options.managed
-    ? bindManagedReplayShutdown(desktop)
-    : () => {};
+  const disposeManagedShutdown = bindManagedReplayShutdown(desktop);
   let client = null;
   try {
     const pageWebSocket = await waitForPageWebSocket(
@@ -597,6 +645,13 @@ async function runReplayWorkspaceOrchestration(bootstrap, options) {
                   : initialTargetCheckpoint,
               async onCheckpoint(checkpoint) {
                 if (options.screenshotCheckpoints) {
+                  const checkpointPlan = cassette.checkpoints[checkpoint];
+                  await maybeSettleForScreenshot(
+                    cassette.settleScenario,
+                    client,
+                    options.timeoutMs,
+                    checkpointPlan
+                  );
                   await captureCheckpointScreenshot({
                     artifactDirectory: workspaceArtifactDirectory,
                     cassetteId: cassette.cassetteId,
@@ -880,6 +935,17 @@ export function validateReplayWorkspaceManifest(value) {
   const cassetteIds = new Set();
   const rootIds = new Set();
   const cassettes = value.cassettes.map((cassette) => {
+    const scenario =
+      typeof cassette?.scenario === "string" ? cassette.scenario.trim() : "";
+    const scenarioFile =
+      typeof cassette?.scenarioFile === "string" && cassette.scenarioFile.trim()
+        ? resolve(cassette.scenarioFile)
+        : "";
+    if ((scenario && !scenarioFile) || (!scenario && scenarioFile)) {
+      throw new Error(
+        "Replay Workspace cassette scenario and scenarioFile must be provided together"
+      );
+    }
     const normalized = {
       cassetteId:
         typeof cassette?.cassetteId === "string"
@@ -893,7 +959,9 @@ export function validateReplayWorkspaceManifest(value) {
       rootAgentSessionId:
         typeof cassette?.rootAgentSessionId === "string"
           ? cassette.rootAgentSessionId.trim()
-          : ""
+          : "",
+      scenario,
+      scenarioFile
     };
     if (!normalized.cassetteDirectory) {
       throw new Error("Replay Workspace cassette registration is invalid");
@@ -1058,6 +1126,13 @@ async function loadReplayWorkspaceCassette(cassette, workspaceId) {
     cassette.cassetteDirectory,
     cassetteManifest.mode
   );
+  const settleScenario =
+    cassette.scenario && cassette.scenarioFile
+      ? await loadRecordScenario({
+          scenario: cassette.scenario,
+          scenarioFile: cassette.scenarioFile
+        })
+      : null;
   return {
     ...cassette,
     cassetteId,
@@ -1068,6 +1143,7 @@ async function loadReplayWorkspaceCassette(cassette, workspaceId) {
       cassette.cassetteDirectory,
       activityEvents
     ),
+    settleScenario,
     totalDurationMs,
     mode: cassetteManifest.mode
   };
@@ -1080,7 +1156,7 @@ async function loadReplayProject(cassetteDirectory, rootAgentSessionId) {
   return resolveReplayProjectFromExpectedState(
     expectedState,
     rootAgentSessionId,
-    workspaceRoot
+    projectRoot
   );
 }
 
@@ -1253,7 +1329,11 @@ async function runDesktopAction(input) {
           currentCheckpoint: 0,
           totalCheckpoints: input.checkpoints.length,
           paused: false,
-          timingMode: "realtime",
+          timingMode:
+            process.env.TUTTI_AGENT_SESSION_REPLAY_TIMING_MODE?.trim() ===
+            "fast-forward"
+              ? "fast-forward"
+              : "realtime",
           targetCheckpoint: null
         }
       : {})
@@ -1279,7 +1359,8 @@ async function runDesktopAction(input) {
             // anchor. Its process cwd is not reliable (the desktop launcher
             // may start it from `apps/desktop`), so pin the same root the
             // runner uses to resolve portable activity-event payloads.
-            TUTTI_AGENT_SESSION_REPLAY_CWD: workspaceRoot,
+            // When PROJECT_ROOT is set, that root is the Agent user-project.
+            TUTTI_AGENT_SESSION_REPLAY_CWD: projectRoot,
             ...(input.controlPath
               ? { TUTTI_AGENT_SESSION_REPLAY_CONTROL_PATH: input.controlPath }
               : {})
@@ -1379,6 +1460,13 @@ async function runDesktopAction(input) {
           cassetteId: input.cassetteId,
           async onCheckpoint(checkpoint) {
             if (input.screenshotCheckpoints) {
+              const checkpointPlan = input.checkpoints[checkpoint];
+              await maybeSettleForScreenshot(
+                input.settleScenario,
+                pageClient,
+                input.timeoutMs,
+                checkpointPlan
+              );
               await captureCheckpointScreenshot({
                 artifactDirectory: input.artifactDirectory,
                 checkpointIndex: checkpoint,
@@ -1455,7 +1543,17 @@ async function runDesktopAction(input) {
       );
     }
     if (input.mode === "record") {
+      async function captureEvidence(name) {
+        if (!/^[a-z0-9][a-z0-9-]*$/u.test(name)) {
+          throw new Error(`invalid scenario evidence name: ${name}`);
+        }
+        await captureScreenshot(
+          pageClient,
+          join(input.artifactDirectory, `${name}.png`)
+        );
+      }
       await input.action.scenario.drive({
+        captureEvidence,
         client: pageClient,
         scenarioState: input.action.scenarioState,
         timeoutMs: input.timeoutMs
@@ -1463,21 +1561,21 @@ async function runDesktopAction(input) {
       settled = await input.action.scenario.assert({
         assertPathAbsent: (path) =>
           assertForbiddenPathAbsent(path, input.action.scenario.id),
-        async captureEvidence(name) {
-          if (!/^[a-z0-9][a-z0-9-]*$/u.test(name)) {
-            throw new Error(`invalid scenario evidence name: ${name}`);
-          }
-          await captureScreenshot(
-            pageClient,
-            join(input.artifactDirectory, `${name}.png`)
-          );
-        },
+        captureEvidence,
         client: pageClient,
         phase: "terminal",
         scenarioState: input.action.scenarioState,
         timeoutMs: input.timeoutMs
       });
     }
+    const settleScenario =
+      input.mode === "record" ? input.action.scenario : input.settleScenario;
+    await maybeSettleForScreenshot(
+      settleScenario,
+      pageClient,
+      input.timeoutMs,
+      null
+    );
     await captureScreenshot(
       pageClient,
       join(input.artifactDirectory, `${input.mode}-agent-gui.png`)
@@ -1756,6 +1854,7 @@ async function verifyReplayTransport(stateDirectory, cassetteId, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   const transportPath = `/v1/agent-session-replay/cassettes/${encodeURIComponent(cassetteId)}/transport`;
   let latestPlayback = null;
+  let nextHardFailureCheckAt = 0;
   while (Date.now() < deadline) {
     const playbackResponse = await fetch(
       `${baseURL}${transportPath}/playback`,
@@ -1774,11 +1873,34 @@ async function verifyReplayTransport(stateDirectory, cassetteId, timeoutMs) {
     if (latestPlayback.drained === true) {
       break;
     }
+    // Fail fast on hard outbound faults instead of waiting out the full
+    // drain timeout while playback.drained stays false.
+    if (Date.now() >= nextHardFailureCheckAt) {
+      nextHardFailureCheckAt = Date.now() + 500;
+      const earlyFailure = await readReplayTransportHardFailure(
+        baseURL,
+        headers,
+        cassetteId,
+        timeoutMs
+      );
+      if (earlyFailure) {
+        throw new Error(
+          `replay transport failed before drain: ${earlyFailure}; playback=${JSON.stringify(latestPlayback)}`
+        );
+      }
+    }
     await delay(50);
   }
   if (latestPlayback?.drained !== true) {
+    const lateFailure = await readReplayTransportHardFailure(
+      baseURL,
+      headers,
+      cassetteId,
+      timeoutMs
+    );
     throw new Error(
-      `replay transport did not drain before verification: ${JSON.stringify(latestPlayback)}`
+      `replay transport did not drain before verification: ${JSON.stringify(latestPlayback)}` +
+        (lateFailure ? `; transport=${lateFailure}` : "")
     );
   }
   const response = await fetch(`${baseURL}${transportPath}/verify`, {
@@ -1793,61 +1915,45 @@ async function verifyReplayTransport(stateDirectory, cassetteId, timeoutMs) {
   }
 }
 
-export function bindManagedReplayShutdown(
-  desktop,
-  {
-    clearInterval: clearIntervalFn = clearInterval,
-    isProcessAlive = defaultIsProcessAlive,
-    parentPid = process.env.TUTTI_AGENT_SESSION_REPLAY_PARENT_PID,
-    processRuntime = process,
-    setInterval: setIntervalFn = setInterval,
-    stopDesktop = stopProcessTree
-  } = {}
-) {
-  let stopping = false;
-  const stop = () => {
-    if (stopping) return;
-    stopping = true;
-    void Promise.resolve(stopDesktop(desktop)).catch(() => undefined);
-  };
-  const onOutputError = (error) => {
-    if (error?.code === "EPIPE") {
-      stop();
-    }
-  };
-  const parsedParentPid = Number.parseInt(parentPid?.trim() ?? "", 10);
-  const parentCheckInterval =
-    Number.isSafeInteger(parsedParentPid) && parsedParentPid > 0
-      ? setIntervalFn(() => {
-          if (!isProcessAlive(parsedParentPid)) {
-            stop();
-          }
-        }, 500)
-      : null;
-  parentCheckInterval?.unref?.();
-  processRuntime.once("SIGINT", stop);
-  processRuntime.once("SIGTERM", stop);
-  processRuntime.stdout?.on("error", onOutputError);
-  processRuntime.stderr?.on("error", onOutputError);
-  return () => {
-    if (parentCheckInterval) {
-      clearIntervalFn(parentCheckInterval);
-    }
-    processRuntime.off("SIGINT", stop);
-    processRuntime.off("SIGTERM", stop);
-    processRuntime.stdout?.off("error", onOutputError);
-    processRuntime.stderr?.off("error", onOutputError);
-  };
+export function replayTransportHardFailureMessage(status, body) {
+  if (status !== 409 || typeof body !== "string" || body.trim() === "") {
+    return "";
+  }
+  if (
+    body.includes("outbound mismatch") ||
+    body.includes("unexpected outbound bytes after cassette end")
+  ) {
+    return body.trim();
+  }
+  return "";
 }
 
-function defaultIsProcessAlive(pid) {
+async function readReplayTransportHardFailure(
+  baseURL,
+  headers,
+  cassetteId,
+  timeoutMs
+) {
   try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return error?.code !== "ESRCH";
+    const response = await fetch(
+      `${baseURL}/v1/agent-session-replay/cassettes/${encodeURIComponent(cassetteId)}/transport/verify`,
+      {
+        method: "POST",
+        headers,
+        signal: AbortSignal.timeout(timeoutMs)
+      }
+    );
+    if (response.ok) return "";
+    return replayTransportHardFailureMessage(
+      response.status,
+      await response.text()
+    );
+  } catch {
+    return "";
   }
 }
+
+export { bindManagedReplayShutdown } from "./agent-session-replay-runner/desktop-shutdown.mjs";
 
 export async function replayStimuli(
   stateDirectory,
@@ -2448,7 +2554,10 @@ export function createReplayPlaybackController(input) {
     : input.targetCheckpoint;
   let targetDeadline = null;
   let activityEventSequence = 0;
-  let timingMode = "realtime";
+  const preferFastForward =
+    process.env.TUTTI_AGENT_SESSION_REPLAY_TIMING_MODE?.trim() ===
+    "fast-forward";
+  let timingMode = preferFastForward ? "fast-forward" : "realtime";
   const transportPlaybackPath = `/v1/agent-session-replay/cassettes/${encodeURIComponent(cassetteId)}/transport/playback`;
   const checkpointVerificationPath = (checkpointIndex) =>
     `/v1/agent-session-replay/cassettes/${encodeURIComponent(cassetteId)}/checkpoints/${checkpointIndex}/verify`;
@@ -2503,12 +2612,30 @@ export function createReplayPlaybackController(input) {
   };
 
   const setRealtime = async () => {
+    if (preferFastForward) {
+      if (timingMode === "fast-forward") return;
+      await setTransport({
+        command: "set-timing-mode",
+        timingMode: "fast-forward"
+      });
+      timingMode = "fast-forward";
+      return;
+    }
     if (timingMode === "realtime") return;
     await setTransport({
       command: "set-timing-mode",
       timingMode: "realtime"
     });
     timingMode = "realtime";
+  };
+
+  const setFastForward = async () => {
+    if (timingMode === "fast-forward") return;
+    await setTransport({
+      command: "set-timing-mode",
+      timingMode: "fast-forward"
+    });
+    timingMode = "fast-forward";
   };
 
   const installProviderTarget = async (checkpointIndex) => {
@@ -2606,6 +2733,7 @@ export function createReplayPlaybackController(input) {
     if (automatic && currentCheckpoint < input.checkpoints.length - 1) {
       targetCheckpoint = currentCheckpoint + 1;
       await installProviderTarget(targetCheckpoint);
+      await setFastForward();
       paused = false;
     } else if (automatic || input.resumeAfterTarget) {
       await setTransport({ command: "clear-provider-cursor" });
@@ -2694,11 +2822,7 @@ export function createReplayPlaybackController(input) {
           );
           if (targetCheckpoint > currentCheckpoint) {
             await installProviderTarget(targetCheckpoint);
-            await setTransport({
-              command: "set-timing-mode",
-              timingMode: "fast-forward"
-            });
-            timingMode = "fast-forward";
+            await setFastForward();
             await setTransport({ command: "resume" });
             paused = false;
           } else {
@@ -2760,13 +2884,7 @@ export function createReplayPlaybackController(input) {
         await reachBootstrap();
       } else if (targetCheckpoint !== null) {
         await installProviderTarget(targetCheckpoint);
-        if (!automatic) {
-          await setTransport({
-            command: "set-timing-mode",
-            timingMode: "fast-forward"
-          });
-          timingMode = "fast-forward";
-        }
+        await setFastForward();
         await setTransport({ command: "resume" });
       }
       await updateStatus();
@@ -3642,6 +3760,8 @@ export function parseArgs(argv) {
       options.help = true;
     } else if (arg === "--record") {
       setMode(options, "record", requiredValue(argv, (index += 1), arg));
+    } else if (arg === "--ui-drive") {
+      setMode(options, "ui-drive", requiredValue(argv, (index += 1), arg));
     } else if (arg === "--replay") {
       setMode(options, "replay", requiredValue(argv, (index += 1), arg));
     } else if (arg === "--replay-workspace-manifest") {
@@ -3688,7 +3808,7 @@ export function parseArgs(argv) {
     }
   }
   if (!options.help && !options.mode) {
-    throw new Error("choose exactly one of --record or --replay");
+    throw new Error("choose exactly one of --record, --replay, or --ui-drive");
   }
   if (
     options.screenshotCheckpoints &&
@@ -3715,20 +3835,54 @@ export function parseArgs(argv) {
       "--target-checkpoint is not supported with a Replay Workspace"
     );
   }
-  if (options.agentTargetId && options.mode !== "record") {
-    throw new Error("--agent-target-id is only supported with record");
+  if (
+    options.agentTargetId &&
+    options.mode !== "record" &&
+    options.mode !== "ui-drive"
+  ) {
+    throw new Error(
+      "--agent-target-id is only supported with record or --ui-drive"
+    );
   }
-  if (options.scenario && options.mode !== "record") {
-    throw new Error("--scenario is only supported with record");
+  if (
+    options.scenario &&
+    options.mode !== "record" &&
+    options.mode !== "replay" &&
+    options.mode !== "replay-workspace" &&
+    options.mode !== "ui-drive"
+  ) {
+    throw new Error(
+      "--scenario is only supported with record, replay, replay-workspace, or --ui-drive"
+    );
   }
-  if (options.scenarioFile && options.mode !== "record") {
-    throw new Error("--scenario-file is only supported with record");
+  if (
+    options.scenarioFile &&
+    options.mode !== "record" &&
+    options.mode !== "replay" &&
+    options.mode !== "replay-workspace" &&
+    options.mode !== "ui-drive"
+  ) {
+    throw new Error(
+      "--scenario-file is only supported with record, replay, replay-workspace, or --ui-drive"
+    );
+  }
+  if (
+    (options.scenario && !options.scenarioFile) ||
+    (!options.scenario && options.scenarioFile)
+  ) {
+    throw new Error("--scenario and --scenario-file must be provided together");
   }
   if (options.mode === "record" && !options.scenario) {
     throw new Error("--scenario is required with --record");
   }
   if (options.mode === "record" && !options.scenarioFile) {
     throw new Error("--scenario-file is required with --record");
+  }
+  if (options.mode === "ui-drive" && !options.scenario) {
+    throw new Error("--scenario is required with --ui-drive");
+  }
+  if (options.mode === "ui-drive" && !options.scenarioFile) {
+    throw new Error("--scenario-file is required with --ui-drive");
   }
   return options;
 }
@@ -3747,12 +3901,50 @@ export async function loadRecordScenario(options) {
       `record scenario file does not export scenario ${options.scenario}: ${options.scenarioFile}`
     );
   }
+  if (
+    scenario.settleForScreenshot !== undefined &&
+    typeof scenario.settleForScreenshot !== "function"
+  ) {
+    throw new Error(
+      `record scenario ${options.scenario} has invalid settleForScreenshot`
+    );
+  }
   return scenario;
+}
+
+export function checkpointNeedsToolSettle(checkpoint) {
+  if (!checkpoint) return true;
+  const kind = String(checkpoint.kind ?? "");
+  const tags = Array.isArray(checkpoint.tags) ? checkpoint.tags : [];
+  return [kind, ...tags].some((token) =>
+    /(?:^|[.])(?:tool\.completed|turn\.terminal|turn\.completed)$/u.test(
+      String(token)
+    )
+  );
+}
+
+export async function maybeSettleForScreenshot(
+  scenario,
+  client,
+  timeoutMs,
+  checkpoint = null
+) {
+  if (!scenario || typeof scenario.settleForScreenshot !== "function") {
+    return;
+  }
+  if (checkpoint && !checkpointNeedsToolSettle(checkpoint)) {
+    return;
+  }
+  await scenario.settleForScreenshot({
+    client,
+    timeoutMs,
+    checkpoint
+  });
 }
 
 function setMode(options, mode, directory) {
   if (options.mode) {
-    throw new Error("choose exactly one of --record or --replay");
+    throw new Error("choose exactly one of --record, --replay, or --ui-drive");
   }
   options.mode = mode;
   options.cassetteDirectory = resolve(directory);
@@ -3816,18 +4008,20 @@ async function logFailureDiagnostics(runtime, tailLines = 15) {
 
 function printUsage() {
   process.stdout.write(
-    `Record and replay an AgentGUI Codex SessionGraph scenario.\n\n` +
+    `Record and replay an AgentGUI SessionGraph scenario.\n\n` +
       `Usage:\n` +
       `  pnpm e2e:agent-gui -- --record .tmp/cassettes/c01_codex --scenario c01 --scenario-file ../tutti-agent-session-replay-cases/cases/c01/scenario.mjs\n` +
       `  pnpm e2e:agent-gui -- --replay .tmp/cassettes/c01_codex\n` +
+      `  pnpm e2e:agent-gui -- --ui-drive .tmp/ui-drive/u01 --scenario u01 --scenario-file ../tutti-agent-session-replay-cases/cases/u01/scenarios/u01.mjs\n` +
       `  pnpm e2e:agent-gui -- --replay-workspace-manifest .tmp/replay-workspace.json\n\n` +
       `Options:\n` +
       `  --record <directory>   Record the required named scenario into a new empty cassette directory\n` +
+      `  --ui-drive <directory>  Run a pure-UI scenario with step checkpoints/screenshots (no cassette)\n` +
       `  --replay <directory>   Replay an existing complete cassette\n` +
       `  --replay-workspace-manifest <path> Bootstrap one fixed multi-Cassette Replay Workspace\n` +
-      `  --scenario <id>        Required with --record. Must match the loaded scenario id\n` +
-      `  --scenario-file <path> Required with --record. ES module exporting the scenario as default\n` +
-      `  --agent-target-id <id> Agent Target used for recording. Default: local:codex\n` +
+      `  --scenario <id>        Required with --record/--ui-drive; optional with replay to settle UI before screenshots\n` +
+      `  --scenario-file <path> Required with --record/--ui-drive; optional with replay. ES module exporting the scenario as default\n` +
+      `  --agent-target-id <id> Agent Target used for recording/ui-drive. Default: local:codex\n` +
       `  --timeout-ms <n>       Desktop/action timeout. Default: ${defaultTimeoutMs}\n` +
       `  --stall-timeout-ms <n> Fail a wait when its observed value stops changing for n ms; 0 disables. Default: ${defaultStallTimeoutMs}\n` +
       `  --headless             Hide the Electron window (default: show the window)\n` +

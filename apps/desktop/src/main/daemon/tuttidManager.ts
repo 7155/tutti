@@ -29,6 +29,7 @@ import {
   createDaemonRestartController,
   type DaemonRestartController
 } from "./daemonRestartController.ts";
+import type { DesktopUpdateAdmissionDaemonConfig } from "../desktopDaemonRuntime.ts";
 
 const healthPollIntervalMs = 250;
 const healthTimeoutMs = 90_000;
@@ -63,9 +64,16 @@ interface ResolveLaunchSpecOptions {
 
 export function createTuttidManager(
   endpoint: DesktopDaemonEndpoint,
-  tuttidClient: TuttidClient
+  tuttidClient: TuttidClient,
+  options?: {
+    desktopUpdateAdmission?: DesktopUpdateAdmissionDaemonConfig;
+  }
 ): TuttidManager {
-  return new ManagedTuttid(endpoint, tuttidClient);
+  return new ManagedTuttid(
+    endpoint,
+    tuttidClient,
+    options?.desktopUpdateAdmission
+  );
 }
 
 class ManagedTuttid implements TuttidManager {
@@ -74,10 +82,18 @@ class ManagedTuttid implements TuttidManager {
   private readonly endpoint: DesktopDaemonEndpoint;
   private readonly tuttidClient: TuttidClient;
   private readonly restartController: DaemonRestartController;
+  private readonly desktopUpdateAdmission:
+    | DesktopUpdateAdmissionDaemonConfig
+    | undefined;
 
-  constructor(endpoint: DesktopDaemonEndpoint, tuttidClient: TuttidClient) {
+  constructor(
+    endpoint: DesktopDaemonEndpoint,
+    tuttidClient: TuttidClient,
+    desktopUpdateAdmission?: DesktopUpdateAdmissionDaemonConfig
+  ) {
     this.endpoint = endpoint;
     this.tuttidClient = tuttidClient;
+    this.desktopUpdateAdmission = desktopUpdateAdmission;
     this.restartController = createDaemonRestartController({
       restart: () => this.start(),
       isStopRequested: () => this.stopRequested,
@@ -124,6 +140,7 @@ class ManagedTuttid implements TuttidManager {
       detached: process.platform !== "win32",
       env: resolveManagedDaemonProcessEnv({
         endpoint: this.endpoint,
+        desktopUpdateAdmission: this.desktopUpdateAdmission,
         logOutput,
         userShellEnv
       }),
@@ -256,6 +273,7 @@ function resolveEndpointEnv(
 }
 
 export interface ManagedDaemonProcessEnvInput {
+  desktopUpdateAdmission?: DesktopUpdateAdmissionDaemonConfig;
   endpoint: DesktopDaemonEndpoint;
   logDir?: string;
   logOutput: string;
@@ -365,6 +383,7 @@ function resolveManagedRuntimeDaemonEnv(
 export function resolveManagedDaemonProcessEnv(
   input: ManagedDaemonProcessEnvInput
 ): NodeJS.ProcessEnv {
+  const desktopUpdateAdmission = input.desktopUpdateAdmission;
   return {
     ...process.env,
     ...(input.userShellEnv ?? {}),
@@ -373,6 +392,18 @@ export function resolveManagedDaemonProcessEnv(
     ...resolveBrowserMcpDaemonEnv(),
     ...resolveClaudeSDKSidecarDaemonEnv(),
     TUTTI_APP_VERSION: process.env.TUTTI_APP_VERSION?.trim() ?? "",
+    TUTTI_DESKTOP_UPDATE_ADMISSION_ARCHITECTURE:
+      desktopUpdateAdmission?.architecture ?? "",
+    TUTTI_DESKTOP_UPDATE_ADMISSION_CURRENT_VERSION:
+      desktopUpdateAdmission?.currentVersion ?? "",
+    TUTTI_DESKTOP_UPDATE_ADMISSION_MANAGED: desktopUpdateAdmission?.managed
+      ? "1"
+      : "0",
+    TUTTI_DESKTOP_UPDATE_ADMISSION_PACKAGED: desktopUpdateAdmission?.packaged
+      ? "1"
+      : "0",
+    TUTTI_DESKTOP_UPDATE_ADMISSION_PLATFORM:
+      desktopUpdateAdmission?.platform ?? "",
     TUTTI_BROWSER_NODE_LISTENER_INFO:
       resolveBrowserNodeAutomationListenerInfoPath(),
     TUTTI_DESKTOP_PARENT_PID: String(input.parentPID ?? process.pid),

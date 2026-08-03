@@ -63,6 +63,9 @@ import type {
   DeleteUserProjectRequest,
   DeleteAgentQuickPromptRequest,
   DesktopPreferencesStateResponse,
+  DesktopUpdateAdmissionRefreshResult,
+  DesktopUpdateAdmissionRefreshTrigger,
+  DesktopUpdateAdmissionSnapshot,
   DeletedAgentConversationPurgeResult,
   EditRetryWorkspaceAgentTurnRequest,
   ExportWorkspaceAppRequest,
@@ -455,6 +458,16 @@ export interface TuttidClient
     request: CopyWorkspaceFileEntryRequest
   ): Promise<WorkspaceFileEntryResponse>;
   getDesktopPreferences(): Promise<DesktopPreferencesStateResponse>;
+  getDesktopUpdateAdmissionSnapshot(
+    requestOptions?: TuttidRequestOptions
+  ): Promise<DesktopUpdateAdmissionSnapshot>;
+  getDesktopUpdateAdmissionStartup(
+    requestOptions?: TuttidRequestOptions
+  ): Promise<DesktopUpdateAdmissionSnapshot>;
+  refreshDesktopUpdateAdmission(
+    trigger: DesktopUpdateAdmissionRefreshTrigger,
+    requestOptions?: TuttidRequestOptions
+  ): Promise<DesktopUpdateAdmissionRefreshResult>;
   purgeDeletedAgentConversations(): Promise<DeletedAgentConversationPurgeResult>;
   getHealth(): Promise<HealthStatusResponse>;
   getStartupWorkspace(): Promise<WorkspaceSummary | null>;

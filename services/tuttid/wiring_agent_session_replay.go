@@ -51,6 +51,13 @@ func composeAgentReplayVerifier(
 			cassetteID string,
 			checkpointIndex int,
 		) (tuttiapi.AgentSessionReplayCheckpointState, error) {
+			// Fold the transport barrier's completed units into the semantic
+			// handled lane before verify. Observation stamps can miss a unit
+			// (compact slash-command path); the barrier still knows the unit
+			// completed because it parks there.
+			if handled, err := transport.ReplayProviderCursor(cassetteID); err == nil {
+				semanticRuntime.NoteHandledProviderUnits(cassetteID, handled)
+			}
 			state, err := semanticRuntime.VerifyCheckpoint(
 				ctx,
 				cassetteID,

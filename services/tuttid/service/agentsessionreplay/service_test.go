@@ -12,16 +12,18 @@ import (
 )
 
 func TestServiceKeepsTuttiTargetPolicyOutsideSharedWorkflow(t *testing.T) {
-	for _, agentTargetID := range []string{"local:claude-code", "local:cursor"} {
-		t.Run(agentTargetID, func(t *testing.T) {
-			service := &Service{}
-			_, err := service.Start(context.Background(), StartInput{
-				WorkspaceID: "workspace-1", AgentTargetID: agentTargetID,
-			})
-			if !errors.Is(err, ErrUnsupportedTarget) {
-				t.Fatalf("error = %v", err)
-			}
-		})
+	service := &Service{}
+	_, err := service.Start(context.Background(), StartInput{
+		WorkspaceID: "workspace-1", AgentTargetID: "local:cursor",
+	})
+	if !errors.Is(err, ErrUnsupportedTarget) {
+		t.Fatalf("Cursor error = %v", err)
+	}
+	_, err = service.Start(context.Background(), StartInput{
+		WorkspaceID: "workspace-1", AgentTargetID: "local:claude-code",
+	})
+	if errors.Is(err, ErrUnsupportedTarget) {
+		t.Fatalf("Claude Code remains unsupported: %v", err)
 	}
 }
 

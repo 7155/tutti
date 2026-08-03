@@ -5,8 +5,11 @@ import { basename, join, relative, resolve } from "node:path";
 import {
   cassettePolicy,
   parseActivityEvents,
-  portableReplayCWDToken
+  portableReplayCWDToken,
+  resolveAgentSessionReplayProjectRoot
 } from "./cassette.mjs";
+
+export { resolveAgentSessionReplayProjectRoot };
 
 const activityEventsName = cassettePolicy.files.activityEvents.path;
 const checkpointPlanName = cassettePolicy.files.checkpointPlan.path;

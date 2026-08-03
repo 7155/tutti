@@ -491,6 +491,10 @@ export class SDKMessageRouter {
     if (!checkpointMessageId || !turnId || !providerTurnId) {
       return;
     }
+    // Newer Claude SDK versions can omit the echoed root user message that
+    // normally binds Provider identity. The first durable root checkpoint is
+    // still Provider evidence, so announce the turn before its checkpoint.
+    this.turns.confirmProviderTurnStarted(providerTurnId);
     this.emitProviderCheckpointEvent(
       turnId,
       providerTurnId,

@@ -4,27 +4,25 @@ import type {
 } from "electron";
 import {
   desktopUpdateAdmissionIpcChannels,
+  type DesktopUpdateAdmissionBackend,
   type DesktopUpdateAdmissionRuntime,
-  type DesktopFeatureAvailabilityRuntime,
+  type DesktopUpdateAdmissionSnapshot,
   type DesktopProduct,
   type MinimumVersionAppUpdateService,
   type MinimumVersionCheckRequest,
-  type MinimumVersionCheckResponse,
+  type MinimumVersionCheckResult,
   type MinimumVersionUpgradeError,
   type MinimumVersionUpgradeState,
+  type UpgradeRequiredMinimumVersionCheckResult,
   type MandatoryDesktopUpdateSession,
   type MandatoryDesktopUpdateTarget
 } from "../contracts/index.ts";
 import {
   resolveMinimumVersionRuntimeTarget,
-  shouldCheckMinimumVersionAfterForeground,
   validateMinimumVersionResponse
 } from "../core/index.ts";
 import { DevelopmentInstallSuppressedError } from "../development/updaterDriver.ts";
 import { MandatoryUpdateTargetError } from "../mandatory-updater/index.ts";
-
-const startupCheckTimeoutMs = 3_000;
-const foregroundCheckTimeoutMs = 10_000;
 
 export interface DesktopUpdateAdmissionElectronRuntime {
   app: typeof import("electron").app;
@@ -50,15 +48,11 @@ export interface DesktopUpdateAdmissionControllerOptions<
   product: TProduct;
   runtime: DesktopUpdateAdmissionRuntime;
   electron: DesktopUpdateAdmissionElectronRuntime;
-  checkMinimumVersion(
-    request: MinimumVersionCheckRequest<TProduct>,
-    signal: AbortSignal
-  ): Promise<unknown>;
-  featureAvailability?: Pick<
-    DesktopFeatureAvailabilityRuntime<TProduct>,
-    "getSnapshot"
-  > & {
-    acceptRemoteResponse(response: unknown, policyRevision: string): void;
+  backend: DesktopUpdateAdmissionBackend<TProduct>;
+  featureAvailability?: {
+    acceptDaemonSnapshot(
+      snapshot: DesktopUpdateAdmissionSnapshot<TProduct>
+    ): void;
   };
   updateService: MinimumVersionAppUpdateService;
   logger: DesktopUpdateAdmissionLogger;
@@ -66,10 +60,11 @@ export interface DesktopUpdateAdmissionControllerOptions<
   preloadPath: string;
   rendererFilePath: string;
   rendererUrl?: string;
-  manualDownloadUrl(response: MinimumVersionCheckResponse<TProduct>): string;
+  manualDownloadUrl(
+    response: UpgradeRequiredMinimumVersionCheckResult<TProduct>
+  ): string;
   listBusinessWindows(): ElectronBrowserWindow[];
   icon?: BrowserWindowConstructorOptions["icon"];
-  now?: () => number;
 }
 
 function logMinimumVersionCheck(
@@ -86,8 +81,6 @@ export function createDesktopUpdateAdmissionController<
   options: DesktopUpdateAdmissionControllerOptions<TProduct>
 ): DesktopUpdateAdmissionController {
   const { app, BrowserWindow, ipcMain, shell } = options.electron;
-  const now = options.now ?? Date.now;
-  let lastCheckAt = 0;
   let foregroundPrompted = false;
   let state: MinimumVersionUpgradeState<TProduct> | null = null;
   let upgradeWindow: ElectronBrowserWindow | null = null;
@@ -95,7 +88,7 @@ export function createDesktopUpdateAdmissionController<
   let forcedFlowStarted = false;
   let installRequested = false;
   let disposed = false;
-  let activeCheck: Promise<MinimumVersionCheckResponse<TProduct> | null> | null =
+  let activeCheck: Promise<MinimumVersionCheckResult<TProduct> | null> | null =
     null;
   let activeForcedFlow: Promise<void> | null = null;
   let appQuitStarted = false;
@@ -260,48 +253,46 @@ export function createDesktopUpdateAdmissionController<
   };
 
   const runPolicyCheck = async (
-    bounded: boolean
-  ): Promise<MinimumVersionCheckResponse<TProduct> | null> => {
+    stage: "startup" | "foreground" | "retry"
+  ): Promise<MinimumVersionCheckResult<TProduct> | null> => {
     const request = requestPayload();
     if (!request) {
-      lastCheckAt = now();
       logMinimumVersionCheck(options.logger, "info", {
         architecture: process.arch,
         decision: "notApplicable",
         platform: process.platform,
         reason: "unsupportedRuntime",
         result: "success",
-        stage: bounded ? "startup" : "foreground"
+        stage
       });
       return null;
     }
-    const startedAt = now();
     const controller = new AbortController();
     const abortForLifecycle = (): void => controller.abort();
     lifecycleAbort.signal.addEventListener("abort", abortForLifecycle, {
       once: true
     });
-    let timer: ReturnType<typeof setTimeout> | null = null;
     try {
-      const timeoutMs = bounded
-        ? startupCheckTimeoutMs
-        : foregroundCheckTimeoutMs;
-      const response = await Promise.race([
-        options.checkMinimumVersion(request, controller.signal),
-        new Promise<never>((_resolve, reject) => {
-          timer = setTimeout(() => {
-            controller.abort();
-            reject(new Error(`minimum version check exceeded ${timeoutMs}ms`));
-          }, timeoutMs);
-        })
-      ]);
-      const validated = validateMinimumVersionResponse(response, request);
+      const snapshot =
+        stage === "startup"
+          ? await options.backend.getStartupSnapshot(controller.signal)
+          : (
+              await options.backend.refresh(
+                stage === "retry" ? "retry" : "foreground",
+                controller.signal
+              )
+            ).snapshot;
+      if (
+        snapshot.identity.product !== request.product ||
+        snapshot.identity.platform !== request.platform ||
+        snapshot.identity.architecture !== request.architecture ||
+        snapshot.identity.currentVersion !== request.currentVersion
+      ) {
+        throw new Error("desktop update admission daemon identity mismatch");
+      }
       if (options.featureAvailability) {
         try {
-          options.featureAvailability.acceptRemoteResponse(
-            response,
-            validated.policyRevision
-          );
+          options.featureAvailability.acceptDaemonSnapshot(snapshot);
         } catch (error) {
           logMinimumVersionCheck(options.logger, "error", {
             error: error instanceof Error ? error.message : String(error),
@@ -310,42 +301,56 @@ export function createDesktopUpdateAdmissionController<
           });
         }
       }
-      lastCheckAt = now();
+      if (snapshot.policy.status !== "resolved") {
+        logMinimumVersionCheck(
+          options.logger,
+          snapshot.policy.status === "failedOpen" ? "error" : "info",
+          {
+            failure:
+              snapshot.policy.status === "failedOpen"
+                ? snapshot.policy.failure.kind
+                : null,
+            result:
+              snapshot.policy.status === "failedOpen" ? "failure" : "skipped",
+            stage,
+            status: snapshot.policy.status
+          }
+        );
+        return null;
+      }
+      const validated = validateMinimumVersionResponse(
+        snapshot.policy.response,
+        request
+      );
       logMinimumVersionCheck(options.logger, "info", {
         currentVersion: validated.currentVersion,
         decision: validated.decision,
-        elapsedMs: now() - startedAt,
         minimumVersion: validated.minimumVersion,
         policyRevision: validated.policyRevision,
         reason: validated.reason,
         result: "success",
-        stage: bounded ? "startup" : "foreground"
+        stage
       });
       return validated;
     } catch (error) {
-      lastCheckAt = now();
       logMinimumVersionCheck(options.logger, "error", {
-        elapsedMs: now() - startedAt,
         error: error instanceof Error ? error.message : String(error),
         result: "failure",
-        stage: bounded ? "startup" : "foreground"
+        stage
       });
       return null;
     } finally {
-      if (timer) {
-        clearTimeout(timer);
-      }
       lifecycleAbort.signal.removeEventListener("abort", abortForLifecycle);
     }
   };
 
   const checkPolicy = async (
-    bounded: boolean
-  ): Promise<MinimumVersionCheckResponse<TProduct> | null> => {
+    stage: "startup" | "foreground" | "retry"
+  ): Promise<MinimumVersionCheckResult<TProduct> | null> => {
     if (activeCheck) {
       return activeCheck;
     }
-    const pendingCheck = runPolicyCheck(bounded);
+    const pendingCheck = runPolicyCheck(stage);
     activeCheck = pendingCheck;
     try {
       return await pendingCheck;
@@ -528,7 +533,7 @@ export function createDesktopUpdateAdmissionController<
   ipcMain.handle(desktopUpdateAdmissionIpcChannels.retry, async (event) => {
     assertUpgradeWindowSender(event.sender.id);
     await activeForcedFlow;
-    const response = await checkPolicy(false);
+    const response = await checkPolicy("retry");
     if (!response) {
       applyState(
         "error",
@@ -569,7 +574,7 @@ export function createDesktopUpdateAdmissionController<
       if (!options.runtime.checksEnabled) {
         return false;
       }
-      const response = await checkPolicy(true);
+      const response = await checkPolicy("startup");
       if (!response || response.decision !== "upgradeRequired") {
         return false;
       }
@@ -584,22 +589,16 @@ export function createDesktopUpdateAdmissionController<
     },
     async checkAfterForegroundRestore() {
       if (
-        !shouldCheckMinimumVersionAfterForeground({
-          checksEnabled: options.runtime.checksEnabled,
-          disposed,
-          foregroundCheckIntervalMs: options.runtime.foregroundCheckIntervalMs,
-          foregroundPrompted,
-          lastCheckAt,
-          now: now(),
-          startupBlocked:
-            mode === "startup" &&
-            upgradeWindow !== null &&
-            !upgradeWindow.isDestroyed()
-        })
+        !options.runtime.checksEnabled ||
+        disposed ||
+        foregroundPrompted ||
+        (mode === "startup" &&
+          upgradeWindow !== null &&
+          !upgradeWindow.isDestroyed())
       ) {
         return;
       }
-      const response = await checkPolicy(false);
+      const response = await checkPolicy("foreground");
       if (disposed || !response || response.decision !== "upgradeRequired") {
         return;
       }

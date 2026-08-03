@@ -6,13 +6,6 @@ import {
   readRequiredDevelopmentEnvironment
 } from "./environment.ts";
 import {
-  resolveDesktopUpdateDevelopmentPolicyScenario,
-  type DesktopUpdateDevelopmentPolicyMinimum,
-  type DesktopUpdateDevelopmentPolicyScenario,
-  type DesktopUpdateDevelopmentPolicyStep,
-  validateDevelopmentPolicyScenarioForCurrentVersion
-} from "./policyScenario.ts";
-import {
   compareDevelopmentManagedVersions,
   parseDevelopmentManagedVersion,
   validateStrictDevelopmentSemVer
@@ -31,45 +24,22 @@ export type DesktopUpdateDevelopmentUpdaterScenario =
 
 interface DesktopUpdateDevelopmentScenarioBase {
   currentVersion: string;
-  foregroundCheckIntervalMs: number;
   updater: DesktopUpdateDevelopmentUpdaterScenario;
 }
 
 export type DesktopUpdateDevelopmentScenario =
   | (DesktopUpdateDevelopmentScenarioBase & {
       mockServerUrl: null;
-      policy: DesktopUpdateDevelopmentPolicyScenario;
       transport: "in-process";
     })
   | (DesktopUpdateDevelopmentScenarioBase & {
       mockServerUrl: string;
-      policy: null;
       transport: "loopback";
     });
 
 export interface DesktopUpdateDevelopmentResolution {
   runtime: DesktopUpdateAdmissionRuntime;
   scenario: DesktopUpdateDevelopmentScenario | null;
-}
-
-const productionForegroundCheckIntervalMs = 30 * 60 * 1_000;
-
-function readForegroundInterval(
-  env: Readonly<Record<string, string | undefined>>
-): number {
-  const name =
-    desktopUpdateAdmissionDevelopmentEnvironment.foregroundIntervalMs;
-  const raw = env[name]?.trim();
-  if (!raw) {
-    return productionForegroundCheckIntervalMs;
-  }
-  const value = Number(raw);
-  if (!Number.isSafeInteger(value) || value < 100) {
-    return invalidDevelopmentScenario(
-      `${name} must be an integer greater than or equal to 100`
-    );
-  }
-  return value;
 }
 
 function resolveUpdater(
@@ -208,60 +178,6 @@ function validateUpdater(
   }
 }
 
-function validateInProcessCoherence(
-  scenario: Extract<
-    DesktopUpdateDevelopmentScenario,
-    { transport: "in-process" }
-  >
-): void {
-  validateDevelopmentPolicyScenarioForCurrentVersion(
-    scenario.policy,
-    scenario.currentVersion
-  );
-  const updater = scenario.updater;
-  if (!("latestVersion" in updater)) {
-    return;
-  }
-  const latest = parseDevelopmentManagedVersion(updater.latestVersion)!;
-  const requiredSteps = scenario.policy.policySteps.filter(
-    (
-      step
-    ): step is DesktopUpdateDevelopmentPolicyStep & {
-      minimum: DesktopUpdateDevelopmentPolicyMinimum;
-      outcome: "upgradeRequired";
-    } => step.outcome === "upgradeRequired"
-  );
-  const configuredRequiredVersions = requiredSteps.map((step) => {
-    if (step.minimum.kind !== "configured") {
-      return invalidDevelopmentScenario(
-        "upgradeRequired policy must configure a minimumVersion"
-      );
-    }
-    return parseDevelopmentManagedVersion(step.minimum.version)!;
-  });
-  if (updater.check === "targetBelowMinimum") {
-    const minimum = configuredRequiredVersions[0];
-    if (!minimum) {
-      invalidDevelopmentScenario(
-        "targetBelowMinimum requires an upgradeRequired policy step"
-      );
-    }
-    if (compareDevelopmentManagedVersions(latest, minimum) >= 0) {
-      invalidDevelopmentScenario(
-        "targetBelowMinimum requires latestVersion below minimumVersion"
-      );
-    }
-    return;
-  }
-  for (const minimum of configuredRequiredVersions) {
-    if (compareDevelopmentManagedVersions(latest, minimum) < 0) {
-      invalidDevelopmentScenario(
-        "available latestVersion must satisfy every upgradeRequired step"
-      );
-    }
-  }
-}
-
 export function resolveDesktopUpdateDevelopmentScenario(input: {
   env: Readonly<Record<string, string | undefined>>;
   isPackaged: boolean;
@@ -285,7 +201,6 @@ export function resolveDesktopUpdateDevelopmentScenario(input: {
   }
   const preset =
     transport === "in-process" ? input.env[names.scenario]?.trim() : undefined;
-  const foregroundCheckIntervalMs = readForegroundInterval(input.env);
   const updater = resolveUpdater(input.env, {
     defaultCheck: transport === "in-process" ? "available" : "unavailable",
     preset
@@ -294,32 +209,19 @@ export function resolveDesktopUpdateDevelopmentScenario(input: {
     transport === "in-process"
       ? {
           currentVersion,
-          foregroundCheckIntervalMs,
           mockServerUrl: null,
-          policy:
-            resolveDesktopUpdateDevelopmentPolicyScenario({
-              env: input.env
-            }) ??
-            invalidDevelopmentScenario(
-              "in-process transport requires a local policy scenario"
-            ),
           transport,
           updater
         }
       : {
           currentVersion,
-          foregroundCheckIntervalMs,
           mockServerUrl: validateLoopbackUrl(
             readRequiredDevelopmentEnvironment(input.env, names.mockServerUrl)
           ),
-          policy: null,
           transport,
           updater
         };
   validateUpdater(scenario.updater, currentVersion);
-  if (scenario.transport === "in-process") {
-    validateInProcessCoherence(scenario);
-  }
   if (scenario.transport === "in-process") {
     return Object.freeze({
       ...scenario,
@@ -347,8 +249,7 @@ export function resolveDesktopUpdateAdmissionDevelopment(input: {
       runtime: {
         checksEnabled: true,
         currentVersion: applicationVersion,
-        development: false,
-        foregroundCheckIntervalMs: productionForegroundCheckIntervalMs
+        development: false
       },
       scenario: null
     };
@@ -358,8 +259,7 @@ export function resolveDesktopUpdateAdmissionDevelopment(input: {
       runtime: {
         checksEnabled: false,
         currentVersion: applicationVersion,
-        development: false,
-        foregroundCheckIntervalMs: productionForegroundCheckIntervalMs
+        development: false
       },
       scenario: null
     };
@@ -368,8 +268,7 @@ export function resolveDesktopUpdateAdmissionDevelopment(input: {
     runtime: {
       checksEnabled: true,
       currentVersion: scenario.currentVersion,
-      development: true,
-      foregroundCheckIntervalMs: scenario.foregroundCheckIntervalMs
+      development: true
     },
     scenario
   };

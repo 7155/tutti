@@ -99,6 +99,73 @@ test("shared tuttid client purges deleted Agent conversations", async () => {
   });
 });
 
+test("shared tuttid client reads and refreshes daemon-owned desktop admission", async () => {
+  const snapshot = {
+    featureAvailability: {
+      fetchedAt: null,
+      keys: ["workspace.example"],
+      policyRevision: "v1",
+      source: "remote"
+    },
+    identity: {
+      architecture: "arm64",
+      currentVersion: "1.0.0",
+      platform: "macos",
+      product: "tutti-desktop"
+    },
+    lastAttemptAt: "2026-08-02T09:00:00Z",
+    nextForegroundCheckAt: "2026-08-02T09:30:00Z",
+    policy: {
+      response: {
+        channel: "stable",
+        decision: "allowed",
+        minimumVersion: "1.0.0",
+        policyRevision: "v1",
+        reason: "meetsMinimum"
+      },
+      status: "resolved"
+    }
+  } as const;
+  const { client, requests } = captureClient((request) =>
+    jsonResponse(
+      request.path.endsWith("/refresh")
+        ? { performed: true, snapshot }
+        : snapshot
+    )
+  );
+  const controller = new AbortController();
+
+  assert.deepEqual(
+    await client.getDesktopUpdateAdmissionStartup({
+      signal: controller.signal
+    }),
+    snapshot
+  );
+  assert.deepEqual(
+    await client.refreshDesktopUpdateAdmission("foreground", {
+      signal: controller.signal
+    }),
+    { performed: true, snapshot }
+  );
+  assertRequest(requests[0]!, {
+    authorization: null,
+    body: null,
+    method: "GET",
+    path: "/v1/desktop-update-admission/startup",
+    query: {}
+  });
+  assertRequest(requests[1]!, {
+    authorization: null,
+    body: { trigger: "foreground" },
+    method: "POST",
+    path: "/v1/desktop-update-admission/refresh",
+    query: {}
+  });
+  controller.abort();
+  assert.equal(requests[0]!.signal.aborted, true);
+  assert.equal(requests[1]!.signal.aborted, true);
+});
+
 test("shared tuttid client reads and updates cassette-scoped replay playback", async () => {
   const playback = {
     drained: false,

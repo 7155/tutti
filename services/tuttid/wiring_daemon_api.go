@@ -254,7 +254,7 @@ func buildDaemonAPI(
 		return tuttiapi.DaemonAPI{}, nil, nil, nil, fmt.Errorf("create agent runtime: %w", err)
 	}
 	agentRuntimePreparer := runtimeprep.NewDefaultPreparer(tuttitypes.DefaultStateDir())
-	agentRuntimePreparer.RegisterProvider(tuttiagentservice.NewPreparer())
+	agentRuntimePreparer.RegisterProvider(tuttiagentservice.NewPreparer(tuttitypes.DefaultStateDir()))
 	agentRuntimePreparer.ComputerUseAvailable = func() bool {
 		return runtimeprep.ComputerUseDefaultEnabled() && computersvc.CheckReady() == nil
 	}

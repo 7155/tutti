@@ -604,3 +604,36 @@ func TestCompletedFirstTurnBindsBirthAddressFromPlan(t *testing.T) {
 		t.Fatalf("fingerprint diverged: got %s want %s", actualFP, startedFP)
 	}
 }
+
+func TestQueuedSubmitActivityBoundaryWaitsForDrainEffect(t *testing.T) {
+	if !activityIntentRequiresEffect("submit/requested") {
+		t.Fatal("submit/requested must require an effect for checkpoint boundaries")
+	}
+	if !activityIntentRequiresEffect("activation/requested") {
+		t.Fatal("activation/requested still requires an effect")
+	}
+	var recorder checkpointRecorder
+	queued := replay.ActivityEvent{
+		Kind:           replay.ActivityEventKindIntent,
+		Type:           "submit/requested",
+		EventID:        "submit-queued",
+		AgentSessionID: "session-1",
+		Payload: map[string]any{
+			"submitDiagnostics": map[string]any{"queued": true},
+		},
+	}
+	if got := recorder.completeActivityBoundary([]replay.ActivityEvent{queued}); got != nil {
+		t.Fatalf("queued submit without drain effect must suppress boundary: %#v", got)
+	}
+	drain := replay.ActivityEvent{
+		Kind:            replay.ActivityEventKindEffect,
+		Type:            "queue/sendPrompt",
+		EventID:         "send-1",
+		CausedByEventID: "submit-queued",
+		AgentSessionID:  "session-1",
+	}
+	got := recorder.completeActivityBoundary([]replay.ActivityEvent{drain})
+	if len(got) != 2 {
+		t.Fatalf("drain should complete queued submit boundary: %#v", got)
+	}
+}

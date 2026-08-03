@@ -13,6 +13,36 @@ RPC service is only a transport/path/security adapter and must call the same
 `runtimeprep.DefaultPreparer`; it must not maintain separate Claude or Codex
 preparers.
 
+For a Codex Session launched with saver mode enabled, runtime preparation keeps
+the selected main-thread model unchanged and materializes a session-scoped
+default subagent role backed by `agents/luna_worker.toml`, plus a short managed
+`AGENTS.md` routing rule. The role pins only delegated work to the Luna model and reasoning
+effort. The routing rule is intentionally advisory and bounded: it favors
+self-contained work that would otherwise consume meaningful main-thread
+reasoning, context, tool calls, or waiting time and must replace rather than add
+main-thread work. One complete independent unit defaults to one worker. More
+workers are used only when multiple genuinely independent, non-trivial,
+non-overlapping units exist; implementation, tests, and compatibility are not
+automatically treated as separate units. Independent read-only or
+isolated-worktree units may run in parallel. Workers start before the main
+thread inspects their assigned questions or files, and the main thread verifies
+returned evidence narrowly instead of repeating the investigation. Write scopes
+that cannot be isolated remain sequential. A mechanical workflow stays in the
+main thread when one bounded blocking or event-driven command can complete it.
+A single worker owns the end-to-end flow only when it would otherwise require
+multiple model-driven tool turns. Delegations declare non-goals, allowed state
+changes, acceptance criteria, evidence, and retry limits. Workers use the
+minimum analysis and tools needed. Each delegation has a concrete tool-call
+budget; unless justified otherwise, read-only analysis is capped at 8 calls and
+implementation at 20. Read-only analysis does not run tests, repair an
+environment, or write files unless explicitly requested. Workers return when
+the criteria or budget are reached, and the main thread interrupts a worker if
+an intermediate message already supplies sufficient evidence instead of
+waiting for further exploration. Workers do not delegate recursively unless
+their parent task explicitly authorizes nested delegation and sets a total
+nested-worker and tool-call budget. The policy does not create an unbounded
+automatic retry loop.
+
 Deployment differences are expressed with `DeploymentProfile` and
 `CapabilityPack`. A pack resolves policy, skills, and environment together.
 Dynamic host skills use `SkillSource`; per-session skills use `ExtraSkills`.

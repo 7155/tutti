@@ -33,7 +33,7 @@ export const enAgentGuiQuickPrompts = {
   reorderConflict:
     "The prompt order changed in another window. Refresh and drag again.",
   reorderDisabledMinimum:
-    "Add at least two quick prompts to adjust their order",
+    "At least two quick prompts are required to adjust their order",
   reorderDisabledPending: "Wait for the current quick prompt change to finish",
   reorderDisabledSearch: "Clear the search to adjust prompt order",
   reorderDisabledUnsupported: "This host does not support prompt reordering",

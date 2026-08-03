@@ -30,7 +30,7 @@ export const zhCNAgentGuiQuickPrompts = {
   noResults: "没有匹配的快捷提示词",
   required: "标题和提示词内容不能为空",
   reorderConflict: "提示词顺序已在其他窗口发生变化，请刷新后重新拖拽",
-  reorderDisabledMinimum: "至少添加两个快捷提示词后才能调整顺序",
+  reorderDisabledMinimum: "至少需要两个快捷提示词才能调整顺序",
   reorderDisabledPending: "请等待当前提示词操作完成后再调整顺序",
   reorderDisabledSearch: "清空搜索内容后才能调整提示词顺序",
   reorderDisabledUnsupported: "当前宿主不支持调整提示词顺序",

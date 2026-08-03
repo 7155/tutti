@@ -105,19 +105,7 @@ export function AgentQuickPromptPopover({
     controller.openCreate({ title: template.title, content: template.content });
   };
   const isTemplateView = view === "templates";
-  const reorderDisabledMessage = !controller.reorderCapabilityAvailable
-    ? labels.reorderDisabledUnsupported
-    : snapshot.status === "idle" || snapshot.status === "loading"
-      ? labels.loading
-      : snapshot.status === "error" && snapshot.prompts.length === 0
-        ? labels.loadError
-        : controller.isInteractionLocked
-          ? labels.reorderDisabledPending
-          : controller.searchQuery.trim()
-            ? labels.reorderDisabledSearch
-            : controller.filteredPrompts.length < 2
-              ? labels.reorderDisabledMinimum
-              : null;
+  const reorderDisabledMessage = resolveReorderDisabledMessage(controller);
   const startSortingButton = (
     <Button
       disabled={reorderDisabledMessage !== null}
@@ -456,6 +444,31 @@ export function AgentQuickPromptPopover({
       </ConfirmationDialog>
     </>
   );
+}
+
+function resolveReorderDisabledMessage(
+  controller: AgentQuickPromptLibraryController
+): string | null {
+  const { labels, snapshot } = controller;
+  if (!controller.reorderCapabilityAvailable) {
+    return labels.reorderDisabledUnsupported;
+  }
+  if (snapshot.status === "idle" || snapshot.status === "loading") {
+    return labels.loading;
+  }
+  if (snapshot.status === "error" && snapshot.prompts.length === 0) {
+    return labels.loadError;
+  }
+  if (controller.isInteractionLocked) {
+    return labels.reorderDisabledPending;
+  }
+  if (controller.searchQuery.trim()) {
+    return labels.reorderDisabledSearch;
+  }
+  if (controller.filteredPrompts.length < 2) {
+    return labels.reorderDisabledMinimum;
+  }
+  return null;
 }
 
 function RecommendedTemplateList({

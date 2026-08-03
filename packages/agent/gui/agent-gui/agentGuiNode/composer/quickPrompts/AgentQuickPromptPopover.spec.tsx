@@ -20,7 +20,7 @@ const labels = new Proxy(
     startSorting: "Reorder",
     finishSorting: "Done",
     reorderDisabledMinimum:
-      "Add at least two quick prompts to adjust their order",
+      "At least two quick prompts are required to adjust their order",
     reorderDisabledPending:
       "Wait for the current quick prompt change to finish",
     reorderDisabledSearch: "Clear the search to adjust prompt order",
@@ -295,7 +295,7 @@ describe("AgentQuickPromptPopover", () => {
 
     expect(
       screen.getByLabelText(
-        "Add at least two quick prompts to adjust their order"
+        "At least two quick prompts are required to adjust their order"
       )
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reorder" })).toBeDisabled();

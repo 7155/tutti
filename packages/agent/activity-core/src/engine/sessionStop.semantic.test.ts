@@ -107,6 +107,44 @@ test("semantic session stop waits 30 seconds for a first Turn and deduplicates r
   assert.equal(harness.scheduled[0]?.canceled, true);
 });
 
+test("semantic session stop targets the latest pending prompt admission", () => {
+  const harness = createHarness(false);
+
+  assert.deepEqual(
+    harness.engine.submitPrompt({
+      agentSessionId: "session-1",
+      clientSubmitId: "submit-1",
+      content: [{ text: "hello", type: "text" }]
+    }),
+    { accepted: true, queued: false }
+  );
+
+  harness.engine.stopSession({ agentSessionId: "session-1" });
+
+  assert.equal(
+    selectEngineCancelState(harness.engine.getSnapshot(), "session-1")
+      ?.targetClientSubmitId,
+    "submit-1"
+  );
+  assert.equal(harness.commands.at(-1)?.type, "queue/sendPrompt");
+});
+
+test("semantic session stop preserves an explicit submit target with an active turn", () => {
+  const harness = createHarness(true);
+
+  harness.engine.stopSession({
+    agentSessionId: "session-1",
+    clientSubmitId: "submit-explicit"
+  });
+
+  assert.deepEqual(harness.commands, []);
+  assert.equal(
+    selectEngineCancelState(harness.engine.getSnapshot(), "session-1")
+      ?.targetClientSubmitId,
+    "submit-explicit"
+  );
+});
+
 function activeTurn(): AgentActivityTurn {
   return {
     agentSessionId: "session-1",

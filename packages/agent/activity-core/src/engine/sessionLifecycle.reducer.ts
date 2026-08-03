@@ -69,6 +69,8 @@ export function sessionLifecycleReducer(
   }
 ): EngineReducerResult<SessionLifecycleState> {
   switch (intent.type) {
+    case "message/snapshotReceived":
+      return reconcilePendingCancelFromMessages(state, intent.messages);
     case "session/snapshotReceived":
       return reconcilePendingCancels(
         state,
@@ -232,11 +234,15 @@ export function sessionLifecycleReducer(
           );
         }
         const { session, turn } = sendResult;
-        return result(
-          upsertCanonicalTurn(
-            upsertCanonicalSession(state, session, initialOperation),
-            turn
-          )
+        const projected = upsertCanonicalTurn(
+          upsertCanonicalSession(state, session, initialOperation),
+          turn
+        );
+        return reconcilePendingCancelForSubmit(
+          state,
+          projected,
+          intent.correlationId?.trim() ?? "",
+          turn
         );
       }
       return unchanged(state);
@@ -464,11 +470,12 @@ function requestCancel(
     nextState = setOperation(state, id, operation);
   }
   if (cancelPending(operation.cancel)) return unchanged(nextState);
+  const targetClientSubmitId = intent.clientSubmitId?.trim() || null;
   const activeTurnId = session?.activeTurnId ?? null;
   const turn = activeTurnId
     ? state.turnsById[canonicalTurnKey(id, activeTurnId)]
     : null;
-  if (turn && turn.phase !== "settled") {
+  if (turn && turn.phase !== "settled" && !targetClientSubmitId) {
     const next = setCancel(
       nextState,
       id,
@@ -483,7 +490,12 @@ function requestCancel(
   }
   const expiryId = `cancel:awaiting-turn:${intent.commandId}`;
   const next = setCancel(nextState, id, {
-    ...requestedCancel(intent.commandId, null, workspaceId),
+    ...requestedCancel(
+      intent.commandId,
+      null,
+      workspaceId,
+      targetClientSubmitId
+    ),
     expiryId,
     requestedSessionVersion: session ? sessionVersion(session) : null,
     status: "awaitingTurn"
@@ -509,16 +521,22 @@ function reconcilePendingCancels(
   let state = settings.state;
   for (const [id, operation] of Object.entries(state.operationBySessionId)) {
     const session = state.sessionsById[id];
-    const turn = session?.activeTurnId
+    const activeTurn = session?.activeTurnId
       ? state.turnsById[canonicalTurnKey(id, session.activeTurnId)]
       : null;
     const reconciledOperation = state.operationBySessionId[id] ?? operation;
+    const targetedTurn = reconciledOperation.cancel.turnId
+      ? state.turnsById[canonicalTurnKey(id, reconciledOperation.cancel.turnId)]
+      : null;
+    const turn = targetedTurn ?? activeTurn;
     if (
       reconciledOperation.cancel.status === "awaitingTurn" &&
       session &&
       turn &&
       turn.phase !== "settled" &&
-      reconciledOperation.cancel.commandId
+      reconciledOperation.cancel.commandId &&
+      (!reconciledOperation.cancel.targetClientSubmitId ||
+        reconciledOperation.cancel.turnId === turn.turnId)
     ) {
       if (reconciledOperation.cancel.expiryId)
         commands.push({
@@ -542,7 +560,7 @@ function reconcilePendingCancels(
     } else if (
       reconciledOperation.cancel.status !== "idle" &&
       reconciledOperation.cancel.status !== "awaitingTurn" &&
-      (!turn || turn.phase === "settled")
+      (!activeTurn || activeTurn.phase === "settled")
     ) {
       state = setOperation(state, id, {
         ...reconciledOperation,
@@ -552,6 +570,89 @@ function reconcilePendingCancels(
     }
   }
   return state === previous && commands.length === 0
+    ? unchanged(previous)
+    : { commands, state };
+}
+
+function reconcilePendingCancelFromMessages(
+  state: SessionLifecycleState,
+  messages: readonly import("../types.ts").AgentActivityMessage[]
+): EngineReducerResult<SessionLifecycleState> {
+  let next = state;
+  for (const message of messages) {
+    const clientSubmitId = message.payload?.clientSubmitId;
+    const turnId = message.turnId?.trim() ?? "";
+    if (
+      typeof clientSubmitId !== "string" ||
+      !clientSubmitId.trim() ||
+      !turnId
+    ) {
+      continue;
+    }
+    const agentSessionId = message.agentSessionId.trim();
+    const operation = next.operationBySessionId[agentSessionId];
+    if (
+      !operation ||
+      operation.cancel.status !== "awaitingTurn" ||
+      operation.cancel.targetClientSubmitId !== clientSubmitId.trim() ||
+      (operation.cancel.turnId && operation.cancel.turnId !== turnId)
+    ) {
+      continue;
+    }
+    next = setCancel(next, agentSessionId, {
+      ...operation.cancel,
+      turnId
+    });
+  }
+  return next === state
+    ? unchanged(state)
+    : reconcilePendingCancels(state, next);
+}
+
+function reconcilePendingCancelForSubmit(
+  previous: SessionLifecycleState,
+  next: SessionLifecycleState,
+  clientSubmitId: string,
+  turn: AgentActivityTurn
+): EngineReducerResult<SessionLifecycleState> {
+  if (!clientSubmitId || turn.phase === "settled") {
+    return result(next);
+  }
+  const operation = next.operationBySessionId[turn.agentSessionId];
+  if (
+    !operation ||
+    operation.cancel.status !== "awaitingTurn" ||
+    operation.cancel.targetClientSubmitId !== clientSubmitId ||
+    !operation.cancel.commandId
+  ) {
+    return result(next);
+  }
+  const session = next.sessionsById[turn.agentSessionId];
+  if (!session || session.workspaceId.trim() === "") {
+    return result(next);
+  }
+  const commands: EngineCommand[] = [];
+  if (operation.cancel.expiryId) {
+    commands.push({
+      type: "engine/cancelExpiry",
+      expiryId: operation.cancel.expiryId
+    });
+  }
+  commands.push(
+    cancelCommand(
+      session.workspaceId,
+      turn.agentSessionId,
+      turn,
+      operation.cancel.commandId
+    )
+  );
+  const state = setCancel(next, turn.agentSessionId, {
+    ...operation.cancel,
+    expiryId: null,
+    status: "requested",
+    turnId: turn.turnId
+  });
+  return previous === state && commands.length === 0
     ? unchanged(previous)
     : { commands, state };
 }

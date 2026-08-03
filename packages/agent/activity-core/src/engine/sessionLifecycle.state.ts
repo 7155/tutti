@@ -21,6 +21,7 @@ export function initialCancel(): SessionCancelState {
     expiryId: null,
     requestedSessionVersion: null,
     requestedWorkspaceId: null,
+    targetClientSubmitId: null,
     status: "idle",
     turnId: null
   };
@@ -29,13 +30,15 @@ export function initialCancel(): SessionCancelState {
 export function requestedCancel(
   commandId: string,
   turnId: string | null,
-  requestedWorkspaceId: string
+  requestedWorkspaceId: string,
+  targetClientSubmitId: string | null = null
 ): SessionCancelState {
   return {
     ...initialCancel(),
     commandId,
     requestedWorkspaceId,
     status: "requested",
+    targetClientSubmitId,
     turnId
   };
 }

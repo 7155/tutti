@@ -28,6 +28,7 @@ type Service struct {
 	AnalyticsReporter              reporterservice.Reporter
 	AvailabilityChecker            ProviderAvailabilityChecker
 	ModelCatalog                   AgentModelCatalog
+	ReplayMode                     bool
 	ModelCapabilities              ModelCapabilitiesResolver
 	AgentTargetStore               AgentTargetStore
 	SessionInitializer             SessionInitializer

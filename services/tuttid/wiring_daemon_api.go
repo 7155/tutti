@@ -274,6 +274,10 @@ func buildDaemonAPI(
 	agentModelCatalog := agentservice.NewAgentModelCatalog()
 	agentModelCatalog.ModelCapabilities = agentModelCapabilities
 	agentModelCatalog.ProviderCommands = &agentStatusService
+	modelCatalog := agentservice.AgentModelCatalog(agentModelCatalog)
+	if replayComposition && agentProcessComposition.replayModelCatalog != nil {
+		modelCatalog = agentProcessComposition.replayModelCatalog
+	}
 	agentSessionPurgeStore, ok := agentActivityRepo.(agenthost.SessionPurgeStore)
 	if !ok {
 		return tuttiapi.DaemonAPI{}, nil, nil, nil, fmt.Errorf("agent session purge store is unavailable")
@@ -374,7 +378,8 @@ func buildDaemonAPI(
 		},
 		Composer: agentservice.ServiceComposerConfig{
 			AvailabilityChecker:         availabilityChecker,
-			ModelCatalog:                agentModelCatalog,
+			ModelCatalog:                modelCatalog,
+			ReplayMode:                  replayComposition,
 			ModelCapabilities:           agentModelCapabilities,
 			AgentTargetStore:            agentTargetStore,
 			WorkspaceAgentResolver:      workspaceAgents,

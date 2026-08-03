@@ -54,6 +54,7 @@ export interface AgentQuickPromptLibraryController {
   openPopover: () => void;
   promptToDelete: AgentHostQuickPrompt | null;
   retry: () => void;
+  reorderCapabilityAvailable: boolean;
   reorderError: AgentQuickPromptMutationError;
   reorderPrompts: (
     promptId: string,
@@ -138,17 +139,18 @@ export function useAgentQuickPromptLibrary(input: {
     isReordering ||
     Boolean(snapshot.orderMutationPending) ||
     snapshot.pendingMutationIds.length > 0;
+  const reorderCapabilityAvailable = Boolean(
+    quickPrompts?.move && capabilityAvailable
+  );
   const canReorder = Boolean(
-    quickPrompts?.move &&
-    capabilityAvailable &&
+    reorderCapabilityAvailable &&
     !disabled &&
     !searchQuery.trim() &&
     filteredPrompts.length > 1 &&
     !isInteractionLocked
   );
   const showReorderHandles = Boolean(
-    quickPrompts?.move &&
-    capabilityAvailable &&
+    reorderCapabilityAvailable &&
     !searchQuery.trim() &&
     filteredPrompts.length > 1
   );
@@ -407,6 +409,7 @@ export function useAgentQuickPromptLibrary(input: {
     openPopover,
     promptToDelete,
     retry,
+    reorderCapabilityAvailable,
     reorderError,
     reorderPrompts,
     saveDraft,

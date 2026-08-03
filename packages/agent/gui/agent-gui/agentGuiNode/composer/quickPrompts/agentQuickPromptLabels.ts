@@ -42,6 +42,10 @@ export interface AgentQuickPromptLabels {
   noResults: string;
   required: string;
   reorderConflict: string;
+  reorderDisabledMinimum: string;
+  reorderDisabledPending: string;
+  reorderDisabledSearch: string;
+  reorderDisabledUnsupported: string;
   reorderError: string;
   retry: string;
   save: string;
@@ -116,6 +120,18 @@ export function agentQuickPromptLabels(t: TranslateFn): AgentQuickPromptLabels {
     noResults: t("agentHost.agentGui.quickPrompts.noResults"),
     required: t("agentHost.agentGui.quickPrompts.required"),
     reorderConflict: t("agentHost.agentGui.quickPrompts.reorderConflict"),
+    reorderDisabledMinimum: t(
+      "agentHost.agentGui.quickPrompts.reorderDisabledMinimum"
+    ),
+    reorderDisabledPending: t(
+      "agentHost.agentGui.quickPrompts.reorderDisabledPending"
+    ),
+    reorderDisabledSearch: t(
+      "agentHost.agentGui.quickPrompts.reorderDisabledSearch"
+    ),
+    reorderDisabledUnsupported: t(
+      "agentHost.agentGui.quickPrompts.reorderDisabledUnsupported"
+    ),
     reorderError: t("agentHost.agentGui.quickPrompts.reorderError"),
     retry: t("agentHost.agentGui.quickPrompts.retry"),
     save: t("agentHost.agentGui.quickPrompts.save"),

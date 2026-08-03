@@ -151,6 +151,7 @@ describe("useAgentQuickPromptLibrary", () => {
 
     expect(rendered.result.current.isInteractionLocked).toBe(true);
     expect(rendered.result.current.canReorder).toBe(false);
+    expect(rendered.result.current.reorderCapabilityAvailable).toBe(true);
     act(() => {
       rendered.result.current.openCreate();
       rendered.result.current.openEdit(second);

@@ -32,6 +32,11 @@ export const enAgentGuiQuickPrompts = {
   required: "Title and prompt text are required",
   reorderConflict:
     "The prompt order changed in another window. Refresh and drag again.",
+  reorderDisabledMinimum:
+    "Add at least two quick prompts to adjust their order",
+  reorderDisabledPending: "Wait for the current quick prompt change to finish",
+  reorderDisabledSearch: "Clear the search to adjust prompt order",
+  reorderDisabledUnsupported: "This host does not support prompt reordering",
   reorderError: "The prompt order could not be saved. Try dragging again.",
   retry: "Try again",
   recommendedTemplates: {
@@ -74,7 +79,7 @@ export const enAgentGuiQuickPrompts = {
   save: "Save",
   saving: "Saving…",
   searchPlaceholder: "Search quick prompts",
-  startSorting: "Sort",
+  startSorting: "Reorder",
   title: "Quick prompts",
   titleLabel: "Title",
   titlePlaceholder: "Give this prompt a short name",

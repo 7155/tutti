@@ -45,6 +45,10 @@ export function createWorkspaceBrowserService(
   } = {}
 ): WorkspaceBrowserService {
   const connectedFeatures = new WeakSet<BrowserNodeFeature>();
+  const featuresByHostApi = new WeakMap<
+    BrowserNodeHostApi,
+    BrowserNodeFeature
+  >();
   const routes = new Set<WorkspaceBrowserEventRoute>();
   let disconnectBrowserEvents: (() => void) | null = null;
   let disconnectUserAutomation: (() => void) | null = null;
@@ -61,6 +65,7 @@ export function createWorkspaceBrowserService(
     disconnectBrowserEvents = input.browserApi.onEvent((event) => {
       let launchWorkspaceId: string | null = null;
       let launchSource: "browser" | "workspace_app" | undefined;
+      let openUrlHandled = false;
       for (const route of routes) {
         if (route.listeners.size === 0) {
           continue;
@@ -68,16 +73,28 @@ export function createWorkspaceBrowserService(
         if (!route.acceptsEvent(event)) {
           continue;
         }
-        if (event.type === "open-url" && launchWorkspaceId === null) {
-          launchWorkspaceId = route.workspaceId;
-          launchSource = route.source;
+        if (event.type === "open-url") {
+          if (
+            route.source === "browser" &&
+            event.reuseIfOpen !== false &&
+            !openUrlHandled
+          ) {
+            const feature = featuresByHostApi.get(route.hostApi);
+            openUrlHandled = feature
+              ? openBrowserUrlInNewTab(feature, event)
+              : false;
+          }
+          if (!openUrlHandled && launchWorkspaceId === null) {
+            launchWorkspaceId = route.workspaceId;
+            launchSource = route.source;
+          }
         }
         route.observeEvent?.(event);
         for (const listener of route.listeners) {
           listener(event);
         }
       }
-      if (launchWorkspaceId && event.type === "open-url") {
+      if (launchWorkspaceId && event.type === "open-url" && !openUrlHandled) {
         launchOpenUrl(event, launchWorkspaceId, launchSource);
       }
     });
@@ -101,33 +118,36 @@ export function createWorkspaceBrowserService(
       if (!input.browserApi) {
         throw new Error("Workspace browser service requires a browser API");
       }
-      const route: WorkspaceBrowserEventRoute = {
-        acceptsEvent,
-        listeners: new Set(),
-        observeEvent,
-        source,
-        workspaceId
-      };
-      routes.add(route);
+      const listeners = new Set<(event: BrowserNodeEvent) => void>();
       const featureApi = { ...input.browserApi };
       if (source === "workspace_app") {
         delete featureApi.discoverChromeCookieProfiles;
         delete featureApi.importChromeCookies;
         delete featureApi.cancelChromeCookieImport;
       }
-      return {
+      const hostApi: BrowserNodeHostApi = {
         ...featureApi,
         onEvent(listener) {
-          route.listeners.add(listener);
+          listeners.add(listener);
           ensureBrowserEventsConnected();
           return () => {
-            route.listeners.delete(listener);
+            listeners.delete(listener);
             maybeDisconnectBrowserEvents();
           };
         }
       };
+      routes.add({
+        acceptsEvent,
+        hostApi,
+        listeners,
+        observeEvent,
+        source,
+        workspaceId
+      });
+      return hostApi;
     },
     ensureFeatureConnected(feature) {
+      featuresByHostApi.set(feature.hostApi, feature);
       if (connectedFeatures.has(feature)) {
         return;
       }
@@ -229,10 +249,30 @@ function resolveBrowserSurfaceNodeId(nodeId: string): string | null {
 
 interface WorkspaceBrowserEventRoute {
   acceptsEvent: WorkspaceBrowserEventMatcher;
+  hostApi: BrowserNodeHostApi;
   listeners: Set<(event: BrowserNodeEvent) => void>;
   observeEvent?: (event: BrowserNodeEvent) => void;
   source?: "browser" | "workspace_app";
   workspaceId: string;
+}
+
+function openBrowserUrlInNewTab(
+  feature: BrowserNodeFeature,
+  event: BrowserNodeOpenUrlEvent
+): boolean {
+  const surfaceNodeId = resolveBrowserSurfaceNodeId(event.sourceNodeId);
+  const state = surfaceNodeId
+    ? feature.tabsStore.getSurfaceState(surfaceNodeId)
+    : null;
+  if (
+    !surfaceNodeId ||
+    !state?.tabs.some((tab) => tab.nodeId === event.sourceNodeId)
+  ) {
+    return false;
+  }
+
+  feature.tabsStore.addTab(surfaceNodeId, event.url);
+  return true;
 }
 
 function launchOpenUrl(

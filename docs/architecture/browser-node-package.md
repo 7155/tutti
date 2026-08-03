@@ -78,6 +78,14 @@ one surface must use the package-owned surface-event predicate so both the
 parent ID and its `:tab:*` child IDs are accepted without admitting events from
 other Browser surfaces.
 
+Ordinary guest `target="_blank"` links and `window.open` calls emit an
+`open-url` event with the exact source child ID. The full workspace Browser host
+uses that identity to create and select a new tab in the same Browser surface.
+It must not translate this explicit popup intent into a passive Workbench
+`defaultUrl` update: controller synchronization deliberately ignores
+same-origin URL differences so normal in-page and authentication redirects are
+not reset by stale host state.
+
 ## Package Entry Points
 
 The package uses multiple exports from one package rather than several small

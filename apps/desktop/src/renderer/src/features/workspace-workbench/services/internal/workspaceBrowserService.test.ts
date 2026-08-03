@@ -95,7 +95,7 @@ test("workspace browser service routes multiple features through one desktop sub
   );
 });
 
-test("workspace browser service launches open-url once from the owning route", async () => {
+test("workspace browser service opens Browser popups in tabs and launches app URLs", async () => {
   const requests: WorkspaceBrowserLaunchRequest[] = [];
   let emitDesktopBrowserEvent = (_event: BrowserNodeEvent): void => undefined;
   const service = createWorkspaceBrowserService({
@@ -111,15 +111,22 @@ test("workspace browser service launches open-url once from the owning route", a
   const browserFeature = createBrowserNodeFeature({
     hostApi: service.createFeatureHostApi({
       acceptsEvent: (event) => browserNodeOwnsEvent(event),
+      source: "browser",
       workspaceId: "workspace-browser-open-url"
     })
   });
   const appFeature = createBrowserNodeFeature({
     hostApi: service.createFeatureHostApi({
       acceptsEvent: (event) => workspaceAppOwnsEvent(event),
+      source: "workspace_app",
       workspaceId: "workspace-browser-open-url"
     })
   });
+  const surfaceNodeId = "browser:surface-1";
+  const initial = browserFeature.tabsStore.ensureSurface(
+    surfaceNodeId,
+    "https://www.baidu.com/"
+  );
   const disposeLaunchHandler = registerWorkspaceBrowserLaunchHandler(
     "workspace-browser-open-url",
     (request) => {
@@ -131,10 +138,10 @@ test("workspace browser service launches open-url once from the owning route", a
   service.ensureFeatureConnected(browserFeature);
   service.ensureFeatureConnected(appFeature);
   emitDesktopBrowserEvent({
-    reuseIfOpen: false,
-    sourceNodeId: "browser:node-1",
+    reuseIfOpen: true,
+    sourceNodeId: initial.tabs[0]!.nodeId,
     type: "open-url",
-    url: "https://example.com/browser-popup"
+    url: "https://www.baidu.com/s?wd=tutti"
   });
   emitDesktopBrowserEvent({
     reuseIfOpen: false,
@@ -145,16 +152,18 @@ test("workspace browser service launches open-url once from the owning route", a
   await Promise.resolve();
 
   disposeLaunchHandler();
+  const browserTabs = browserFeature.tabsStore.getSurfaceState(surfaceNodeId);
+  assert.equal(browserTabs?.tabs.length, 2);
+  assert.equal(
+    browserTabs?.tabs.find((tab) => tab.id === browserTabs.activeTabId)
+      ?.defaultUrl,
+    "https://www.baidu.com/s?wd=tutti"
+  );
   assert.deepEqual(requests, [
     {
       kind: "open",
       reuseIfOpen: false,
-      url: "https://example.com/browser-popup",
-      workspaceId: "workspace-browser-open-url"
-    },
-    {
-      kind: "open",
-      reuseIfOpen: false,
+      source: "workspace_app",
       url: "https://example.com/app-popup",
       workspaceId: "workspace-browser-open-url"
     }

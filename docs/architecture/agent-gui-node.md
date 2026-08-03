@@ -316,6 +316,12 @@ When enabled, Desktop injects its recording and replay controls through generic
 AgentGUI render slots. AgentGUI contains no recording/replay API, controller,
 state, provider branch, component, or copy.
 
+The provider-neutral renderer contract is published separately as
+`@tutti-os/agent-session-replay`. It owns the portable activity event type and
+interaction contract shared by Desktop and TSH; product adapters still own
+scope mapping, persistence, HTTP/Electron integration, replay runners, and
+provider/runtime setup.
+
 `packages/agent/session-replay` owns the provider-neutral Recording/Cassette
 workflow, status transitions, portable contracts, and validation policy.
 `services/tuttid/service/agentsessionreplay` is Tutti's HTTP/product adapter and

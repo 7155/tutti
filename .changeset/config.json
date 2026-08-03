@@ -20,6 +20,7 @@
       "@tutti-os/workspace-terminal",
       "@tutti-os/agent-activity-core",
       "@tutti-os/agent-gui",
+      "@tutti-os/agent-session-replay",
       "@tutti-os/commerce",
       "@tutti-os/claude-sdk-sidecar",
       "@tutti-os/browser-node",

@@ -43,6 +43,17 @@ type agentSessionReplayRegistration struct {
 	FrozenModel        string   `json:"frozenModel"`
 }
 
+func replayAgentModelCatalog(
+	replayComposition bool,
+	composition agentProcessComposition,
+	normalCatalog *agentservice.AgentModelCatalog,
+) agentservice.AgentModelCatalog {
+	if replayComposition && composition.replayModelCatalog != nil {
+		return composition.replayModelCatalog
+	}
+	return normalCatalog
+}
+
 func buildAgentProcessComposition(
 	sessionRecordingEnabled bool,
 ) (agentProcessComposition, error) {

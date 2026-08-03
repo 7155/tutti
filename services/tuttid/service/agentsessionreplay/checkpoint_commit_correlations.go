@@ -443,7 +443,45 @@ func committedObservationMatches(
 						event.TurnOutcome,
 					))
 		}
-		return stateMatches && hasCommittedMutation(delta, "turn", event.TurnID)
+		if !stateMatches {
+			return false
+		}
+		if hasCommittedMutation(delta, "turn", event.TurnID) {
+			return true
+		}
+		// RootProviderTurnAccepted still means a durable turn-row write even when
+		// ProjectionDirty was omitted (exact-replay session + already-running
+		// canonical phase). Prefer the Result flag over inventing a dirty hint.
+		result := delta.ActivityState.Result
+		if (result.RootProviderTurnAccepted || result.RootTurnAccepted) &&
+			strings.TrimSpace(result.RootTurn.TurnID) == event.TurnID {
+			return true
+		}
+		// Claude Code acceptance may persist RootProviderTurn first; the
+		// observation-bearing follow-up can then return the already-running
+		// RootTurn with Accepted=false (no ProjectionDirty). Still confirm when
+		// Result already shows the expected running turn.
+		if event.Type == "root_provider_turn.started" {
+			if strings.TrimSpace(result.RootTurn.TurnID) == event.TurnID &&
+				semanticTurnStateMatches(
+					result.RootTurn.Phase,
+					result.RootTurn.Outcome,
+					event.TurnPhase,
+					event.TurnOutcome,
+				) {
+				return true
+			}
+			if strings.TrimSpace(result.Turn.TurnID) == event.TurnID &&
+				semanticTurnStateMatches(
+					result.Turn.Phase,
+					result.Turn.Outcome,
+					event.TurnPhase,
+					event.TurnOutcome,
+				) {
+				return true
+			}
+		}
+		return false
 	case "call":
 		if delta.SessionMessages == nil {
 			return false

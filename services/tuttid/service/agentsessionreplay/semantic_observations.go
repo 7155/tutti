@@ -150,6 +150,42 @@ func (*SemanticRuntime) flushPendingObservationBatches(
 	return nil
 }
 
+// NoteHandledProviderUnits folds transport-completed Provider input units into
+// the semantic handled lane. Replay parks the input barrier after a unit is
+// completed, so the runner can observe that the trigger unit was reached even
+// when the observation stamp for that unit was lost (compact slash-command
+// turn/started is the known case).
+func (r *SemanticRuntime) NoteHandledProviderUnits(
+	cassetteID string,
+	handled map[string]sessionreplay.ProviderUnitPosition,
+) {
+	if r == nil || len(handled) == 0 {
+		return
+	}
+	cassetteID = strings.TrimSpace(cassetteID)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	state := r.observations[cassetteID]
+	if state == nil || state.handled == nil {
+		return
+	}
+	for connectionID, position := range handled {
+		connectionID = strings.TrimSpace(connectionID)
+		position.ConnectionID = strings.TrimSpace(position.ConnectionID)
+		if connectionID == "" || position.ConnectionID == "" ||
+			position.ChunkSeq == 0 || position.UnitIndex == 0 {
+			continue
+		}
+		if position.ConnectionID != connectionID {
+			position.ConnectionID = connectionID
+		}
+		current, seen := state.handled[connectionID]
+		if !seen || providerUnitPositionAfter(position, current) {
+			state.handled[connectionID] = position
+		}
+	}
+}
+
 func providerPositionPassed(
 	handled map[string]sessionreplay.ProviderUnitPosition,
 	position *sessionreplay.ProviderObservationPosition,
@@ -164,4 +200,20 @@ func providerPositionPassed(
 	return current.ChunkSeq > position.ChunkSeq ||
 		(current.ChunkSeq == position.ChunkSeq &&
 			current.UnitIndex > position.UnitIndex)
+}
+
+func providerPositionReached(
+	handled map[string]sessionreplay.ProviderUnitPosition,
+	position *sessionreplay.ProviderObservationPosition,
+) bool {
+	if position == nil {
+		return false
+	}
+	current, ok := handled[position.ConnectionID]
+	if !ok {
+		return false
+	}
+	return current.ChunkSeq > position.ChunkSeq ||
+		(current.ChunkSeq == position.ChunkSeq &&
+			current.UnitIndex >= position.UnitIndex)
 }

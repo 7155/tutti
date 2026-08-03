@@ -656,13 +656,14 @@ func TestReplayProcessTransportMatchesJSONRPCRequestSemanticsAndMapsResponseID(t
 	)
 
 	descriptor := codexReplayDescriptorForCassetteTest(t)
-	responseIDs, matches := processCassetteJSONMatch(
+	responseIDs, _, matches := processCassetteJSONMatch(
 		descriptor,
 		expected,
 		actual,
 		"",
 		"",
 		"",
+		nil,
 	)
 	if !matches {
 		t.Fatal("semantically identical JSON-RPC request did not match")
@@ -672,15 +673,162 @@ func TestReplayProcessTransportMatchesJSONRPCRequestSemanticsAndMapsResponseID(t
 	}
 
 	changedPrompt := bytes.Replace(actual, []byte("1+2"), []byte("3+1"), 1)
-	if _, matches := processCassetteJSONMatch(
+	if _, _, matches := processCassetteJSONMatch(
 		descriptor,
 		expected,
 		changedPrompt,
 		"",
 		"",
 		"",
+		nil,
 	); matches {
 		t.Fatal("JSON-RPC request with changed prompt matched")
+	}
+}
+
+func TestClaudeSidecarRecordingAndReplayProjectsEnvironmentAndGeneratedIdentities(t *testing.T) {
+	directory := t.TempDir()
+	base := &cassetteTestConnection{received: []ProcessFrame{
+		{Stdout: []byte(`{"version":8,"id":"request-recorded","type":"ok","payload":{"providerSessionId":"provider-recorded"}}` + "\n")},
+		{Stdout: []byte(`{"version":8,"id":"exec-recorded","type":"ok"}` + "\n")},
+	}}
+	recording, err := NewRecordingProcessTransport(
+		cassetteTestTransport{connection: base},
+		directory,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordedSpec := ProcessSpec{
+		Provider:       ProviderClaudeCode,
+		AgentSessionID: "session-recorded",
+		CWD:            "/Users/recorded/project",
+		Env: []string{
+			"ANTHROPIC_API_KEY=secret-recorded",
+			"CLAUDE_CONFIG_DIR=/Users/recorded/.claude",
+			"IS_SANDBOX=1",
+		},
+	}
+	connection, err := recording.Start(context.Background(), recordedSpec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordedStart := []byte(`{"version":8,"id":"request-recorded","type":"start","payload":{"agentSessionId":"session-recorded","providerSessionId":"provider-recorded","cwd":"/Users/recorded/project","env":{"ANTHROPIC_API_KEY":"secret-recorded","CLAUDE_CONFIG_DIR":"/Users/recorded/.claude","IS_SANDBOX":"1"}}}` + "\n")
+	if err := connection.Send(recordedStart); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := connection.Recv(); err != nil {
+		t.Fatal(err)
+	}
+	recordedExec := []byte(`{"version":8,"id":"exec-recorded","type":"exec","payload":{"agentSessionId":"session-recorded","turnId":"turn-recorded","promptCorrelationId":"submit-recorded","prompt":"REPLAY_EXACT"}}` + "\n")
+	if err := connection.Send(recordedExec); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := connection.Recv(); err != nil {
+		t.Fatal(err)
+	}
+	if err := connection.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := recording.Finalize(); err != nil {
+		t.Fatal(err)
+	}
+
+	frames, err := os.ReadFile(filepath.Join(directory, processCassetteChunksName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var projectedPayload bytes.Buffer
+	for _, line := range bytes.Split(bytes.TrimSpace(frames), []byte("\n")) {
+		var chunk processCassetteChunk
+		if err := json.Unmarshal(line, &chunk); err != nil {
+			t.Fatal(err)
+		}
+		if chunk.Data == "" {
+			continue
+		}
+		decoded, err := base64.StdEncoding.DecodeString(chunk.Data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		projectedPayload.Write(decoded)
+	}
+	for _, forbidden := range []string{
+		"secret-recorded",
+		"/Users/recorded/.claude",
+		"ANTHROPIC_API_KEY",
+		"CLAUDE_CONFIG_DIR",
+		"IS_SANDBOX",
+	} {
+		if bytes.Contains(projectedPayload.Bytes(), []byte(forbidden)) {
+			t.Fatalf("projected Claude tape retained %q", forbidden)
+		}
+	}
+
+	replay, err := NewReplayProcessTransport(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := replay.Start(context.Background(), ProcessSpec{
+		Provider:       ProviderClaudeCode,
+		AgentSessionID: "session-replayed",
+		CWD:            "/isolated/project",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayStart := []byte(`{"payload":{"env":{"ANTHROPIC_API_KEY":"different-secret","CLAUDE_CONFIG_DIR":"/isolated/.claude","IS_SANDBOX":"1"},"cwd":"/isolated/project","providerSessionId":"provider-replayed","agentSessionId":"session-replayed"},"type":"start","id":"request-replayed","version":8}` + "\n")
+	if err := replayed.Send(replayStart); err != nil {
+		t.Fatal(err)
+	}
+	frame, err := replayed.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(frame.Stdout, []byte(`"id":"request-replayed"`)) ||
+		!bytes.Contains(frame.Stdout, []byte(`"providerSessionId":"provider-recorded"`)) {
+		t.Fatalf("mapped Claude start response = %s", frame.Stdout)
+	}
+	replayExec := []byte(`{"version":8,"id":"exec-replayed","type":"exec","payload":{"agentSessionId":"session-replayed","turnId":"turn-replayed","promptCorrelationId":"submit-replayed","prompt":"REPLAY_EXACT"}}` + "\n")
+	if err := replayed.Send(replayExec); err != nil {
+		t.Fatal(err)
+	}
+	frame, err = replayed.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(frame.Stdout, []byte(`"id":"exec-replayed"`)) {
+		t.Fatalf("mapped Claude exec response = %s", frame.Stdout)
+	}
+	if err := replayed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := replay.VerifyComplete(); err != nil {
+		t.Fatal(err)
+	}
+
+	mismatchReplay, err := NewReplayProcessTransport(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mismatch, err := mismatchReplay.Start(context.Background(), ProcessSpec{
+		Provider:       ProviderClaudeCode,
+		AgentSessionID: "session-replayed",
+		CWD:            "/isolated/project",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mismatch.Send(replayStart); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mismatch.Recv(); err != nil {
+		t.Fatal(err)
+	}
+	changedPrompt := bytes.Replace(replayExec, []byte("REPLAY_EXACT"), []byte("WRONG"), 1)
+	if err := mismatch.Send(changedPrompt); err == nil ||
+		!strings.Contains(err.Error(), "outbound mismatch") {
+		t.Fatalf("changed Claude prompt error = %v, want outbound mismatch", err)
 	}
 }
 
@@ -762,13 +910,14 @@ func TestReplayProcessTransportKeepsOrdinaryClientUserMessageIDStrict(t *testing
 	actual := []byte(
 		`{"id":10,"method":"turn/start","params":{"clientUserMessageId":"user-submit-2"}}` + "\n",
 	)
-	if _, matches := processCassetteJSONMatch(
+	if _, _, matches := processCassetteJSONMatch(
 		codexReplayDescriptorForCassetteTest(t),
 		expected,
 		actual,
 		"",
 		"",
 		"",
+		nil,
 	); matches {
 		t.Fatal("ordinary clientUserMessageId mismatch matched")
 	}
@@ -1127,6 +1276,126 @@ func TestReplayProcessTransportDoesNotRequireUnlaunchedProbeConnection(t *testin
 	}
 	if _, err := connection.Recv(); err != nil {
 		t.Fatal(err)
+	}
+	if err := replay.VerifyComplete(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReplayProcessTransportAbsorbsExtraOptionalProbeDuringInbound(t *testing.T) {
+	request := func(value string) processCassetteChunk {
+		return processCassetteChunk{
+			Kind: "outbound",
+			Data: base64.StdEncoding.EncodeToString([]byte(value + "\n")),
+		}
+	}
+	stdout := func(value string) processCassetteChunk {
+		return processCassetteChunk{
+			Kind: "stdout",
+			Data: base64.StdEncoding.EncodeToString([]byte(value + "\n")),
+		}
+	}
+	replay := replayProcessTransportWithChunksForTest(t, []replayConnectionChunksForTest{{
+		spec: ProcessSpec{Provider: ProviderCodex, AgentSessionID: "session-1"},
+		chunks: []processCassetteChunk{
+			request(`{"id":1,"method":"initialize"}`),
+			stdout(`{"id":1,"result":{}}`),
+			stdout(`{"method":"turn/started","params":{"turn":{"id":"turn-1"}}}`),
+			request(`{"id":30,"method":"turn/start"}`),
+			stdout(`{"id":30,"result":{"turn":{"id":"turn-1"}}}`),
+		},
+	}})
+	connection, err := replay.Start(context.Background(), ProcessSpec{
+		Provider: ProviderCodex, AgentSessionID: "session-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := connection.Send([]byte("{\"id\":1,\"method\":\"initialize\"}\n")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := connection.Recv(); err != nil {
+		t.Fatal(err)
+	}
+	// Extra nickname-style probes arrive while the tape is delivering inbound.
+	if err := connection.Send([]byte(
+		"{\"id\":9,\"method\":\"thread/read\",\"params\":{\"threadId\":\"child-1\"}}\n",
+	)); err != nil {
+		t.Fatal(err)
+	}
+	frame, err := connection.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(frame.Stdout), "turn/started") {
+		t.Fatalf("stdout = %q, want turn/started", frame.Stdout)
+	}
+	if err := connection.Send([]byte("{\"id\":3,\"method\":\"turn/start\"}\n")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := connection.Recv(); err != nil {
+		t.Fatal(err)
+	}
+	if state := replay.ReplayPlaybackState(); !state.Drained {
+		t.Fatalf("playback state = %#v, want drained", state)
+	}
+	if err := replay.VerifyComplete(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReplayProcessTransportAbsorbsExtraOptionalProbeAfterCassetteEnd(t *testing.T) {
+	request := func(value string) processCassetteChunk {
+		return processCassetteChunk{
+			Kind: "outbound",
+			Data: base64.StdEncoding.EncodeToString([]byte(value + "\n")),
+		}
+	}
+	stdout := func(value string) processCassetteChunk {
+		return processCassetteChunk{
+			Kind: "stdout",
+			Data: base64.StdEncoding.EncodeToString([]byte(value + "\n")),
+		}
+	}
+	replay := replayProcessTransportWithChunksForTest(t, []replayConnectionChunksForTest{{
+		spec: ProcessSpec{Provider: ProviderCodex, AgentSessionID: "session-1"},
+		chunks: []processCassetteChunk{
+			request(`{"id":1,"method":"initialize"}`),
+			stdout(`{"id":1,"result":{}}`),
+			request(`{"id":2,"method":"thread/read","params":{"threadId":"child-1"}}`),
+			stdout(`{"id":2,"result":{"thread":{"nickname":"helper"}}}`),
+		},
+	}})
+	connection, err := replay.Start(context.Background(), ProcessSpec{
+		Provider: ProviderCodex, AgentSessionID: "session-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := connection.Send([]byte("{\"id\":1,\"method\":\"initialize\"}\n")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := connection.Recv(); err != nil {
+		t.Fatal(err)
+	}
+	if err := connection.Send([]byte(
+		"{\"id\":2,\"method\":\"thread/read\",\"params\":{\"threadId\":\"child-1\"}}\n",
+	)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := connection.Recv(); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []int{12, 13, 14} {
+		if err := connection.Send([]byte(fmt.Sprintf(
+			`{"id":%d,"method":"thread/read","params":{"threadId":"child-1"}}`+"\n",
+			id,
+		))); err != nil {
+			t.Fatalf("extra thread/read id=%d error = %v", id, err)
+		}
+	}
+	if state := replay.ReplayPlaybackState(); !state.Drained {
+		t.Fatalf("playback state = %#v, want drained after absorbed probes", state)
 	}
 	if err := replay.VerifyComplete(); err != nil {
 		t.Fatal(err)

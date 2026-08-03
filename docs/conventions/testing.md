@@ -269,6 +269,25 @@ pnpm e2e:agent-gui -- \
 pnpm e2e:agent-gui -- --replay .tmp/cassettes/c01_codex
 ```
 
+Claude Code uses the same runner with an explicit target:
+
+```sh
+pnpm e2e:agent-gui -- \
+  --record .tmp/cassettes/claude-smoke \
+  --scenario claude-smoke \
+  --scenario-file /absolute/path/to/claude-smoke.mjs \
+  --agent-target-id local:claude-code \
+  --timeout-ms 300000
+pnpm e2e:agent-gui -- --replay .tmp/cassettes/claude-smoke
+```
+
+Recording requires the repository-managed Claude SDK sidecar dependencies, an
+installed `claude` CLI, and a successful `claude auth status`. These are live
+recording prerequisites only. Replay uses the cassette process transport and
+an isolated `CLAUDE_CONFIG_DIR`; it does not require Claude credentials or an
+Anthropic request. Start with a pure-text, no-tool scenario before qualifying
+tool, approval, cancel, or background-task behavior.
+
 Record mode requires a named external scenario module from the QA case
 repository. The scenario declares its preparation, browser actions, and
 assertions; the runner only creates the isolated runtime, starts and stops

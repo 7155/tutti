@@ -403,11 +403,20 @@ func checkpointObservationEvent(event activityshared.Event) bool {
 		activityshared.EventTurnCompleted,
 		activityshared.EventTurnFailed,
 		activityshared.EventTurnCanceled,
-		activityshared.EventCallStarted,
 		activityshared.EventCallCompleted,
 		activityshared.EventCallFailed,
 		activityshared.EventInteractionRequested,
 		activityshared.EventInteractionSuperseded:
+		return true
+	case activityshared.EventCallStarted:
+		// commandExecution/outputDelta reuses call.started for live tool
+		// output. Those frames must not mint another tool.started checkpoint
+		// (no matching commit → checkpoint_commit_unconfirmed).
+		if event.Payload.Metadata != nil {
+			if _, ok := event.Payload.Metadata[liveToolOutputOperationMetadataKey]; ok {
+				return false
+			}
+		}
 		return true
 	default:
 		return false

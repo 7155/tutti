@@ -198,12 +198,12 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	}
 	w.mobileRemoteHost = mobileRemoteService
 	preferencesService, preferencesOK := api.PreferencesService.(*preferencesservice.Service)
-	agentStatusService, agentStatusOK := api.AgentStatusService.(*agentstatusservice.Service)
-	if !preferencesOK || !agentStatusOK {
+	agentUpdateDiscoverer, agentUpdateDiscovererOK := api.AgentStatusService.(agentstatusservice.ManagedProviderUpdateDiscoverer)
+	if !preferencesOK || !agentUpdateDiscovererOK {
 		return errors.New("agent CLI update scheduler wiring is invalid")
 	}
 	w.agentCLIUpdateScheduler = agentstatusservice.NewProviderUpdateScheduler(
-		agentstatusservice.ProviderUpdateSchedulerConfig{Discoverer: agentStatusService},
+		agentstatusservice.ProviderUpdateSchedulerConfig{Discoverer: agentUpdateDiscoverer},
 	)
 	w.observeDesktopPreferenceChanges(preferencesService)
 

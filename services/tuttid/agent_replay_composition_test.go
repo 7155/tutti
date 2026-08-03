@@ -8,6 +8,7 @@ import (
 	agentdaemon "github.com/tutti-os/tutti/packages/agent/daemon"
 	sessionreplay "github.com/tutti-os/tutti/packages/agent/session-replay"
 	agentservice "github.com/tutti-os/tutti/services/tuttid/service/agent"
+	agentstatusservice "github.com/tutti-os/tutti/services/tuttid/service/agentstatus"
 )
 
 type replayVerifierTransport struct {
@@ -99,6 +100,34 @@ func TestReplayProviderAvailabilityCheckerDoesNotProbeHost(t *testing.T) {
 		got[0].Provider != "codex" ||
 		got[0].Status != agentservice.ProviderAvailabilityAvailable {
 		t.Fatalf("availability = %#v, want replay-local available", got)
+	}
+}
+
+func TestReplayProviderStatusDoesNotRequireHostCLIOrCredentials(t *testing.T) {
+	service := replayAgentProviderStatusService{}
+	snapshot, err := service.List(
+		context.Background(),
+		agentstatusservice.ListInput{Providers: []string{"claude-code", "cursor"}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Providers) != 2 ||
+		snapshot.Providers[0].Availability.Status != agentstatusservice.AvailabilityReady ||
+		snapshot.Providers[0].Auth.Status != agentstatusservice.AuthAuthenticated ||
+		snapshot.Providers[1].Availability.Status != agentstatusservice.AvailabilityUnsupported {
+		t.Fatalf("replay provider statuses = %#v", snapshot.Providers)
+	}
+	probe, err := service.Probe(
+		context.Background(),
+		agentstatusservice.ProbeInput{Provider: "claude-code"},
+	)
+	if err != nil || probe.Status != agentstatusservice.ProbeSkipped ||
+		!probe.ProtocolReady || len(probe.Command) != 0 {
+		t.Fatalf("replay provider probe = %#v, err=%v", probe, err)
+	}
+	if err := service.DiscoverManagedProviderUpdates(context.Background()); err != nil {
+		t.Fatalf("replay provider update discovery = %v", err)
 	}
 }
 

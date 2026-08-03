@@ -36,8 +36,7 @@ func newProcessCassetteProjection(
 			spec.Provider,
 		)
 	}
-	if descriptor.Tape.Codec != replay.ProviderTapeCodecJSONRPC ||
-		descriptor.Tape.ProjectionCodec != replay.ProviderProjectionCodecJSONRPCPortable {
+	if !processCassetteProjectionSupported(descriptor) {
 		return nil, fmt.Errorf(
 			"provider %q has unsupported replay projection adapter",
 			spec.Provider,
@@ -49,6 +48,21 @@ func newProcessCassetteProjection(
 		personalRoots:  processCassettePersonalRoots(spec, descriptor),
 		requestMethods: map[string]string{},
 	}, nil
+}
+
+func processCassetteProjectionSupported(
+	descriptor replay.ProviderReplayDescriptor,
+) bool {
+	switch descriptor.Tape.Codec {
+	case replay.ProviderTapeCodecJSONRPC:
+		return descriptor.Tape.ProjectionCodec ==
+			replay.ProviderProjectionCodecJSONRPCPortable
+	case replay.ProviderTapeCodecClaudeSidecarV7:
+		return descriptor.Tape.ProjectionCodec ==
+			replay.ProviderProjectionCodecClaudeSidecarV7Portable
+	default:
+		return false
+	}
 }
 
 func (p *processCassetteProjection) project(
@@ -273,6 +287,7 @@ func (p *processCassetteProjection) projectValues(
 		return nil, false, fmt.Errorf("encode process cassette projection baseline: %w", err)
 	}
 	projectProcessCassetteRuntimeGeneratedFields(values, p.descriptor)
+	projectProcessCassetteEnvironment(values, p.descriptor)
 	if p.cwd.recorded != "" {
 		for index, value := range values {
 			values[index] = mapProcessCassettePathFields(
@@ -312,6 +327,23 @@ func (p *processCassetteProjection) projectValues(
 		}
 	}
 	return output.Bytes(), true, nil
+}
+
+func projectProcessCassetteEnvironment(
+	values []any,
+	descriptor replay.ProviderReplayDescriptor,
+) {
+	if !descriptor.Tape.ExcludeEnvironment {
+		return
+	}
+	for _, value := range values {
+		message, ok := value.(map[string]any)
+		if !ok || strings.TrimSpace(payloadString(message, "type")) != "start" {
+			continue
+		}
+		payload, _ := message["payload"].(map[string]any)
+		delete(payload, "env")
+	}
 }
 
 func projectProcessCassetteRuntimeGeneratedFields(

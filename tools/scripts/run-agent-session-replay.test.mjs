@@ -22,6 +22,7 @@ import {
   replayWorkbenchSnapshot
 } from "./agent-session-replay-runner/runtime.mjs";
 import {
+  resolveAgentSessionReplayProjectRoot,
   resolveRecordScenarioProject,
   seedRecordingUserProject,
   verifyRecordedProjectBindingArtifacts
@@ -38,6 +39,7 @@ import {
   createReplayWorkspaceSurfaceReadyQueue,
   validateReplayCheckpointPlan,
   assertReplayWorkspaceSucceeded,
+  checkpointNeedsToolSettle,
   parseArgs,
   resolveDesktopHeadless,
   replayCheckpointScreenshotPath,
@@ -57,7 +59,8 @@ import {
   submitRequestedRequiresSessionIdle,
   validateAction,
   validateReplayWorkspaceManifest,
-  verifyReplayWorkspaceTransports
+  verifyReplayWorkspaceTransports,
+  replayTransportHardFailureMessage
 } from "./run-agent-session-replay.mjs";
 
 const replayCassetteAID = "277377ed-af34-454f-a8b9-1047b4064e74";
@@ -1988,6 +1991,48 @@ test("record arguments accept an external scenario file", () => {
   assert.equal(options.scenarioFile, "/tmp/cases/c01/scenario.mjs");
 });
 
+test("replay arguments accept an optional scenario file for screenshot settle", () => {
+  const options = parseArgs([
+    "--replay",
+    ".tmp/cassettes/example",
+    "--scenario",
+    "c01",
+    "--scenario-file",
+    "/tmp/cases/c01/scenario.mjs",
+    "--screenshot-checkpoints"
+  ]);
+  assert.equal(options.mode, "replay");
+  assert.equal(options.scenario, "c01");
+  assert.equal(options.scenarioFile, "/tmp/cases/c01/scenario.mjs");
+  assert.equal(options.screenshotCheckpoints, true);
+});
+
+test("checkpoint settle targets completed tool and terminal turn checkpoints", () => {
+  assert.equal(checkpointNeedsToolSettle(null), true);
+  assert.equal(
+    checkpointNeedsToolSettle({
+      kind: "tool.completed",
+      tags: ["tool.completed"]
+    }),
+    true
+  );
+  assert.equal(
+    checkpointNeedsToolSettle({
+      kind: "turn.terminal",
+      tags: ["turn.terminal"]
+    }),
+    true
+  );
+  assert.equal(
+    checkpointNeedsToolSettle({ kind: "tool.started", tags: ["tool.started"] }),
+    false
+  );
+  assert.equal(
+    checkpointNeedsToolSettle({ kind: "turn.working", tags: ["turn.working"] }),
+    false
+  );
+});
+
 test("record scenarios require an id and file and reject raw prompt overrides", () => {
   assert.throws(
     () => parseArgs(["--record", ".tmp/cassettes/example"]),
@@ -1996,7 +2041,7 @@ test("record scenarios require an id and file and reject raw prompt overrides", 
   assert.throws(
     () =>
       parseArgs(["--record", ".tmp/cassettes/example", "--scenario", "c01"]),
-    /--scenario-file is required/u
+    /--scenario and --scenario-file must be provided together/u
   );
   assert.throws(
     () =>
@@ -2129,7 +2174,9 @@ test("Replay Workspace manifest rejects duplicate cassette and root Session", ()
         {
           cassetteDirectory: join(process.cwd(), ".tmp", "portable-cassette"),
           cassetteId: "",
-          rootAgentSessionId: ""
+          rootAgentSessionId: "",
+          scenario: "",
+          scenarioFile: ""
         }
       ],
       playbackMode: "manual",
@@ -3125,6 +3172,73 @@ test("does not apply create-session Composer defaults while continuing a Session
   assert.deepEqual(action.activityEvents[0].payload.settings, {});
 });
 
+test("PROJECT_ROOT remaps portable REPLAY_CWD outside Tutti checkout", () => {
+  const previous = process.env.TUTTI_AGENT_SESSION_REPLAY_PROJECT_ROOT;
+  const externalRoot = resolve(tmpdir(), "tutti.sessionrec-unit-test");
+  try {
+    assert.equal(
+      resolveAgentSessionReplayProjectRoot(workspaceRoot),
+      workspaceRoot
+    );
+    process.env.TUTTI_AGENT_SESSION_REPLAY_PROJECT_ROOT = externalRoot;
+    assert.equal(
+      resolveAgentSessionReplayProjectRoot(workspaceRoot),
+      externalRoot
+    );
+    const project = resolveRecordScenarioProject(
+      { label: "sessionrec", relativePath: "." },
+      resolveAgentSessionReplayProjectRoot(workspaceRoot)
+    );
+    assert.equal(project.path, externalRoot);
+    assert.equal(project.portablePath, "${REPLAY_CWD}");
+    assert.equal(project.path.startsWith(workspaceRoot + "/"), false);
+    assert.throws(() => {
+      process.env.TUTTI_AGENT_SESSION_REPLAY_PROJECT_ROOT = "relative/path";
+      resolveAgentSessionReplayProjectRoot(workspaceRoot);
+    }, /must be an absolute path/u);
+    process.env.TUTTI_AGENT_SESSION_REPLAY_PROJECT_ROOT = externalRoot;
+    const action = replayActionFromManifest(
+      {
+        schemaVersion: cassettePolicy.schemaVersion,
+        mode: "create-session",
+        agentTargetId: "local:codex",
+        replayPrerequisites: replayPrerequisitesForTest(),
+        rootAgentSessionId: "session-1"
+      },
+      [
+        {
+          schemaVersion: cassettePolicy.schemaVersion,
+          sequence: 1,
+          kind: "intent",
+          type: "activation/requested",
+          eventId: "create-1",
+          agentSessionId: "session-1",
+          payload: {
+            cwd: "${REPLAY_CWD}",
+            railPlacement: {
+              projectPath: "${REPLAY_CWD}",
+              sectionKey: "project:${REPLAY_CWD}"
+            },
+            railSectionKey: "project:${REPLAY_CWD}"
+          }
+        }
+      ],
+      "22222222-2222-4222-8222-222222222222"
+    );
+    assert.equal(action.activityEvents[0].payload.cwd, externalRoot);
+    assert.equal(
+      action.activityEvents[0].payload.railPlacement.projectPath,
+      externalRoot
+    );
+  } finally {
+    if (previous === undefined) {
+      delete process.env.TUTTI_AGENT_SESSION_REPLAY_PROJECT_ROOT;
+    } else {
+      process.env.TUTTI_AGENT_SESSION_REPLAY_PROJECT_ROOT = previous;
+    }
+  }
+});
+
 test("P01 selects an in-cwd project and requires portable binding artifacts", async () => {
   const root = await mkdtemp(join(tmpdir(), "agent-replay-project-binding-"));
   const project = resolveRecordScenarioProject(
@@ -3325,3 +3439,29 @@ function replayPrerequisitesForTest() {
     }
   };
 }
+
+test("replayTransportHardFailureMessage classifies hard outbound faults", () => {
+  assert.equal(
+    replayTransportHardFailureMessage(
+      409,
+      "connection connection-1 outbound mismatch at chunk 64"
+    ),
+    "connection connection-1 outbound mismatch at chunk 64"
+  );
+  assert.equal(
+    replayTransportHardFailureMessage(
+      409,
+      "connection connection-1 received unexpected outbound bytes after cassette end"
+    ),
+    "connection connection-1 received unexpected outbound bytes after cassette end"
+  );
+  assert.equal(
+    replayTransportHardFailureMessage(
+      409,
+      "connection connection-1 consumed 64 of 131 chunks"
+    ),
+    ""
+  );
+  assert.equal(replayTransportHardFailureMessage(500, "outbound mismatch"), "");
+  assert.equal(replayTransportHardFailureMessage(409, ""), "");
+});

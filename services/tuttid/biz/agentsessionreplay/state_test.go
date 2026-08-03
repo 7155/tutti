@@ -70,6 +70,69 @@ func TestResolvePortableAgentStateRejectsPathEscape(t *testing.T) {
 	}
 }
 
+func TestProjectPortableAgentStateProjectsTurnFileChangePaths(t *testing.T) {
+	recordedRoot := filepath.Join(
+		string(filepath.Separator),
+		"Users",
+		"recording",
+		"repo",
+	)
+	absolutePath := filepath.Join(
+		recordedRoot,
+		".tmp",
+		"agent-session-replay-r09",
+		"delete-me.txt",
+	)
+	agent := TuttiReplayAgent{
+		RootSessionID: "session-1",
+		Sessions: []agenthost.HistoricalSession{{
+			ID:  "session-1",
+			Cwd: recordedRoot,
+			Turns: []agenthost.HistoricalTurn{{
+				ID:    "turn-1",
+				Phase: "settled",
+				FileChanges: map[string]any{
+					"files": []any{
+						map[string]any{
+							"path":   absolutePath,
+							"change": "deleted",
+						},
+					},
+				},
+			}},
+		}},
+	}
+
+	portable := ProjectPortableAgentState(agent, t.TempDir())
+	files, _ := portable.Sessions[0].Turns[0].FileChanges["files"].([]any)
+	file, _ := files[0].(map[string]any)
+	if file["path"] !=
+		sessionreplay.PortableReplayCWDToken+"/.tmp/agent-session-replay-r09/delete-me.txt" {
+		t.Fatalf("portable fileChanges path = %#v", file["path"])
+	}
+	if agent.Sessions[0].Turns[0].FileChanges["files"].([]any)[0].(map[string]any)["path"] !=
+		absolutePath {
+		t.Fatalf("source fileChanges was mutated: %#v", agent.Sessions[0].Turns[0].FileChanges)
+	}
+
+	replayRoot := filepath.Join(string(filepath.Separator), "runtime", "replay")
+	resolved, err := ResolvePortableAgentState(portable, replayRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedFiles, _ := resolved.Sessions[0].Turns[0].FileChanges["files"].([]any)
+	resolvedFile, _ := resolvedFiles[0].(map[string]any)
+	want := filepath.Join(
+		replayRoot,
+		".tmp",
+		"agent-session-replay-r09",
+		"delete-me.txt",
+	)
+	if resolvedFile["path"] != want {
+		t.Fatalf("resolved fileChanges path = %#v, want %#v", resolvedFile["path"], want)
+	}
+}
+
 func TestProjectPortableAgentStateProjectsGeneratedImagePaths(t *testing.T) {
 	stateDirectory := t.TempDir()
 	generatedPath := filepath.Join(

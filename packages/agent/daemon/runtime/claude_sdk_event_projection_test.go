@@ -223,7 +223,7 @@ func TestClaudeCodeSDKAdapterCompletesCanonicalTurnByProviderIdentity(t *testing
 			published = append(published, events...)
 		}
 	})
-	adapter.dispatchClaudeSDKEvent(
+	_ = adapter.dispatchClaudeSDKEvent(
 		session.AgentSessionID,
 		adapterSession,
 		claudeSDKSidecarEvent{
@@ -698,7 +698,7 @@ func TestClaudeCodeSDKAdapterScopesChildApprovalAckEventsToChild(t *testing.T) {
 	}()
 	waitForCondition(t, func() bool { return len(conn.sentRequests()) == 1 })
 	request := conn.sentRequests()[0]
-	adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
+	_ = adapter.dispatchClaudeSDKEvent(session.AgentSessionID, adapterSession, claudeSDKSidecarEvent{
 		ID:   request.ID,
 		Type: "ok",
 		Payload: map[string]any{

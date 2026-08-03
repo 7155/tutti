@@ -22,6 +22,21 @@ import (
 // credentials on the host machine.
 type replayProviderAvailabilityChecker struct{}
 
+// replayAgentProviderStatusService keeps status reads inside the isolated
+// composition. Replay capability comes from the cassette registry, not from
+// installed CLIs, adapters, or credentials on the host machine.
+type replayAgentProviderStatusService struct{}
+
+func replayAgentProviderStatusAPI(
+	replayComposition bool,
+	live tuttiapi.AgentProviderStatusService,
+) tuttiapi.AgentProviderStatusService {
+	if replayComposition {
+		return replayAgentProviderStatusService{}
+	}
+	return live
+}
+
 type agentReplayTransportVerifier struct {
 	enabled          bool
 	verifyState      func(context.Context, string) error
@@ -271,4 +286,85 @@ func (replayProviderAvailabilityChecker) ListProviderAvailability(
 		})
 	}
 	return result, nil
+}
+
+func (replayAgentProviderStatusService) List(
+	_ context.Context,
+	input agentstatusservice.ListInput,
+) (agentstatusservice.Snapshot, error) {
+	providers := append([]string(nil), input.Providers...)
+	if len(providers) == 0 {
+		providers = []string{"codex", "claude-code"}
+	}
+	now := time.Now().UTC()
+	statuses := make([]agentstatusservice.ProviderStatus, 0, len(providers))
+	for _, provider := range providers {
+		provider = strings.TrimSpace(provider)
+		availability := agentstatusservice.AvailabilityUnsupported
+		reasonCode := "replay_provider_unsupported"
+		installed := false
+		auth := agentstatusservice.AuthUnknown
+		if _, ok := sessionreplay.FindProviderReplayByProvider(provider); ok {
+			availability = agentstatusservice.AvailabilityReady
+			reasonCode = ""
+			installed = true
+			auth = agentstatusservice.AuthAuthenticated
+		}
+		statuses = append(statuses, agentstatusservice.ProviderStatus{
+			Provider: provider,
+			Availability: agentstatusservice.Availability{
+				Status: availability, ReasonCode: reasonCode, CheckedAt: &now,
+			},
+			CLI:     agentstatusservice.CLIStatus{Installed: installed},
+			Adapter: agentstatusservice.AdapterStatus{Installed: installed},
+			Auth:    agentstatusservice.AuthInfo{Status: auth},
+			Update: agentstatusservice.UpdateStatus{
+				Capability:        agentstatusservice.UpdateCapabilityUnsupported,
+				UnsupportedReason: "agent session replay composition",
+			},
+		})
+	}
+	return agentstatusservice.Snapshot{CapturedAt: now, Providers: statuses}, nil
+}
+
+func (replayAgentProviderStatusService) Probe(
+	_ context.Context,
+	input agentstatusservice.ProbeInput,
+) (agentstatusservice.ProbeResult, error) {
+	provider := strings.TrimSpace(input.Provider)
+	if _, ok := sessionreplay.FindProviderReplayByProvider(provider); !ok {
+		return agentstatusservice.ProbeResult{}, agentstatusservice.ErrInvalidProvider
+	}
+	return agentstatusservice.ProbeResult{
+		Provider:      provider,
+		Status:        agentstatusservice.ProbeSkipped,
+		CheckedAt:     time.Now().UTC(),
+		ReasonCode:    "agent_session_replay",
+		ProtocolReady: true,
+	}, nil
+}
+
+func (replayAgentProviderStatusService) RunAction(
+	context.Context,
+	agentstatusservice.RunActionInput,
+) (agentstatusservice.RunActionResult, error) {
+	return agentstatusservice.RunActionResult{}, agentstatusservice.ErrInvalidAction
+}
+
+func (replayAgentProviderStatusService) GetCodexRuntimeCatalog(
+	context.Context,
+	string,
+) (agentstatusservice.CodexRuntimeCatalog, error) {
+	return agentstatusservice.CodexRuntimeCatalog{}, agentstatusservice.ErrInvalidProvider
+}
+
+func (replayAgentProviderStatusService) SetCodexRuntimeSelection(
+	context.Context,
+	agentstatusservice.SetCodexRuntimeSelectionInput,
+) (agentstatusservice.CodexRuntimeCatalog, error) {
+	return agentstatusservice.CodexRuntimeCatalog{}, agentstatusservice.ErrInvalidProvider
+}
+
+func (replayAgentProviderStatusService) DiscoverManagedProviderUpdates(context.Context) error {
+	return nil
 }

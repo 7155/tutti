@@ -24,6 +24,7 @@ export interface WorkspaceBrowserService {
   createFeatureHostApi(
     input: WorkspaceBrowserFeatureHostApiInput
   ): BrowserNodeHostApi;
+  disposeWorkspace(workspaceId: string): void;
   ensureFeatureConnected(feature: BrowserNodeFeature): void;
   setUserAutomationSurface(input: {
     feature: BrowserNodeFeature;
@@ -44,12 +45,16 @@ export function createWorkspaceBrowserService(
       >;
   } = {}
 ): WorkspaceBrowserService {
-  const connectedFeatures = new WeakSet<BrowserNodeFeature>();
-  const featuresByHostApi = new WeakMap<
-    BrowserNodeHostApi,
-    BrowserNodeFeature
-  >();
   const routes = new Set<WorkspaceBrowserEventRoute>();
+  const routesByHostApi = new WeakMap<
+    BrowserNodeHostApi,
+    WorkspaceBrowserEventRoute
+  >();
+  const featureReleases = new WeakMap<BrowserNodeFeature, () => void>();
+  const activeRoutesByWorkspace = new Map<
+    string,
+    Map<WorkspaceBrowserFeatureSource, WorkspaceBrowserEventRoute>
+  >();
   let disconnectBrowserEvents: (() => void) | null = null;
   let disconnectUserAutomation: (() => void) | null = null;
 
@@ -79,7 +84,7 @@ export function createWorkspaceBrowserService(
             event.reuseIfOpen !== false &&
             !openUrlHandled
           ) {
-            const feature = featuresByHostApi.get(route.hostApi);
+            const feature = route.feature;
             openUrlHandled = feature
               ? openBrowserUrlInNewTab(feature, event)
               : false;
@@ -113,6 +118,45 @@ export function createWorkspaceBrowserService(
     disconnectBrowserEvents = null;
   };
 
+  const disposeRoute = (route: WorkspaceBrowserEventRoute): void => {
+    const feature = route.feature;
+    route.releaseFeature?.();
+    if (feature) {
+      featureReleases.delete(feature);
+    }
+    route.releaseFeature = null;
+    route.feature = null;
+    routes.delete(route);
+    routesByHostApi.delete(route.hostApi);
+    if (route.source) {
+      const activeRoutes = activeRoutesByWorkspace.get(route.workspaceId);
+      if (activeRoutes?.get(route.source) === route) {
+        activeRoutes.delete(route.source);
+        if (activeRoutes.size === 0) {
+          activeRoutesByWorkspace.delete(route.workspaceId);
+        }
+      }
+    }
+    maybeDisconnectBrowserEvents();
+  };
+
+  const replaceActiveRoute = (route: WorkspaceBrowserEventRoute): void => {
+    if (!route.source) {
+      return;
+    }
+    const previousRoute = activeRoutesByWorkspace
+      .get(route.workspaceId)
+      ?.get(route.source);
+    if (previousRoute && previousRoute !== route) {
+      disposeRoute(previousRoute);
+    }
+    const activeRoutes =
+      activeRoutesByWorkspace.get(route.workspaceId) ??
+      new Map<WorkspaceBrowserFeatureSource, WorkspaceBrowserEventRoute>();
+    activeRoutes.set(route.source, route);
+    activeRoutesByWorkspace.set(route.workspaceId, activeRoutes);
+  };
+
   return {
     createFeatureHostApi({ acceptsEvent, observeEvent, source, workspaceId }) {
       if (!input.browserApi) {
@@ -136,24 +180,40 @@ export function createWorkspaceBrowserService(
           };
         }
       };
-      routes.add({
+      const route: WorkspaceBrowserEventRoute = {
         acceptsEvent,
+        feature: null,
         hostApi,
         listeners,
         observeEvent,
+        releaseFeature: null,
         source,
         workspaceId
-      });
+      };
+      routes.add(route);
+      routesByHostApi.set(hostApi, route);
       return hostApi;
     },
+    disposeWorkspace(workspaceId) {
+      for (const route of Array.from(routes)) {
+        if (route.workspaceId === workspaceId) {
+          disposeRoute(route);
+        }
+      }
+    },
     ensureFeatureConnected(feature) {
-      featuresByHostApi.set(feature.hostApi, feature);
-      if (connectedFeatures.has(feature)) {
+      if (featureReleases.has(feature)) {
         return;
       }
-
-      feature.connect();
-      connectedFeatures.add(feature);
+      const route = routesByHostApi.get(feature.hostApi);
+      const releaseFeature = feature.connect();
+      featureReleases.set(feature, releaseFeature);
+      if (!route) {
+        return;
+      }
+      route.feature = feature;
+      route.releaseFeature = releaseFeature;
+      replaceActiveRoute(route);
     },
     setUserAutomationSurface({ feature, workspaceId }) {
       disconnectUserAutomation?.();
@@ -249,12 +309,18 @@ function resolveBrowserSurfaceNodeId(nodeId: string): string | null {
 
 interface WorkspaceBrowserEventRoute {
   acceptsEvent: WorkspaceBrowserEventMatcher;
+  feature: BrowserNodeFeature | null;
   hostApi: BrowserNodeHostApi;
   listeners: Set<(event: BrowserNodeEvent) => void>;
   observeEvent?: (event: BrowserNodeEvent) => void;
+  releaseFeature: (() => void) | null;
   source?: "browser" | "workspace_app";
   workspaceId: string;
 }
+
+type WorkspaceBrowserFeatureSource = NonNullable<
+  WorkspaceBrowserEventRoute["source"]
+>;
 
 function openBrowserUrlInNewTab(
   feature: BrowserNodeFeature,

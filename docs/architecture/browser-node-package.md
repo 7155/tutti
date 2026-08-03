@@ -86,6 +86,13 @@ It must not translate this explicit popup intent into a passive Workbench
 same-origin URL differences so normal in-page and authentication redirects are
 not reset by stale host state.
 
+The workspace host keeps one active Browser feature route per workspace and
+source. Rebuilding a Workbench contribution replaces and disconnects the prior
+route before it can handle another event, and disposing the Workbench session
+releases every Browser route for that workspace. A weak lookup does not replace
+this lifecycle: a route that still strongly owns its lookup key would also keep
+the obsolete feature and tab store alive.
+
 ## Package Entry Points
 
 The package uses multiple exports from one package rather than several small

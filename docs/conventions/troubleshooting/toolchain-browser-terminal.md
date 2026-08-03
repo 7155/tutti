@@ -410,12 +410,17 @@ delimited by ---`, and the composer skill picker may show partial or
   Keep the same-origin synchronization guard. Route Browser-owned `open-url`
   events by their exact source child ID, create and select a new tab on that
   Browser surface, and retain the existing Workbench launch fallback for URLs
-  emitted by Workspace Apps or unavailable Browser surfaces.
+  emitted by Workspace Apps or unavailable Browser surfaces. Treat the route
+  registration as a Workbench-session resource: replace an earlier route for
+  the same workspace/source generation and dispose all workspace routes when
+  its session closes.
 - Validation:
   Cover a same-origin popup from an existing Browser child and assert that a
   second selected tab owns the requested URL while no Workbench launch occurs.
-  Also retain coverage that Workspace App URLs still launch through the
-  workspace Browser coordinator.
+  Rebuild the Browser contribution and assert only the latest feature receives
+  the popup, then dispose the workspace and assert its feature no longer
+  receives events. Also retain coverage that Workspace App URLs still launch
+  through the workspace Browser coordinator.
 - References:
   [workspaceBrowserService.ts](../../../apps/desktop/src/renderer/src/features/workspace-workbench/services/internal/workspaceBrowserService.ts)
   [tabsStore.ts](../../../packages/browser/workbench-node/src/core/tabsStore.ts)

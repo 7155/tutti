@@ -170,6 +170,125 @@ test("workspace browser service opens Browser popups in tabs and launches app UR
   ]);
 });
 
+test("workspace browser service replaces stale feature routes before handling popups", () => {
+  let emitDesktopBrowserEvent = (_event: BrowserNodeEvent): void => undefined;
+  const service = createWorkspaceBrowserService({
+    browserApi: createBrowserNodeHostApi({
+      onEvent(listener) {
+        emitDesktopBrowserEvent = listener;
+        return () => {
+          emitDesktopBrowserEvent = () => undefined;
+        };
+      }
+    })
+  });
+  const createFeature = () => {
+    const feature = createBrowserNodeFeature({
+      hostApi: service.createFeatureHostApi({
+        acceptsEvent: (event) => browserNodeOwnsEvent(event),
+        source: "browser",
+        workspaceId: "workspace-browser-replacement"
+      })
+    });
+    feature.tabsStore.ensureSurface(
+      "browser:surface-replacement",
+      "https://www.baidu.com/"
+    );
+    service.ensureFeatureConnected(feature);
+    return feature;
+  };
+  const staleFeature = createFeature();
+  const currentFeature = createFeature();
+
+  emitDesktopBrowserEvent({
+    reuseIfOpen: true,
+    sourceNodeId: "browser:surface-replacement:tab:1",
+    type: "open-url",
+    url: "https://www.baidu.com/s?wd=tutti"
+  });
+
+  assert.equal(
+    staleFeature.tabsStore.getSurfaceState("browser:surface-replacement")?.tabs
+      .length,
+    1
+  );
+  assert.equal(
+    currentFeature.tabsStore.getSurfaceState("browser:surface-replacement")
+      ?.tabs.length,
+    2
+  );
+});
+
+test("workspace browser service disposes routes with their workspace session", () => {
+  let desktopDisconnectCount = 0;
+  let emitDesktopBrowserEvent = (_event: BrowserNodeEvent): void => undefined;
+  const service = createWorkspaceBrowserService({
+    browserApi: createBrowserNodeHostApi({
+      onEvent(listener) {
+        emitDesktopBrowserEvent = listener;
+        return () => {
+          desktopDisconnectCount += 1;
+          emitDesktopBrowserEvent = () => undefined;
+        };
+      }
+    })
+  });
+  const createFeature = (workspaceId: string, nodeIdPrefix: string) => {
+    const feature = createBrowserNodeFeature({
+      hostApi: service.createFeatureHostApi({
+        acceptsEvent: (event) => {
+          const nodeId =
+            event.type === "open-url" ? event.sourceNodeId : event.nodeId;
+          return nodeId.startsWith(nodeIdPrefix);
+        },
+        source: "browser",
+        workspaceId
+      })
+    });
+    service.ensureFeatureConnected(feature);
+    return feature;
+  };
+  const disposedFeature = createFeature("workspace-disposed", "browser-old:");
+  const activeFeature = createFeature("workspace-active", "browser-active:");
+
+  service.disposeWorkspace("workspace-disposed");
+  emitDesktopBrowserEvent({
+    canGoBack: false,
+    canGoForward: false,
+    isLoading: false,
+    isOccluded: false,
+    lifecycle: "active",
+    nodeId: "browser-old:tab:1",
+    title: "Disposed",
+    type: "state",
+    url: "https://disposed.example/"
+  });
+  emitDesktopBrowserEvent({
+    canGoBack: false,
+    canGoForward: false,
+    isLoading: false,
+    isOccluded: false,
+    lifecycle: "active",
+    nodeId: "browser-active:tab:1",
+    title: "Active",
+    type: "state",
+    url: "https://active.example/"
+  });
+
+  assert.equal(
+    disposedFeature.runtimeStore.getNodeState("browser-old:tab:1").url,
+    null
+  );
+  assert.equal(
+    activeFeature.runtimeStore.getNodeState("browser-active:tab:1").url,
+    "https://active.example/"
+  );
+  assert.equal(desktopDisconnectCount, 0);
+
+  service.disposeWorkspace("workspace-active");
+  assert.equal(desktopDisconnectCount, 1);
+});
+
 test("workspace app Browser features do not inherit Chrome Cookie import", () => {
   const browserApi = createBrowserNodeHostApi({
     cancelChromeCookieImport: async () => undefined,

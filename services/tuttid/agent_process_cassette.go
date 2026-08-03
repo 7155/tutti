@@ -46,7 +46,7 @@ type agentSessionReplayRegistration struct {
 func replayAgentModelCatalog(
 	replayComposition bool,
 	composition agentProcessComposition,
-	normalCatalog *agentservice.AgentModelCatalog,
+	normalCatalog agentservice.AgentModelCatalog,
 ) agentservice.AgentModelCatalog {
 	if replayComposition && composition.replayModelCatalog != nil {
 		return composition.replayModelCatalog

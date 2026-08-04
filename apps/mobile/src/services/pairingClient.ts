@@ -19,6 +19,7 @@ import {
   type PairingQRPayload
 } from "./pairingProtocol";
 import { PAIRING_OPERATION_SUSPENDED } from "./servicePorts";
+import { raceSuccessful } from "./pairingTransportRace";
 
 interface RegisteredDevice {
   userDeviceId: string;
@@ -131,103 +132,62 @@ export async function connectPairedDevice(
   isCurrent: () => boolean = () => true
 ): Promise<DeviceLinkPathScope> {
   const identity = await mobileSecurity.getOrCreateIdentity();
-  await requireCurrentConnection(isCurrent);
+  requireCurrentConnection(isCurrent);
   await registerIdentity(sessionId, identity);
-  await requireCurrentConnection(isCurrent);
-  const relayDescriptorTask = issueAgentRelayDescriptor(
+  requireCurrentConnection(isCurrent);
+  const relayController = new AbortController();
+  const directController = new AbortController();
+  const directTask = connectDirectDevice(
     sessionId,
     pairingId,
-    identity
-  )
-    .then(async (descriptor) => {
-      if (!isCurrent() || typeof deviceLink.configureRelay !== "function") {
-        return null;
-      }
-      await deviceLink.configureRelay(
-        descriptor.relayDialEndpoint,
-        JSON.stringify({
-          authority_id: [descriptor.authorityId],
-          channel: ["agent"],
-          target: ["device-gateway"]
-        }),
-        JSON.stringify({
-          Authorization: [`Bearer ${descriptor.token}`]
-        }),
-        RELAY_STREAM_SUBPROTOCOL
-      );
-      return isCurrent() ? descriptor : null;
-    })
-    .catch(() => null);
+    identity,
+    isCurrent,
+    directController.signal
+  );
+  const relayTask = configureRelayTransport(
+    sessionId,
+    pairingId,
+    identity,
+    isCurrent,
+    relayController.signal
+  ).then(async (descriptor) => {
+    if (descriptor === null) return null;
+    // A descriptor only makes Relay dialable. The native probe opens a Relay
+    // stream and waits for the paired desktop Agent endpoint to acknowledge a
+    // authenticated Agent request before this path can win the connection race.
+    requireCurrentConnection(isCurrent, relayController.signal);
+    await deviceLink.probeRelay(10_000);
+    requireCurrentConnection(isCurrent, relayController.signal);
+    return descriptor;
+  });
   try {
-    let prepared = await deviceLink.prepareLink("[]", 10_000);
-    let local = parseDeviceLinkDescription(prepared.descriptionJSON);
-    await requireCurrentConnection(isCurrent);
-    let attempt = await createDeviceLinkAttempt(
-      sessionId,
-      identity.deviceId,
-      pairingId,
-      local
-    );
-    await requireCurrentConnection(isCurrent);
-    if ((attempt.stunEndpoints?.length ?? 0) > 0) {
-      prepared = await deviceLink.prepareLink(
-        JSON.stringify(attempt.stunEndpoints),
-        10_000
-      );
-      local = parseDeviceLinkDescription(prepared.descriptionJSON);
-      await requireCurrentConnection(isCurrent);
-      attempt = await updateDeviceLinkParticipant(
-        sessionId,
-        identity.deviceId,
-        pairingId,
-        attempt.attemptId,
-        local
-      );
-      await requireCurrentConnection(isCurrent);
-    }
-    const getSignature = standardBase64ToURL(
-      await mobileSecurity.sign(
-        deviceLinkProof("get", pairingId, attempt.attemptId, "")
-      )
-    );
-    const deadline = Date.parse(attempt.expiresAt);
-    while (Date.now() < deadline) {
-      if (
-        attempt.state === "ready" &&
-        attempt.ownerIce &&
-        attempt.ownerFingerprint
-      ) {
-        const scope = await deviceLink.connectLink(
-          JSON.stringify({
-            candidates: attempt.ownerIce.candidates,
-            fingerprint: attempt.ownerFingerprint,
-            pwd: attempt.ownerIce.pwd,
-            ufrag: attempt.ownerIce.ufrag
-          }),
-          true,
-          prepared.token,
-          30_000
-        );
-        await requireCurrentConnection(isCurrent);
-        return normalizeDeviceLinkPathScope(scope);
+    const winner = await raceSuccessful<
+      DeviceLinkPathScope | AgentRelayDescriptor
+    >([
+      {
+        name: "direct",
+        run: () => directTask
+      },
+      {
+        name: "relay",
+        run: async () => (await relayTask) ?? null
       }
-      await delay(500);
-      await requireCurrentConnection(isCurrent);
-      attempt = await getDeviceLinkAttempt(
-        sessionId,
-        identity.deviceId,
-        pairingId,
-        attempt.attemptId,
-        getSignature
-      );
-      await requireCurrentConnection(isCurrent);
-    }
-    if (await relayDescriptorTask) {
-      await requireCurrentConnection(isCurrent);
+    ]);
+    requireCurrentConnection(isCurrent);
+    if (winner.name === "relay") {
+      // The Relay task completes only after the native Agent probe has
+      // received a response from the paired desktop. Keep direct rendezvous
+      // running so later data-stream races retain a direct candidate.
       return "private_network";
     }
-    throw new Error("device-link attempt expired");
+    // Direct is already usable. Do not leave a control-plane descriptor
+    // request running after the connection lifecycle has returned; a later
+    // reconnect will request a fresh Relay descriptor if it needs one.
+    relayController.abort();
+    return winner.value as DeviceLinkPathScope;
   } catch (error) {
+    relayController.abort();
+    directController.abort();
     if (isCurrent()) {
       await deviceLink.closeLink().catch(() => undefined);
     }
@@ -235,10 +195,120 @@ export async function connectPairedDevice(
   }
 }
 
+async function connectDirectDevice(
+  sessionId: string,
+  pairingId: string,
+  identity: DeviceIdentity,
+  isCurrent: () => boolean,
+  signal: AbortSignal
+): Promise<DeviceLinkPathScope> {
+  let prepared = await deviceLink.prepareLink("[]", 10_000);
+  let local = parseDeviceLinkDescription(prepared.descriptionJSON);
+  requireCurrentConnection(isCurrent, signal);
+  let attempt = await createDeviceLinkAttempt(
+    sessionId,
+    identity.deviceId,
+    pairingId,
+    local,
+    signal
+  );
+  requireCurrentConnection(isCurrent, signal);
+  if ((attempt.stunEndpoints?.length ?? 0) > 0) {
+    prepared = await deviceLink.prepareLink(
+      JSON.stringify(attempt.stunEndpoints),
+      10_000
+    );
+    local = parseDeviceLinkDescription(prepared.descriptionJSON);
+    requireCurrentConnection(isCurrent, signal);
+    attempt = await updateDeviceLinkParticipant(
+      sessionId,
+      identity.deviceId,
+      pairingId,
+      attempt.attemptId,
+      local,
+      signal
+    );
+    requireCurrentConnection(isCurrent, signal);
+  }
+  const getSignature = standardBase64ToURL(
+    await mobileSecurity.sign(
+      deviceLinkProof("get", pairingId, attempt.attemptId, "")
+    )
+  );
+  const deadline = Date.parse(attempt.expiresAt);
+  while (Date.now() < deadline) {
+    requireCurrentConnection(isCurrent, signal);
+    if (
+      attempt.state === "ready" &&
+      attempt.ownerIce &&
+      attempt.ownerFingerprint
+    ) {
+      const scope = await deviceLink.connectLink(
+        JSON.stringify({
+          candidates: attempt.ownerIce.candidates,
+          fingerprint: attempt.ownerFingerprint,
+          pwd: attempt.ownerIce.pwd,
+          ufrag: attempt.ownerIce.ufrag
+        }),
+        true,
+        prepared.token,
+        30_000
+      );
+      requireCurrentConnection(isCurrent, signal);
+      return normalizeDeviceLinkPathScope(scope);
+    }
+    await delay(500, signal);
+    requireCurrentConnection(isCurrent, signal);
+    attempt = await getDeviceLinkAttempt(
+      sessionId,
+      identity.deviceId,
+      pairingId,
+      attempt.attemptId,
+      getSignature,
+      signal
+    );
+  }
+  throw new Error("device-link attempt expired");
+}
+
+async function configureRelayTransport(
+  sessionId: string,
+  pairingId: string,
+  identity: DeviceIdentity,
+  isCurrent: () => boolean,
+  signal: AbortSignal
+): Promise<AgentRelayDescriptor | null> {
+  if (typeof deviceLink.configureRelay !== "function") {
+    return null;
+  }
+  const descriptor = await issueAgentRelayDescriptor(
+    sessionId,
+    pairingId,
+    identity,
+    signal
+  );
+  requireCurrentConnection(isCurrent, signal);
+  await deviceLink.configureRelay(
+    descriptor.relayDialEndpoint,
+    JSON.stringify({
+      authority_id: [descriptor.authorityId],
+      channel: ["agent"],
+      target: ["device-gateway"]
+    }),
+    JSON.stringify({
+      Authorization: [`Bearer ${descriptor.token}`]
+    }),
+    RELAY_STREAM_SUBPROTOCOL
+  );
+  requireCurrentConnection(isCurrent, signal);
+  return descriptor;
+}
+
 export async function issueAgentRelayDescriptor(
   sessionId: string,
   pairingId: string,
-  identity?: DeviceIdentity
+  identity?: DeviceIdentity,
+  signal?: AbortSignal
 ): Promise<AgentRelayDescriptor> {
   const currentIdentity =
     identity ?? (await mobileSecurity.getOrCreateIdentity());
@@ -261,7 +331,8 @@ export async function issueAgentRelayDescriptor(
         pairingId
       }),
       method: "POST"
-    }
+    },
+    signal
   );
   const descriptor = response.descriptor ?? response;
   if (
@@ -303,7 +374,8 @@ async function createDeviceLinkAttempt(
   sessionId: string,
   deviceId: string,
   pairingId: string,
-  local: DeviceLinkDescription
+  local: DeviceLinkDescription,
+  signal?: AbortSignal
 ): Promise<DeviceLinkAttempt> {
   const signature = await mobileSecurity.sign(
     deviceLinkProof("create", pairingId, "", local.fingerprint)
@@ -324,7 +396,8 @@ async function createDeviceLinkAttempt(
         protocolVersion: 2
       }),
       method: "POST"
-    }
+    },
+    signal
   );
   return response.attempt;
 }
@@ -334,7 +407,8 @@ async function updateDeviceLinkParticipant(
   deviceId: string,
   pairingId: string,
   attemptId: string,
-  local: DeviceLinkDescription
+  local: DeviceLinkDescription,
+  signal?: AbortSignal
 ): Promise<DeviceLinkAttempt> {
   const signature = await mobileSecurity.sign(
     deviceLinkProof("update", pairingId, attemptId, local.fingerprint)
@@ -355,7 +429,8 @@ async function updateDeviceLinkParticipant(
         protocolVersion: 2
       }),
       method: "POST"
-    }
+    },
+    signal
   );
   return response.attempt;
 }
@@ -365,12 +440,14 @@ async function getDeviceLinkAttempt(
   deviceId: string,
   pairingId: string,
   attemptId: string,
-  identitySignature: string
+  identitySignature: string,
+  signal?: AbortSignal
 ): Promise<DeviceLinkAttempt> {
   const response = await controlPlaneRequest<{ attempt: DeviceLinkAttempt }>(
     sessionId,
     `/device-pairings/${encodeURIComponent(pairingId)}/device-link-attempts/${encodeURIComponent(attemptId)}?deviceId=${encodeURIComponent(deviceId)}&identitySignature=${encodeURIComponent(identitySignature)}`,
-    { method: "GET" }
+    { method: "GET" },
+    signal
   );
   return response.attempt;
 }
@@ -426,26 +503,52 @@ async function registerIdentity(
   return response.device;
 }
 
-async function requireCurrentConnection(
-  isCurrent: () => boolean
-): Promise<void> {
+function requireCurrentConnection(
+  isCurrent: () => boolean,
+  signal?: AbortSignal
+): void {
+  if (signal?.aborted) {
+    throw new Error("device-link connection race was cancelled");
+  }
   if (isCurrent()) {
     return;
   }
   throw new Error("device-link connection was cancelled");
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error("device-link connection race was cancelled"));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(new Error("device-link connection race was cancelled"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 async function controlPlaneRequest<T>(
   sessionId: string,
   path: string,
-  init: RequestInit
+  init: RequestInit,
+  externalSignal?: AbortSignal
 ): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15_000);
+  const abortExternal = () => controller.abort();
+  if (externalSignal?.aborted) {
+    controller.abort();
+  } else {
+    externalSignal?.addEventListener("abort", abortExternal, { once: true });
+  }
   try {
     const response = await fetch(`${controlPlaneBaseURL}${path}`, {
       ...init,
@@ -460,5 +563,6 @@ async function controlPlaneRequest<T>(
     return readJSON<T>(response);
   } finally {
     clearTimeout(timer);
+    externalSignal?.removeEventListener("abort", abortExternal);
   }
 }

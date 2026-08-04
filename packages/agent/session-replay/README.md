@@ -168,6 +168,11 @@ validates and merges all semantic initial states before mutation, restores
 canonical Agent history through Host before normal recovery, and verifies the
 semantic expected state. The JavaScript runner injects the transient identity
 only into product Activity Event envelopes.
+The runner also binds every scenario to one user-project root outside the Tutti
+checkout. A caller may supply an absolute
+`TUTTI_AGENT_SESSION_REPLAY_PROJECT_ROOT`; otherwise the direct CLI creates a
+run-scoped Git project under the operating-system temporary directory and
+removes it on exit. `--keep-runtime` retains that project for diagnosis.
 Semantic settings readiness compares every recorded composer setting with the
 live canonical value but ignores live-only default fields. A Replay recorded
 before a provider began materializing a new default such as `speed` therefore

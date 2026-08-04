@@ -114,9 +114,9 @@ func (r semanticCanonicalReader) predicateSatisfied(
 			return false, err
 		}
 		status, _ := message.Payload["status"].(string)
-		// A tool call awaiting an interactive approval keeps the recorded
-		// running readiness: waiting_approval is a running sub-state, not a
-		// terminal transition.
+		// Prefer payload status then message.Status. Fold stream/activity
+		// vocabularies (streaming/working) and interactive-wait sub-states
+		// into running so recorded call.status=running stays satisfied.
 		return canonicalCallStatus(firstNonEmpty(status, message.Status)) ==
 			canonicalCallStatus(predicate.Equals), nil
 	case "plan.status":
@@ -267,12 +267,15 @@ func canonicalTurnPhase(phase string) string {
 	}
 }
 
-// canonicalCallStatus folds interactive-wait call sub-states into running so
-// a recorded call.status=running readiness stays satisfied while the replayed
-// call waits for its approval or input response.
+// canonicalCallStatus folds activity/stream-layer call vocabularies into the
+// closed checkpoint readiness tokens (running/completed/failed). Recorded
+// call.status=running must stay satisfied while the canonical message still
+// carries payload.status "streaming"/"working" (ACP live tool frames) or an
+// interactive-wait sub-state — same family as canonicalTurnPhase.
 func canonicalCallStatus(status string) string {
 	switch strings.TrimSpace(status) {
-	case "waiting_approval", "awaiting_approval", "waiting_input":
+	case "working", "streaming", "in_progress", "pending",
+		"waiting_approval", "awaiting_approval", "waiting_input":
 		return "running"
 	default:
 		return strings.TrimSpace(status)

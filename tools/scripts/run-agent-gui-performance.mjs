@@ -526,7 +526,7 @@ export function startDesktop(input) {
   child.once("close", () => logStream.end());
   child.performanceLogTail = tail;
   // Detached Electron descendants may leave the process group; stopProcessTree
-  // uses these to sweep leftovers by user-data / state dir.
+  // sweeps leftovers by isolated user-data / state dir only (not shared TUTTID_BIN).
   child.userDataDirectory = input.userDataDirectory;
   child.stateDirectory = input.stateDirectory;
   child.daemonPath = input.daemonPath;
@@ -709,11 +709,12 @@ async function sweepDetachedDesktopLeftovers(child) {
   if (process.platform === "win32" || typeof child !== "object" || !child) {
     return;
   }
-  const markers = [
-    child.userDataDirectory,
-    child.stateDirectory,
-    child.daemonPath
-  ].filter((value) => typeof value === "string" && value.trim());
+  // Only match run-isolated paths. Never use daemonPath: parallel record/replay
+  // workers share a warmed tuttids binary (TUTTID_BIN), so sweeping by that path
+  // SIGTERMs every concurrent managed tuttids when one Desktop exits.
+  const markers = [child.userDataDirectory, child.stateDirectory].filter(
+    (value) => typeof value === "string" && value.trim()
+  );
   if (markers.length === 0) return;
   const pids = await listPidsMatchingMarkers(markers);
   for (const pid of pids) {

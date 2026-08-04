@@ -59,12 +59,13 @@ import {
   verifyRecordedProjectBindingArtifacts
 } from "./agent-session-replay-runner/recording.mjs";
 import { bindManagedReplayShutdown } from "./agent-session-replay-runner/desktop-shutdown.mjs";
+import { acquireAgentSessionReplayProjectRoot } from "./agent-session-replay-runner/project-root.mjs";
 import { uiDriveScenario } from "./agent-session-replay-runner/ui-drive.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = resolve(scriptDirectory, "..", "..");
-/** Agent user-project root; equals Tutti checkout unless PROJECT_ROOT env is set. */
-const projectRoot = resolveAgentSessionReplayProjectRoot(workspaceRoot);
+/** Run-bound Agent user-project root; assigned before a record/replay mode starts. */
+let projectRoot = resolveAgentSessionReplayProjectRoot();
 const defaultTimeoutMs = 180_000;
 const defaultStallTimeoutMs = 60_000;
 export const managedReplayReadyPrefix = "[tutti-agent-session-replay-ready] ";
@@ -114,22 +115,33 @@ export async function main(argv) {
     printUsage();
     return;
   }
-  configureWaitDiagnostics({
-    log,
-    stallTimeoutMs: options.stallTimeoutMs
+  const project = await acquireAgentSessionReplayProjectRoot({
+    keepRuntime: options.keepRuntime
   });
-  if (options.mode === "record") {
-    await recordCassette(options);
-  } else if (options.mode === "replay-workspace") {
-    await replayWorkspace(options);
-  } else if (options.mode === "ui-drive") {
-    await uiDriveScenario({
-      ...options,
-      artifactDirectory: options.cassetteDirectory,
-      workspaceRoot
+  projectRoot = project.root;
+  try {
+    configureWaitDiagnostics({
+      log,
+      stallTimeoutMs: options.stallTimeoutMs
     });
-  } else {
-    await replayCassette(options);
+    if (options.mode === "record") {
+      await recordCassette(options);
+    } else if (options.mode === "replay-workspace") {
+      await replayWorkspace(options);
+    } else if (options.mode === "ui-drive") {
+      await uiDriveScenario({
+        ...options,
+        artifactDirectory: options.cassetteDirectory,
+        workspaceRoot
+      });
+    } else {
+      await replayCassette(options);
+    }
+  } finally {
+    await project.dispose();
+    if (project.owned && options.keepRuntime) {
+      log(`project kept: ${project.root}`);
+    }
   }
 }
 
@@ -4505,8 +4517,12 @@ export function checkpointNeedsScreenshotSettle(checkpoint) {
   if (!checkpoint) return true;
   const kind = String(checkpoint.kind ?? "");
   const tags = Array.isArray(checkpoint.tags) ? checkpoint.tags : [];
+  // Match checkpointNeedsToolSettle: tool.started is often paused mid-stream
+  // before Bash/command input is painted (Claude tool_started arrives with
+  // {toolName} only; command lands on the next tool_updated). Hard-settling
+  // there deadlocks replay — provider is frozen until settle returns.
   return [kind, ...tags].some((token) =>
-    /(?:^|[.])(?:tool\.completed|tool\.started|turn\.terminal|turn\.completed)$/u.test(
+    /(?:^|[.])(?:tool\.completed|turn\.terminal|turn\.completed)$/u.test(
       String(token)
     )
   );
@@ -4825,6 +4841,6 @@ function printUsage() {
       `  --cassette-id <id>          Stable managed Replay Cassette identity\n` +
       `  --target-checkpoint <n> Fast-forward a replacement Cassette and pause at checkpoint n\n` +
       `  --screenshot-checkpoints Capture a PNG under artifacts/ after each inspectable checkpoint\n` +
-      `  --keep-runtime         Keep the isolated state/userData dirs after exit (Electron still stops)\n`
+      `  --keep-runtime         Keep isolated state/userData/project dirs after exit (Electron still stops)\n`
   );
 }

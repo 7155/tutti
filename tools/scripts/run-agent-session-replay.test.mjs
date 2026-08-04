@@ -2409,6 +2409,13 @@ test("checkpoint settle targets completed tool and terminal turn checkpoints", (
   );
   assert.equal(
     checkpointNeedsScreenshotSettle({
+      kind: "tool.started",
+      tags: ["tool.started"]
+    }),
+    false
+  );
+  assert.equal(
+    checkpointNeedsScreenshotSettle({
       kind: "submission.accepted",
       tags: ["submission.accepted"]
     }),
@@ -3571,8 +3578,11 @@ test("resolves portable recording paths for Engine activation", () => {
     "22222222-2222-4222-8222-222222222222"
   );
   const payload = action.activityEvents[0].payload;
-  const agentPackagePath = join(workspaceRoot, "packages", "agent");
-  assert.equal(payload.cwd, workspaceRoot);
+  const replayProjectRoot = resolveAgentSessionReplayProjectRoot();
+  const agentPackagePath = join(replayProjectRoot, "packages", "agent");
+  assert.equal(payload.cwd, replayProjectRoot);
+  assert.equal(payload.cwd.startsWith(`${workspaceRoot}/`), false);
+  assert.notEqual(payload.cwd, workspaceRoot);
   assert.equal(payload.railPlacement.projectPath, agentPackagePath);
   assert.equal(payload.railPlacement.sectionKey.startsWith("project:"), true);
   assert.equal(payload.railPlacement.sectionKey, `project:${agentPackagePath}`);
@@ -3658,25 +3668,26 @@ test("PROJECT_ROOT remaps portable REPLAY_CWD outside Tutti checkout", () => {
   const previous = process.env.TUTTI_AGENT_SESSION_REPLAY_PROJECT_ROOT;
   const externalRoot = resolve(tmpdir(), "tutti.sessionrec-unit-test");
   try {
+    delete process.env.TUTTI_AGENT_SESSION_REPLAY_PROJECT_ROOT;
+    const defaultRoot = resolveAgentSessionReplayProjectRoot();
     assert.equal(
-      resolveAgentSessionReplayProjectRoot(workspaceRoot),
-      workspaceRoot
+      defaultRoot.startsWith(join(tmpdir(), "tutti-agent-session-rec")),
+      true
     );
+    assert.equal(defaultRoot.startsWith(`${workspaceRoot}/`), false);
+    assert.notEqual(defaultRoot, workspaceRoot);
     process.env.TUTTI_AGENT_SESSION_REPLAY_PROJECT_ROOT = externalRoot;
-    assert.equal(
-      resolveAgentSessionReplayProjectRoot(workspaceRoot),
-      externalRoot
-    );
+    assert.equal(resolveAgentSessionReplayProjectRoot(), externalRoot);
     const project = resolveRecordScenarioProject(
       { label: "sessionrec", relativePath: "." },
-      resolveAgentSessionReplayProjectRoot(workspaceRoot)
+      resolveAgentSessionReplayProjectRoot()
     );
     assert.equal(project.path, externalRoot);
     assert.equal(project.portablePath, "${REPLAY_CWD}");
     assert.equal(project.path.startsWith(workspaceRoot + "/"), false);
     assert.throws(() => {
       process.env.TUTTI_AGENT_SESSION_REPLAY_PROJECT_ROOT = "relative/path";
-      resolveAgentSessionReplayProjectRoot(workspaceRoot);
+      resolveAgentSessionReplayProjectRoot();
     }, /must be an absolute path/u);
     process.env.TUTTI_AGENT_SESSION_REPLAY_PROJECT_ROOT = externalRoot;
     const action = replayActionFromManifest(

@@ -531,6 +531,8 @@ export interface AgentSessionSubmitPromptResult {
 
 export interface AgentSessionStopInput {
   agentSessionId: string;
+  /** Identity of the pending submit to stop while its Turn is being admitted. */
+  clientSubmitId?: string;
 }
 
 export interface AgentSessionEngine {

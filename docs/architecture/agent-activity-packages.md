@@ -267,7 +267,12 @@ display text.
 Desktop AgentGUI and Mobile call `stopSession` instead of constructing
 `session/stopRequested` protocol fields. The same method stops an active Turn
 or records a bounded request that cancels the first Turn produced by an
-in-flight activation.
+in-flight activation. When an implicit stop observes a submit admission without
+an active Turn, it retains only a submit that may still produce an unsettled
+Turn: definitive admission failure and a known settled canonical Turn are not
+stop targets. Missing or out-of-order canonical evidence remains eligible, and
+late activity messages correlate the exact submit identity before issuing the
+Turn cancel.
 Desktop AgentGUI and Mobile call `submitPrompt` for an existing Session instead
 of constructing `submit/requested` protocol fields or reading multiple Engine
 selectors to infer whether the submission was admitted. The Engine fixes the

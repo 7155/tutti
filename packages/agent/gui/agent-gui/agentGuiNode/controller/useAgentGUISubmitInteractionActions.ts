@@ -1,6 +1,5 @@
 import {
   parseAgentActivityGoalControlText,
-  selectLatestActivationForSession,
   type AgentActivityGoalControlAction,
   type AgentActivityInteraction,
   type AgentActivityTurn,
@@ -191,16 +190,6 @@ export function useAgentGUISubmitInteractionActions(
     if (!agentSessionId) {
       return;
     }
-    const latestActivation = selectLatestActivationForSession(
-      sessionEngine.getSnapshot(),
-      agentSessionId
-    );
-    if (
-      latestActivation?.mode === "new" &&
-      latestActivation.status === "failed"
-    ) {
-      return;
-    }
     if (isSessionMarkedNonResumable(agentSessionId)) {
       return;
     }
@@ -214,7 +203,6 @@ export function useAgentGUISubmitInteractionActions(
     activation,
     isCurrentConversation,
     isSessionMarkedNonResumable,
-    sessionEngine,
     workspaceId
   ]);
 

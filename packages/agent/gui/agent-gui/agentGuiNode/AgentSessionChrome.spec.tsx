@@ -45,13 +45,12 @@ describe("AgentSessionChrome", () => {
     );
 
     const retryButtons = screen.getAllByRole("button", { name: "Retry" });
-    expect(retryButtons).toHaveLength(2);
+    expect(retryButtons).toHaveLength(1);
     for (const retryButton of retryButtons) {
       expect(retryButton.className).toContain("h-7");
     }
     fireEvent.click(retryButtons[0]!);
-    fireEvent.click(retryButtons[1]!);
-    expect(onRetryActivation).toHaveBeenCalledTimes(2);
+    expect(onRetryActivation).toHaveBeenCalledTimes(1);
   });
 
   it("runs the auth login action from auth failures", () => {
@@ -87,15 +86,14 @@ describe("AgentSessionChrome", () => {
     expect(onAuthLogin).toHaveBeenCalledTimes(1);
   });
 
-  it("hides retry for a rejected new-session authentication failure", () => {
+  it("offers login without manual retry for authentication failures", () => {
     const onAuthLogin = vi.fn();
     const onRetryActivation = vi.fn();
     render(
       <AgentSessionChrome
         chrome={{
           auth: {
-            message: "Please sign in before starting a new conversation.",
-            canRetry: false
+            message: "Please sign in before starting a new conversation."
           },
           approval: null,
           recovery: null,
@@ -126,7 +124,7 @@ describe("AgentSessionChrome", () => {
   it("shows full auth chrome messages with a native title without expandable layout state", () => {
     const onRetryActivation = vi.fn();
     const message =
-      "Codex ACP requires authentication in the runtime VM. Sync the Codex host credentials, then retry this session.";
+      "Codex ACP requires authentication in the runtime VM. Sync the Codex host credentials, then start a new session.";
 
     render(
       <AgentSessionChrome
@@ -162,8 +160,8 @@ describe("AgentSessionChrome", () => {
       screen.queryByTestId("agent-session-chrome-auth-expand-cue")
     ).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(onRetryActivation).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(onRetryActivation).not.toHaveBeenCalled();
     expect(warningChrome).not.toHaveAttribute("data-expanded");
   });
 

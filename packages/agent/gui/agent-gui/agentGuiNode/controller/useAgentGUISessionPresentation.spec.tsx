@@ -73,7 +73,7 @@ describe("useAgentGUISessionPresentation", () => {
     });
   });
 
-  it("keeps a rejected startup non-retryable across reopen and restart", () => {
+  it("does not expose manual retry for failed activation", () => {
     const sessionEngine = createAgentSessionEngine({
       clock: { nowUnixMs: () => 1 },
       commandPort: createTestEngineCommandPort({
@@ -157,8 +157,7 @@ describe("useAgentGUISessionPresentation", () => {
     const rendered = renderHook(() => useAgentGUISessionPresentation(input));
 
     expect(rendered.result.current.sessionChrome.auth).toEqual({
-      message: "Claude Code needs authentication",
-      canRetry: false
+      message: "Claude Code needs authentication"
     });
 
     input.activationError = "Provider rejected the initial request";
@@ -170,39 +169,6 @@ describe("useAgentGUISessionPresentation", () => {
       kind: "failed",
       message: "Provider rejected the initial request",
       canRetry: false
-    });
-
-    const restoredInput = input as unknown as {
-      activeConversation: unknown;
-      activePendingActivation: unknown;
-      activationError: string | null;
-      activationErrorCode: string | null;
-    };
-    restoredInput.activeConversation = {
-      id: "session-rejected",
-      isImported: false,
-      resumable: false
-    };
-    restoredInput.activePendingActivation = null;
-    restoredInput.activationError = "Claude Code needs authentication";
-    restoredInput.activationErrorCode = "auth_required";
-    rendered.rerender();
-
-    expect(rendered.result.current.sessionChrome.auth).toEqual({
-      message: "Claude Code needs authentication",
-      canRetry: false
-    });
-
-    restoredInput.activationError = null;
-    restoredInput.activationErrorCode = null;
-    rendered.rerender();
-
-    expect(rendered.result.current.sessionChrome.auth).toBeNull();
-    expect(rendered.result.current.sessionChrome.recovery).toEqual({
-      kind: "resume-unavailable",
-      message:
-        "This session cannot be resumed on this device. Start a new session and @this session to keep going.",
-      followupAction: "continue-in-new-conversation"
     });
   });
 

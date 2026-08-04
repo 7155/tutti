@@ -163,13 +163,6 @@ func TestHostCreateRetainsVisibleFailedTurnAfterExplicitProviderRejection(t *tes
 	if len(runtime.closeCalls) != 1 || !runtime.closeCalls[0].PreserveCanonicalState {
 		t.Fatalf("runtime close calls=%#v, want one canonical-preserving discard", runtime.closeCalls)
 	}
-	listed, err := service.List(ctx, "ws-rejected")
-	if err != nil {
-		t.Fatalf("List() rejected session: %v", err)
-	}
-	if len(listed) != 1 || listed[0].ID != input.AgentSessionID || listed[0].Resumable {
-		t.Fatalf("listed rejected session=%#v, want retained non-resumable history", listed)
-	}
 	if len(publisher.events) == 0 {
 		t.Fatal("rejected visible create did not publish canonical updates")
 	}

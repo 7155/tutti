@@ -47,7 +47,6 @@ function createGoalControlInput(
     commandPort: {
       kind: "typed",
       effects: {
-        activateSession: () => new Promise<never>(() => undefined),
         controlGoal: async (
           effectInput: AgentSessionGoalControlEffectInput,
           options?: EngineEffectOptions
@@ -146,72 +145,6 @@ function createGoalControlInput(
     setGoalClearNoticeSequence
   };
 }
-
-describe("activation retry", () => {
-  it("does not reactivate a rejected new conversation", () => {
-    const { input, sessionEngine } = createGoalControlInput(
-      vi.fn(async () => undefined) as never
-    );
-    sessionEngine.dispatch({
-      agentSessionId: "session-1",
-      agentTargetId: "local:claude-code",
-      clientSubmitId: "submit-rejected",
-      content: [{ type: "text", text: "hello" }],
-      cwd: "/workspace",
-      expiresAtUnixMs: 45_001,
-      mode: "new",
-      requestedAtUnixMs: 1,
-      requestId: "activation-rejected",
-      type: "activation/requested",
-      workspaceId: "workspace-1"
-    });
-    sessionEngine.dispatch({
-      commandId: "activate:activation-rejected",
-      commandType: "session/activate",
-      correlationId: "activation-rejected",
-      errorMessage: "Claude Code needs authentication",
-      outcome: "failed",
-      type: "engine/commandResult"
-    });
-    const { result } = renderHook(() =>
-      useAgentGUISubmitInteractionActions(input)
-    );
-
-    act(() => result.current.retryActivation());
-
-    expect(input.activation.activate).not.toHaveBeenCalled();
-  });
-
-  it("keeps retry available for an ordinary existing-session failure", () => {
-    const { input } = createGoalControlInput(
-      vi.fn(async () => undefined) as never
-    );
-    const { result } = renderHook(() =>
-      useAgentGUISubmitInteractionActions(input)
-    );
-
-    act(() => result.current.retryActivation());
-
-    expect(input.activation.activate).toHaveBeenCalledWith({
-      mode: "existing",
-      agentSessionId: "session-1"
-    });
-  });
-
-  it("does not retry a session restored as non-resumable", () => {
-    const { input } = createGoalControlInput(
-      vi.fn(async () => undefined) as never
-    );
-    input.isSessionMarkedNonResumable = () => true;
-    const { result } = renderHook(() =>
-      useAgentGUISubmitInteractionActions(input)
-    );
-
-    act(() => result.current.retryActivation());
-
-    expect(input.activation.activate).not.toHaveBeenCalled();
-  });
-});
 
 describe("new-conversation home draft lifecycle", () => {
   it("clears only the draft that still matches the submitted content", () => {

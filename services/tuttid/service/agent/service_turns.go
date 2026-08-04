@@ -24,14 +24,6 @@ type TurnStore interface {
 	ListPendingInteractionsBySession(context.Context, string, []string) (map[string][]agentactivitybiz.Interaction, error)
 }
 
-type providerSessionResumeEvidenceStore interface {
-	GetProviderSessionResumeEvidence(
-		context.Context,
-		string,
-		string,
-	) (agentactivitybiz.ProviderSessionResumeEvidence, error)
-}
-
 // TurnCancelObserver is notified after CancelTurn actually canceled a live
 // turn. The Issue manager uses it to cascade a user's stop on a planning
 // conversation to every running task run that conversation orchestrates.
@@ -273,10 +265,6 @@ func (s *Service) withProtocolV2TurnStateProjectionOptions(
 	if err != nil {
 		return Session{}, err
 	}
-	session, err = s.withDurableProviderResumeEvidence(ctx, workspaceID, session)
-	if err != nil {
-		return Session{}, err
-	}
 	if resolveProviderCapabilities {
 		session = s.withSessionForkCapabilities(ctx, workspaceID, session)
 		if session.ActiveTurn != nil {
@@ -376,10 +364,6 @@ func (s *Service) withProtocolV2TurnStates(ctx context.Context, workspaceID stri
 		}
 		session.PendingInteractions = pendingBySessionID[sessionID]
 		session.LatestTurnInteractions = latestInteractionsBySessionID[sessionID]
-		session, err = s.withDurableProviderResumeEvidence(ctx, workspaceID, session)
-		if err != nil {
-			return nil, err
-		}
 		session, err = s.withSessionForkLineage(ctx, workspaceID, session)
 		if err != nil {
 			return nil, err
@@ -387,44 +371,6 @@ func (s *Service) withProtocolV2TurnStates(ctx context.Context, workspaceID stri
 		result[i] = session
 	}
 	return s.withTuttiModeActivations(ctx, workspaceID, result)
-}
-
-func (s *Service) withDurableProviderResumeEvidence(
-	ctx context.Context,
-	workspaceID string,
-	session Session,
-) (Session, error) {
-	latest := session.LatestTurn
-	if !session.Resumable || s == nil || s.TurnStore == nil || latest == nil ||
-		strings.TrimSpace(latest.Phase) != agentactivitybiz.TurnPhaseSettled ||
-		strings.TrimSpace(latest.RootProviderTurnID) != "" {
-		return session, nil
-	}
-	evidence := agentactivitybiz.ProviderSessionResumeEvidence{}
-	var err error
-	if store, ok := s.TurnStore.(providerSessionResumeEvidenceStore); ok {
-		evidence, err = store.GetProviderSessionResumeEvidence(ctx, workspaceID, session.ID)
-	} else {
-		var turns []agentactivitybiz.Turn
-		turns, err = s.TurnStore.ListSessionTurns(ctx, workspaceID, session.ID)
-		evidence.HasTurns = len(turns) > 0
-		for _, turn := range turns {
-			if strings.TrimSpace(turn.Phase) == agentactivitybiz.TurnPhaseSettled {
-				evidence.HasSettledTurn = true
-			}
-			if strings.TrimSpace(turn.RootProviderTurnID) != "" {
-				evidence.Established = true
-			}
-		}
-	}
-	if err != nil {
-		return Session{}, err
-	}
-	if evidence.Established {
-		return session, nil
-	}
-	session.Resumable = false
-	return session, nil
 }
 
 func (s *Service) withSessionForkLineage(

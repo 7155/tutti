@@ -3288,10 +3288,11 @@ inline data URL instead`. Claude or standard ACP may instead receive no
   Session id. Do not automatically resend the failed prompt because delivery
   may be ambiguous. Do not recycle the Query for a transient retry that
   eventually succeeds or for a terminal HTTP/authentication error.
-  This SDK-owned `api_retry` behavior is separate from AgentGUI's manual
-  activation retry. If authentication rejects the first submit of a new
-  Session, Host preserves the failed history and discards that startup runtime;
-  the auth notice offers login but not reactivation of the rejected Session.
+  This SDK-owned `api_retry` behavior is separate from AgentGUI presentation.
+  AgentGUI does not expose manual activation retry for a failed or canceled
+  Session. If authentication rejects the first submit, Host preserves the
+  failed history and discards that startup runtime; the auth notice offers
+  login, after which the user starts a new conversation.
   Runtime discard keeps cleanup cancellation-independent but re-applies the
   caller's deadline. If the Claude sidecar does not acknowledge close in time,
   the adapter forcibly unregisters and closes the connection so a rejected

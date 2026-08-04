@@ -30,7 +30,11 @@ import {
   canRequestQueuedPromptSendNow,
   type PromptQueueSendNowStrategy
 } from "./promptQueue.sendNow.ts";
-import { resolveQueueDrainDecision } from "./promptQueue.drainDecision.ts";
+import {
+  activeTurnIdForSession,
+  isSettingsUpdateBlockingDrain,
+  resolveQueueDrainDecision
+} from "./promptQueue.drainDecision.ts";
 import {
   deriveCanonicalSubmitAvailability,
   type CanonicalSessionLifecycleView
@@ -107,7 +111,9 @@ function reduceQueueOwnedState(
           enqueueSubmit(state, intent, context.lifecycle).state,
           intent.agentSessionId,
           intent.clientSubmitId,
-          context.sendNowStrategy
+          context.sendNowStrategy,
+          intent.targetTurnId ??
+            activeTurnIdForSession(context.lifecycle, intent.agentSessionId)
         );
       }
       return enqueueSubmit(state, intent, context.lifecycle);
@@ -144,7 +150,8 @@ function reduceQueueOwnedState(
         state,
         intent.agentSessionId,
         intent.promptId,
-        context.sendNowStrategy
+        context.sendNowStrategy,
+        activeTurnIdForSession(context.lifecycle, intent.agentSessionId)
       );
     case "queue/suspended":
       return suspendQueue(state, intent.agentSessionId, intent.reason);
@@ -254,6 +261,9 @@ function sendCommandFromImmediateSubmit(
     ...(intent.submitDiagnostics
       ? { submitDiagnostics: intent.submitDiagnostics }
       : {}),
+    ...(intent.targetTurnId?.trim()
+      ? { targetTurnId: intent.targetTurnId.trim() }
+      : {}),
     promptId: intent.clientSubmitId,
     ...clonePromptRequiredSettingsPatch(intent.requiredSettingsPatch),
     timeoutMs: QUEUE_SEND_TIMEOUT_MS,
@@ -300,7 +310,8 @@ function requestQueuedPromptSendNow(
   state: PromptQueueState,
   rawAgentSessionId: string,
   rawPromptId: string,
-  strategy: PromptQueueSendNowStrategy
+  strategy: PromptQueueSendNowStrategy,
+  targetTurnId?: string
 ): EngineReducerResult<PromptQueueState> {
   const agentSessionId = rawAgentSessionId.trim();
   const promptId = rawPromptId.trim();
@@ -314,9 +325,14 @@ function requestQueuedPromptSendNow(
   const [selected] = prompts.splice(index, 1);
   const selectedWithoutGuidance = { ...selected! };
   delete selectedWithoutGuidance.guidance;
+  delete selectedWithoutGuidance.targetTurnId;
   prompts.unshift(
     strategy === "native_guidance"
-      ? { ...selectedWithoutGuidance, guidance: true }
+      ? {
+          ...selectedWithoutGuidance,
+          guidance: true,
+          ...(targetTurnId?.trim() ? { targetTurnId: targetTurnId.trim() } : {})
+        }
       : selectedWithoutGuidance
   );
   return result(
@@ -653,6 +669,9 @@ function sendCommandFromQueuedPrompt(
     content: head.runtimeContent ?? head.content,
     ...(head.displayPrompt ? { displayPrompt: head.displayPrompt } : {}),
     ...(guidance ? { guidance: true } : {}),
+    ...(guidance && head.targetTurnId?.trim()
+      ? { targetTurnId: head.targetTurnId.trim() }
+      : {}),
     ...(head.submitDiagnostics
       ? { submitDiagnostics: head.submitDiagnostics }
       : {}),
@@ -662,20 +681,6 @@ function sendCommandFromQueuedPrompt(
     type: "queue/sendPrompt",
     workspaceId: record.workspaceId
   };
-}
-
-function isSettingsUpdateBlockingDrain(
-  lifecycle: CanonicalSessionLifecycleView,
-  agentSessionId: string
-): boolean {
-  const status =
-    lifecycle.operationBySessionId[agentSessionId]?.settingsUpdate.status;
-  return (
-    status === "inFlight" ||
-    status === "waitingForRuntime" ||
-    status === "unknown" ||
-    status === "failed"
-  );
 }
 
 function affectedSessionIds(

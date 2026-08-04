@@ -441,9 +441,10 @@ intents. The runtime has no duplicate activation, submit, Goal, Interaction,
 settings, Tutti Mode, or unactivation callbacks. The effective `AgentHostApi`
 is limited to host
 capabilities such as files, clipboard, runtime metadata, account/project
-lookup, diagnostics, setup, and OS/Workbench helpers. Its input type still
-accepts a legacy `agentSessions` shape, but `toAgentHostRuntimeApi` strips that
-shape; production AgentGUI must not use it as an activity source.
+lookup, diagnostics, setup, and OS/Workbench helpers. The public
+`AgentHostInputApi` no longer exposes the legacy `agentSessions` activity
+lifecycle shape; production AgentGUI must not use the host capability contract
+as an activity source.
 Large pasted text is a separate runtime capability rather than an inference
 from generic file upload. `stagePastedText` returns one provider-readable
 locator: a local archive `path`, or an ordinary prepared remote-file `url`

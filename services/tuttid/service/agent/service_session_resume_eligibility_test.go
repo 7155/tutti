@@ -8,6 +8,54 @@ import (
 	agenttargetbiz "github.com/tutti-os/tutti/services/tuttid/biz/agenttarget"
 )
 
+type resumeEvidenceTurnStore struct {
+	TurnStore
+	evidence agentactivitybiz.ProviderSessionResumeEvidence
+}
+
+func (s resumeEvidenceTurnStore) GetProviderSessionResumeEvidence(
+	context.Context,
+	string,
+	string,
+) (agentactivitybiz.ProviderSessionResumeEvidence, error) {
+	return s.evidence, nil
+}
+
+func TestPersistedSessionResumeRequiresDurableProviderTurnEvidence(t *testing.T) {
+	t.Parallel()
+
+	service := newIsolatedAgentService(newFakeRuntime())
+	session := Session{
+		ID: "session-rejected", Provider: "claude-code", ProviderSessionID: "provider-session-provisional",
+		Resumable: true,
+		LatestTurn: &agentactivitybiz.Turn{
+			WorkspaceID: "workspace-1", AgentSessionID: "session-rejected", TurnID: "turn-rejected",
+			Phase: agentactivitybiz.TurnPhaseSettled, Outcome: agentactivitybiz.TurnOutcomeFailed,
+		},
+	}
+	service.TurnStore = resumeEvidenceTurnStore{evidence: agentactivitybiz.ProviderSessionResumeEvidence{
+		HasTurns: true, HasSettledTurn: true,
+	}}
+	projected, err := service.withDurableProviderResumeEvidence(t.Context(), "workspace-1", session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projected.Resumable {
+		t.Fatal("rejected startup session projected resumable without provider Turn evidence")
+	}
+
+	service.TurnStore = resumeEvidenceTurnStore{evidence: agentactivitybiz.ProviderSessionResumeEvidence{
+		HasTurns: true, HasSettledTurn: true, Established: true,
+	}}
+	projected, err = service.withDurableProviderResumeEvidence(t.Context(), "workspace-1", session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !projected.Resumable {
+		t.Fatal("established provider session projected non-resumable")
+	}
+}
+
 func TestServiceListRebuildsExtensionTargetRefForPersistedSessionResume(t *testing.T) {
 	runtime := newFakeRuntime()
 	runtime.canResumeHook = func(input RuntimeResumeInput) bool {

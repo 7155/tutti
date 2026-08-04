@@ -489,6 +489,9 @@ type RuntimeCancelResult struct {
 type RuntimeCloseInput struct {
 	WorkspaceID    string
 	AgentSessionID string
+	// PreserveCanonicalState removes the provider runtime without publishing a
+	// canonical Session completion over an already-durable terminal state.
+	PreserveCanonicalState bool
 }
 
 type RuntimeSubmitInteractiveInput struct {

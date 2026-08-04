@@ -39,6 +39,7 @@ export {
 export interface AgentGUISessionChrome {
   auth: {
     message: string;
+    canRetry?: boolean;
   } | null;
   approval: AgentGUIApprovalRequest | null;
   recovery:

@@ -305,6 +305,11 @@ export function useAgentGUISessionPresentation(
           /auth|sign in|log in|login|unauthorized|authenticated/i.test(
             normalizedError
           )));
+    const rejectedNewSessionStartup =
+      input.activePendingActivation?.mode === "new" &&
+      input.activePendingActivation.status === "failed";
+    const nonRetryableActivation =
+      rejectedNewSessionStartup || activeConversationResumeUnavailable;
     const isResumeNotLocalRecovery =
       providerSessionMissing || activeConversationResumeUnavailable;
     const recoveryMessage = isResumeNotLocalRecovery
@@ -318,9 +323,13 @@ export function useAgentGUISessionPresentation(
       auth: providerSessionMissing
         ? null
         : authState !== ""
-          ? { message: authState }
+          ? nonRetryableActivation
+            ? { message: authState, canRetry: false }
+            : { message: authState }
           : isAuthError
-            ? { message: normalizedError }
+            ? nonRetryableActivation
+              ? { message: normalizedError, canRetry: false }
+              : { message: normalizedError }
             : null,
       approval: input.pendingApproval,
       recovery:
@@ -340,7 +349,7 @@ export function useAgentGUISessionPresentation(
               : {
                   kind: "failed",
                   message: recoveryMessage,
-                  canRetry: !providerSessionMissing
+                  canRetry: !providerSessionMissing && !nonRetryableActivation
                 }
             : null,
       rawState: sessionChromeRawState
@@ -355,6 +364,7 @@ export function useAgentGUISessionPresentation(
     input.activeLiveState,
     input.activeSessionState,
     input.activePendingActivation?.mode,
+    input.activePendingActivation?.status,
     input.pendingApproval,
     input.ownerDeviceLabel,
     input.selectedAgentTargetOwnerLabel,

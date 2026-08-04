@@ -87,6 +87,42 @@ describe("AgentSessionChrome", () => {
     expect(onAuthLogin).toHaveBeenCalledTimes(1);
   });
 
+  it("hides retry for a rejected new-session authentication failure", () => {
+    const onAuthLogin = vi.fn();
+    const onRetryActivation = vi.fn();
+    render(
+      <AgentSessionChrome
+        chrome={{
+          auth: {
+            message: "Please sign in before starting a new conversation.",
+            canRetry: false
+          },
+          approval: null,
+          recovery: null,
+          rawState: null
+        }}
+        isRespondingApproval={false}
+        onSubmitApprovalOption={vi.fn()}
+        onAuthLogin={onAuthLogin}
+        onRetryActivation={onRetryActivation}
+        onContinueInNewConversation={vi.fn()}
+        labels={{
+          approvalRequired: "Approval required",
+          authLogin: "Sign in",
+          authRequired: "Authentication required",
+          activatingSession: "Connecting session...",
+          retryActivation: "Retry",
+          continueInNewConversation: "Continue in new conversation"
+        }}
+      />
+    );
+
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(onAuthLogin).toHaveBeenCalledTimes(1);
+    expect(onRetryActivation).not.toHaveBeenCalled();
+  });
+
   it("shows full auth chrome messages with a native title without expandable layout state", () => {
     const onRetryActivation = vi.fn();
     const message =

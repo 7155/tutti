@@ -333,7 +333,17 @@ func (c *Controller) enrichReportStatePatchesWithSessionMetadata(
 	if snapshot.AgentSessionID == "" {
 		return
 	}
-	enrichReportStatePatchesWithSessionMetadata(report, statePatchFromSessionStateSnapshot(snapshot))
+	snapshotPatch := statePatchFromSessionStateSnapshot(snapshot)
+	enrichReportStatePatchesWithSessionMetadata(report, snapshotPatch)
+	if session.UserTitleSet {
+		// A user-established title is the authoritative title source. Never let
+		// a stale provider title carried by an event payload override it here;
+		// the session's accepted title always wins in the persisted report.
+		title := strings.TrimSpace(snapshotPatch.Title)
+		for index := range report.StatePatches {
+			report.StatePatches[index].Title = title
+		}
+	}
 }
 
 func (c *Controller) enrichStreamStateEventsWithSessionSnapshot(
@@ -362,6 +372,11 @@ func (c *Controller) enrichStreamStateEventsWithSessionSnapshot(
 		enrichReportStatePatchesWithSessionMetadata(&tmp, snapshotPatch)
 		tmp.StatePatches[0].TurnLifecycle = cloneTurnLifecycle(snapshotPatch.TurnLifecycle)
 		tmp.StatePatches[0].SubmitAvailability = cloneSubmitAvailability(snapshotPatch.SubmitAvailability)
+		if session.UserTitleSet {
+			// Same ownership rule as the report enrichment: a user-established
+			// title is the authoritative title source for the stream projection.
+			tmp.StatePatches[0].Title = strings.TrimSpace(snapshotPatch.Title)
+		}
 		events[index].Data = tmp.StatePatches[0]
 	}
 }

@@ -78,3 +78,11 @@ revision monotonically. `ArtifactInstaller`, `AuthorizationProvider`, and
 `OperationScheduler` must be idempotent for the operation or client request id
 they receive because daemon recovery can replay accepted or running work after
 a crash.
+
+`Application.ExecuteOperation` also provides process-local single-flight
+semantics: concurrent dispatches for the same operation ID share one execution
+and its final result, while different operation IDs remain independently
+schedulable. This in-memory ownership is intentionally limited to one
+`Application` instance; after a process restart, durable accepted/running
+operations are replayed through `Recover`, so adapters must still tolerate
+uncertain external side effects from a crash.

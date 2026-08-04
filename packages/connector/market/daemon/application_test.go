@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -73,6 +75,110 @@ func TestApplicationExecutesAcceptedInstall(t *testing.T) {
 	}
 	if operation.State != OperationStateCompleted || installer.installs != 1 {
 		t.Fatalf("operation = %#v, installs = %d", operation, installer.installs)
+	}
+}
+
+func TestApplicationSingleFlightsConcurrentOperationExecution(t *testing.T) {
+	repository := newMemoryRepository(testConnector("github"))
+	scheduler := &memoryScheduler{}
+	installer := newBlockingInstaller()
+	application := newTestApplication(t, repository, scheduler, installer, CatalogSnapshot{})
+	accepted, err := application.Install(context.Background(), ConnectorMutation{
+		Mutation:     Mutation{ClientRequestID: "request-1", ExpectedRevision: 0},
+		ConnectorKey: "github",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- application.ExecuteOperation(context.Background(), accepted.Operation.OperationID)
+	}()
+	select {
+	case <-installer.started:
+	case <-time.After(time.Second):
+		t.Fatal("first operation did not reach installer")
+	}
+
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- application.ExecuteOperation(context.Background(), accepted.Operation.OperationID)
+	}()
+	select {
+	case err := <-secondDone:
+		t.Fatalf("second execution returned before the first completed: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(installer.release)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first execution error = %v", err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatalf("second execution error = %v", err)
+	}
+	if installs := installer.installs.Load(); installs != 1 {
+		t.Fatalf("installer calls = %d, want 1", installs)
+	}
+}
+
+func TestApplicationSharesConcurrentOperationFailureAndClearsFlight(t *testing.T) {
+	repository := newMemoryRepository(testConnector("github"))
+	scheduler := &memoryScheduler{}
+	cause := errors.New("installer unavailable")
+	installer := newBlockingInstallerWithError(cause)
+	application := newTestApplication(t, repository, scheduler, installer, CatalogSnapshot{})
+	accepted, err := application.Install(context.Background(), ConnectorMutation{
+		Mutation:     Mutation{ClientRequestID: "request-1", ExpectedRevision: 0},
+		ConnectorKey: "github",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- application.ExecuteOperation(context.Background(), accepted.Operation.OperationID)
+	}()
+	select {
+	case <-installer.started:
+	case <-time.After(time.Second):
+		t.Fatal("first operation did not reach installer")
+	}
+
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- application.ExecuteOperation(context.Background(), accepted.Operation.OperationID)
+	}()
+	select {
+	case err := <-secondDone:
+		t.Fatalf("second execution returned before the first completed: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(installer.release)
+	firstErr := <-firstDone
+	secondErr := <-secondDone
+	for name, err := range map[string]error{"first": firstErr, "second": secondErr} {
+		var domainError *DomainError
+		if !errors.As(err, &domainError) || !errors.Is(err, cause) {
+			t.Errorf("%s error = %#v, want install domain error caused by %v", name, err, cause)
+		}
+	}
+	if installs := installer.installs.Load(); installs != 1 {
+		t.Fatalf("installer calls = %d, want 1", installs)
+	}
+
+	operation, err := repository.Operation(context.Background(), accepted.Operation.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if operation.State != OperationStateFailed {
+		t.Fatalf("operation state = %q, want failed", operation.State)
+	}
+	if err := application.ExecuteOperation(context.Background(), accepted.Operation.OperationID); err != nil {
+		t.Fatalf("terminal operation after flight cleanup = %v", err)
 	}
 }
 
@@ -153,7 +259,7 @@ func newTestApplication(
 	t *testing.T,
 	repository *memoryRepository,
 	scheduler *memoryScheduler,
-	installer *memoryInstaller,
+	installer ArtifactInstaller,
 	catalog CatalogSnapshot,
 ) *Application {
 	t.Helper()
@@ -224,6 +330,41 @@ func (installer *memoryInstaller) Install(context.Context, Manifest) error {
 
 func (installer *memoryInstaller) Uninstall(context.Context, Connector) error {
 	installer.uninstalls++
+	return nil
+}
+
+type blockingInstaller struct {
+	started  chan struct{}
+	release  chan struct{}
+	once     sync.Once
+	installs atomic.Int32
+	err      error
+}
+
+func newBlockingInstaller() *blockingInstaller {
+	return newBlockingInstallerWithError(nil)
+}
+
+func newBlockingInstallerWithError(err error) *blockingInstaller {
+	return &blockingInstaller{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		err:     err,
+	}
+}
+
+func (installer *blockingInstaller) Install(ctx context.Context, _ Manifest) error {
+	installer.installs.Add(1)
+	installer.once.Do(func() { close(installer.started) })
+	select {
+	case <-installer.release:
+		return installer.err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (installer *blockingInstaller) Uninstall(context.Context, Connector) error {
 	return nil
 }
 

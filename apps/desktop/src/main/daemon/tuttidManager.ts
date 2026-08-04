@@ -155,13 +155,11 @@ class ManagedTuttid implements TuttidManager {
       env: processEnv,
       stdio: ["ignore", forwardStdout ? "pipe" : "ignore", "pipe"]
     });
+    const spawned = waitForChildSpawn(child);
 
     this.process = child;
     this.stopRequested = false;
     let startupDiagnostic = "";
-    logger.info("managed tuttid spawned", {
-      pid: child.pid ?? null
-    });
 
     if (forwardStdout) {
       child.stdout?.on("data", (chunk: Buffer | string) => {
@@ -177,6 +175,13 @@ class ManagedTuttid implements TuttidManager {
       getDesktopLogger().error("managed tuttid stderr", {
         chunk: chunk.toString().trim(),
         error_code: desktopErrorCodes.managedProcessStderr
+      });
+    });
+
+    child.on("error", (error) => {
+      getDesktopLogger().error("managed tuttid process error", {
+        error: formatErrorMessage(error),
+        error_code: desktopErrorCodes.managedProcessError
       });
     });
 
@@ -196,6 +201,10 @@ class ManagedTuttid implements TuttidManager {
     });
 
     try {
+      await spawned;
+      logger.info("managed tuttid spawned", {
+        pid: child.pid ?? null
+      });
       this.endpoint.boundAddr = await waitForListenerInfo(
         this.endpoint.listenerInfoPath,
         () => this.isProcessAlive()
@@ -249,6 +258,21 @@ class ManagedTuttid implements TuttidManager {
 
     return this.process.exitCode === null && this.process.signalCode === null;
   }
+}
+
+function waitForChildSpawn(child: ChildProcess): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onSpawn = () => {
+      child.off("error", onError);
+      resolve();
+    };
+    const onError = (error: Error) => {
+      child.off("spawn", onSpawn);
+      reject(error);
+    };
+    child.once("spawn", onSpawn);
+    child.once("error", onError);
+  });
 }
 
 export function managedTuttidStartupError(

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -25,6 +26,16 @@ type ApplicationConfig struct {
 
 type Application struct {
 	config ApplicationConfig
+
+	// executionMu and inFlight provide process-local ownership for operation
+	// execution. Durable recovery remains the repository and adapter contract.
+	executionMu sync.Mutex
+	inFlight    map[string]*operationExecution
+}
+
+type operationExecution struct {
+	done chan struct{}
+	err  error
 }
 
 var _ Service = (*Application)(nil)
@@ -57,7 +68,7 @@ func NewApplication(config ApplicationConfig) (*Application, error) {
 	if config.NewID == nil {
 		config.NewID = randomID
 	}
-	return &Application{config: config}, nil
+	return &Application{config: config, inFlight: make(map[string]*operationExecution)}, nil
 }
 
 func (application *Application) Snapshot(ctx context.Context, workspaceID string) (Snapshot, error) {
@@ -359,6 +370,48 @@ func (application *Application) SetWorkspaceEnabled(
 }
 
 func (application *Application) ExecuteOperation(ctx context.Context, operationID string) error {
+	execution, owner := application.beginOperationExecution(operationID)
+	if !owner {
+		select {
+		case <-execution.done:
+			return execution.err
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	var executeErr error
+	defer func() {
+		application.finishOperationExecution(operationID, execution, executeErr)
+	}()
+	executeErr = application.executeOperation(ctx, operationID)
+	return executeErr
+}
+
+func (application *Application) beginOperationExecution(operationID string) (*operationExecution, bool) {
+	application.executionMu.Lock()
+	defer application.executionMu.Unlock()
+	if execution, ok := application.inFlight[operationID]; ok {
+		return execution, false
+	}
+	execution := &operationExecution{done: make(chan struct{})}
+	application.inFlight[operationID] = execution
+	return execution, true
+}
+
+func (application *Application) finishOperationExecution(
+	operationID string,
+	execution *operationExecution,
+	err error,
+) {
+	application.executionMu.Lock()
+	defer application.executionMu.Unlock()
+	execution.err = err
+	delete(application.inFlight, operationID)
+	close(execution.done)
+}
+
+func (application *Application) executeOperation(ctx context.Context, operationID string) error {
 	operation, err := application.config.Repository.Operation(ctx, operationID)
 	if err != nil {
 		return err

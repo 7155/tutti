@@ -1442,9 +1442,11 @@ async function runDesktopAction(input) {
     stateDirectory: input.runtime.stateDirectory,
     userDataDirectory: input.runtime.userDataDirectory
   });
-  const disposeManagedShutdown = input.keepDesktopOpen
-    ? bindManagedReplayShutdown(desktop)
-    : () => {};
+  // Desktop is spawned detached. Always bind shutdown so SIGTERM/abort and
+  // parent death stop Electron even when --keep-runtime leaves the temp dir.
+  // keepDesktopOpen only skips the normal finally stopProcessTree so the
+  // window can stay up for managed replay; signal/parent hooks still apply.
+  const disposeManagedShutdown = bindManagedReplayShutdown(desktop);
   let pageClient = null;
   let primaryError = null;
   let replayPlayback = null;
@@ -2291,6 +2293,28 @@ function submitRequestedCausedSend(event, activityEvents) {
   );
 }
 
+/**
+ * Resolve the live Turn id from a session GET projection.
+ * Protocol v2 embeds Turns as `{ turnId }`; older fixtures used `{ id }`.
+ * After cancel/settle, `activeTurnId` is null and only `latestTurn` remains.
+ */
+export function replayObservedTurnId(session) {
+  if (!session || typeof session !== "object") return null;
+  const candidates = [
+    session.activeTurnId,
+    session.activeTurn?.turnId,
+    session.activeTurn?.id,
+    session.latestTurn?.turnId,
+    session.latestTurn?.id
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return null;
+}
+
 function createReplayTurnIdentityTracker(plan, runtime) {
   const sessions = new Map(
     Object.entries(plan).map(([sessionId, session]) => [
@@ -2317,7 +2341,7 @@ function createReplayTurnIdentityTracker(plan, runtime) {
   const observeSessionTurn = (recordedSessionId, session) => {
     const identity = sessions.get(recordedSessionId);
     if (!identity) return;
-    const actualTurnId = session.activeTurnId ?? session.latestTurn?.id ?? null;
+    const actualTurnId = replayObservedTurnId(session);
     if (!actualTurnId || identity.actualTurnIds.has(actualTurnId)) return;
     const recordedTurnId =
       identity.recordedTurnIds[identity.mappedTurnIds.size];
@@ -2797,6 +2821,10 @@ export function createReplayPlaybackController(input) {
   };
 
   const reconcileTarget = async () => {
+    // Consume the newest control revision before landing. Otherwise a duplicate
+    // next command written during a fast seek can remain unread until after the
+    // target pauses, where it would be mistaken for a request to advance again.
+    await applyControl();
     if (targetCheckpoint === null) return;
     const checkpoint = input.checkpoints[targetCheckpoint];
     if (activityEventSequence > checkpoint.cursor.activityEventSequence) {
@@ -2991,7 +3019,6 @@ export function createReplayPlaybackController(input) {
       // next/resumes again.
       while (true) {
         await reconcileTarget();
-        await applyControl();
         const blockedByTarget =
           targetCheckpoint !== null &&
           sequence >
@@ -4798,6 +4825,6 @@ function printUsage() {
       `  --cassette-id <id>          Stable managed Replay Cassette identity\n` +
       `  --target-checkpoint <n> Fast-forward a replacement Cassette and pause at checkpoint n\n` +
       `  --screenshot-checkpoints Capture a PNG under artifacts/ after each inspectable checkpoint\n` +
-      `  --keep-runtime         Keep the isolated state and Electron userData\n`
+      `  --keep-runtime         Keep the isolated state/userData dirs after exit (Electron still stops)\n`
   );
 }

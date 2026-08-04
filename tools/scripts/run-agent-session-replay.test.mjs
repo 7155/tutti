@@ -54,6 +54,7 @@ import {
   replayControlRouter,
   replayPendingInteraction,
   resolveReplayProjectFromExpectedState,
+  replayObservedTurnId,
   replayStimuli,
   replayStimulusPrecondition,
   replayStimulusRetryableStatus,
@@ -322,6 +323,154 @@ test("maybeSettleForScreenshot pins and clears settle agent session id", async (
       expression.includes("delete globalThis.__tuttiSettleAgentSessionId")
     )
   );
+});
+
+test("replayObservedTurnId prefers Protocol v2 turnId after settle", () => {
+  assert.equal(
+    replayObservedTurnId({
+      activeTurnId: null,
+      latestTurn: { turnId: "turn-settled" }
+    }),
+    "turn-settled"
+  );
+  assert.equal(
+    replayObservedTurnId({
+      activeTurnId: "turn-active",
+      latestTurn: { turnId: "turn-other" }
+    }),
+    "turn-active"
+  );
+  assert.equal(
+    replayObservedTurnId({
+      activeTurnId: null,
+      latestTurn: { id: "turn-legacy" }
+    }),
+    "turn-legacy"
+  );
+  assert.equal(
+    replayObservedTurnId({
+      activeTurnId: null,
+      latestTurn: {}
+    }),
+    null
+  );
+});
+
+test("replay rebases cancel Turn id from settled latestTurn.turnId", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-replay-cancel-turnid-"));
+  const listenerDirectory = join(root, "run");
+  await mkdir(listenerDirectory, { recursive: true });
+  const verified = [];
+  const playbackStartedAt = Date.now();
+  const server = createServer((request, response) => {
+    response.setHeader("content-type", "application/json");
+    if (respondToCheckpointVerification(request, response)) return;
+    if (
+      request.method === "GET" &&
+      request.url ===
+        `/v1/agent-session-replay/cassettes/${replayCassetteAID}/transport/playback`
+    ) {
+      response.end(
+        JSON.stringify({
+          drained: false,
+          paused: false,
+          playbackElapsedMs: Date.now() - playbackStartedAt,
+          providerConnections: [],
+          speed: 1,
+          timingMode: "realtime"
+        })
+      );
+      return;
+    }
+    // Settled after early cancel: activeTurnId cleared; Protocol v2 uses turnId.
+    response.end(
+      JSON.stringify({
+        session: {
+          activeTurnId: null,
+          latestTurn: { turnId: "turn-live-canceled" },
+          status: "idle"
+        }
+      })
+    );
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen)
+  );
+  try {
+    const address = server.address();
+    assert.notEqual(address, null);
+    assert.equal(typeof address, "object");
+    await writeFile(
+      join(listenerDirectory, "tuttid.listener.json"),
+      JSON.stringify({
+        addr: `127.0.0.1:${address.port}`,
+        auth: { token: "test-token" }
+      })
+    );
+    const base = {
+      agentSessionId: "session-1",
+      workspaceId: "workspace-1"
+    };
+    await replayStimuli(
+      root,
+      {
+        ...base,
+        activityEvents: [
+          {
+            ...base,
+            kind: "effect",
+            occurredAtUnixMs: 1,
+            payload: { outcome: "succeeded" },
+            sequence: 1,
+            type: "session/activate"
+          },
+          {
+            ...base,
+            kind: "effect",
+            occurredAtUnixMs: 2,
+            payload: {
+              outcome: "succeeded",
+              turnId: "turn-recorded-canceled"
+            },
+            sequence: 2,
+            type: "turn/cancel"
+          }
+        ],
+        turnIdentityPlan: {
+          "session-1": {
+            initialTurnIds: [],
+            recordedTurnIds: ["turn-recorded-canceled"]
+          }
+        }
+      },
+      2_000,
+      {
+        cassetteId: replayCassetteAID,
+        rendererDriver: {
+          async dispatchIntent() {},
+          async verifyEffect(event) {
+            verified.push(event);
+          }
+        },
+        checkpoints: [
+          {
+            index: 0,
+            kind: "bootstrap",
+            trigger: { source: "bootstrap" },
+            cursor: { activityEventSequence: 0, providerConnections: [] },
+            schemaVersion: cassettePolicy.schemaVersion
+          }
+        ]
+      }
+    );
+    assert.equal(verified.length, 2);
+    assert.equal(verified[1].type, "turn/cancel");
+    assert.equal(verified[1].payload.turnId, "turn-live-canceled");
+  } finally {
+    await new Promise((resolveClose, rejectClose) =>
+      server.close((error) => (error ? rejectClose(error) : resolveClose()))
+    );
+  }
 });
 
 test("replay rebases recorded Turn identities before Engine intents", async () => {

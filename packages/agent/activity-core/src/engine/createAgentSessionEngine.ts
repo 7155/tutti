@@ -16,7 +16,7 @@ import {
   selectEngineSessionSettingsUpdate
 } from "./sessionLifecycle.selectors.ts";
 import {
-  selectLatestPendingSubmitForSession,
+  selectLatestStopTargetSubmitForSession,
   selectPendingSubmitsForSession
 } from "./pendingIntents.selectors.ts";
 import {
@@ -468,7 +468,7 @@ export function createAgentSessionEngine({
     const clientSubmitId =
       requestedClientSubmitId ??
       (!activeTurn
-        ? selectLatestPendingSubmitForSession(publicSnapshot, agentSessionId)
+        ? selectLatestStopTargetSubmitForSession(publicSnapshot, agentSessionId)
             ?.clientSubmitId
         : undefined);
     const requestedAtUnixMs = clock.nowUnixMs();

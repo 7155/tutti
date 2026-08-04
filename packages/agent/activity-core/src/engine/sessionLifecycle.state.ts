@@ -1,6 +1,7 @@
 import { createInitialSettingsUpdate } from "./sessionSettings.reducer.ts";
 import type {
   SessionCancelState,
+  SessionLifecycleState,
   SessionOperationState
 } from "./sessionLifecycle.types.ts";
 
@@ -45,4 +46,24 @@ export function requestedCancel(
 
 export function cancelPending(cancel: SessionCancelState): boolean {
   return cancel.status === "requested" || cancel.status === "awaitingTurn";
+}
+
+export function setCancel(
+  state: SessionLifecycleState,
+  id: string,
+  cancel: SessionCancelState
+): SessionLifecycleState {
+  const operation = state.operationBySessionId[id];
+  return operation ? setOperation(state, id, { ...operation, cancel }) : state;
+}
+
+export function setOperation(
+  state: SessionLifecycleState,
+  id: string,
+  operation: SessionOperationState
+): SessionLifecycleState {
+  return {
+    ...state,
+    operationBySessionId: { ...state.operationBySessionId, [id]: operation }
+  };
 }

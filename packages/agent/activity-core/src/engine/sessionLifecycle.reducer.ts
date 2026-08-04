@@ -1,9 +1,8 @@
-import type { AgentActivityInteraction, AgentActivityTurn } from "../types.ts";
+import type { AgentActivityInteraction } from "../types.ts";
 import type { SendInputResultValidation } from "./commandResult.validation.ts";
 import type { ScopedSessionResultValidation } from "./commandResult.validation.ts";
 import type { CancelResultValidation } from "./commandResult.validation.ts";
 import {
-  reconcileSettingsUpdates,
   requestSettingsUpdate,
   resumeSettingsQueueAfterPrompt,
   resumeSettingsUpdateWhenRuntimeAvailable,
@@ -15,7 +14,6 @@ import type {
   EngineReducerResult
 } from "./types.ts";
 import {
-  type SessionCancelState,
   type SessionLifecycleState,
   type SessionOperationState
 } from "./sessionLifecycle.types.ts";
@@ -37,8 +35,17 @@ import {
   cancelPending,
   initialCancel,
   initialOperation,
-  requestedCancel
+  requestedCancel,
+  setCancel,
+  setOperation
 } from "./sessionLifecycle.state.ts";
+import {
+  cancelCommand,
+  reconcilePendingCancelForSubmit,
+  reconcilePendingCancelFromMessages,
+  reconcilePendingCancels,
+  sessionVersion
+} from "./sessionLifecycle.cancel.ts";
 const NO_COMMANDS: readonly EngineCommand[] = [];
 const TURN_CANCEL_TIMEOUT_MS = 30_000;
 
@@ -512,151 +519,6 @@ function requestCancel(
   };
 }
 
-function reconcilePendingCancels(
-  previous: SessionLifecycleState,
-  next: SessionLifecycleState
-): EngineReducerResult<SessionLifecycleState> {
-  const settings = reconcileSettingsUpdates(previous, next);
-  const commands: EngineCommand[] = [...settings.commands];
-  let state = settings.state;
-  for (const [id, operation] of Object.entries(state.operationBySessionId)) {
-    const session = state.sessionsById[id];
-    const activeTurn = session?.activeTurnId
-      ? state.turnsById[canonicalTurnKey(id, session.activeTurnId)]
-      : null;
-    const reconciledOperation = state.operationBySessionId[id] ?? operation;
-    const targetedTurn = reconciledOperation.cancel.turnId
-      ? state.turnsById[canonicalTurnKey(id, reconciledOperation.cancel.turnId)]
-      : null;
-    const turn = targetedTurn ?? activeTurn;
-    if (
-      reconciledOperation.cancel.status === "awaitingTurn" &&
-      session &&
-      turn &&
-      turn.phase !== "settled" &&
-      reconciledOperation.cancel.commandId &&
-      (!reconciledOperation.cancel.targetClientSubmitId ||
-        reconciledOperation.cancel.turnId === turn.turnId)
-    ) {
-      if (reconciledOperation.cancel.expiryId)
-        commands.push({
-          type: "engine/cancelExpiry",
-          expiryId: reconciledOperation.cancel.expiryId
-        });
-      commands.push(
-        cancelCommand(
-          session.workspaceId,
-          id,
-          turn,
-          reconciledOperation.cancel.commandId
-        )
-      );
-      state = setCancel(state, id, {
-        ...reconciledOperation.cancel,
-        expiryId: null,
-        status: "requested",
-        turnId: turn.turnId
-      });
-    } else if (
-      reconciledOperation.cancel.status !== "idle" &&
-      reconciledOperation.cancel.status !== "awaitingTurn" &&
-      (!activeTurn || activeTurn.phase === "settled")
-    ) {
-      state = setOperation(state, id, {
-        ...reconciledOperation,
-        cancel: initialCancel(),
-        operationError: null
-      });
-    }
-  }
-  return state === previous && commands.length === 0
-    ? unchanged(previous)
-    : { commands, state };
-}
-
-function reconcilePendingCancelFromMessages(
-  state: SessionLifecycleState,
-  messages: readonly import("../types.ts").AgentActivityMessage[]
-): EngineReducerResult<SessionLifecycleState> {
-  let next = state;
-  for (const message of messages) {
-    const clientSubmitId = message.payload?.clientSubmitId;
-    const turnId = message.turnId?.trim() ?? "";
-    if (
-      typeof clientSubmitId !== "string" ||
-      !clientSubmitId.trim() ||
-      !turnId
-    ) {
-      continue;
-    }
-    const agentSessionId = message.agentSessionId.trim();
-    const operation = next.operationBySessionId[agentSessionId];
-    if (
-      !operation ||
-      operation.cancel.status !== "awaitingTurn" ||
-      operation.cancel.targetClientSubmitId !== clientSubmitId.trim() ||
-      (operation.cancel.turnId && operation.cancel.turnId !== turnId)
-    ) {
-      continue;
-    }
-    next = setCancel(next, agentSessionId, {
-      ...operation.cancel,
-      turnId
-    });
-  }
-  return next === state
-    ? unchanged(state)
-    : reconcilePendingCancels(state, next);
-}
-
-function reconcilePendingCancelForSubmit(
-  previous: SessionLifecycleState,
-  next: SessionLifecycleState,
-  clientSubmitId: string,
-  turn: AgentActivityTurn
-): EngineReducerResult<SessionLifecycleState> {
-  if (!clientSubmitId || turn.phase === "settled") {
-    return result(next);
-  }
-  const operation = next.operationBySessionId[turn.agentSessionId];
-  if (
-    !operation ||
-    operation.cancel.status !== "awaitingTurn" ||
-    operation.cancel.targetClientSubmitId !== clientSubmitId ||
-    !operation.cancel.commandId
-  ) {
-    return result(next);
-  }
-  const session = next.sessionsById[turn.agentSessionId];
-  if (!session || session.workspaceId.trim() === "") {
-    return result(next);
-  }
-  const commands: EngineCommand[] = [];
-  if (operation.cancel.expiryId) {
-    commands.push({
-      type: "engine/cancelExpiry",
-      expiryId: operation.cancel.expiryId
-    });
-  }
-  commands.push(
-    cancelCommand(
-      session.workspaceId,
-      turn.agentSessionId,
-      turn,
-      operation.cancel.commandId
-    )
-  );
-  const state = setCancel(next, turn.agentSessionId, {
-    ...operation.cancel,
-    expiryId: null,
-    status: "requested",
-    turnId: turn.turnId
-  });
-  return previous === state && commands.length === 0
-    ? unchanged(previous)
-    : { commands, state };
-}
-
 function settleCancel(
   state: SessionLifecycleState,
   intent: Extract<EngineIntent, { type: "engine/commandResult" }>,
@@ -821,56 +683,6 @@ function updateOperation(
   return current
     ? result(setOperation(state, id.trim(), update(current)))
     : unchanged(state);
-}
-function setCancel(
-  state: SessionLifecycleState,
-  id: string,
-  cancel: SessionCancelState
-): SessionLifecycleState {
-  const operation = state.operationBySessionId[id];
-  return operation ? setOperation(state, id, { ...operation, cancel }) : state;
-}
-function setOperation(
-  state: SessionLifecycleState,
-  id: string,
-  operation: SessionOperationState
-): SessionLifecycleState {
-  return {
-    ...state,
-    operationBySessionId: { ...state.operationBySessionId, [id]: operation }
-  };
-}
-function cancelCommand(
-  workspaceId: string,
-  agentSessionId: string,
-  turn: AgentActivityTurn,
-  commandId: string,
-  timeoutMs = TURN_CANCEL_TIMEOUT_MS
-): EngineCommand {
-  return {
-    type: "turn/cancel",
-    workspaceId,
-    agentSessionId,
-    turnId: turn.turnId,
-    commandId,
-    timeoutMs
-  };
-}
-function sessionVersion(session: {
-  updatedAtUnixMs?: number;
-  lastEventUnixMs?: number;
-  messageVersion?: number;
-  createdAtUnixMs?: number;
-  startedAtUnixMs?: number;
-}): number | null {
-  return (
-    session.updatedAtUnixMs ??
-    session.lastEventUnixMs ??
-    session.messageVersion ??
-    session.createdAtUnixMs ??
-    session.startedAtUnixMs ??
-    null
-  );
 }
 function result(
   state: SessionLifecycleState

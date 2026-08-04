@@ -1274,6 +1274,49 @@ test("stop for a submit still resolves after send admission times out", () => {
   });
 });
 
+test("stop target correlation ignores a message from another workspace", () => {
+  let state = reduce(createInitialSessionLifecycleState(), {
+    type: "session/snapshotReceived",
+    sessions: [session(null, 1)]
+  }).state;
+  state = reduce(state, {
+    type: "session/stopRequested",
+    agentSessionId: "session-1",
+    awaitingTurnExpiresAtUnixMs: 30_000,
+    clientSubmitId: "submit-1",
+    commandId: "stop-1",
+    workspaceId: "workspace-1"
+  }).state;
+
+  const message = {
+    agentSessionId: "session-1",
+    kind: "user_prompt",
+    messageId: "message-1",
+    occurredAtUnixMs: 2,
+    payload: { clientSubmitId: "submit-1" },
+    role: "user",
+    turnId: "turn-2",
+    version: 1
+  };
+  const ignored = reduce(state, {
+    messages: [{ ...message, workspaceId: "workspace-other" }],
+    type: "message/snapshotReceived"
+  });
+  assert.equal(
+    ignored.state.operationBySessionId["session-1"]?.cancel.turnId,
+    null
+  );
+
+  const matched = reduce(ignored.state, {
+    messages: [{ ...message, workspaceId: "workspace-1" }],
+    type: "message/snapshotReceived"
+  });
+  assert.equal(
+    matched.state.operationBySessionId["session-1"]?.cancel.turnId,
+    "turn-2"
+  );
+});
+
 for (const provider of ["cursor", "codex", "claude-code"]) {
   test(`stop requested before ${provider} activation survives snapshots and cancels the first turn`, () => {
     const waiting = reduce(createInitialSessionLifecycleState(), {

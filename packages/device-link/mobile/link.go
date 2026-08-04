@@ -168,9 +168,10 @@ func (l *Link) OpenStream(timeoutMillis int64) (*Stream, error) {
 }
 
 // OpenStreamWithRelay starts the direct and Relay stream dials together. The
-// first authenticated stream wins; the losing dial is canceled by the shared
-// race context. A Link may still be completing Connect, so the direct dial
-// waits for that operation while Relay starts immediately.
+// first dialable byte stream wins; callers must complete their application
+// protocol handshake before treating that path as usable. The losing dial is
+// canceled by the shared race context. A Link may still be completing Connect,
+// so the direct dial waits for that operation while Relay starts immediately.
 func (l *Link) OpenStreamWithRelay(
 	endpoint string,
 	queryJSON string,

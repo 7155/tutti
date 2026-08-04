@@ -568,10 +568,12 @@ Relay Agent lane 已接入同一套应用帧协议：Desktop `mobileremote` 只�
 移动端连接开关后获取 Relay owner demand，按 Device Authority 完成 identity
 enrollment、owner token 和 lease renewal；Relay stream prelude 校验 authority、
 user、target、channel 及 paired-device scope 后复用现有 Agent HTTP/live handler。
-Mobile 在直连准备阶段并行请求短期 Relay descriptor；如果 descriptor 先就绪，只提前
-返回可用的 Relay 配置，不取消 direct attempt，后者继续到成功或当前连接代际失效。
-Android/iOS native adapter 对每个 framed HTTP/live stream 同时拨号 direct 与 Relay，首个
-成功路径获胜。因此 UI、生成客户端和 Agent DTO 不变。pairing 的 active 快照仍由现有控制面轮询刷新，Relay stream
+Mobile 在直连准备阶段并行请求短期 Relay descriptor；如果 descriptor 先就绪，原生层
+先通过一条 Relay stream 完成带应用帧的 Agent 请求/响应，确认对端 tunnel 和 Agent
+handler 已接受后才把 Relay 标记为可用；不会取消 direct attempt，后者继续到成功或
+当前连接代际失效。Android/iOS native adapter 对每个 framed HTTP/live stream 同时
+拨号 direct 与 Relay，不能把 WebSocket 101 单独当作成功路径。因此 UI、生成客户端和
+Agent DTO 不变。pairing 的 active 快照仍由现有控制面轮询刷新，Relay stream
 在本地快照中找不到 pairing 时 fail closed；快照刷新间隔是当前 2 秒轮询周期。
 
 这里依赖的 Relay descriptor、Device Authority 和 `tsh-tunnel-relay` Agent channel

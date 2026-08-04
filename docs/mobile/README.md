@@ -218,15 +218,15 @@ transport、Agent live Subscriber 和产品 adapter 的现有所有权，不把 
 
 移动端连接分成两个边界，不能把控制面轮询和数据面建流混为一谈：
 
-| 边界                                       | 当前策略                                                                         | 所有者                                      |
-| ------------------------------------------ | -------------------------------------------------------------------------------- | ------------------------------------------- |
-| DeviceLink attempt / Relay descriptor 准备 | direct attempt 与 Relay descriptor 并行；direct attempt 仍按 500ms 轮询状态      | `apps/mobile/src/services/pairingClient.ts` |
-| Agent HTTP / live 数据流                   | direct authenticated stream 与已授权 Relay stream 立即并行，首个成功 stream 胜出 | `packages/device-link/mobile` + 原生 bridge |
+| 边界                                       | 当前策略                                                                                                                              | 所有者                                                    |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| DeviceLink attempt / Relay descriptor 准备 | direct attempt 与 Relay descriptor 并行；Relay 只有完成一次对端 Agent 请求/响应后才可成为可用路径；direct attempt 仍按 500ms 轮询状态 | `apps/mobile/src/services/pairingClient.ts` + 原生 bridge |
+| Agent HTTP / live 数据流                   | direct 与 Relay 的底层拨号仍可并行；应用帧得到对端响应前不把 Relay 的 WebSocket 101 当成成功                                          | `packages/device-link/mobile` + 原生 bridge               |
 
 移动端目前没有已确认的 `device_link.attempt.changed` 控制面 WebSocket 契约，因此不
 凭空增加推送协议；控制面仍保留轮询作为事实来源。Relay descriptor 先准备好时，
-移动端可以先通过 Relay 工作，同时让 direct attempt 在后台完成；direct stream 等待
-正在进行的 `Connect`，Relay stream 不等待它。TSH Desktop 的默认 3 秒 Relay 兜底策略
+原生层先通过一次带应用帧的 Agent 请求确认对端 tunnel 和 handler，再让 Relay 参与
+连接结果竞速；direct attempt 仍在后台完成。TSH Desktop 的默认 3 秒 Relay 兜底策略
 属于另一套已上线产品策略，本改动不改变它。
 
 ### 账号浏览器认证边界
@@ -498,9 +498,9 @@ Google Play 账号。以下事项等正式分发前再处理：
   DeviceLink request stream、端到端请求 deadline、prepare/connect generation
   fencing 和 Native 15 秒后台 grace period；
 - Android/iOS caller 已将 direct 与 Relay 的 Agent 数据流接入同一条即时竞速；控制面
-  Relay descriptor 先就绪时不再等待 direct attempt 的 TTL，但 direct attempt 会在
-  后台继续完成，作为后续数据流竞速的 direct 候选；UI 和现有 DeviceLink path scope
-  保持不变；
+  Relay descriptor 先就绪时先做一次端到端 Agent 请求确认，不再把 WebSocket 101
+  当成成功，同时不等待 direct attempt 的 TTL；direct attempt 会在后台继续完成，
+  作为后续数据流竞速的 direct 候选；UI 和现有 DeviceLink path scope 保持不变；
 - 移动端已直接复用 `@tutti-os/client-tuttid-ts`，并从
   `@tutti-os/agent-gui` 复用安全的 Interaction answer model、无 DOM 的会话摘要和
   canonical 对话流 projection，完成 Personal 单 workspace 校验、按置顶/项目/最近分组的

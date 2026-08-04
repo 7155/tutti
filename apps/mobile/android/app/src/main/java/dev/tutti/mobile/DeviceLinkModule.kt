@@ -14,6 +14,7 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.UiThreadUtil
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import dev.tutti.mobile.bindings.liveprotocolmobile.Liveprotocolmobile
@@ -167,6 +168,48 @@ class DeviceLinkModule(
             )
         }
         promise.resolve(null)
+    }
+
+    @ReactMethod
+    fun probeRelay(timeoutMillis: Double, promise: Promise) {
+        val relay = relaySnapshot()
+        if (relay == null) {
+            promise.reject(
+                "DEVICE_LINK_RELAY_PROBE_FAILED",
+                "DeviceLink Relay is not configured",
+            )
+            return
+        }
+        val timeout = timeoutMillis.toLong().coerceAtLeast(1)
+        runAsync(
+            promise,
+            "DEVICE_LINK_RELAY_PROBE_FAILED",
+            "Relay peer handshake failed",
+        ) {
+            val response =
+                requestAgentHTTPWithStream(
+                    Mobile.dialRelay(
+                        relay.endpoint,
+                        relay.queryJSON,
+                        relay.headersJSON,
+                        relay.subprotocol,
+                        timeout,
+                    ),
+                    "GET",
+                    "/v1/preferences/desktop",
+                    "",
+                    timeout,
+                )
+            val protocolEpoch = response.getInt("protocolEpoch")
+            require(protocolEpoch.toLong() == Mobile.protocolEpoch()) {
+                "Relay peer uses an unsupported DeviceLink protocol epoch"
+            }
+            val status = response.getInt("status")
+            require(status in 200..299) {
+                "Relay peer control request returned HTTP $status"
+            }
+            null
+        }
     }
 
     @ReactMethod
@@ -624,7 +667,7 @@ class DeviceLinkModule(
         path: String,
         body: String,
         timeoutMillis: Long,
-    ): Any {
+    ): ReadableMap {
         val timeout = timeoutMillis.coerceAtLeast(1)
         val deadline = SystemClock.elapsedRealtime() + timeout
         try {

@@ -150,7 +150,16 @@ export async function connectPairedDevice(
     identity,
     isCurrent,
     relayController.signal
-  );
+  ).then(async (descriptor) => {
+    if (descriptor === null) return null;
+    // A descriptor only makes Relay dialable. The native probe opens a Relay
+    // stream and waits for the paired desktop Agent endpoint to acknowledge a
+    // authenticated Agent request before this path can win the connection race.
+    requireCurrentConnection(isCurrent, relayController.signal);
+    await deviceLink.probeRelay(10_000);
+    requireCurrentConnection(isCurrent, relayController.signal);
+    return descriptor;
+  });
   try {
     const winner = await raceSuccessful<
       DeviceLinkPathScope | AgentRelayDescriptor
@@ -166,11 +175,9 @@ export async function connectPairedDevice(
     ]);
     requireCurrentConnection(isCurrent);
     if (winner.name === "relay") {
-      // A Relay descriptor only makes the fallback dialable; it does not prove
-      // that the Relay stream is usable. Keep direct rendezvous running so a
-      // later data-stream race still has a direct candidate if Relay fails.
-      // Relay is an internal transport fallback. Keep the existing path scope
-      // contract consumed by the UI and workspace services unchanged.
+      // The Relay task completes only after the native Agent probe has
+      // received a response from the paired desktop. Keep direct rendezvous
+      // running so later data-stream races retain a direct candidate.
       return "private_network";
     }
     // Direct is already usable. Do not leave a control-plane descriptor

@@ -4,7 +4,8 @@ jest.mock("../native/mobileNative", () => ({
     closeLink: jest.fn(),
     configureRelay: jest.fn(),
     connectLink: jest.fn(),
-    prepareLink: jest.fn()
+    prepareLink: jest.fn(),
+    probeRelay: jest.fn()
   },
   mobileSecurity: {
     getOrCreateIdentity: jest.fn(),
@@ -34,6 +35,7 @@ const mockCloseLink = jest.mocked(deviceLink.closeLink);
 const mockConfigureRelay = jest.mocked(deviceLink.configureRelay!);
 const mockConnectLink = jest.mocked(deviceLink.connectLink);
 const mockPrepareLink = jest.mocked(deviceLink.prepareLink);
+const mockProbeRelay = jest.mocked(deviceLink.probeRelay);
 
 function controlPlaneResponse(data: unknown): Response {
   return {
@@ -188,6 +190,12 @@ describe("control-plane authentication", () => {
       })
     );
     mockConfigureRelay.mockResolvedValue(undefined);
+    let resolveProbeRelay!: () => void;
+    mockProbeRelay.mockReturnValue(
+      new Promise((resolve) => {
+        resolveProbeRelay = resolve;
+      })
+    );
     mockConnectLink.mockResolvedValue("local_subnet");
     globalThis.fetch = jest.fn().mockImplementation((input: RequestInfo) => {
       const url = String(input);
@@ -217,7 +225,7 @@ describe("control-plane authentication", () => {
                 pwd: "password",
                 ufrag: "username"
               },
-              expiresAt: "2026-08-04T10:00:30Z",
+              expiresAt: new Date(Date.now() + 30_000).toISOString(),
               ownerFingerprint: "owner-fingerprint-1",
               ownerIce: {
                 candidates: ["candidate:owner"],
@@ -232,12 +240,22 @@ describe("control-plane authentication", () => {
       throw new Error(`unexpected control-plane request: ${url}`);
     });
 
-    await expect(connectPairedDevice("session-1", "pairing-1")).resolves.toBe(
-      "private_network"
+    let settled = false;
+    const connection = connectPairedDevice("session-1", "pairing-1").then(
+      (scope) => {
+        settled = true;
+        return scope;
+      }
     );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
     expect(mockConfigureRelay).toHaveBeenCalledTimes(1);
+    expect(mockProbeRelay).toHaveBeenCalledWith(10_000);
     expect(mockConnectLink).not.toHaveBeenCalled();
     expect(mockCloseLink).not.toHaveBeenCalled();
+
+    resolveProbeRelay();
+    await expect(connection).resolves.toBe("private_network");
 
     resolvePrepareLink({
       descriptionJSON: JSON.stringify({
@@ -248,7 +266,13 @@ describe("control-plane authentication", () => {
       }),
       token: 1
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    for (
+      let attempt = 0;
+      attempt < 20 && !mockConnectLink.mock.calls.length;
+      attempt += 1
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
     expect(mockConnectLink).toHaveBeenCalledTimes(1);
   });
 });

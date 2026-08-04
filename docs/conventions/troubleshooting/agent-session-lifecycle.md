@@ -2463,6 +2463,38 @@ inline data URL instead`. Claude or standard ACP may instead receive no
   [agentPatchMetadata.ts](../../../packages/agent/gui/shared/agentConversation/rules/agentPatchMetadata.ts)
   [git_patch.go](../../../services/tuttid/service/agent/git_patch.go)
 
+### AgentGUI changed-files summary shows negative lines for a new file
+
+- Symptom:
+  The file-edit row reports additions, but the settled changed-files summary
+  reports deletions, often matching the number of Markdown list items that
+  begin with `-`. The worktree file itself is present and complete.
+- Quick checks:
+  Compare the final file's line count with the tool row, then inspect the
+  canonical `turn.fileChanges.files[]` entry. A real unified diff has a hunk
+  header such as `@@ -0,0 +1,13 @@`; a file body stored in `unifiedDiff` is
+  malformed metadata, not a diff.
+- Root cause:
+  The summary projection used any non-empty `unifiedDiff` as a valid patch and
+  counted every line beginning with `-` as a removal. Its content fallback also
+  discarded blank lines, so the summary and tool row could use different line
+  totals for the same write.
+- Fix:
+  Normalize `fileChanges` at the runtime and durable-payload boundaries: a
+  created file's raw body becomes `newString`, while `unifiedDiff` is retained
+  only when it has a real hunk. AgentGUI also requires a hunk before parsing
+  historical payloads and shares the line-count helper with tool render data,
+  so blank lines are counted consistently.
+- Validation:
+  Cover a created Markdown body containing list items and blank lines at both
+  canonicalization boundaries, then run the Agent runtime and AgentGUI tests
+  and typechecks.
+- References:
+  [tool_file_changes.go](../../../packages/agent/daemon/runtime/tool_file_changes.go)
+  [tool_payload.go](../../../packages/agent/store-sqlite/canonical/tool_payload.go)
+  [agentUnifiedDiff.ts](../../../packages/agent/gui/shared/agentConversation/components/tool-renderers/file-diff/agentUnifiedDiff.ts)
+  [AgentTurnSummaryRow.tsx](../../../packages/agent/gui/shared/agentConversation/components/AgentTurnSummaryRow.tsx)
+
 ### Cursor deleted files appear as created or modified
 
 - Symptom:

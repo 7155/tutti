@@ -5,6 +5,7 @@ import { AgentMessageMarkdown } from "../../../AgentMessageMarkdown";
 import { stripImagePayloadData } from "../../../imageGenerationTool";
 import type { AgentToolCallVM } from "../../contracts/agentToolCallVM";
 import {
+  getCommandRenderData,
   getFileChangeRenderData,
   getImageGenerationRenderData,
   getToolFallbackText,
@@ -177,7 +178,18 @@ export function hasAgentToolContent(call: AgentToolCallVM): boolean {
       return hasWriteContent(call);
     case "edit":
       return hasEditContent(call);
-    case "bash":
+    case "bash": {
+      const command = getCommandRenderData(call);
+      // toolName-only Claude Bash starts must not claim expandable detail —
+      // that paints an empty terminal shell with no data-agent-terminal-command.
+      return Boolean(
+        command.command ||
+        command.stdout ||
+        command.stderr ||
+        call.error ||
+        stringValue(call.summary)
+      );
+    }
     case "search":
       return hasGenericStructuredContent(call);
     case "web-search":

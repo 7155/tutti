@@ -21,6 +21,7 @@ require (
 	github.com/tutti-os/tutti/packages/analytics/reporter-go v0.0.0
 	github.com/tutti-os/tutti/packages/appcli/core v0.0.0
 	github.com/tutti-os/tutti/packages/auth/bridge-go v0.0.0
+	github.com/tutti-os/tutti/packages/clients/device-authority-go v0.0.0
 	github.com/tutti-os/tutti/packages/commerce v0.0.0
 	github.com/tutti-os/tutti/packages/device-link v0.0.0
 	github.com/tutti-os/tutti/packages/desktop/update-admission v0.0.0
@@ -132,6 +133,8 @@ tool github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
 replace github.com/tutti-os/tutti/packages/appcli/core => ../../packages/appcli/core
 
 replace github.com/tutti-os/tutti/packages/auth/bridge-go => ../../packages/auth/bridge-go
+
+replace github.com/tutti-os/tutti/packages/clients/device-authority-go => ../../packages/clients/device-authority-go
 
 replace github.com/tutti-os/tutti/packages/commerce => ../../packages/commerce
 

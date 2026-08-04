@@ -4,6 +4,7 @@ import {
   chmod,
   mkdir,
   mkdtemp,
+  rm,
   stat,
   utimes,
   writeFile
@@ -13,7 +14,10 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import type { TuttidClient } from "@tutti-os/client-tuttid-ts";
+import type { DesktopDaemonEndpoint } from "../transport/paths.ts";
 import {
+  createTuttidManager,
   isLikelyTuttidProcess,
   managedTuttidStartupError,
   resolveBrowserMcpDaemonEnv,
@@ -26,6 +30,35 @@ import {
 const repoRoot = resolve(
   fileURLToPath(new URL("../../../../..", import.meta.url))
 );
+
+test("rejects startup when the managed tuttid binary cannot be spawned", async () => {
+  const previousEnv = { ...process.env };
+  const runtimeDirectory = await mkdtemp(join(tmpdir(), "tutti-tuttid-spawn-"));
+  const endpoint: DesktopDaemonEndpoint = {
+    accessToken: "test-token",
+    boundAddr: null,
+    listenerInfoPath: join(runtimeDirectory, "listener.json"),
+    pidPath: join(runtimeDirectory, "tuttid.pid"),
+    requestedAddr: "127.0.0.1:0"
+  };
+  const tuttidClient = {
+    async getHealth() {
+      throw new Error("health must not run when spawn fails");
+    }
+  } as unknown as TuttidClient;
+
+  try {
+    process.env.TUTTID_BIN = join(runtimeDirectory, "missing-tuttid");
+    const manager = createTuttidManager(endpoint, tuttidClient);
+
+    await assert.rejects(manager.start(), { code: "ENOENT" });
+    assert.equal(endpoint.boundAddr, null);
+    await manager.stop();
+  } finally {
+    restoreEnv(previousEnv);
+    await rm(runtimeDirectory, { force: true, recursive: true });
+  }
+});
 
 test("preserves managed tuttid stderr as a structured startup cause", () => {
   const failure = managedTuttidStartupError(

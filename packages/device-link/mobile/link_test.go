@@ -111,6 +111,113 @@ func TestLoopbackLinksExchangeDescriptionsAndStreams(t *testing.T) {
 	}
 }
 
+func TestOpenStreamWithRelayStartsBeforeConnect(t *testing.T) {
+	t.Parallel()
+	server := newRelayEchoServer(t)
+	defer server.Close()
+
+	link, err := NewLoopbackLink()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer link.Close()
+
+	stream, err := link.OpenStreamWithRelay(
+		server.endpoint,
+		`{"authority_id":["authority-1"]}`,
+		`{"Authorization":["Bearer target-token"]}`,
+		"relay.test.v1",
+		5_000,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	if got := stream.transport; got != "relay" {
+		t.Fatalf("transport = %q, want relay", got)
+	}
+}
+
+func TestOpenStreamCanStartBeforeConnect(t *testing.T) {
+	t.Parallel()
+	caller, err := NewLoopbackLink()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer caller.Close()
+	owner, err := NewLoopbackLink()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+
+	callerDescription, err := caller.LocalDescription(20_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerDescription, err := owner.LocalDescription(20_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	streamResult := make(chan struct {
+		stream *Stream
+		err    error
+	}, 1)
+	go func() {
+		stream, openErr := caller.OpenStream(5_000)
+		streamResult <- struct {
+			stream *Stream
+			err    error
+		}{stream: stream, err: openErr}
+	}()
+	ownerResult := make(chan error, 1)
+	go func() {
+		_, connectErr := owner.Connect(callerDescription, false, 20_000)
+		ownerResult <- connectErr
+	}()
+	if _, err := caller.Connect(ownerDescription, true, 20_000); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-ownerResult; err != nil {
+		t.Fatal(err)
+	}
+	acceptResult := make(chan struct {
+		stream *Stream
+		err    error
+	}, 1)
+	go func() {
+		stream, acceptErr := owner.AcceptStream(5_000)
+		acceptResult <- struct {
+			stream *Stream
+			err    error
+		}{stream: stream, err: acceptErr}
+	}()
+	result := <-streamResult
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	if result.stream == nil {
+		t.Fatal("OpenStream returned a nil stream")
+	}
+	defer result.stream.Close()
+	if result.stream.transport != "direct" {
+		t.Fatalf("transport = %q, want direct", result.stream.transport)
+	}
+	if _, err := result.stream.Write([]byte("pending-stream")); err != nil {
+		t.Fatal(err)
+	}
+	acceptedResult := <-acceptResult
+	if acceptedResult.err != nil {
+		t.Fatal(acceptedResult.err)
+	}
+	accepted := acceptedResult.stream
+	if accepted == nil {
+		t.Fatal("AcceptStream returned a nil stream")
+	}
+	defer accepted.Close()
+}
+
 func TestProtocolEpochMatchesApplicationPrelude(t *testing.T) {
 	if ProtocolEpoch() != ApplicationProtocolEpoch {
 		t.Fatalf("ProtocolEpoch() = %d, want %d", ProtocolEpoch(), ApplicationProtocolEpoch)
@@ -119,35 +226,10 @@ func TestProtocolEpochMatchesApplicationPrelude(t *testing.T) {
 
 func TestDialRelayOpensConfiguredByteStream(t *testing.T) {
 	t.Parallel()
-	upgrader := websocket.Upgrader{
-		CheckOrigin:  func(*http.Request) bool { return true },
-		Subprotocols: []string{"relay.test.v1"},
-	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("authority_id") != "authority-1" {
-			http.Error(w, "authority missing", http.StatusBadRequest)
-			return
-		}
-		if r.Header.Get("Authorization") != "Bearer target-token" {
-			http.Error(w, "authorization missing", http.StatusUnauthorized)
-			return
-		}
-		connection, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer connection.Close()
-		messageType, payload, err := connection.ReadMessage()
-		if err != nil {
-			return
-		}
-		_ = connection.WriteMessage(messageType, payload)
-	}))
+	server := newRelayEchoServer(t)
 	defer server.Close()
-
-	endpoint := "ws" + strings.TrimPrefix(server.URL, "http")
 	stream, err := DialRelay(
-		endpoint,
+		server.endpoint,
 		`{"authority_id":["authority-1"]}`,
 		`{"Authorization":["Bearer target-token"]}`,
 		"relay.test.v1",
@@ -189,6 +271,47 @@ func TestDialRelayRejectsMalformedValuesBeforeDial(t *testing.T) {
 			}
 		})
 	}
+}
+
+type relayTestServer struct {
+	endpoint string
+	server   *httptest.Server
+}
+
+func newRelayEchoServer(t *testing.T) *relayTestServer {
+	t.Helper()
+	upgrader := websocket.Upgrader{
+		CheckOrigin:  func(*http.Request) bool { return true },
+		Subprotocols: []string{"relay.test.v1"},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("authority_id") != "authority-1" {
+			http.Error(w, "authority missing", http.StatusBadRequest)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer target-token" {
+			http.Error(w, "authorization missing", http.StatusUnauthorized)
+			return
+		}
+		connection, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer connection.Close()
+		messageType, payload, err := connection.ReadMessage()
+		if err != nil {
+			return
+		}
+		_ = connection.WriteMessage(messageType, payload)
+	}))
+	return &relayTestServer{
+		endpoint: "ws" + strings.TrimPrefix(server.URL, "http"),
+		server:   server,
+	}
+}
+
+func (s *relayTestServer) Close() {
+	s.server.Close()
 }
 
 func max(left, right int) int {

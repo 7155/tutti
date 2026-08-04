@@ -144,6 +144,8 @@ link facade:
   material;
 - caller/owner connection using the peer description;
 - authenticated bidirectional stream open/accept/read/write/deadline/close;
+- `OpenStreamWithRelay`, which races a direct authenticated stream and an
+  already-authorized Relay stream concurrently and closes the losing stream;
 - the loopback integration probe used by the Android build gate.
 
 The mobile read boundary intentionally fills a caller-owned byte buffer and
@@ -159,8 +161,10 @@ headers, and WebSocket subprotocol as JSON `map[string][]string` values, then
 returns the same `Stream` abstraction used by the Agent framing adapter. The
 mobile package does not issue credentials, select a target, or decide when to
 fall back; those policies remain in the Mobile pairing service and native
-bridge. Relay streams must be closed by the caller after each HTTP request or
-when the live subscription ends.
+bridge. `Link.OpenStreamWithRelay` uses the same stream abstraction to start
+direct and Relay together; a direct stream may wait for an in-progress
+`Link.Connect`, while Relay starts immediately. Relay streams must be closed by
+the caller after each HTTP request or when the live subscription ends.
 
 Account identity signatures, DeviceLink attempts, pairing scope, Agent HTTP
 framing, and foreground/background policy remain in the Android and tuttid

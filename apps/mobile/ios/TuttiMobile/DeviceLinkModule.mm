@@ -318,13 +318,13 @@ RCT_REMAP_METHOD(requestAgentHTTP,
     NSDictionary *response = nil;
     if (selected != nil) {
       response = [self requestAgentHTTPWithLink:selected
+                                          relay:relay
                                          method:method
                                            path:path
                                            body:body
-                                  timeoutMillis:(int64_t)timeoutMillis
+                                          timeoutMillis:(int64_t)timeoutMillis
                                           error:&error];
-    }
-    if (response == nil && relay != nil) {
+    } else if (relay != nil) {
       NSError *relayError = nil;
       TUTMobileStream *stream = TUTMobileDialRelay(
           relay[@"endpoint"], relay[@"queryJSON"], relay[@"headersJSON"],
@@ -339,7 +339,7 @@ RCT_REMAP_METHOD(requestAgentHTTP,
       }
       if (response != nil) {
         error = nil;
-      } else if (error == nil) {
+      } else {
         error = relayError;
       }
     }
@@ -498,13 +498,24 @@ RCT_REMAP_METHOD(closeLink,
 }
 
 - (NSDictionary *)requestAgentHTTPWithLink:(TUTMobileLink *)link
+                                     relay:(NSDictionary *)relay
                                     method:(NSString *)method
                                       path:(NSString *)path
                                      body:(NSString *)body
                             timeoutMillis:(int64_t)timeoutMillis
                                      error:(NSError **)error {
   int64_t timeout = MAX(timeoutMillis, 1);
-  TUTMobileStream *stream = [link openStream:timeout error:error];
+  TUTMobileStream *stream = nil;
+  if (relay != nil) {
+    stream = [link openStreamWithRelay:relay[@"endpoint"]
+                              queryJSON:relay[@"queryJSON"]
+                            headersJSON:relay[@"headersJSON"]
+                            subprotocol:relay[@"subprotocol"]
+                          timeoutMillis:timeout
+                                  error:error];
+  } else {
+    stream = [link openStream:timeout error:error];
+  }
   if (stream == nil) {
     return nil;
   }
@@ -620,14 +631,28 @@ RCT_REMAP_METHOD(closeLink,
 
 - (TUTMobileStream *)openAgentStream:(TUTMobileLink *)link
                                relay:(NSDictionary *)relay
-                       timeoutMillis:(int64_t)timeoutMillis
+                               timeoutMillis:(int64_t)timeoutMillis
                                error:(NSError **)error {
   NSError *directError = nil;
   if (link != nil) {
-    TUTMobileStream *stream = [link openStream:MAX(timeoutMillis, 1)
-                                         error:&directError];
+    TUTMobileStream *stream = relay != nil
+                                  ? [link openStreamWithRelay:
+                                           relay[@"endpoint"]
+                                             queryJSON:relay[@"queryJSON"]
+                                           headersJSON:relay[@"headersJSON"]
+                                           subprotocol:relay[@"subprotocol"]
+                                         timeoutMillis:MAX(timeoutMillis, 1)
+                                                 error:&directError]
+                                  : [link openStream:MAX(timeoutMillis, 1)
+                                               error:&directError];
     if (stream != nil) {
       return stream;
+    }
+    if (relay != nil) {
+      if (error != NULL) {
+        *error = directError;
+      }
+      return nil;
     }
   }
   if (relay != nil) {

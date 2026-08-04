@@ -1,7 +1,10 @@
 jest.mock("../native/mobileNative", () => ({
   __esModule: true,
   deviceLink: {
-    configureRelay: jest.fn()
+    closeLink: jest.fn(),
+    configureRelay: jest.fn(),
+    connectLink: jest.fn(),
+    prepareLink: jest.fn()
   },
   mobileSecurity: {
     getOrCreateIdentity: jest.fn(),
@@ -9,9 +12,10 @@ jest.mock("../native/mobileNative", () => ({
   }
 }));
 
-import { mobileSecurity } from "../native/mobileNative";
+import { deviceLink, mobileSecurity } from "../native/mobileNative";
 import {
   claimPairing,
+  connectPairedDevice,
   issueAgentRelayDescriptor,
   registerCurrentDevice
 } from "./pairingClient";
@@ -26,6 +30,10 @@ import { PAIRING_OPERATION_SUSPENDED } from "./servicePorts";
 
 const mockGetOrCreateIdentity = jest.mocked(mobileSecurity.getOrCreateIdentity);
 const mockSign = jest.mocked(mobileSecurity.sign);
+const mockCloseLink = jest.mocked(deviceLink.closeLink);
+const mockConfigureRelay = jest.mocked(deviceLink.configureRelay!);
+const mockConnectLink = jest.mocked(deviceLink.connectLink);
+const mockPrepareLink = jest.mocked(deviceLink.prepareLink);
 
 function controlPlaneResponse(data: unknown): Response {
   return {
@@ -160,6 +168,88 @@ describe("control-plane authentication", () => {
         publicKey: "cHVibGljLWtleQ"
       })
     ).rejects.toThrow("control-plane Relay descriptor is incomplete");
+  });
+
+  it("returns the existing path scope while Relay is ready first", async () => {
+    mockGetOrCreateIdentity.mockResolvedValue({
+      arch: "arm64",
+      deviceId: "device-1",
+      deviceName: "Alice's iPhone",
+      publicKey: "cHVibGljLWtleQ"
+    });
+    mockSign.mockResolvedValue("signature");
+    let resolvePrepareLink!: (value: {
+      descriptionJSON: string;
+      token: number;
+    }) => void;
+    mockPrepareLink.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePrepareLink = resolve;
+      })
+    );
+    mockConfigureRelay.mockResolvedValue(undefined);
+    mockConnectLink.mockResolvedValue("local_subnet");
+    globalThis.fetch = jest.fn().mockImplementation((input: RequestInfo) => {
+      const url = String(input);
+      if (url.endsWith("/devices/current")) {
+        return Promise.resolve(
+          controlPlaneResponse({ device: { userDeviceId: "user-device-1" } })
+        );
+      }
+      if (url.includes("/agent-relay-descriptor")) {
+        return Promise.resolve(
+          controlPlaneResponse({
+            authorityId: "authority-1",
+            relayDialEndpoint: "wss://relay.example.test/v1/tunnels/dial",
+            token: "target-token",
+            tokenExpiresAt: "2026-08-04T10:00:00Z"
+          })
+        );
+      }
+      if (url.includes("/device-link-attempts")) {
+        return Promise.resolve(
+          controlPlaneResponse({
+            attempt: {
+              attemptId: "attempt-1",
+              callerFingerprint: "fingerprint-1",
+              callerIce: {
+                candidates: ["candidate:local"],
+                pwd: "password",
+                ufrag: "username"
+              },
+              expiresAt: "2026-08-04T10:00:30Z",
+              ownerFingerprint: "owner-fingerprint-1",
+              ownerIce: {
+                candidates: ["candidate:owner"],
+                pwd: "owner-password",
+                ufrag: "owner-username"
+              },
+              state: "ready"
+            }
+          })
+        );
+      }
+      throw new Error(`unexpected control-plane request: ${url}`);
+    });
+
+    await expect(connectPairedDevice("session-1", "pairing-1")).resolves.toBe(
+      "private_network"
+    );
+    expect(mockConfigureRelay).toHaveBeenCalledTimes(1);
+    expect(mockConnectLink).not.toHaveBeenCalled();
+    expect(mockCloseLink).not.toHaveBeenCalled();
+
+    resolvePrepareLink({
+      descriptionJSON: JSON.stringify({
+        candidates: ["candidate:local"],
+        fingerprint: "fingerprint-1",
+        pwd: "password",
+        ufrag: "username"
+      }),
+      token: 1
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockConnectLink).toHaveBeenCalledTimes(1);
   });
 });
 

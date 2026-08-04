@@ -187,43 +187,48 @@ class DeviceLinkModule(
             return
         }
         runAsync(promise, "DEVICE_LINK_REQUEST_FAILED", "DeviceLink request failed") {
-            var directFailure: Throwable? = null
+            if (selected != null && relay != null) {
+                val stream = selected.openStreamWithRelay(
+                    relay.endpoint,
+                    relay.queryJSON,
+                    relay.headersJSON,
+                    relay.subprotocol,
+                    timeoutMillis.toLong().coerceAtLeast(1),
+                )
+                return@runAsync requestAgentHTTPWithStream(
+                    stream,
+                    method,
+                    path,
+                    body,
+                    timeoutMillis.toLong(),
+                )
+            }
             if (selected != null) {
-                try {
-                    return@runAsync requestAgentHTTPWithStream(
-                        selected.openStream(timeoutMillis.toLong().coerceAtLeast(1)),
-                        method,
-                        path,
-                        body,
-                        timeoutMillis.toLong(),
-                    )
-                } catch (error: Throwable) {
-                    directFailure = error
-                }
+                val stream = selected.openStream(timeoutMillis.toLong().coerceAtLeast(1))
+                return@runAsync requestAgentHTTPWithStream(
+                    stream,
+                    method,
+                    path,
+                    body,
+                    timeoutMillis.toLong(),
+                )
             }
             if (relay != null) {
-                try {
-                    return@runAsync requestAgentHTTPWithStream(
-                        Mobile.dialRelay(
-                            relay.endpoint,
-                            relay.queryJSON,
-                            relay.headersJSON,
-                            relay.subprotocol,
-                            timeoutMillis.toLong(),
-                        ),
-                        method,
-                        path,
-                        body,
+                return@runAsync requestAgentHTTPWithStream(
+                    Mobile.dialRelay(
+                        relay.endpoint,
+                        relay.queryJSON,
+                        relay.headersJSON,
+                        relay.subprotocol,
                         timeoutMillis.toLong(),
-                    )
-                } catch (error: Throwable) {
-                    if (directFailure != null) {
-                        throw IllegalStateException("direct and Relay Agent requests failed", error)
-                    }
-                    throw error
-                }
+                    ),
+                    method,
+                    path,
+                    body,
+                    timeoutMillis.toLong(),
+                )
             }
-            throw directFailure ?: IllegalStateException("DeviceLink request failed")
+            throw IllegalStateException("DeviceLink request is not configured")
         }
     }
 
@@ -695,6 +700,15 @@ class DeviceLinkModule(
         relay: RelayConfig?,
         timeoutMillis: Long,
     ): Stream {
+        if (selected != null && relay != null) {
+            return selected.openStreamWithRelay(
+                relay.endpoint,
+                relay.queryJSON,
+                relay.headersJSON,
+                relay.subprotocol,
+                timeoutMillis,
+            )
+        }
         var directFailure: Throwable? = null
         if (selected != null) {
             try {

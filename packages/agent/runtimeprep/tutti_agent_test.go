@@ -79,6 +79,9 @@ func TestTuttiAgentPreparerUsesExplicitAuthSourceAndInstallsSkills(t *testing.T)
 			t.Fatalf("managed config unexpectedly pinned %q: %s", unexpected, config)
 		}
 	}
+	if runtime.GOOS == "windows" && !containsConfigBlock(string(config), "[windows]\nsandbox = \"unelevated\"") {
+		t.Fatalf("Tutti Agent session config missing Windows sandbox fallback: %s", config)
+	}
 	if len(result.Env) == 0 || result.Env[0] != "TUTTI_AGENT_HOME="+home {
 		t.Fatalf("Prepare() env = %#v", result.Env)
 	}

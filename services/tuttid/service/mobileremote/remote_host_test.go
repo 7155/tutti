@@ -12,6 +12,7 @@ import (
 	"time"
 
 	authbridge "github.com/tutti-os/tutti/packages/auth/bridge-go"
+	devicelink "github.com/tutti-os/tutti/packages/device-link"
 	authenticatedlink "github.com/tutti-os/tutti/packages/device-link/authenticated"
 	"github.com/tutti-os/tutti/packages/device-link/linkmanager"
 	mobileremotebiz "github.com/tutti-os/tutti/services/tuttid/biz/mobileremote"
@@ -196,6 +197,9 @@ func TestRemoteHostConnectsAuthenticatedLinkAndServesAgentHTTP(t *testing.T) {
 	stream, err := link.OpenStream(ctx)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := devicelink.ProbeStream(ctx, stream); err != nil {
+		t.Fatalf("probe DeviceLink stream: %v", err)
 	}
 	if err := writeRemoteFrame(stream, RemoteRequest{
 		ProtocolEpoch: ApplicationProtocolEpoch, Service: AgentHTTPService,

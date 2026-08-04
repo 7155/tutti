@@ -31,7 +31,8 @@ an authenticated link:
 - one in-flight establishment per opaque peer key;
 - authenticated link reuse, stream reference counting, idle retirement, and
   deterministic collision resolution;
-- a delayed two-path race that closes every losing late connection;
+- a delayed two-path race that verifies each candidate with a transport-owned
+  stream probe before selecting it and closes every losing late connection;
 - an annealed direct-probe cache with bounded peer state and explicit
   environment invalidation.
 
@@ -109,6 +110,17 @@ handshake response body available for adapter-owned wire-reason parsing, but
 does not include that body in its error string; adapters must not persist the
 raw value in ordinary logs or metrics.
 
+### Stream readiness probe
+
+`ProbeStream` and `ServeStreamProbe` form the product-neutral readiness barrier
+for a newly opened authenticated stream. The caller writes a fresh nonce and
+selects the path only after the peer echoes that nonce. This matters for stale
+QUIC sessions: `OpenStreamSync` can succeed locally after a network transition
+even though the peer is no longer reachable. The probe is deliberately
+separate from Agent framing and leaves the verified stream open for the
+consumer's application protocol. Owners must run `ServeStreamProbe` before
+dispatching the stream to their handler.
+
 ## Trickle ICE and protocol migration
 
 Consumers that exchange candidates incrementally call
@@ -145,10 +157,10 @@ link facade:
 - caller/owner connection using the peer description;
 - authenticated bidirectional stream open/accept/read/write/deadline/close;
 - `OpenStreamWithRelay`, which races a direct stream dial and an authorized
-  Relay stream dial concurrently and closes the losing stream. The returned
-  byte stream is only a transport candidate: callers that carry an application
-  protocol must complete that protocol's request/response handshake before
-  recording the path as usable;
+  Relay stream dial concurrently, requires the shared stream probe on both
+  candidates, and closes the losing stream. The returned byte stream has
+  crossed the transport readiness barrier; callers still own their application
+  protocol handshake and request semantics;
 - the loopback integration probe used by the Android build gate.
 
 The mobile read boundary intentionally fills a caller-owned byte buffer and
@@ -161,9 +173,10 @@ Java receives it.
 `mobile.DialRelay` is the corresponding gomobile-safe byte-stream entry point for
 an already-authorized Relay caller. It accepts the endpoint, query values,
 headers, and WebSocket subprotocol as JSON `map[string][]string` values, then
-returns the same `Stream` abstraction used by the Agent framing adapter. A
-successful WebSocket upgrade is not proof that the owner tunnel or Agent
-handler accepted the stream. The mobile package does not issue credentials,
+runs the shared stream probe before returning the same `Stream` abstraction used
+by the Agent framing adapter. A successful WebSocket upgrade alone is not proof
+that the owner tunnel or Agent handler accepted the stream; the probe confirms
+only that the transport owner is responsive. The mobile package does not issue credentials,
 select a target, or decide when to fall back; those policies remain in the
 Mobile pairing service and native bridge. `Link.OpenStreamWithRelay` uses the
 same stream abstraction to start direct and Relay together; a direct stream may

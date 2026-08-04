@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	devicelink "github.com/tutti-os/tutti/packages/device-link"
 	authenticatedlink "github.com/tutti-os/tutti/packages/device-link/authenticated"
 	"github.com/tutti-os/tutti/packages/device-link/linkmanager"
 	mobileremotebiz "github.com/tutti-os/tutti/services/tuttid/biz/mobileremote"
@@ -554,13 +556,18 @@ func serveManagedRemoteStream(
 	incoming linkmanager.IncomingStream[string, remoteLinkMetadata],
 ) error {
 	metadata := incoming.Metadata
-	return serveRemoteStreamWithAgentLive(
-		ctx,
-		incoming.Stream,
-		metadata.handler,
-		metadata.pairingID,
-		metadata.liveEvents,
-	)
+	return devicelink.ServeStreamProbe(ctx, incoming.Stream, func(
+		ctx context.Context,
+		stream net.Conn,
+	) error {
+		return serveRemoteStreamWithAgentLive(
+			ctx,
+			stream,
+			metadata.handler,
+			metadata.pairingID,
+			metadata.liveEvents,
+		)
+	})
 }
 
 func deviceLinkProof(action, pairingID, attemptID, fingerprint string) []byte {

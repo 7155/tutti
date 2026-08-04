@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	devicelink "github.com/tutti-os/tutti/packages/device-link"
 	authenticated "github.com/tutti-os/tutti/packages/device-link/authenticated"
 	"github.com/tutti-os/tutti/packages/device-link/linkmanager"
 	"github.com/tutti-os/tutti/packages/device-link/relaytransport"
@@ -103,6 +104,10 @@ func DialRelay(
 	if err != nil {
 		return nil, err
 	}
+	if err := devicelink.ProbeStream(ctx, conn); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("probe Relay stream: %w", err)
+	}
 	return &Stream{conn: conn, transport: transportRelay}, nil
 }
 
@@ -167,11 +172,12 @@ func (l *Link) OpenStream(timeoutMillis int64) (*Stream, error) {
 	return &Stream{conn: stream, transport: transportDirect}, nil
 }
 
-// OpenStreamWithRelay starts the direct and Relay stream dials together. The
-// first dialable byte stream wins; callers must complete their application
-// protocol handshake before treating that path as usable. The losing dial is
-// canceled by the shared race context. A Link may still be completing Connect,
-// so the direct dial waits for that operation while Relay starts immediately.
+// OpenStreamWithRelay starts the direct and Relay stream dials together. Each
+// candidate must complete the shared DeviceLink stream probe before it can win;
+// a QUIC stream that only allocated locally is not considered usable. The
+// losing dial is canceled by the shared race context. A Link may still be
+// completing Connect, so the direct dial waits for that operation while Relay
+// starts immediately.
 func (l *Link) OpenStreamWithRelay(
 	endpoint string,
 	queryJSON string,
@@ -275,7 +281,15 @@ func (l *Link) openStreamContext(ctx context.Context) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return connected.OpenStream(ctx)
+	stream, err := connected.OpenStream(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := devicelink.ProbeStream(ctx, stream); err != nil {
+		_ = stream.Close()
+		return nil, fmt.Errorf("probe direct stream: %w", err)
+	}
+	return stream, nil
 }
 
 func (l *Link) waitConnected(ctx context.Context) (*authenticated.Link, error) {

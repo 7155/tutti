@@ -28,6 +28,7 @@ function connector(key: string, revision: number): Connector {
       manifest: {
         schemaVersion: "1",
         displayName: key,
+        iconUrl: "data:image/png;base64,iVBORw0KGgo=",
         permissions: [],
         implementation: {
           kind: "builtin",

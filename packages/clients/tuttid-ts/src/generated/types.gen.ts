@@ -4598,6 +4598,7 @@ export type ConnectorMarketRelease = {
 export type ConnectorMarketManifest = {
   schemaVersion: "1";
   displayName: string;
+  iconUrl: string;
   description?: string;
   permissions: Array<string>;
   implementation: ConnectorMarketImplementation;

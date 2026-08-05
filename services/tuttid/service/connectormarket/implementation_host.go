@@ -37,6 +37,7 @@ type ConnectorRuntimeResolver interface {
 
 type ImplementationHostConfig struct {
 	Artifacts         PreparedArtifactResolver
+	CLIInstallations  market.CLIInstallationManager
 	Runtimes          ConnectorRuntimeResolver
 	Processes         agentruntime.ProcessTransport
 	Commands          *ConnectorCommandRegistry
@@ -46,6 +47,7 @@ type ImplementationHostConfig struct {
 
 type ImplementationHost struct {
 	artifacts         PreparedArtifactResolver
+	cliInstallations  market.CLIInstallationManager
 	runtimes          ConnectorRuntimeResolver
 	processes         agentruntime.ProcessTransport
 	commands          *ConnectorCommandRegistry
@@ -100,7 +102,7 @@ func NewImplementationHost(config ImplementationHostConfig) (*ImplementationHost
 	if config.MCPStartupTimeout <= 0 {
 		config.MCPStartupTimeout = 15 * time.Second
 	}
-	return &ImplementationHost{artifacts: config.Artifacts, runtimes: config.Runtimes, processes: config.Processes,
+	return &ImplementationHost{artifacts: config.Artifacts, cliInstallations: config.CLIInstallations, runtimes: config.Runtimes, processes: config.Processes,
 		commands: config.Commands, stateRoot: filepath.Clean(config.StateRoot), mcpStartupTimeout: config.MCPStartupTimeout,
 		routes: make(map[string]*connectorRoute), fences: make(map[string]market.HostGeneration), transitions: make(map[string]*sync.Mutex)}, nil
 }
@@ -264,7 +266,7 @@ func (host *ImplementationHost) buildManagedRoute(ctx context.Context, request m
 		processes: make(map[uint64]trackedConnectorProcess), pendingStarts: make(map[uint64]context.CancelFunc)}
 	sandbox := &agentruntime.ConnectorSandboxPolicy{ReadOnlyPaths: []string{prepared.PreparedPath, resolved.Root}, WritablePaths: []string{stateDir},
 		ReadOnlyTreeIdentities: []agentruntime.ReadOnlyTreeIdentity{{Root: prepared.PreparedPath, SHA256: prepared.InventoryDigest}},
-		Network:                containsPermission(request.Connector.Release.Manifest.Permissions, "network")}
+		Network:                containsPermissionScope(request.Connector.Release.Manifest.Permissions, "network")}
 	if managed.MCP != nil {
 		if err := host.attachMCP(ctx, route, managed, prepared, executable, sandbox); err != nil {
 			_ = route.close(time.Now().Add(3 * time.Second))
@@ -272,7 +274,21 @@ func (host *ImplementationHost) buildManagedRoute(ctx context.Context, request m
 		}
 	}
 	if managed.CLI != nil {
-		if err := host.attachCLI(route, managed, prepared, executable, sandbox); err != nil {
+		var installed *market.CLIInstallationReceipt
+		if managed.CLI.Install != nil {
+			if host.cliInstallations == nil {
+				_ = route.close(time.Now().Add(3 * time.Second))
+				return nil, errors.New("connector CLI installation resolver is unavailable")
+			}
+			receipt, err := host.cliInstallations.ResolveCLI(ctx, request.Connector.Release)
+			if err != nil {
+				_ = route.close(time.Now().Add(3 * time.Second))
+				return nil, fmt.Errorf("resolve connector CLI installation: %w", err)
+			}
+			installed = &receipt
+			sandbox.ReadOnlyPaths = append(sandbox.ReadOnlyPaths, receipt.InstallRoot)
+		}
+		if err := host.attachCLI(route, managed, prepared, installed, executable, sandbox); err != nil {
 			_ = route.close(time.Now().Add(3 * time.Second))
 			return nil, err
 		}
@@ -402,10 +418,26 @@ func (host *ImplementationHost) monitorMCPRoute(route *connectorRoute, client *m
 	_ = host.retireExactRoute(route, time.Now().Add(3*time.Second))
 }
 
-func (host *ImplementationHost) attachCLI(route *connectorRoute, managed *market.ManagedStdioImplementation, prepared market.PreparedArtifactReceipt, executable managedruntime.ConnectorExecutable, sandbox *agentruntime.ConnectorSandboxPolicy) error {
-	entrypoint, err := preparedEntrypoint(prepared.PreparedPath, managed.CLI.Entrypoint)
+func (host *ImplementationHost) attachCLI(route *connectorRoute, managed *market.ManagedStdioImplementation,
+	prepared market.PreparedArtifactReceipt, installed *market.CLIInstallationReceipt,
+	executable managedruntime.ConnectorExecutable, sandbox *agentruntime.ConnectorSandboxPolicy) error {
+	entrypointRoot, entrypointRelative := prepared.PreparedPath, managed.CLI.Entrypoint
+	if installed != nil {
+		entrypointRoot, entrypointRelative = installed.InstallRoot, installed.Entrypoint
+	}
+	entrypoint, err := preparedEntrypoint(entrypointRoot, entrypointRelative)
 	if err != nil {
 		return err
+	}
+	launchArguments := []string{entrypoint}
+	launchExecutable := executable
+	if installed != nil && installed.LaunchKind == "native" {
+		launchArguments = nil
+		launchExecutable = managedruntime.ConnectorExecutable{Path: entrypoint, SHA256: installed.EntrypointSHA256,
+			SizeBytes: installed.EntrypointSize}
+	}
+	if len(managed.CLI.Commands) == 0 {
+		return host.attachGenericCLI(route, managed, prepared, launchArguments, launchExecutable, sandbox)
 	}
 	for _, manifestCommand := range managed.CLI.Commands {
 		manifestCommand := manifestCommand
@@ -426,9 +458,10 @@ func (host *ImplementationHost) attachCLI(route *connectorRoute, managed *market
 				}
 				timeoutCtx, cancel := context.WithTimeout(callCtx, time.Duration(manifestCommand.TimeoutMS)*time.Millisecond)
 				defer cancel()
-				arguments := append([]string{entrypoint}, managed.CLI.Arguments...)
+				arguments := append([]string{}, launchArguments...)
+				arguments = append(arguments, managed.CLI.Arguments...)
 				arguments = append(arguments, manifestCommand.Arguments...)
-				connection, processID, err := host.startRouteProcess(timeoutCtx, route, connectorProcessSpec(route, managed.Runtime.Language, executable, prepared.PreparedPath, arguments, sandbox))
+				connection, processID, err := host.startRouteProcess(timeoutCtx, route, connectorProcessSpec(route, managed.Runtime.Language, launchExecutable, prepared.PreparedPath, arguments, sandbox))
 				if err != nil {
 					return cliservice.CommandOutput{}, cliservice.ServiceUnavailableError("start connector CLI command", err)
 				}
@@ -446,6 +479,71 @@ func (host *ImplementationHost) attachCLI(route *connectorRoute, managed *market
 	return nil
 }
 
+func (host *ImplementationHost) attachGenericCLI(route *connectorRoute, managed *market.ManagedStdioImplementation,
+	prepared market.PreparedArtifactReceipt, launchArguments []string, executable managedruntime.ConnectorExecutable,
+	sandbox *agentruntime.ConnectorSandboxPolicy) error {
+	commandID, err := connectorCapabilityID(route.connectorKey, "cli", "run")
+	if err != nil {
+		return err
+	}
+	inputSchema := map[string]any{"type": "object", "properties": map[string]any{
+		"args": map[string]any{"type": "array", "items": map[string]any{"type": "string"},
+			"description": "CLI arguments described by the installed connector skill"}},
+		"required": []string{"args"}, "additionalProperties": false}
+	route.capabilities[commandID] = connectorCommand{capability: connectorCapability(commandID, route.connectorKey, "run",
+		"Run the installed connector CLI with skill-defined arguments", inputSchema),
+		invoke: func(callCtx context.Context, request cliservice.InvokeRequest) (cliservice.CommandOutput, error) {
+			if !host.routeCurrent(route) {
+				return cliservice.CommandOutput{}, cliservice.ErrServiceUnavailable
+			}
+			arguments, err := genericCLIArguments(request.Input["args"])
+			if err != nil {
+				return cliservice.CommandOutput{}, cliservice.InvalidInputReasonError("connector_cli_args_invalid", err.Error(), nil)
+			}
+			timeoutCtx, cancel := context.WithTimeout(callCtx, time.Duration(managed.CLI.TimeoutMS)*time.Millisecond)
+			defer cancel()
+			processArguments := append([]string{}, launchArguments...)
+			processArguments = append(processArguments, managed.CLI.Arguments...)
+			processArguments = append(processArguments, arguments...)
+			connection, processID, err := host.startRouteProcess(timeoutCtx, route, connectorProcessSpec(route,
+				managed.Runtime.Language, executable, prepared.PreparedPath, processArguments, sandbox))
+			if err != nil {
+				return cliservice.CommandOutput{}, cliservice.ServiceUnavailableError("start connector CLI command", err)
+			}
+			defer route.releaseProcess(processID, connection)
+			if graceful, ok := connection.(agentruntime.GracefulProcessConnection); ok {
+				_ = graceful.CloseInput()
+			}
+			return collectCLIOutput(timeoutCtx, connection)
+		}}
+	return nil
+}
+
+func genericCLIArguments(raw any) ([]string, error) {
+	var arguments []string
+	switch values := raw.(type) {
+	case []string:
+		arguments = append(arguments, values...)
+	case []any:
+		for _, value := range values {
+			argument, ok := value.(string)
+			if !ok {
+				return nil, errors.New("connector CLI args must contain only strings")
+			}
+			arguments = append(arguments, argument)
+		}
+	default:
+		return nil, errors.New("connector CLI args are required")
+	}
+	for _, argument := range arguments {
+		if strings.ContainsRune(argument, '\x00') || argument == "--yes" || argument == "--force" ||
+			strings.HasPrefix(argument, "--yes=") || strings.HasPrefix(argument, "--force=") {
+			return nil, errors.New("connector CLI args contain a forbidden non-interactive override")
+		}
+	}
+	return arguments, nil
+}
+
 func connectorProcessSpec(route *connectorRoute, language string, executable managedruntime.ConnectorExecutable, cwd string, args []string, sandbox *agentruntime.ConnectorSandboxPolicy) agentruntime.ProcessSpec {
 	command := append([]string{executable.Path}, args...)
 	stateDir := ""
@@ -454,7 +552,8 @@ func connectorProcessSpec(route *connectorRoute, language string, executable man
 	}
 	return agentruntime.ProcessSpec{Provider: "connector:" + route.connectorKey, RoomID: route.connectionID, CWD: cwd, Command: command,
 		Env: []string{"TUTTI_CONNECTOR_CONNECTION_ID=" + route.connectionID, "TUTTI_CONNECTOR_KEY=" + route.connectorKey,
-			"TUTTI_CONNECTOR_LANGUAGE=" + language, "TUTTI_CONNECTOR_STATE_DIR=" + stateDir},
+			"TUTTI_CONNECTOR_LANGUAGE=" + language, "TUTTI_CONNECTOR_STATE_DIR=" + stateDir,
+			"HOME=" + stateDir, "USERPROFILE=" + stateDir},
 		ExecutableIdentity: &agentruntime.ExecutableIdentity{SHA256: executable.SHA256, SizeBytes: executable.SizeBytes}, ConnectorSandbox: sandbox}
 }
 
@@ -574,6 +673,10 @@ func verifyRuntimeABI(requirement market.RuntimeRequirement, resolved managedrun
 	if requirement.Profile != resolved.Profile || requirement.ABI != resolved.ABI {
 		return errors.New("connector runtime ABI does not match the signed local runtime")
 	}
+	if requirement.Language == "node" && strings.TrimSpace(requirement.VersionRange) != "" &&
+		!nodeVersionSatisfies(resolved.Components["node"], requirement.VersionRange) {
+		return errors.New("connector Node version requirement does not match the signed local runtime")
+	}
 	return nil
 }
 
@@ -613,9 +716,9 @@ func secureConnectorStateDir(root, connectionID, connectorKey string) (string, e
 	return targetReal, nil
 }
 
-func containsPermission(values []string, expected string) bool {
+func containsPermissionScope(values []string, expected string) bool {
 	for _, value := range values {
-		if value == expected {
+		if value == expected || strings.HasPrefix(value, expected+":") {
 			return true
 		}
 	}

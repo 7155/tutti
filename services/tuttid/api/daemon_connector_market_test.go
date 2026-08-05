@@ -160,6 +160,7 @@ func connectorMarketTestConnector() market.Connector {
 			ReleaseDigest:  digest,
 			ManifestDigest: digest,
 			Manifest: market.Manifest{
+				IconURL:       "data:image/png;base64,iVBORw0KGgo=",
 				SchemaVersion: "1",
 				DisplayName:   "Notion",
 				Permissions:   []string{"pages.read"},

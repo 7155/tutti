@@ -568,14 +568,10 @@ func validateAuthenticationProfile(profile AuthenticationProfile) error {
 		if strings.TrimSpace(method.Type) != "terminal" {
 			return errors.New("authentication method type is unsupported")
 		}
-		strategy := strings.TrimSpace(method.Command.Strategy)
-		if strategy != "runtime" && strategy != "runtime-subcommand" {
+		if strings.TrimSpace(method.Command.Strategy) != "runtime-subcommand" {
 			return errors.New("authentication terminal command strategy is unsupported")
 		}
-		if strategy == "runtime" && len(method.Command.Args) != 0 {
-			return errors.New("authentication runtime command must not declare args")
-		}
-		if strategy == "runtime-subcommand" && (len(method.Command.Args) == 0 || len(method.Command.Args) > 16) {
+		if len(method.Command.Args) == 0 || len(method.Command.Args) > 16 {
 			return errors.New("authentication terminal command must declare 1..16 args")
 		}
 		for _, argument := range method.Command.Args {

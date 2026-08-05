@@ -472,8 +472,7 @@ durable and never persist credentials.
 
 A signed `authentication` profile may bind one runtime-advertised method ID to
 a closed terminal command declaration. Authentication profile v1 supports only
-`type: "terminal"`. `command.strategy: "runtime"` opens the verified runtime
-executable without arguments, while `runtime-subcommand` appends a bounded,
+`type: "terminal"` with `command.strategy: "runtime-subcommand"` and a bounded,
 non-empty argv array. A declaration may also replace the advertised method's
 display name and description with bounded presentation strings. Tutti applies
 those fields only when the declaration ID and type match the fresh ACP method,

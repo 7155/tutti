@@ -22,8 +22,8 @@ func TestLoadAuthenticationMethods(t *testing.T) {
 			"description": "Open the runtime to choose an authentication method.",
 			"type": "terminal",
 			"command": {
-				"strategy": "runtime",
-				"args": []
+				"strategy": "runtime-subcommand",
+				"args": ["login"]
 			}
 		}]
 	}`), 0o600); err != nil {
@@ -38,7 +38,8 @@ func TestLoadAuthenticationMethods(t *testing.T) {
 	}
 	method := methods["login"]
 	if method.Name != "Set up Example Agent" || method.Description != "Open the runtime to choose an authentication method." ||
-		method.Type != "terminal" || method.Command.Strategy != "runtime" || len(method.Command.Args) != 0 {
+		method.Type != "terminal" || method.Command.Strategy != "runtime-subcommand" ||
+		len(method.Command.Args) != 1 || method.Command.Args[0] != "login" {
 		t.Fatalf("authentication method = %#v", method)
 	}
 }
@@ -69,10 +70,6 @@ func TestValidateAuthenticationProfileRejectsUnsafeDeclarations(t *testing.T) {
 		},
 		"unsupported strategy": func(profile *AuthenticationProfile) {
 			profile.Methods[0].Command.Strategy = "shell"
-		},
-		"runtime command with args": func(profile *AuthenticationProfile) {
-			profile.Methods[0].Command.Strategy = "runtime"
-			profile.Methods[0].Command.Args = []string{"login"}
 		},
 		"control character in name": func(profile *AuthenticationProfile) {
 			profile.Methods[0].Name = "Set up\nAgent"

@@ -122,8 +122,8 @@ func runRuntimeSetup(
 
 // terminalLoginCommand renders the interactive sign-in command for a terminal
 // auth method. The fresh ACP method type remains authoritative. A compatible
-// signed extension declaration may replace terminal presentation and choose
-// either the verified runtime executable or one of its subcommands, without
+// signed extension declaration may replace terminal presentation and command
+// args, so provider-specific subcommands stay in the extension package without
 // turning a future browser or device-code method with the same ID into terminal
 // auth.
 func terminalLoginCommand(
@@ -133,17 +133,17 @@ func terminalLoginCommand(
 ) string {
 	methodType := method.Type
 	args := method.Args
-	runtimeCommand := false
+	runtimeSubcommand := false
 	if declaration != nil &&
 		strings.TrimSpace(method.Type) == strings.TrimSpace(declaration.Type) {
 		args = declaration.Command.Args
-		runtimeCommand = declaration.Command.Strategy == "runtime" || declaration.Command.Strategy == "runtime-subcommand"
+		runtimeSubcommand = declaration.Command.Strategy == "runtime-subcommand"
 	}
 	if methodType != "terminal" || len(command) == 0 || strings.TrimSpace(command[0]) == "" {
 		return ""
 	}
 	base := command[:1]
-	if !runtimeCommand && len(args) > 0 && strings.HasPrefix(args[0], "-") {
+	if !runtimeSubcommand && len(args) > 0 && strings.HasPrefix(args[0], "-") {
 		base = command
 	}
 	parts := make([]string, 0, len(base)+len(args))

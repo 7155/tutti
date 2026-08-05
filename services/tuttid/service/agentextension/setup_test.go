@@ -578,11 +578,6 @@ func TestTerminalLoginCommand(t *testing.T) {
 	if got := terminalLoginCommand([]string{"/opt/agent/bin/kimi", "acp"}, flagMethod, &declared); got != "/opt/agent/bin/kimi login" {
 		t.Fatalf("terminalLoginCommand with extension declaration = %q", got)
 	}
-	declared.Command.Strategy = "runtime"
-	declared.Command.Args = nil
-	if got := terminalLoginCommand([]string{"/opt/agent/bin/kimi", "acp"}, flagMethod, &declared); got != "/opt/agent/bin/kimi" {
-		t.Fatalf("terminalLoginCommand with bare runtime declaration = %q", got)
-	}
 	browserMethod := agentruntime.StandardACPAuthMethod{ID: "login", Type: "browser", Args: []string{"runtime-browser"}}
 	if got := terminalLoginCommand([]string{"/opt/agent/bin/kimi", "acp"}, browserMethod, &declared); got != "" {
 		t.Fatalf("terminalLoginCommand with mismatched live type = %q", got)
@@ -608,9 +603,10 @@ func TestProbeRuntimeAppliesSignedTerminalSetupPresentation(t *testing.T) {
 	var declared AuthenticationMethodProfile
 	declared.ID = "login"
 	declared.Name = "Set up Example Agent"
-	declared.Description = "Open the runtime and choose a setup method."
+	declared.Description = "Open the runtime login flow."
 	declared.Type = "terminal"
-	declared.Command.Strategy = "runtime"
+	declared.Command.Strategy = "runtime-subcommand"
+	declared.Command.Args = []string{"login"}
 	binding := RuntimeBinding{
 		Installation: Installation{AgentKey: "example", Provider: "acp:example"},
 		Command:      []string{"/opt/example/bin/example", "acp"},
@@ -631,7 +627,7 @@ func TestProbeRuntimeAppliesSignedTerminalSetupPresentation(t *testing.T) {
 	}
 	method := result.AuthMethods[0]
 	if method.Name != declared.Name || method.Description != declared.Description ||
-		method.Type != "terminal" || method.TerminalCommand != "/opt/example/bin/example" {
+		method.Type != "terminal" || method.TerminalCommand != "/opt/example/bin/example login" {
 		t.Fatalf("projected auth method = %#v", method)
 	}
 }

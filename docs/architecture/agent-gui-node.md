@@ -819,6 +819,20 @@ queue submission while keeping the editor editable. Draft emptiness, upload
 progress/failure, project existence, and other draft-local conditions may
 disable submission, but must not change editor editability.
 
+Engine submitting and unconfirmed-submit selectors remain busy facts after a
+canonical Session first appears. Session existence or an `available` runtime
+must not create an idle frame before the exact Turn claims the submission. A
+viable new-Session activation with `initialTurnExpected` remains the same busy
+bridge while no canonical latest Turn exists. Goal-only activation deliberately
+does not expect a Turn. When a provider exposes an exact session-level
+`running`/`idle` observation before Turn identity, the daemon projects that
+typed, non-persistent runtime activity through `agent.activity.updated` after
+the associated state report wins canonical ordering. Desktop and Mobile Live
+consume the same event variant. The workspace Engine uses its occurrence time
+to reject reordering and prevents an older `running` observation from
+overriding a settled Turn. A disconnect clears the ephemeral observation,
+while canonical Turn state remains authoritative once it exists.
+
 ### 4.1 Read/write rules
 
 - reads use exported selectors or memoized `AgentActivitySnapshot`

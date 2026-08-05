@@ -203,6 +203,7 @@ export type AgentActivitySnapshotListener = (
 ) => void;
 
 export type AgentActivityUpdatedEvent =
+  | AgentActivityRuntimeActivityUpdatedEvent
   | AgentActivitySessionReconcileRequiredEvent
   | AgentActivitySessionDeletedEvent
   | AgentActivitySessionAuditEvent
@@ -210,6 +211,19 @@ export type AgentActivityUpdatedEvent =
   | AgentActivityMessageUpdatedEvent
   | AgentActivityTurnUpdatedEvent
   | AgentActivityInteractionUpdatedEvent;
+
+export interface AgentActivityRuntimeActivityUpdatedEvent {
+  workspaceId: string;
+  agentSessionId: string;
+  eventType: "runtime_activity_update";
+  data: {
+    workspaceId: string;
+    agentSessionId: string;
+    eventType: "runtime_activity_update";
+    state: "idle" | "running";
+    occurredAtUnixMs: number;
+  };
+}
 
 export interface AgentActivitySessionReconcileRequiredEvent {
   workspaceId: string;
@@ -622,6 +636,7 @@ export interface AgentActivitySessionGoal {
     | "budgetLimited"
     | "complete";
   reason?: string;
+  startedAtUnixMs?: number;
   iterations?: number;
   durationMs?: number;
   tokens?: number;

@@ -26,6 +26,9 @@ func (p *ActivityProjection) ObserveCommitted(ctx context.Context, delta agentho
 			p.publishPersistedTurnState(ctx, committed.Input, committed.Result)
 		}
 		if committed.Result.State.Accepted && !provisional {
+			if committed.Result.State.StateApplied {
+				p.publishRuntimeActivityUpdate(ctx, committed.Input)
+			}
 			p.publishActivityUpdated(ctx, committed.Input.WorkspaceID, committed.Input.AgentSessionID,
 				"session_reconcile_required", activitySessionUpdateEventPayload(
 					committed.Input.WorkspaceID, committed.Input.AgentSessionID,
@@ -78,6 +81,27 @@ func (p *ActivityProjection) ObserveCommitted(ctx context.Context, delta agentho
 			p.activityTurnUpdateEventPayload(ctx, mutation.WorkspaceID, mutation.AgentSessionID, turn, time.Now().UnixMilli()))
 	}
 	return nil
+}
+
+func (p *ActivityProjection) publishRuntimeActivityUpdate(ctx context.Context, input canonical.ReportSessionStateInput) {
+	observation := input.State.RuntimeActivity
+	if observation == nil {
+		return
+	}
+	state := strings.ToLower(strings.TrimSpace(observation.State))
+	if state != "running" && state != "idle" {
+		return
+	}
+	if observation.OccurredAtUnixMS <= 0 {
+		return
+	}
+	p.publishActivityUpdated(ctx, input.WorkspaceID, input.AgentSessionID, "runtime_activity_update", map[string]any{
+		"workspaceId":      strings.TrimSpace(input.WorkspaceID),
+		"agentSessionId":   strings.TrimSpace(input.AgentSessionID),
+		"eventType":        "runtime_activity_update",
+		"state":            state,
+		"occurredAtUnixMs": observation.OccurredAtUnixMS,
+	})
 }
 
 func activityStateIsProvisional(input canonical.ReportSessionStateInput) bool {

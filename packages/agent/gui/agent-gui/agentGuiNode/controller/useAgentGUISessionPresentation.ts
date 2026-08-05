@@ -1,4 +1,5 @@
 import {
+  isPendingActivationViable,
   selectPlanDecisionForTurn,
   selectPlanTurnDismissed,
   type AgentActivityDisplayStatus,
@@ -93,6 +94,7 @@ interface UseAgentGUISessionPresentationInput {
   activeEngineHasPendingInteractions: boolean;
   activeEngineLatestTurn: AgentActivityTurn | null;
   activeEngineRuntimeAvailability: SessionRuntimeAvailability | null;
+  activeEngineRuntimeActivity: "idle" | "running";
   activeEngineSession: CanonicalAgentSession | null;
   /** In-flight / waiting session settings update; blocks submit until settled. */
   activeEngineSettingsUpdate: {
@@ -115,6 +117,7 @@ interface UseAgentGUISessionPresentationInput {
   composerSupport: ReturnType<typeof composerSettingsSupportFromOptions>;
   conversation: AgentConversationVM | null;
   currentUserId?: string | null;
+  hasUnconfirmedSubmit: boolean;
   isCreatingConversation: boolean;
   isInterrupting: boolean;
   isLoadingMessages: boolean;
@@ -185,8 +188,21 @@ export function useAgentGUISessionPresentation(
   const pendingInteractivePrompt =
     input.serverInteractivePrompt ?? planImplementationPrompt;
 
+  const activeActivationAwaitsInitialTurn = Boolean(
+    input.activeConversationId &&
+    input.activePendingActivation?.mode === "new" &&
+    input.activePendingActivation.agentSessionId ===
+      input.activeConversationId &&
+    input.activePendingActivation.initialTurnExpected &&
+    isPendingActivationViable(input.activePendingActivation) &&
+    !input.activeEngineLatestTurn
+  );
   const activeHasPendingSubmittedTurn = Boolean(
-    input.activeConversationId && input.activeLatestPendingSubmitTurnId
+    input.activeConversationId &&
+    (activeActivationAwaitsInitialTurn ||
+      input.hasUnconfirmedSubmit ||
+      input.isSubmitting ||
+      (!input.activeEngineSession && input.activeLatestPendingSubmitTurnId))
   );
   const activeSubmitBlocked = input.activeEngineAvailability === "blocked";
   const sessionRuntimeBlock =
@@ -203,12 +219,14 @@ export function useAgentGUISessionPresentation(
     input.activeEngineActiveTurn?.turnId,
     input.observationGapSource
   );
-  const activeConversationBusy = input.activeEngineSession
-    ? input.activeEngineAvailability === "blocked"
-    : agentActivityDisplayStatusBusy(input.activityDisplayStatus) ||
-      conversationBusyStatus(input.activeConversation?.status ?? null) ||
-      activeHasPendingSubmittedTurn ||
-      activeSubmitBlocked;
+  const activeConversationBusy =
+    activeHasPendingSubmittedTurn ||
+    input.activeEngineRuntimeActivity === "running" ||
+    (input.activeEngineSession
+      ? input.activeEngineAvailability === "blocked"
+      : agentActivityDisplayStatusBusy(input.activityDisplayStatus) ||
+        conversationBusyStatus(input.activeConversation?.status ?? null) ||
+        activeSubmitBlocked);
   const activeSessionResumable =
     input.activeEngineSession?.resumable ??
     input.activeConversation?.resumable ??
@@ -454,6 +472,7 @@ export function useAgentGUISessionPresentation(
         "",
       input.activeEngineActiveTurn?.turnId ?? "",
       input.activeEngineAvailability,
+      input.activeEngineRuntimeActivity,
       activeConversationBusy ? "busy" : "ready",
       activeHasPendingSubmittedTurn ? "pending-turn" : "no-pending-turn",
       activeSubmitBlocked ? "submit-blocked" : "submit-open",
@@ -487,6 +506,7 @@ export function useAgentGUISessionPresentation(
       activeEngineActiveTurn: input.activeEngineActiveTurn,
       activeEngineAvailability: input.activeEngineAvailability,
       activeEngineLatestTurn: input.activeEngineLatestTurn,
+      activeEngineRuntimeActivity: input.activeEngineRuntimeActivity,
       activeHasPendingSubmittedTurn,
       activeLiveState: input.activeLiveState,
       activeRuntimeSession: input.activeEngineSession,
@@ -515,6 +535,7 @@ export function useAgentGUISessionPresentation(
     input.activeEngineActiveTurn,
     input.activeEngineAvailability,
     input.activeEngineLatestTurn,
+    input.activeEngineRuntimeActivity,
     input.activeEngineSession,
     input.activeLiveState,
     input.activeSessionState,
@@ -529,7 +550,6 @@ export function useAgentGUISessionPresentation(
     input.workspaceId,
     pendingInteractivePrompt
   ]);
-
   return {
     activeConversationBusy,
     composerGate,

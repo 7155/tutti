@@ -123,6 +123,13 @@ export function sessionLifecycleReducer(
         intent.agentSessionId,
         intent.availability
       );
+    case "session/runtimeActivityChanged":
+      return changeRuntimeActivity(
+        state,
+        intent.agentSessionId,
+        intent.state,
+        intent.occurredAtUnixMs
+      );
     case "turn/upserted":
       return reconcilePendingCancels(
         state,
@@ -256,6 +263,50 @@ export function sessionLifecycleReducer(
     default:
       return unchanged(state);
   }
+}
+
+function changeRuntimeActivity(
+  state: SessionLifecycleState,
+  rawAgentSessionId: string,
+  runtimeActivity: SessionOperationState["runtimeActivity"],
+  occurredAtUnixMs: number
+): EngineReducerResult<SessionLifecycleState> {
+  const agentSessionId = rawAgentSessionId.trim();
+  if (!agentSessionId) return unchanged(state);
+  const operation =
+    state.operationBySessionId[agentSessionId] ?? initialOperation();
+  if (occurredAtUnixMs <= 0) {
+    if (
+      operation.runtimeActivity === "idle" &&
+      operation.runtimeActivityOccurredAtUnixMs === 0
+    ) {
+      return unchanged(state);
+    }
+    return result(
+      setOperation(state, agentSessionId, {
+        ...operation,
+        runtimeActivity: "idle",
+        runtimeActivityOccurredAtUnixMs: 0
+      })
+    );
+  }
+  if (
+    occurredAtUnixMs < operation.runtimeActivityOccurredAtUnixMs ||
+    (occurredAtUnixMs === operation.runtimeActivityOccurredAtUnixMs &&
+      operation.runtimeActivity === "idle" &&
+      runtimeActivity === "running") ||
+    (occurredAtUnixMs === operation.runtimeActivityOccurredAtUnixMs &&
+      operation.runtimeActivity === runtimeActivity)
+  ) {
+    return unchanged(state);
+  }
+  return result(
+    setOperation(state, agentSessionId, {
+      ...operation,
+      runtimeActivity,
+      runtimeActivityOccurredAtUnixMs: occurredAtUnixMs
+    })
+  );
 }
 
 function requestInteractionResponse(

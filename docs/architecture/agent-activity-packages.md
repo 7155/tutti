@@ -218,7 +218,10 @@ It owns:
   when the current dispatch creates a new record, not when a rejected duplicate
   finds an older record for the same Session and mode. Prompt submission owns
   routing, the same confirmation window, and the accepted/queued result while
-  its caller retains the stable client submit identity. Stop, Interaction, and
+  its caller retains the stable client submit identity. The queue send command
+  uses a 90-second delivery timeout (aligned with new-Session activation) so
+  inactive-session Resume/Start can finish inside the 120-second confirmation
+  window. Stop, Interaction, and
   settings additionally own command identity plus the 30-second delivery
   timeout.
   Session stop owns the 30-second first-Turn waiting window and duplicate
@@ -486,6 +489,10 @@ Hosts must pass those calls through to the daemon section endpoints so project
 sections come from current user projects and session membership comes from
 persisted `rail_section_key`, not frontend cwd grouping or project-root
 filters.
+Hosts whose first-page section endpoint accepts less than AgentGUI's default
+refresh limit declare the positive backend maximum through
+`conversationRailQueryLimits.sectionRefreshLimitMax`; AgentGUI clamps adaptive
+same-scope and scope-switch refreshes before calling `listSessionSections`.
 The published `@tutti-os/agent-gui/conversation-rail-runtime` entrypoint owns
 the host-neutral Rail query/mutation cohort. Its stable host surface is the
 typed `createAgentConversationRailRuntime` factory plus the runtime/source

@@ -147,6 +147,18 @@ DEV_GUI_KIMI_CODE_PACKAGE_DIR=/path/to/build/tutti-agent/package \
   make dev-gui
 ```
 
+`make dev-gui` starts the Electron renderer dev server on Vite's default
+port 5173. When another local checkout or another electron-vite project
+already occupies that port, set `TUTTI_DESKTOP_DEV_PORT` to pin this run to a
+different port; the server then uses `strictPort`, so a collision fails at
+startup instead of silently hopping ports.
+
+Example:
+
+```sh
+TUTTI_DESKTOP_DEV_PORT=5273 make dev-gui
+```
+
 | Variable                                         | Owner document                                                                        | Purpose                                                                                                                                                                                     |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `TUTTI_AGENT_CONTEXT_CONFIG`                     | [Local State Storage](./local-state-storage.md)                                       | Overrides the migrated agent context config path for tests and diagnostics.                                                                                                                 |
@@ -159,6 +171,7 @@ DEV_GUI_KIMI_CODE_PACKAGE_DIR=/path/to/build/tutti-agent/package \
 | `TUTTI_AGENT_SESSION_REPLAY_DAEMON_EXECUTABLE`   | [Agent Session Replay](../architecture/agent-session-replay.md)                       | Selects the isolated current-build tuttid executable used by the developer record/replay runner.                                                                                            |
 | `TUTTI_AGENT_SESSION_REPLAY_RUNTIME_PARENT`      | [Agent Session Replay](../architecture/agent-session-replay.md)                       | Selects the parent directory for disposable developer Replay runtime state and user data.                                                                                                   |
 | `DEV_GUI_KIMI_CODE_PACKAGE_DIR`                  | [Development scripts](../../tools/scripts/README.md)                                  | Selects an existing unpacked local Kimi package for one `make dev-gui` run; invalid paths fail before launch.                                                                               |
+| `TUTTI_DESKTOP_DEV_PORT`                         | This document                                                                         | Pins the `make dev-gui` Electron renderer dev server to an explicit port with `strictPort`; unset uses the Vite default 5173.                                                               |
 | `TUTTI_AGENT_EXTENSION_<KEY>_PACKAGE_DIR`        | [Agent Extensions](../architecture/agent-extensions.md)                               | Selects a validated local package snapshot in development; does not enable the source.                                                                                                      |
 | `TUTTI_AGENT_CWD`                                | This document                                                                         | Mirrors the prepared agent runtime working directory for diagnostics.                                                                                                                       |
 | `TUTTI_AGENT_EXTRA_SKILL_ROOTS_JSON`             | [Agent Runtime Preparation](../architecture/agent-runtime-preparation.md)             | Internal runtimeprep-to-app-server Adapter handoff for validated Tutti-managed Skill roots; stripped before provider launch and not a supported user override.                              |

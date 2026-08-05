@@ -152,7 +152,7 @@ func validateInstallerSpec(spec InstallerSpec) error {
 			return fmt.Errorf("official script shell is required")
 		}
 		if spec.WindowsFallback == providerregistry.InstallerWindowsFallbackPowerShell && strings.TrimSpace(spec.WindowsPowerShellCommand) == "" {
-			return fmt.Errorf("Windows PowerShell installer command is required")
+			return fmt.Errorf("windows PowerShell installer command is required")
 		}
 	case InstallerKindGitHubReleaseBinary:
 		if spec.ReleaseBinary == nil {

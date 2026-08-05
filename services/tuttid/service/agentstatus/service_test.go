@@ -819,7 +819,7 @@ func TestServiceListStandardACPHandshakeProbe(t *testing.T) {
 			provider:   "cursor",
 			binaryName: "cursor-agent",
 			script:     "#!/bin/sh\ncase \"$*\" in\n*acp*) sleep 5 ;;\nesac\nexit 0\n",
-			wantStatus: AvailabilityNotInstalled,
+			wantStatus: AvailabilityUnknown,
 			wantReason: "acp_adapter_launch_failed",
 		},
 		{
@@ -829,7 +829,7 @@ func TestServiceListStandardACPHandshakeProbe(t *testing.T) {
 			script: "#!/bin/sh\ncase \"$*\" in\n" +
 				"*acp*) echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32000,\"message\":\"unsupported\"}}'; exit 1 ;;\n" +
 				"esac\nexit 0\n",
-			wantStatus: AvailabilityNotInstalled,
+			wantStatus: AvailabilityUnknown,
 			wantReason: "acp_adapter_launch_failed",
 		},
 		{
@@ -844,7 +844,7 @@ func TestServiceListStandardACPHandshakeProbe(t *testing.T) {
 			provider:   "opencode",
 			binaryName: "opencode",
 			script:     "#!/bin/sh\ncase \"$*\" in\n*acp*) sleep 5 ;;\nesac\nexit 0\n",
-			wantStatus: AvailabilityNotInstalled,
+			wantStatus: AvailabilityUnknown,
 			wantReason: "acp_adapter_launch_failed",
 		},
 		{
@@ -854,7 +854,7 @@ func TestServiceListStandardACPHandshakeProbe(t *testing.T) {
 			script: "#!/bin/sh\ncase \"$*\" in\n" +
 				"*acp*) echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32000,\"message\":\"unsupported\"}}'; exit 1 ;;\n" +
 				"esac\nexit 0\n",
-			wantStatus: AvailabilityNotInstalled,
+			wantStatus: AvailabilityUnknown,
 			wantReason: "acp_adapter_launch_failed",
 		},
 		{
@@ -871,7 +871,7 @@ func TestServiceListStandardACPHandshakeProbe(t *testing.T) {
 			script: "#!/bin/sh\ncase \"$*\" in\n" +
 				"*acp*) echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}'; exit 0 ;;\n" +
 				"esac\nexit 0\n",
-			wantStatus: AvailabilityNotInstalled,
+			wantStatus: AvailabilityUnknown,
 			wantReason: "acp_adapter_launch_failed",
 		},
 		{
@@ -881,7 +881,7 @@ func TestServiceListStandardACPHandshakeProbe(t *testing.T) {
 			script: "#!/bin/sh\ncase \"$*\" in\n" +
 				"*acp*) echo '{\"id\":1,\"result\":{}}'; exit 0 ;;\n" +
 				"esac\nexit 0\n",
-			wantStatus: AvailabilityNotInstalled,
+			wantStatus: AvailabilityUnknown,
 			wantReason: "acp_adapter_launch_failed",
 		},
 		{
@@ -891,7 +891,7 @@ func TestServiceListStandardACPHandshakeProbe(t *testing.T) {
 			script: "#!/bin/sh\ncase \"$*\" in\n" +
 				"*acp*) echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}'; exit 0 ;;\n" +
 				"esac\nexit 0\n",
-			wantStatus: AvailabilityNotInstalled,
+			wantStatus: AvailabilityUnknown,
 			wantReason: "acp_adapter_launch_failed",
 		},
 		{
@@ -901,7 +901,7 @@ func TestServiceListStandardACPHandshakeProbe(t *testing.T) {
 			script: "#!/bin/sh\ncase \"$*\" in\n" +
 				"*acp*) echo '{\"id\":1,\"result\":{}}'; exit 0 ;;\n" +
 				"esac\nexit 0\n",
-			wantStatus: AvailabilityNotInstalled,
+			wantStatus: AvailabilityUnknown,
 			wantReason: "acp_adapter_launch_failed",
 		},
 	} {

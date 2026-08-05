@@ -8555,7 +8555,35 @@ components:
         terminalCommand:
           type: string
           nullable: true
-          description: Ready-to-run interactive sign-in command for terminal-type methods.
+          description: Ready-to-run interactive sign-in launch command for terminal-type methods.
+        terminalStartupAction:
+          allOf:
+            - $ref: "#/components/schemas/AgentTargetTerminalStartupAction"
+          nullable: true
+          description: Optional typed terminal action submitted after the interactive runtime reaches its declared ready marker.
+    AgentTargetTerminalStartupAction:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - commandName
+        - readyText
+      properties:
+        type:
+          type: string
+          enum:
+            - slash_command
+          x-enum-varnames:
+            - AgentTargetTerminalStartupActionTypeSlashCommand
+        commandName:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[a-z0-9][a-z0-9._:-]{0,63}$"
+        readyText:
+          type: string
+          minLength: 1
+          maxLength: 256
     InstallAgentTargetRuntimeRequest:
       type: object
       additionalProperties: false
@@ -11898,6 +11926,9 @@ components:
       enum:
         - slash_command
         - badge_remove
+      x-enum-varnames:
+        - TuttiModeActivationSourceSlashCommand
+        - TuttiModeActivationSourceBadgeRemove
     TuttiModeActivationRevision:
       type: object
       additionalProperties: false
@@ -12773,6 +12804,8 @@ components:
           type: string
           enum:
             - slash_command
+          x-enum-varnames:
+            - WorkspaceAgentCapabilityReferenceSourceSlashCommand
     WorkspaceAgentCompletedCommand:
       type: object
       description: >-

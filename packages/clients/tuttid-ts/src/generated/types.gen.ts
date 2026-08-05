@@ -717,9 +717,19 @@ export type AgentTargetAuthMethod = {
    */
   type?: string | null;
   /**
-   * Ready-to-run interactive sign-in command for terminal-type methods.
+   * Ready-to-run interactive sign-in launch command for terminal-type methods.
    */
   terminalCommand?: string | null;
+  /**
+   * Optional typed terminal action submitted after the interactive runtime reaches its declared ready marker.
+   */
+  terminalStartupAction?: AgentTargetTerminalStartupAction | null;
+};
+
+export type AgentTargetTerminalStartupAction = {
+  type: "slash_command";
+  commandName: string;
+  readyText: string;
 };
 
 export type InstallAgentTargetRuntimeRequest = {

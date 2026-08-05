@@ -1906,6 +1906,18 @@ Engine migration preserves all host observability and product integration.
 
 `AgentHostApi` supplies host capabilities only: files, clipboard, project/account lookup, Agent Target setup/probes, diagnostics, and OS/Workbench helpers. It must not become a Session, Turn, timeline, or write source again.
 
+Terminal authentication is one such Host capability. AgentGUI receives an
+optional atomic `terminalStartupAction` containing a safe slash-command name
+and literal readiness marker, then returns it unchanged through
+`terminalLogin.run`; neither layer accepts or synthesizes raw terminal input.
+Hosts must explicitly list supported startup action types; an older Host that
+omits that capability may still expose the manual command fallback but cannot
+silently launch a typed action it does not implement.
+The Desktop Workbench presenter owns node launch, exact-session readiness
+matching, slash submission, diagnostics, and close cleanup. Its startup result
+must settle before the setup-readiness monitor starts, so timeout, cancellation,
+or transport failure cannot leave a second polling lifecycle behind.
+
 The optional quick-prompt library follows that host-capability boundary. Tutti
 Desktop projects the device-global `tuttid` quick-prompt CRUD service through
 `AgentHostApi.quickPrompts`; AgentGUI owns only the picker/editor presentation

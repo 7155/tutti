@@ -69,6 +69,7 @@ import {
 import type { WorkspaceLaunchpadOpenTrigger } from "../services/workspaceLaunchpadAnalytics.ts";
 import { registerWorkspaceBrowserLaunchHandler } from "../services/workspaceBrowserLaunchCoordinator.ts";
 import { createWorkbenchWorkspaceBrowserPresenter } from "../services/workbenchWorkspaceBrowserPresenter.ts";
+import { createWorkbenchTerminalLoginPresenter } from "../services/workbenchTerminalLoginPresenter.ts";
 import { isWorkspaceMissionControlLayoutShortcut } from "../services/workspaceMissionControlShortcut.ts";
 import {
   registerWorkspaceFilesLaunchHandler,
@@ -105,7 +106,6 @@ import { WorkspaceFallbackState } from "./WorkspaceFallbackState.tsx";
 import type { WorkspaceWorkbenchHostSessionBinding } from "../services/workspaceWorkbenchHostService.interface.ts";
 import { useWorkspaceOnboardingAutoOpen } from "./useWorkspaceOnboardingAutoOpen.ts";
 import { resolveWorkspaceWorkbenchLayoutConstraints } from "./workspaceWorkbenchLayoutConstraints.ts";
-import { defaultWorkspaceTerminalWorkbenchTypeId } from "../services/workspaceWorkbenchNodeIds.ts";
 import type {
   DesktopRuntimeApi,
   DesktopWorkspaceAppExternalHostApi
@@ -491,26 +491,11 @@ function ReadyWorkspaceWorkbenchWithSession({
       unregisterTerminalLoginLaunchRef.current =
         registerWorkspaceTerminalLoginLaunchHandler(
           state.workspace.id,
-          async ({ command, cwd }) => {
-            const nodeId = await host.launchNode({
-              payload: {
-                cwd,
-                initialInput: /[\r\n]$/u.test(command)
-                  ? command
-                  : `${command}\n`
-              },
-              reason: "host",
-              typeId: defaultWorkspaceTerminalWorkbenchTypeId
-            });
-            if (!nodeId) {
-              throw new Error("Terminal login did not open a workbench node.");
-            }
-            return {
-              close: () => {
-                host.closeNode(nodeId);
-              }
-            };
-          }
+          createWorkbenchTerminalLoginPresenter({
+            contributions: hostInput.contributions ?? [],
+            host,
+            runtimeApi
+          })
         );
 
       unregisterAgentGuiLaunchRef.current =
@@ -638,7 +623,9 @@ function ReadyWorkspaceWorkbenchWithSession({
     [
       agentEnvService,
       appCenterService,
+      hostInput.contributions,
       runtime,
+      runtimeApi,
       state.workspace.id,
       workspaceAppExternalApi
     ]

@@ -200,6 +200,7 @@ func managedRuntimeIdentity(
 		Launch: runtimeLaunchKey{
 			Executable: installation.Manifest.Runtime.Launch.Executable,
 			Args:       append([]string(nil), installation.Manifest.Runtime.Launch.Args...),
+			Env:        cloneStringMap(installation.Manifest.Runtime.Launch.Env),
 		},
 		PublishUserCommand: installation.Manifest.Runtime.Launch.PublishUserCommand,
 		Discovery:          profile,
@@ -281,8 +282,20 @@ func publishesUserCommand(manifest Manifest) bool {
 }
 
 type runtimeLaunchKey struct {
-	Executable string   `json:"executable"`
-	Args       []string `json:"args"`
+	Executable string            `json:"executable"`
+	Args       []string          `json:"args"`
+	Env        map[string]string `json:"env,omitempty"`
+}
+
+func cloneStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(input))
+	for key, value := range input {
+		result[key] = value
+	}
+	return result
 }
 
 func managedRuntimeRoot(runtimeInstallDir, agentKey, runtimeIdentity string) string {

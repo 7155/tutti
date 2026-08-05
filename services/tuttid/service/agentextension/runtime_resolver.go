@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"runtime"
+	"sort"
 	"strings"
 
 	agentruntime "github.com/tutti-os/tutti/packages/agent/daemon/runtime"
@@ -36,6 +36,7 @@ type RuntimeBinding struct {
 	SetModelReasoningEffortMeta  bool
 	Capabilities                 []string
 	ExecutableIdentity           *agentruntime.ExecutableIdentity
+	Env                          []string
 }
 
 func (r RuntimeResolver) ResolveAdapter(ctx context.Context, input agentruntime.AdapterResolveInput) (agentruntime.Adapter, error) {
@@ -87,21 +88,29 @@ func runtimeAdapterConfig(binding RuntimeBinding, agentTargetID string) agentrun
 		AgentTargetID:                strings.TrimSpace(agentTargetID),
 		InstallationID:               binding.Installation.ID,
 		ExecutableIdentity:           binding.ExecutableIdentity,
-		Env:                          kimiWindowsRuntimeEnv(binding.Installation.Provider),
+		Env:                          append([]string(nil), binding.Env...),
 	}
 }
 
-func kimiWindowsRuntimeEnv(provider string) []string {
-	if runtime.GOOS != "windows" || strings.TrimSpace(provider) != "acp:kimi-code" {
+func resolveRuntimeLaunchEnv(declarations map[string]string) []string {
+	if len(declarations) == 0 {
 		return nil
 	}
-	// Kimi Code uses Git Bash as its Windows shell. The desktop packages a
-	// non-admin MSYS2 bash and exposes its absolute path to tuttid; pass that
-	// path into the ACP process instead of relying on the user's PATH or an
-	// administrator-installed Git for Windows.
-	shell := strings.TrimSpace(os.Getenv("TUTTI_MANAGED_POSIX_SHELL"))
-	if shell == "" {
-		return nil
+	keys := make([]string, 0, len(declarations))
+	for key := range declarations {
+		keys = append(keys, key)
 	}
-	return []string{"KIMI_SHELL_PATH=" + shell}
+	sort.Strings(keys)
+	result := make([]string, 0, len(keys))
+	for _, key := range keys {
+		matches := runtimeEnvironmentReferencePattern.FindStringSubmatch(strings.TrimSpace(declarations[key]))
+		if len(matches) != 2 {
+			continue
+		}
+		value := strings.TrimSpace(os.Getenv(matches[1]))
+		if value != "" {
+			result = append(result, key+"="+value)
+		}
+	}
+	return result
 }

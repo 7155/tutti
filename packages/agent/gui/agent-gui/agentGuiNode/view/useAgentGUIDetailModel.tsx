@@ -417,7 +417,6 @@ export function useAgentGUIDetailModel(input: Input) {
       tuttiBudgetTitle: labels.tuttiBudgetTitle,
       tuttiBudgetEffectLabel: labels.tuttiBudgetEffectLabel,
       tuttiBudgetSpeedLabel: labels.tuttiBudgetSpeedLabel,
-      tuttiBudgetPreviewTitle: labels.tuttiBudgetPreviewTitle,
       tuttiBudgetPreviewHint: labels.tuttiBudgetPreviewHint,
       tuttiBudgetPreviewCost: labels.tuttiBudgetPreviewCost,
       tuttiBudgetPreviewBalance: labels.tuttiBudgetPreviewBalance,
@@ -428,8 +427,6 @@ export function useAgentGUIDetailModel(input: Input) {
         labels.tuttiBudgetModelPreferenceBalance,
       tuttiBudgetModelPreferencePowerful:
         labels.tuttiBudgetModelPreferencePowerful,
-      tuttiBudgetModelPreferenceFastestSuitable:
-        labels.tuttiBudgetModelPreferenceFastestSuitable,
       tuttiBudgetParallelismLabel: labels.tuttiBudgetParallelismLabel,
       tuttiBudgetParallelismValue: labels.tuttiBudgetParallelismValue,
       planModeDescription: labels.planModeDescription,
@@ -596,7 +593,6 @@ export function useAgentGUIDetailModel(input: Input) {
       labels.tuttiBudgetTitle,
       labels.tuttiBudgetEffectLabel,
       labels.tuttiBudgetSpeedLabel,
-      labels.tuttiBudgetPreviewTitle,
       labels.tuttiBudgetPreviewHint,
       labels.tuttiBudgetPreviewCost,
       labels.tuttiBudgetPreviewBalance,
@@ -605,7 +601,6 @@ export function useAgentGUIDetailModel(input: Input) {
       labels.tuttiBudgetModelPreferenceCost,
       labels.tuttiBudgetModelPreferenceBalance,
       labels.tuttiBudgetModelPreferencePowerful,
-      labels.tuttiBudgetModelPreferenceFastestSuitable,
       labels.tuttiBudgetParallelismLabel,
       labels.tuttiBudgetParallelismValue,
       labels.planModeDescription,

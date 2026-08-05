@@ -131,7 +131,6 @@ export interface AgentGUIViewLabels extends AgentGUIProviderReadinessLabels {
   tuttiBudgetTitle: string;
   tuttiBudgetEffectLabel: string;
   tuttiBudgetSpeedLabel: string;
-  tuttiBudgetPreviewTitle: string;
   tuttiBudgetPreviewHint: string;
   tuttiBudgetPreviewCost: string;
   tuttiBudgetPreviewBalance: string;
@@ -140,7 +139,6 @@ export interface AgentGUIViewLabels extends AgentGUIProviderReadinessLabels {
   tuttiBudgetModelPreferenceCost: string;
   tuttiBudgetModelPreferenceBalance: string;
   tuttiBudgetModelPreferencePowerful: string;
-  tuttiBudgetModelPreferenceFastestSuitable: string;
   tuttiBudgetParallelismLabel: string;
   tuttiBudgetParallelismValue: (count: number) => string;
   tuttiModeUpdateFailed: string;

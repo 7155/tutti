@@ -5,8 +5,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  StatusDot,
-  Switch
+  StatusDot
 } from "@tutti-os/ui-system/components";
 
 import type { ConnectorMarketI18nRuntime } from "../../i18n/connectorMarketI18n.ts";
@@ -28,9 +27,7 @@ export interface ConnectorManagementDialogProps {
   onAuthorize: () => void;
   onClose: () => void;
   onUninstall: () => void;
-  onWorkspaceEnabledChange: (enabled: boolean) => void;
   permissions: ReadonlyArray<Readonly<ConnectorPermissionView>>;
-  workspaceEnabled: boolean;
 }
 
 export function ConnectorManagementDialog({
@@ -42,9 +39,7 @@ export function ConnectorManagementDialog({
   onAuthorize,
   onClose,
   onUninstall,
-  onWorkspaceEnabledChange,
-  permissions,
-  workspaceEnabled
+  permissions
 }: ConnectorManagementDialogProps) {
   return (
     <DialogContent className="max-h-[min(720px,calc(100vh-32px))] overflow-y-auto sm:max-w-[520px]">
@@ -94,21 +89,6 @@ export function ConnectorManagementDialog({
       <ConnectorDialogSection title={i18n.t("permissionsTitle")}>
         <ConnectorPermissionList i18n={i18n} permissions={permissions} />
       </ConnectorDialogSection>
-
-      <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--border-1)] px-3 py-3">
-        <div className="min-w-0">
-          <div className="text-[12px] font-medium text-[var(--text-primary)]">
-            {i18n.t("workspaceAccess")}
-          </div>
-          <div className="mt-0.5 text-[11px] leading-[1.4] text-[var(--text-secondary)]">
-            {i18n.t("workspaceAccessDescription")}
-          </div>
-        </div>
-        <Switch
-          checked={workspaceEnabled}
-          onCheckedChange={onWorkspaceEnabledChange}
-        />
-      </div>
 
       <DialogFooter className="sm:justify-between">
         <Button

@@ -57,7 +57,6 @@ const (
 	OperationKindInstall                 OperationKind = "install"
 	OperationKindUninstall               OperationKind = "uninstall"
 	OperationKindStartAuthorization      OperationKind = "start_authorization"
-	OperationKindSetWorkspaceEnabled     OperationKind = "set_workspace_enabled"
 	OperationKindDisconnectAuthorization OperationKind = "disconnect_authorization"
 )
 
@@ -191,40 +190,32 @@ type Compatibility struct {
 	Reason string             `json:"reason,omitempty"`
 }
 
-type WorkspaceBinding struct {
-	WorkspaceID string `json:"workspaceId"`
-	Enabled     bool   `json:"enabled"`
-}
-
 type Connector struct {
-	Key              string            `json:"key"`
-	Release          Release           `json:"release"`
-	Installation     Installation      `json:"installation"`
-	Authorization    Authorization     `json:"authorization"`
-	Compatibility    Compatibility     `json:"compatibility"`
-	WorkspaceBinding *WorkspaceBinding `json:"workspaceBinding,omitempty"`
-	Revision         uint64            `json:"revision"`
+	Key           string        `json:"key"`
+	Release       Release       `json:"release"`
+	Installation  Installation  `json:"installation"`
+	Authorization Authorization `json:"authorization"`
+	Compatibility Compatibility `json:"compatibility"`
+	Revision      uint64        `json:"revision"`
 }
 
 type Operation struct {
-	OperationID      string             `json:"operationId"`
-	ClientRequestID  string             `json:"clientRequestId"`
-	ConnectorKey     string             `json:"connectorKey,omitempty"`
-	Kind             OperationKind      `json:"kind"`
-	State            OperationState     `json:"state"`
-	Stage            OperationStage     `json:"stage,omitempty"`
-	Target           *OperationTarget   `json:"target,omitempty"`
-	WorkspaceID      string             `json:"workspaceId,omitempty"`
-	WorkspaceEnabled *bool              `json:"workspaceEnabled,omitempty"`
-	HostGeneration   HostGeneration     `json:"hostGeneration,omitempty"`
-	Execution        OperationExecution `json:"execution,omitempty"`
-	Attempt          uint32             `json:"attempt"`
-	LeaseOwner       string             `json:"leaseOwner,omitempty"`
-	LeaseToken       uint64             `json:"leaseToken,omitempty"`
-	LeaseExpiresAt   *time.Time         `json:"leaseExpiresAt,omitempty"`
-	FailureCode      string             `json:"failureCode,omitempty"`
-	CreatedAt        time.Time          `json:"createdAt"`
-	UpdatedAt        time.Time          `json:"updatedAt"`
+	OperationID     string             `json:"operationId"`
+	ClientRequestID string             `json:"clientRequestId"`
+	ConnectorKey    string             `json:"connectorKey,omitempty"`
+	Kind            OperationKind      `json:"kind"`
+	State           OperationState     `json:"state"`
+	Stage           OperationStage     `json:"stage,omitempty"`
+	Target          *OperationTarget   `json:"target,omitempty"`
+	HostGeneration  HostGeneration     `json:"hostGeneration,omitempty"`
+	Execution       OperationExecution `json:"execution,omitempty"`
+	Attempt         uint32             `json:"attempt"`
+	LeaseOwner      string             `json:"leaseOwner,omitempty"`
+	LeaseToken      uint64             `json:"leaseToken,omitempty"`
+	LeaseExpiresAt  *time.Time         `json:"leaseExpiresAt,omitempty"`
+	FailureCode     string             `json:"failureCode,omitempty"`
+	CreatedAt       time.Time          `json:"createdAt"`
+	UpdatedAt       time.Time          `json:"updatedAt"`
 }
 
 // OperationTarget freezes the exact release identity at command acceptance so
@@ -262,16 +253,16 @@ type RuntimeActivationReceipt struct {
 }
 
 // HostGeneration fences every MCP/CLI route and child process. BootEpoch
-// changes on daemon restart and Generation changes on reconcile or workspace
+// changes on daemon restart and Generation changes on reconcile or runtime
 // deactivation.
 type HostGeneration struct {
 	BootEpoch  string `json:"bootEpoch"`
 	Generation uint64 `json:"generation"`
 }
 
-type WorkspaceRuntimeReceipt struct {
+type RuntimeReceipt struct {
 	OperationID   string         `json:"operationId"`
-	WorkspaceID   string         `json:"workspaceId"`
+	ConnectionID  string         `json:"connectionId"`
 	ConnectorKey  string         `json:"connectorKey"`
 	ReleaseDigest string         `json:"releaseDigest"`
 	Generation    HostGeneration `json:"generation"`
@@ -301,13 +292,6 @@ type Mutation struct {
 type ConnectorMutation struct {
 	Mutation
 	ConnectorKey string `json:"connectorKey"`
-	WorkspaceID  string `json:"workspaceId,omitempty"`
-}
-
-type SetWorkspaceEnabledCommand struct {
-	ConnectorMutation
-	WorkspaceID string `json:"workspaceId"`
-	Enabled     bool   `json:"enabled"`
 }
 
 type MutationResult struct {
@@ -321,10 +305,4 @@ type AuthorizationResult struct {
 	Operation        Operation `json:"operation"`
 	AuthorizationURL string    `json:"authorizationUrl,omitempty"`
 	Revision         uint64    `json:"revision"`
-}
-
-type WorkspaceBindingResult struct {
-	Connector Connector `json:"connector"`
-	Operation Operation `json:"operation"`
-	Revision  uint64    `json:"revision"`
 }

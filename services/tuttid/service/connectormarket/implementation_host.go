@@ -67,7 +67,7 @@ type trackedConnectorProcess struct {
 
 type connectorRoute struct {
 	id            string
-	workspaceID   string
+	connectionID  string
 	connectorKey  string
 	releaseDigest string
 	generation    market.HostGeneration
@@ -80,6 +80,9 @@ type connectorRoute struct {
 	fenced        bool
 	mcpClient     *mcpservice.StdioClient
 	executionRoot string
+	installedRoot string
+	displayName   string
+	description   string
 }
 
 type connectorCommand struct {
@@ -102,43 +105,47 @@ func NewImplementationHost(config ImplementationHostConfig) (*ImplementationHost
 		routes: make(map[string]*connectorRoute), fences: make(map[string]market.HostGeneration), transitions: make(map[string]*sync.Mutex)}, nil
 }
 
-func (host *ImplementationHost) Reconcile(ctx context.Context, request market.WorkspaceReconcileRequest) (market.WorkspaceRuntimeReceipt, error) {
-	if host == nil || !hostIdentityPattern.MatchString(request.WorkspaceID) || !hostIdentityPattern.MatchString(request.Connector.Key) || request.Generation.BootEpoch == "" || request.Generation.Generation == 0 {
-		return market.WorkspaceRuntimeReceipt{}, errors.New("connector workspace reconcile identity is invalid")
+func (host *ImplementationHost) Reconcile(ctx context.Context, request market.RuntimeReconcileRequest) (market.RuntimeReceipt, error) {
+	if host == nil || !hostIdentityPattern.MatchString(request.ConnectionID) || !hostIdentityPattern.MatchString(request.Connector.Key) || request.Generation.BootEpoch == "" || request.Generation.Generation == 0 {
+		return market.RuntimeReceipt{}, errors.New("connector runtime reconcile identity is invalid")
 	}
-	key := connectorRouteKey(request.WorkspaceID, request.Connector.Key)
+	key := connectorRouteKey(request.ConnectionID, request.Connector.Key)
 	if !request.Enabled {
 		if err := host.removeRoute(key, request.Generation, "", time.Time{}); err != nil {
-			return market.WorkspaceRuntimeReceipt{}, err
+			return market.RuntimeReceipt{}, err
 		}
-		return market.WorkspaceRuntimeReceipt{OperationID: request.OperationID, WorkspaceID: request.WorkspaceID,
+		return market.RuntimeReceipt{OperationID: request.OperationID, ConnectionID: request.ConnectionID,
 			ConnectorKey: request.Connector.Key, ReleaseDigest: request.Connector.Installation.InstalledReleaseDigest, Generation: request.Generation}, nil
 	}
 	if request.Connector.Authorization.State != market.AuthorizationStateNotRequired || request.Connector.Release.Manifest.AuthorizationKind != "none" {
-		return market.WorkspaceRuntimeReceipt{}, errors.New("connector credential broker is not available for authorized connectors")
+		return market.RuntimeReceipt{}, errors.New("connector credential broker is not available for authorized connectors")
 	}
 	if request.Connector.Installation.State != market.InstallationStateInstalled ||
 		request.Connector.Installation.InstalledReleaseDigest != request.Connector.Release.ReleaseDigest {
-		return market.WorkspaceRuntimeReceipt{}, errors.New("connector installed release is not active")
+		return market.RuntimeReceipt{}, errors.New("connector installed release is not active")
 	}
 	prepared, err := host.artifacts.ResolvePrepared(ctx, request.Connector.Release)
 	if err != nil {
-		return market.WorkspaceRuntimeReceipt{}, fmt.Errorf("resolve prepared connector artifact: %w", err)
+		return market.RuntimeReceipt{}, fmt.Errorf("resolve prepared connector artifact: %w", err)
 	}
+	installedRoot := prepared.PreparedPath
 	executionRoot, err := host.createExecutionSnapshot(prepared)
 	if err != nil {
-		return market.WorkspaceRuntimeReceipt{}, fmt.Errorf("create connector execution snapshot: %w", err)
+		return market.RuntimeReceipt{}, fmt.Errorf("create connector execution snapshot: %w", err)
 	}
 	prepared.PreparedPath = executionRoot
 	route, err := host.buildManagedRoute(ctx, request, prepared)
 	if err != nil {
 		_ = removeExecutionSnapshot(executionRoot)
-		return market.WorkspaceRuntimeReceipt{}, err
+		return market.RuntimeReceipt{}, err
 	}
 	route.executionRoot = executionRoot
+	route.installedRoot = installedRoot
+	route.displayName = request.Connector.Release.Manifest.DisplayName
+	route.description = request.Connector.Release.Manifest.Description
 	if err := host.commitRoute(key, route); err != nil {
 		_ = route.close(time.Now().Add(3 * time.Second))
-		return market.WorkspaceRuntimeReceipt{}, err
+		return market.RuntimeReceipt{}, err
 	}
 	if route.mcpClient != nil {
 		go host.monitorMCPRoute(route, route.mcpClient)
@@ -148,7 +155,7 @@ func (host *ImplementationHost) Reconcile(ctx context.Context, request market.Wo
 		routeIDs = append(routeIDs, routeID)
 	}
 	sort.Strings(routeIDs)
-	return market.WorkspaceRuntimeReceipt{OperationID: request.OperationID, WorkspaceID: request.WorkspaceID,
+	return market.RuntimeReceipt{OperationID: request.OperationID, ConnectionID: request.ConnectionID,
 		ConnectorKey: request.Connector.Key, ReleaseDigest: route.releaseDigest, Generation: request.Generation, RouteIDs: routeIDs}, nil
 }
 
@@ -217,7 +224,7 @@ func (host *ImplementationHost) FailClosed(ctx context.Context, deadline time.Ti
 	return host.FenceAll(ctx, deadline)
 }
 
-func (host *ImplementationHost) DeactivateWorkspace(ctx context.Context, request market.WorkspaceDeactivationRequest) error {
+func (host *ImplementationHost) DeactivateRuntime(ctx context.Context, request market.RuntimeDeactivationRequest) error {
 	if host == nil {
 		return errors.New("connector implementation host is unavailable")
 	}
@@ -227,10 +234,10 @@ func (host *ImplementationHost) DeactivateWorkspace(ctx context.Context, request
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return host.removeRoute(connectorRouteKey(request.WorkspaceID, request.ConnectorKey), request.Generation, request.ReleaseDigest, request.Deadline)
+	return host.removeRoute(connectorRouteKey(request.ConnectionID, request.ConnectorKey), request.Generation, request.ReleaseDigest, request.Deadline)
 }
 
-func (host *ImplementationHost) buildManagedRoute(ctx context.Context, request market.WorkspaceReconcileRequest, prepared market.PreparedArtifactReceipt) (*connectorRoute, error) {
+func (host *ImplementationHost) buildManagedRoute(ctx context.Context, request market.RuntimeReconcileRequest, prepared market.PreparedArtifactReceipt) (*connectorRoute, error) {
 	implementation := request.Connector.Release.Manifest.Implementation
 	if implementation.Kind != market.ImplementationKindManagedStdio || implementation.ManagedStdio == nil {
 		return nil, errors.New("only managed_stdio connector implementations are supported")
@@ -247,11 +254,11 @@ func (host *ImplementationHost) buildManagedRoute(ctx context.Context, request m
 	if err := verifyRuntimeABI(managed.Runtime, resolved); err != nil {
 		return nil, err
 	}
-	stateDir, err := secureConnectorStateDir(host.stateRoot, request.WorkspaceID, request.Connector.Key)
+	stateDir, err := secureConnectorStateDir(host.stateRoot, request.ConnectionID, request.Connector.Key)
 	if err != nil {
 		return nil, err
 	}
-	route := &connectorRoute{id: connectorRouteKey(request.WorkspaceID, request.Connector.Key), workspaceID: request.WorkspaceID,
+	route := &connectorRoute{id: connectorRouteKey(request.ConnectionID, request.Connector.Key), connectionID: request.ConnectionID,
 		connectorKey: request.Connector.Key, releaseDigest: request.Connector.Release.ReleaseDigest,
 		generation: request.Generation, capabilities: make(map[string]connectorCommand),
 		processes: make(map[uint64]trackedConnectorProcess), pendingStarts: make(map[uint64]context.CancelFunc)}
@@ -445,8 +452,8 @@ func connectorProcessSpec(route *connectorRoute, language string, executable man
 	if sandbox != nil && len(sandbox.WritablePaths) != 0 {
 		stateDir = sandbox.WritablePaths[0]
 	}
-	return agentruntime.ProcessSpec{Provider: "connector:" + route.connectorKey, RoomID: route.workspaceID, CWD: cwd, Command: command,
-		Env: []string{"TUTTI_CONNECTOR_WORKSPACE_ID=" + route.workspaceID, "TUTTI_CONNECTOR_KEY=" + route.connectorKey,
+	return agentruntime.ProcessSpec{Provider: "connector:" + route.connectorKey, RoomID: route.connectionID, CWD: cwd, Command: command,
+		Env: []string{"TUTTI_CONNECTOR_CONNECTION_ID=" + route.connectionID, "TUTTI_CONNECTOR_KEY=" + route.connectorKey,
 			"TUTTI_CONNECTOR_LANGUAGE=" + language, "TUTTI_CONNECTOR_STATE_DIR=" + stateDir},
 		ExecutableIdentity: &agentruntime.ExecutableIdentity{SHA256: executable.SHA256, SizeBytes: executable.SizeBytes}, ConnectorSandbox: sandbox}
 }
@@ -587,7 +594,7 @@ func connectorCapability(routeID, connectorKey, name, description string, inputS
 var capabilityPartPattern = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,127}$`)
 var hostIdentityPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,190}$`)
 
-func secureConnectorStateDir(root, workspaceID, connectorKey string) (string, error) {
+func secureConnectorStateDir(root, connectionID, connectorKey string) (string, error) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return "", err
 	}
@@ -595,7 +602,7 @@ func secureConnectorStateDir(root, workspaceID, connectorKey string) (string, er
 	if err != nil {
 		return "", err
 	}
-	target := filepath.Join(rootReal, workspaceID, connectorKey)
+	target := filepath.Join(rootReal, connectionID, connectorKey)
 	if err := os.MkdirAll(target, 0o700); err != nil {
 		return "", err
 	}
@@ -622,8 +629,8 @@ func connectorCapabilityID(connectorKey, kind, name string) (string, error) {
 	return "connector." + connectorKey + "." + kind + "." + name, nil
 }
 
-func connectorRouteKey(workspaceID, connectorKey string) string {
-	return workspaceID + "\x00" + connectorKey
+func connectorRouteKey(connectionID, connectorKey string) string {
+	return connectionID + "\x00" + connectorKey
 }
 
 func (host *ImplementationHost) routeTransition(key string) *sync.Mutex {
@@ -649,12 +656,12 @@ func (host *ImplementationHost) commitRoute(key string, next *connectorRoute) er
 	}
 	if fence, exists := host.fences[key]; exists && fence.BootEpoch == next.generation.BootEpoch && next.generation.Generation <= fence.Generation {
 		host.mu.Unlock()
-		return errors.New("connector workspace reconcile generation is fenced")
+		return errors.New("connector runtime reconcile generation is fenced")
 	}
 	current := host.routes[key]
 	if current != nil && !newerOrEqualGeneration(next.generation, current.generation) {
 		host.mu.Unlock()
-		return errors.New("connector workspace reconcile generation is stale")
+		return errors.New("connector runtime reconcile generation is stale")
 	}
 	if current != nil {
 		host.commands.remove(current.id)
@@ -671,7 +678,7 @@ func (host *ImplementationHost) commitRoute(key string, next *connectorRoute) er
 	host.mu.Lock()
 	defer host.mu.Unlock()
 	if host.closed || host.routes[key] != current {
-		return errors.New("connector workspace route changed while committing")
+		return errors.New("connector runtime route changed while committing")
 	}
 	host.routes[key] = next
 	host.commands.replace(next)
@@ -692,11 +699,11 @@ func (host *ImplementationHost) removeRoute(key string, generation market.HostGe
 	}
 	if releaseDigest != "" && current.releaseDigest != releaseDigest {
 		host.mu.Unlock()
-		return errors.New("connector workspace deactivation release digest does not match active route")
+		return errors.New("connector runtime deactivation release digest does not match active route")
 	}
 	if generation.BootEpoch != current.generation.BootEpoch {
 		host.mu.Unlock()
-		return errors.New("connector workspace deactivation boot epoch does not match active route")
+		return errors.New("connector runtime deactivation boot epoch does not match active route")
 	}
 	if generation.Generation < current.generation.Generation {
 		host.mu.Unlock()
@@ -1080,6 +1087,56 @@ type ConnectorCommandRegistry struct {
 	published bool
 }
 
+type connectorBrokerRoute struct {
+	connectorKey  string
+	displayName   string
+	description   string
+	installedRoot string
+}
+
+func (registry *ConnectorCommandRegistry) routesFor() []connectorBrokerRoute {
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
+	if !registry.published {
+		return nil
+	}
+	result := make([]connectorBrokerRoute, 0, len(registry.routes))
+	for _, route := range registry.routes {
+		result = append(result, connectorBrokerRoute{connectorKey: route.connectorKey, displayName: route.displayName,
+			description: route.description, installedRoot: route.installedRoot})
+	}
+	sort.Slice(result, func(left, right int) bool { return result[left].connectorKey < result[right].connectorKey })
+	return result
+}
+
+func (registry *ConnectorCommandRegistry) invokeInternal(ctx context.Context, connectorKey, capabilityName string, request cliservice.InvokeRequest) (cliservice.CommandOutput, error) {
+	registry.mu.RLock()
+	if !registry.published {
+		registry.mu.RUnlock()
+		return cliservice.CommandOutput{}, cliservice.ErrServiceUnavailable
+	}
+	matches := make([]connectorCommand, 0, 1)
+	for _, route := range registry.routes {
+		if route.connectorKey != connectorKey {
+			continue
+		}
+		for _, command := range route.capabilities {
+			parts := strings.Split(command.capability.ID, ".")
+			if len(parts) >= 4 && strings.Join(parts[3:], ".") == capabilityName {
+				matches = append(matches, command)
+			}
+		}
+	}
+	registry.mu.RUnlock()
+	if len(matches) == 0 {
+		return cliservice.CommandOutput{}, cliservice.InvalidInputReasonError("connector_capability_not_found", "Connector capability was not found", nil)
+	}
+	if len(matches) > 1 {
+		return cliservice.CommandOutput{}, cliservice.InvalidInputReasonError("connector_capability_ambiguous", "Connector capability name is ambiguous", nil)
+	}
+	return matches[0].invoke(ctx, request)
+}
+
 func NewConnectorCommandRegistry() *ConnectorCommandRegistry {
 	return &ConnectorCommandRegistry{routes: make(map[string]*connectorRoute), published: true}
 }
@@ -1102,7 +1159,7 @@ func (registry *ConnectorCommandRegistry) remove(routeID string) {
 	registry.mu.Unlock()
 }
 
-func (registry *ConnectorCommandRegistry) Capabilities(_ context.Context, invokeContext cliservice.InvokeContext) []cliservice.Capability {
+func (registry *ConnectorCommandRegistry) Capabilities(_ context.Context, _ cliservice.InvokeContext) []cliservice.Capability {
 	registry.mu.RLock()
 	defer registry.mu.RUnlock()
 	if !registry.published {
@@ -1110,9 +1167,6 @@ func (registry *ConnectorCommandRegistry) Capabilities(_ context.Context, invoke
 	}
 	result := []cliservice.Capability{}
 	for _, route := range registry.routes {
-		if route.workspaceID != invokeContext.WorkspaceID {
-			continue
-		}
 		for _, command := range route.capabilities {
 			result = append(result, command.capability)
 		}
@@ -1129,9 +1183,6 @@ func (registry *ConnectorCommandRegistry) Invoke(ctx context.Context, request cl
 	}
 	var command *connectorCommand
 	for _, route := range registry.routes {
-		if route.workspaceID != request.Context.WorkspaceID {
-			continue
-		}
 		if candidate, ok := route.capabilities[request.CommandID]; ok {
 			copy := candidate
 			command = &copy

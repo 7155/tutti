@@ -2317,12 +2317,11 @@ test("shared tuttid client preserves connector market read and install routes", 
     )
   );
 
-  assert.deepEqual(await client.getConnectorMarket("workspace-1"), snapshot);
+  assert.deepEqual(await client.getConnectorMarket(), snapshot);
   assert.deepEqual(
     await client.installConnectorMarketConnector("notion", {
       clientRequestId: "request-1",
-      expectedRevision: 7,
-      workspaceId: "workspace-1"
+      expectedRevision: 7
     }),
     mutation
   );
@@ -2331,14 +2330,13 @@ test("shared tuttid client preserves connector market read and install routes", 
     body: null,
     method: "GET",
     path: "/v1/connector-market",
-    query: { workspaceId: "workspace-1" }
+    query: {}
   });
   assertRequest(requests[1]!, {
     authorization: null,
     body: {
       clientRequestId: "request-1",
-      expectedRevision: 7,
-      workspaceId: "workspace-1"
+      expectedRevision: 7
     },
     method: "POST",
     path: "/v1/connector-market/connectors/notion:install",
@@ -2358,8 +2356,7 @@ test("shared tuttid connector client preserves structured market errors", async 
   await assert.rejects(
     client.installConnectorMarketConnector("notion", {
       clientRequestId: "request-1",
-      expectedRevision: 11,
-      workspaceId: "workspace-1"
+      expectedRevision: 11
     }),
     (error: unknown) => {
       assert.ok(error instanceof ConnectorMarketClientError);
@@ -2399,8 +2396,7 @@ test("shared tuttid connector client preserves category and cursor pagination", 
     await client.listConnectorMarketCatalog({
       sectionId: "development",
       pageSize: 20,
-      pageToken: "cursor-1",
-      workspaceId: "workspace-1"
+      pageToken: "cursor-1"
     }),
     page
   );
@@ -2419,8 +2415,7 @@ test("shared tuttid connector client preserves category and cursor pagination", 
     query: {
       pageSize: "20",
       pageToken: "cursor-1",
-      sectionId: "development",
-      workspaceId: "workspace-1"
+      sectionId: "development"
     }
   });
 });

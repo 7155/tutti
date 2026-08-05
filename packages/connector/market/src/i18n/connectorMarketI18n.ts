@@ -50,8 +50,7 @@ const connectorMarketEn = {
   close: "Close",
   connectedStatus: "Connected",
   connectorInitial: "Connector icon for {{name}}",
-  description:
-    "Install and authorize external services for Agents in this workspace",
+  description: "Install and authorize external services for every Agent",
   detailAuthorization: "Authorization",
   detailCompatibility: "Compatibility",
   detailImplementation: "Implementation",
@@ -65,8 +64,11 @@ const connectorMarketEn = {
     "Complete authorization in the browser, then return to Tutti",
   dialogAuthorizationTitle: "Connect {{name}} account",
   dialogManagementDescription:
-    "Review installation, authorization, permissions, and workspace access",
+    "Review installation, authorization, and permissions",
   dialogManagementTitle: "{{name}} connector",
+  dialogInstallationDescription:
+    "Once installed, this connector is available to every Agent.",
+  dialogInstallationTitle: "Install {{name}}",
   exactAccessNotice:
     "The exact resources you can access are determined by your account and organization policies",
   installedTab: "Installed",
@@ -96,10 +98,7 @@ const connectorMarketEn = {
   statusInstalled: "Installed",
   statusNotInstalled: "Not installed",
   statusUnavailable: "Unavailable",
-  title: "Connectors",
-  workspaceAccess: "Workspace access",
-  workspaceAccessDescription:
-    "Allow Agents in the current workspace to use this connector"
+  title: "Connectors"
 } as const satisfies I18nDictionary;
 
 const connectorMarketZhCN = {
@@ -133,7 +132,7 @@ const connectorMarketZhCN = {
   close: "关闭",
   connectedStatus: "已连接",
   connectorInitial: "{{name}} 连接器图标",
-  description: "安装并授权外部服务，让 Agent 在当前工作区安全使用数据与工具",
+  description: "安装并授权外部服务，让所有 Agent 使用数据与工具",
   detailAuthorization: "授权方式",
   detailCompatibility: "兼容性",
   detailImplementation: "实现类型",
@@ -145,8 +144,10 @@ const connectorMarketZhCN = {
     "Tutti 只会在下方列出的权限范围内访问 {{name}}",
   dialogAuthorizationPending: "请在浏览器中完成授权，然后返回 Tutti",
   dialogAuthorizationTitle: "连接 {{name}} 账号",
-  dialogManagementDescription: "查看安装、授权、权限与工作区访问状态",
+  dialogManagementDescription: "查看安装、授权与权限状态",
   dialogManagementTitle: "{{name}} 连接器",
+  dialogInstallationDescription: "安装后，所有 Agent 都可以使用这个连接器。",
+  dialogInstallationTitle: "安装 {{name}}",
   exactAccessNotice: "具体可访问范围由你的账号权限和组织策略决定",
   installedTab: "已安装",
   loading: "正在加载连接器…",
@@ -174,9 +175,7 @@ const connectorMarketZhCN = {
   statusInstalled: "已安装",
   statusNotInstalled: "未安装",
   statusUnavailable: "不可用",
-  title: "连接器",
-  workspaceAccess: "工作区访问",
-  workspaceAccessDescription: "允许当前工作区的 Agent 使用这个连接器"
+  title: "连接器"
 } as const satisfies I18nDictionary;
 
 export type ConnectorMarketI18nKey = keyof typeof connectorMarketEn;

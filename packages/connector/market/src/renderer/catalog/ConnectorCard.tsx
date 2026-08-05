@@ -7,7 +7,7 @@ import { useConnectorMarketServices } from "../ConnectorMarketServicesContext.ts
 import { ConnectorIcon } from "./ConnectorIcon.tsx";
 
 export function ConnectorCard({ connectorKey }: { connectorKey: string }) {
-  const { i18n, market, uiState, view } = useConnectorMarketServices();
+  const { i18n, uiState, view } = useConnectorMarketServices();
   const card = useSnapshot(view.dataStore).cardsByKey[connectorKey];
   if (!card) {
     return null;
@@ -17,7 +17,7 @@ export function ConnectorCard({ connectorKey }: { connectorKey: string }) {
   const status = resolveStatus(card.status, i18n.t);
   const handleAction = () => {
     if (card.action === "install") {
-      void market.install(connectorKey).catch(() => undefined);
+      uiState.openConnector(connectorKey);
       return;
     }
     if (card.action !== "busy") {

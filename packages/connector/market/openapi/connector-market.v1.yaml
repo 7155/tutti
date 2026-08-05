@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Connector Market API Fragment
   version: 1.0.0
-  description: Host-neutral connector catalog, installation, authorization, and workspace-binding contract.
+  description: Host-neutral connector catalog, installation, authorization, and global Agent-access contract.
 tags:
   - name: connector-market
 paths:
@@ -11,8 +11,6 @@ paths:
       operationId: getConnectorMarket
       tags: [connector-market]
       summary: Get the authoritative connector-market snapshot
-      parameters:
-        - $ref: "#/components/parameters/ConnectorMarketWorkspaceID"
       responses:
         "200":
           description: Connector-market snapshot
@@ -51,7 +49,6 @@ paths:
         - $ref: "#/components/parameters/ConnectorMarketSectionID"
         - $ref: "#/components/parameters/ConnectorMarketPageSize"
         - $ref: "#/components/parameters/ConnectorMarketPageToken"
-        - $ref: "#/components/parameters/ConnectorMarketWorkspaceID"
       responses:
         "200":
           description: Connector-market section page
@@ -72,8 +69,6 @@ paths:
       operationId: getConnectorMarketConnector
       tags: [connector-market]
       summary: Get one connector projection
-      parameters:
-        - $ref: "#/components/parameters/ConnectorMarketWorkspaceID"
       responses:
         "200":
           description: Connector projection
@@ -127,7 +122,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ConnectorMarketWorkspaceMutationRequest"
+              $ref: "#/components/schemas/ConnectorMarketMutationRequest"
       responses:
         "202":
           description: Installation operation accepted
@@ -189,7 +184,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ConnectorMarketWorkspaceMutationRequest"
+              $ref: "#/components/schemas/ConnectorMarketMutationRequest"
       responses:
         "200":
           description: Authorization attempt started
@@ -237,36 +232,6 @@ paths:
           $ref: "#/components/responses/ConnectorMarketConflictError"
         "503":
           $ref: "#/components/responses/ConnectorMarketUnavailableError"
-  /v1/connector-market/connectors/{connectorKey}/workspace-binding:set:
-    parameters:
-      - $ref: "#/components/parameters/ConnectorMarketConnectorKey"
-    post:
-      operationId: setConnectorMarketWorkspaceBinding
-      tags: [connector-market]
-      summary: Enable or disable a connector for one workspace
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SetConnectorMarketWorkspaceBindingRequest"
-      responses:
-        "200":
-          description: Updated connector projection
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ConnectorMarketConnectorResponse"
-        "400":
-          $ref: "#/components/responses/ConnectorMarketInvalidRequestError"
-        "401":
-          $ref: "#/components/responses/ConnectorMarketUnauthorizedError"
-        "404":
-          $ref: "#/components/responses/ConnectorMarketNotFoundError"
-        "409":
-          $ref: "#/components/responses/ConnectorMarketConflictError"
-        "503":
-          $ref: "#/components/responses/ConnectorMarketUnavailableError"
   /v1/connector-market/operations/{operationID}:
     parameters:
       - $ref: "#/components/parameters/ConnectorMarketOperationID"
@@ -302,13 +267,6 @@ components:
       name: operationID
       in: path
       required: true
-      schema:
-        type: string
-        minLength: 1
-    ConnectorMarketWorkspaceID:
-      name: workspaceId
-      in: query
-      required: false
       schema:
         type: string
         minLength: 1
@@ -467,8 +425,6 @@ components:
           $ref: "#/components/schemas/ConnectorMarketAuthorization"
         compatibility:
           $ref: "#/components/schemas/ConnectorMarketCompatibility"
-        workspaceBinding:
-          $ref: "#/components/schemas/ConnectorMarketWorkspaceBinding"
         revision:
           type: integer
           format: int64
@@ -620,15 +576,6 @@ components:
           $ref: "#/components/schemas/ConnectorMarketCompatibilityState"
         reason:
           type: string
-    ConnectorMarketWorkspaceBinding:
-      type: object
-      additionalProperties: false
-      required: [workspaceId, enabled]
-      properties:
-        workspaceId:
-          type: string
-        enabled:
-          type: boolean
     ConnectorMarketOperation:
       type: object
       additionalProperties: false
@@ -698,38 +645,6 @@ components:
           type: integer
           format: int64
           minimum: 0
-    ConnectorMarketWorkspaceMutationRequest:
-      type: object
-      additionalProperties: false
-      required: [clientRequestId, expectedRevision, workspaceId]
-      properties:
-        clientRequestId:
-          type: string
-          minLength: 1
-        expectedRevision:
-          type: integer
-          format: int64
-          minimum: 0
-        workspaceId:
-          type: string
-          minLength: 1
-    SetConnectorMarketWorkspaceBindingRequest:
-      type: object
-      additionalProperties: false
-      required: [clientRequestId, expectedRevision, workspaceId, enabled]
-      properties:
-        clientRequestId:
-          type: string
-          minLength: 1
-        expectedRevision:
-          type: integer
-          format: int64
-          minimum: 0
-        workspaceId:
-          type: string
-          minLength: 1
-        enabled:
-          type: boolean
     ConnectorMarketMutationResponse:
       type: object
       additionalProperties: false
@@ -814,7 +729,6 @@ components:
         - install
         - uninstall
         - start_authorization
-        - set_workspace_enabled
         - disconnect_authorization
     ConnectorMarketOperationState:
       type: string

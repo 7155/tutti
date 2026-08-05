@@ -69,11 +69,14 @@ export interface ConnectorAuthorizationDialogView extends ConnectorDialogBaseVie
   pending: boolean;
 }
 
+export interface ConnectorInstallationDialogView extends ConnectorDialogBaseView {
+  kind: "installation";
+}
+
 export interface ConnectorManagementDialogView extends ConnectorDialogBaseView {
   canAuthorize: boolean;
   details: ConnectorDetailFieldView[];
   kind: "management";
-  workspaceEnabled: boolean;
 }
 
 export interface ConnectorBlockedDialogView extends ConnectorDialogBaseView {
@@ -84,6 +87,7 @@ export interface ConnectorBlockedDialogView extends ConnectorDialogBaseView {
 export type ConnectorDialogView =
   | ConnectorAuthorizationDialogView
   | ConnectorBlockedDialogView
+  | ConnectorInstallationDialogView
   | ConnectorManagementDialogView;
 
 export interface ConnectorMarketViewState {

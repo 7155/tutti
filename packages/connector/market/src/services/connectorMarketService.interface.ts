@@ -28,7 +28,6 @@ export interface ConnectorMarketStoreState {
   operationsByConnectorKey: Record<string, ConnectorOperation>;
   lastError: ConnectorMarketErrorShape | null;
   revision: number;
-  workspaceId?: string;
 }
 
 export interface ConnectorMarketServiceDependencies {
@@ -36,7 +35,6 @@ export interface ConnectorMarketServiceDependencies {
   /** Host-owned admission check for transport requests. */
   canRequest?: () => boolean;
   events?: ConnectorMarketEventSource;
-  workspaceId?: string;
   createRequestId?: () => string;
   openAuthorizationUrl?: (url: string) => Promise<void>;
   reportDiagnostic?: (error: unknown) => void;
@@ -60,9 +58,6 @@ export interface IConnectorMarketService {
   uninstall(connectorKey: string): Promise<void>;
   beginAuthorization(connectorKey: string): Promise<void>;
   disconnectAuthorization(connectorKey: string): Promise<void>;
-  setWorkspaceEnabled(connectorKey: string, enabled: boolean): Promise<void>;
-  setWorkspace(workspaceId?: string): Promise<void>;
-
   /** Releases subscriptions and makes the service terminal. */
   dispose(): void;
 }

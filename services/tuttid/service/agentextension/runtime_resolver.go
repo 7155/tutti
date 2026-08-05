@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"runtime"
 	"strings"
 
 	agentruntime "github.com/tutti-os/tutti/packages/agent/daemon/runtime"
@@ -85,5 +87,21 @@ func runtimeAdapterConfig(binding RuntimeBinding, agentTargetID string) agentrun
 		AgentTargetID:                strings.TrimSpace(agentTargetID),
 		InstallationID:               binding.Installation.ID,
 		ExecutableIdentity:           binding.ExecutableIdentity,
+		Env:                          kimiWindowsRuntimeEnv(binding.Installation.Provider),
 	}
+}
+
+func kimiWindowsRuntimeEnv(provider string) []string {
+	if runtime.GOOS != "windows" || strings.TrimSpace(provider) != "acp:kimi-code" {
+		return nil
+	}
+	// Kimi Code uses Git Bash as its Windows shell. The desktop packages a
+	// non-admin MSYS2 bash and exposes its absolute path to tuttid; pass that
+	// path into the ACP process instead of relying on the user's PATH or an
+	// administrator-installed Git for Windows.
+	shell := strings.TrimSpace(os.Getenv("TUTTI_MANAGED_POSIX_SHELL"))
+	if shell == "" {
+		return nil
+	}
+	return []string{"KIMI_SHELL_PATH=" + shell}
 }

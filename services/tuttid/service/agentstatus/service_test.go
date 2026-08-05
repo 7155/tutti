@@ -1453,6 +1453,9 @@ func TestServiceProbeTreatsTemporarilyUnsupportedProviderAsUnsupported(t *testin
 }
 
 func TestServiceRunActionInstallsThenProbesProvider(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script fixture and POSIX adapter probe are not a native Windows test")
+	}
 	home := t.TempDir()
 	binDir := filepath.Join(home, ".nvm", "versions", "node", "v24.12.0", "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {

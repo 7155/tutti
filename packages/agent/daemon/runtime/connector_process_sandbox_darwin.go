@@ -41,7 +41,11 @@ func (darwinConnectorProcessSandbox) Apply(command *exec.Cmd, spec ProcessSpec) 
 }
 
 func darwinConnectorSandboxProfile(policy ConnectorSandboxPolicy, executable string) (string, error) {
-	readPaths, err := normalizedSandboxPaths(append([]string{executable}, policy.ReadOnlyPaths...))
+	secondaryExecutables, err := normalizedSandboxPaths(policy.AllowedExecutables)
+	if err != nil {
+		return "", err
+	}
+	readPaths, err := normalizedSandboxPaths(append(append([]string{executable}, secondaryExecutables...), policy.ReadOnlyPaths...))
 	if err != nil {
 		return "", err
 	}
@@ -55,7 +59,9 @@ func darwinConnectorSandboxProfile(policy ConnectorSandboxPolicy, executable str
 	// Interpreted connector code may fork runtime workers, but it cannot exec a
 	// downloaded helper or discover arbitrary user Mach/XPC services.
 	profile.WriteString("(allow process-fork)\n")
-	profile.WriteString("(allow process-exec (literal " + strconv.Quote(filepath.Clean(executable)) + "))\n")
+	for _, allowed := range append([]string{filepath.Clean(executable)}, secondaryExecutables...) {
+		profile.WriteString("(allow process-exec (literal " + strconv.Quote(allowed) + "))\n")
+	}
 	profile.WriteString("(allow signal (target self))\n(allow sysctl-read)\n")
 	// dyld probes the root directory before resolving the pinned executable.
 	// literal "/" admits only that directory entry read, not descendant data.

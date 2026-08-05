@@ -222,6 +222,7 @@ function connector(key: string, overrides: Partial<Connector> = {}): Connector {
       manifest: {
         authorizationKind: "none",
         displayName: "GitHub",
+        iconUrl: "data:image/png;base64,iVBORw0KGgo=",
         implementation: {
           builtin: { cli: true, mcp: true, providerId: key },
           kind: "builtin"

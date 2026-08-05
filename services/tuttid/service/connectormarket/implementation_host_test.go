@@ -148,7 +148,7 @@ func testCLIHost(t *testing.T, processes agentruntime.ProcessTransport) (*Implem
 	t.Cleanup(func() { _ = host.Close() })
 	connector := market.Connector{Key: "github", Installation: market.Installation{State: market.InstallationStateInstalled,
 		InstalledReleaseDigest: "release-digest"}, Authorization: market.Authorization{State: market.AuthorizationStateNotRequired}}
-	connector.Release = market.Release{ConnectorKey: "github", ReleaseDigest: "release-digest", Manifest: market.Manifest{AuthorizationKind: "none",
+	connector.Release = market.Release{ConnectorKey: "github", ReleaseDigest: "release-digest", Manifest: market.Manifest{AuthorizationKind: "none", IconURL: "data:image/png;base64,iVBORw0KGgo=",
 		Implementation: market.Implementation{Kind: market.ImplementationKindManagedStdio, ManagedStdio: &market.ManagedStdioImplementation{
 			Runtime: market.RuntimeRequirement{Language: "node", Profile: managedruntime.ConnectorNodeProfile, ABI: "node20-" + runtime.GOOS + "-" + runtime.GOARCH},
 			CLI: &market.ManagedCLIInterface{Entrypoint: "connector.js", Commands: []market.CLICommand{{Name: "status",
@@ -207,6 +207,27 @@ func (stub *connectorConnectionStub) Recv() (agentruntime.ProcessFrame, error) {
 	return frame, nil
 }
 
+func TestGenericCLIArgumentsRejectsNonInteractiveOverrides(t *testing.T) {
+	arguments, err := genericCLIArguments([]any{"doc", "list", "--page-size", "20"})
+	if err != nil || len(arguments) != 4 {
+		t.Fatalf("genericCLIArguments() = %#v, %v", arguments, err)
+	}
+	for _, forbidden := range []string{"--yes", "--force", "--force=true"} {
+		if _, err := genericCLIArguments([]any{"doc", "delete", forbidden}); err == nil {
+			t.Fatalf("genericCLIArguments() accepted %q", forbidden)
+		}
+	}
+}
+
+func TestContainsPermissionScopeAcceptsScopedPermission(t *testing.T) {
+	if !containsPermissionScope([]string{"network:larksuite.com"}, "network") {
+		t.Fatal("scoped network permission did not enable connector network access")
+	}
+	if containsPermissionScope([]string{"filesystem:workspace"}, "network") {
+		t.Fatal("unrelated scoped permission enabled connector network access")
+	}
+}
+
 func TestImplementationHostRegistersWorkspaceFencedCLIAndDeactivatesIt(t *testing.T) {
 	root := t.TempDir()
 	entrypoint := filepath.Join(root, "connector.js")
@@ -234,7 +255,7 @@ func TestImplementationHostRegistersWorkspaceFencedCLIAndDeactivatesIt(t *testin
 	}
 	connector := market.Connector{Key: "github", Installation: market.Installation{State: market.InstallationStateInstalled,
 		InstalledReleaseDigest: "release-digest"}, Authorization: market.Authorization{State: market.AuthorizationStateNotRequired}}
-	connector.Release = market.Release{ConnectorKey: "github", ReleaseDigest: "release-digest", Manifest: market.Manifest{AuthorizationKind: "none",
+	connector.Release = market.Release{ConnectorKey: "github", ReleaseDigest: "release-digest", Manifest: market.Manifest{AuthorizationKind: "none", IconURL: "data:image/png;base64,iVBORw0KGgo=",
 		Implementation: market.Implementation{Kind: market.ImplementationKindManagedStdio, ManagedStdio: &market.ManagedStdioImplementation{
 			Runtime: market.RuntimeRequirement{Language: "node", Profile: managedruntime.ConnectorNodeProfile, ABI: "node20-" + runtime.GOOS + "-" + runtime.GOARCH},
 			CLI: &market.ManagedCLIInterface{Entrypoint: "connector.js", Commands: []market.CLICommand{{Name: "status",

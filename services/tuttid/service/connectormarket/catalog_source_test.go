@@ -47,7 +47,7 @@ func TestCatalogSourceMapsPublishedConnectorItems(t *testing.T) {
       "itemType": "connector",
       "itemKey": "github",
       "version": "1.0.0",
-      "display": {"name": "GitHub", "description": "GitHub connector"},
+      "display": {"name": "GitHub", "description": "GitHub connector", "iconUrl": "data:image/png;base64,iVBORw0KGgo="},
       "supportedMarkets": ["overseas"],
       "payload": {
         "permissions": ["repository.read"],
@@ -93,7 +93,7 @@ func TestCatalogSourceMapsPublishedConnectorItems(t *testing.T) {
 		t.Fatalf("snapshot = %#v", result)
 	}
 	got := result.Releases[0]
-	if got.ConnectorKey != "github" || got.ReleaseID != "github@1.0.0" || got.ManifestDigest != "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" || got.Artifact.SizeBytes != 123 || got.Artifact.MediaType != "application/zip" || got.Manifest.Implementation.ManagedStdio == nil {
+	if got.ConnectorKey != "github" || got.ReleaseID != "github@1.0.0" || got.Manifest.SchemaVersion != "1" || got.ManifestDigest != "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" || got.Artifact.SizeBytes != 123 || got.Artifact.MediaType != "application/zip" || got.Manifest.Implementation.ManagedStdio == nil {
 		t.Fatalf("release = %#v", got)
 	}
 }
@@ -154,6 +154,7 @@ func catalogTestRelease() market.Release {
 		Manifest: market.Manifest{
 			SchemaVersion:     "1",
 			DisplayName:       "GitHub",
+			IconURL:           "data:image/png;base64,iVBORw0KGgo=",
 			Permissions:       []string{"repository.read"},
 			AuthorizationKind: "none",
 			Implementation: market.Implementation{

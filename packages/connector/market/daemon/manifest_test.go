@@ -2,8 +2,11 @@ package daemon
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
+
+const testConnectorIconURL = "data:image/png;base64,iVBORw0KGgo="
 
 func TestImplementationRegistryValidatesSupportedManifest(t *testing.T) {
 	registry := NewImplementationRegistry(map[string]ImplementationValidator{
@@ -18,6 +21,7 @@ func TestImplementationRegistryValidatesSupportedManifest(t *testing.T) {
 	err := registry.Validate(Manifest{
 		SchemaVersion: "1",
 		DisplayName:   "GitHub",
+		IconURL:       testConnectorIconURL,
 		Permissions:   []string{"repository.read"},
 		Implementation: Implementation{
 			Kind: ImplementationKindManagedStdio,
@@ -39,6 +43,7 @@ func TestImplementationRegistryRejectsUnknownImplementation(t *testing.T) {
 	err := registry.Validate(Manifest{
 		SchemaVersion:     "1",
 		DisplayName:       "GitHub",
+		IconURL:           testConnectorIconURL,
 		Implementation:    Implementation{Kind: "unknown", Builtin: &BuiltinImplementation{ProviderID: "github", MCP: true}},
 		AuthorizationKind: "none",
 	})
@@ -48,6 +53,59 @@ func TestImplementationRegistryRejectsUnknownImplementation(t *testing.T) {
 	}
 	if domainError.Code != ErrorCodeInvalidManifest {
 		t.Fatalf("code = %q", domainError.Code)
+	}
+}
+
+func TestManagedCLIAllowsTypedNodePackageWithoutActionMappings(t *testing.T) {
+	manifest := Manifest{SchemaVersion: "1", DisplayName: "Lark", IconURL: testConnectorIconURL, AuthorizationKind: "none",
+		Implementation: Implementation{Kind: ImplementationKindManagedStdio, ManagedStdio: &ManagedStdioImplementation{
+			Runtime: RuntimeRequirement{Language: "node", Profile: "connector-node-static", ABI: "node22-darwin-arm64",
+				VersionRange: ">=22.0.0 <23.0.0"},
+			CLI: &ManagedCLIInterface{Entrypoint: "lark-cli", TimeoutMS: 120_000,
+				Install: &CLIInstallation{Kind: "node_package", NodePackage: &NodePackageInstallation{
+					Package: "@larksuite/cli", Version: "1.0.83",
+					Integrity: "sha512-qbJYoJtNch6dV8RvYBO2wpcKO9+6Io3Cuf5alYFzvLbtkSntOKqoc+xHI7p6wRq4oH4F9fydgNJbTGy79ibPdg==",
+					Launch: NodePackageLaunch{Kind: "native", Entrypoint: "bin/lark-cli",
+						SHA256: strings.Repeat("a", 64)},
+					Lifecycle: []NodeLifecycleCommand{{Event: "postinstall", Entrypoint: "scripts/install.js",
+						AllowedExecutables: []string{"curl", "tar"}}},
+				}},
+			},
+		}}}
+	if err := ValidateManifestShape(manifest); err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Implementation.ManagedStdio.CLI.Commands) != 0 {
+		t.Fatal("typed CLI install unexpectedly requires command mappings")
+	}
+}
+
+func TestManagedCLIRequiresExplicitNodeVersionAndExactIntegrity(t *testing.T) {
+	manifest := Manifest{
+		SchemaVersion: "1", DisplayName: "Lark", IconURL: testConnectorIconURL, AuthorizationKind: "none",
+		Implementation: Implementation{
+			Kind: ImplementationKindManagedStdio,
+			ManagedStdio: &ManagedStdioImplementation{
+				Runtime: RuntimeRequirement{Language: "node", Profile: "connector-node-static", ABI: "node22-darwin-arm64"},
+				CLI: &ManagedCLIInterface{
+					Entrypoint: "lark-cli", TimeoutMS: 120_000,
+					Install: &CLIInstallation{Kind: "node_package", NodePackage: &NodePackageInstallation{
+						Package: "@larksuite/cli", Version: "1.0.83", Integrity: "sha512-invalid",
+						Launch: NodePackageLaunch{Kind: "native", Entrypoint: "bin/lark-cli",
+							SHA256: strings.Repeat("a", 64)},
+					}},
+				},
+			},
+		},
+	}
+	err := ValidateManifestShape(manifest)
+	if err == nil || !strings.Contains(err.Error(), "versionRange") {
+		t.Fatalf("error = %v, want explicit Node versionRange rejection", err)
+	}
+	manifest.Implementation.ManagedStdio.Runtime.VersionRange = ">=22.0.0 <23.0.0"
+	err = ValidateManifestShape(manifest)
+	if err == nil || !strings.Contains(err.Error(), "sha512") {
+		t.Fatalf("error = %v, want exact integrity rejection", err)
 	}
 }
 

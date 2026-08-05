@@ -207,6 +207,11 @@ func validateConnectorProcessSpec(spec ProcessSpec) error {
 	if spec.ConnectorSandbox == nil {
 		return errors.New("connector process sandbox policy is required")
 	}
+	for _, executable := range spec.ConnectorSandbox.AllowedExecutables {
+		if !filepath.IsAbs(executable) || strings.ContainsRune(executable, '\x00') {
+			return errors.New("connector sandbox allowed executables must be absolute paths")
+		}
+	}
 	environmentKeys := make(map[string]struct{}, len(spec.Env))
 	for _, item := range spec.Env {
 		key, _, ok := strings.Cut(item, "=")

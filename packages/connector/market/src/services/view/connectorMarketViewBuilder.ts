@@ -129,6 +129,7 @@ function buildConnectorCardView(
     connectorKey: connector.key,
     description: connector.release.manifest.description ?? "",
     displayName: connector.release.manifest.displayName,
+    iconUrl: connector.release.manifest.iconUrl,
     implementationTags: implementationTags(connector),
     installationState: connector.installation.state,
     operationStage,
@@ -154,6 +155,7 @@ function buildConnectorDialogView(
     connectorKey: connector.key,
     description: connector.release.manifest.description ?? "",
     displayName: connector.release.manifest.displayName,
+    iconUrl: connector.release.manifest.iconUrl,
     permissions: connector.release.manifest.permissions.map((permission) => ({
       id: permission,
       name: permission

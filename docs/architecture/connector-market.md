@@ -73,6 +73,74 @@ durable operation
     -> repository result commit
 ```
 
+For a CLI declared with a typed `node_package` installation, the prepared
+artifact contains connector metadata and skills, not the CLI npm package. The
+daemon inserts one additional, replay-safe stage between artifact preparation
+and route reconciliation:
+
+This is the pre-release connector manifest schema v1 contract. It includes
+required icons, typed package installation, explicit Node ranges, and
+mapping-free generic CLI. Because v1 has not shipped yet, these are intentional
+breaking changes to its earlier draft rather than a new protocol major.
+
+```text
+signed node_package intent
+    -> resolve connector-node-static
+    -> verify the signed Node executable, ABI, and version range
+    -> run fixed pnpm through that Node (never a user shell/npm)
+    -> shared content-addressed store + release-scoped link tree
+    -> verify package name, exact version, sha512 integrity, lock, and bin entry
+    -> atomically publish the installation receipt
+```
+
+A device has one active connector Node runtime. Connector manifests may state
+an explicit Node version range, but cannot download Node or select a second
+runtime. An incompatible range rejects installation; it never falls back to
+the user's system Node, nvm, npm global prefix, or `PATH`.
+
+Node package storage separates physical reuse from execution isolation:
+
+```text
+<state-dir>/connectors/node-packages/
+  shared/
+    pnpm-store/   # shared content-addressed package data
+    corepack/     # shared fixed-package-manager cache
+    npm-cache/    # shared registry/download cache
+    pnpm-home/
+  packages/<connector-key>/<release-digest>/
+    package.json
+    pnpm-lock.yaml
+    node_modules/ # hardlinks and release-local links into shared content
+    .tutti-cli-installation.json
+```
+
+The package manager is daemon-selected and version-pinned. Manifests declare a
+typed package name, exact version, integrity, and optional allowlisted Node
+lifecycle entrypoints; they do not provide arbitrary shell commands. Package
+manager lifecycle scripts are disabled. An allowed lifecycle entrypoint is
+launched directly by the same verified Node inside the connector installer
+sandbox. A `node_script` launch continues through that Node; a `native` launch
+must declare the expected platform-binary SHA-256, and activation executes only
+the file matching that digest. All connections and workspaces reuse one installed connector release.
+Removing one connector release must not remove the shared store or caches.
+
+Catalog display metadata includes a required, bounded PNG, WebP, or SVG data
+URL. This makes the icon available before installation and removes connector-key
+special cases from the renderer. The data URL is generated from the source
+connector icon during publishing and is limited to 128 KiB after decoding.
+
+CLI manifests do not require action mappings. When `commands` is absent, the
+host publishes one generic, sandboxed `connector.<key>.cli.run` capability and
+the installed Skill supplies the CLI arguments and workflow. The host rejects
+NUL-bearing arguments and non-interactive `--yes`/`--force` overrides.
+
+The initial Lark profile is representative: it pins `@larksuite/cli@1.0.83`
+and its npm sha512 integrity, requires the shared Node 22 profile, runs only the
+package's declared `scripts/install.js` lifecycle with `curl` and `tar`
+explicitly admitted, and then launches the resulting verified `bin/lark-cli`
+native binary. The connector artifact contains metadata, icon, and Skills, not
+the npm package or a second Node runtime.
+
 Archive handling must reject absolute paths, parent traversal, and symlink or
 hardlink escapes. It must enforce limits for file count, individual file size,
 expanded bytes, and compression ratio. Artifact code is not executed before
@@ -231,8 +299,9 @@ authoritative snapshot reload.
 The registered Tutti Host reads the ordinary TSH market item API, downloads an
 artifact directly from the configured artifact base URL, verifies its declared
 SHA-256 and size, prepares a content-addressed snapshot, selects the local
-Node/Python runtime, and exposes one daemon-owned MCP/CLI runtime per installed
-connector. Crash recovery adopts every host-touching operation into the current
+Node/Python runtime, installs typed Node CLI packages into a private shared-store
+layout when requested, and exposes one daemon-owned MCP/CLI runtime per installed
+connector connection. Crash recovery adopts every host-touching operation into the current
 boot epoch. Startup requires one successful catalog refresh before restoring
 routes; later refresh failures preserve installed last-known-good capabilities
 while the daemon retries.

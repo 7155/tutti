@@ -57,6 +57,20 @@ func TestDarwinConnectorSandboxProfileRunsOnlyThePinnedExecutableWithoutBroadPro
 	}
 }
 
+func TestDarwinConnectorSandboxProfileAllowsOnlyExplicitSecondaryExecutable(t *testing.T) {
+	profile, err := darwinConnectorSandboxProfile(ConnectorSandboxPolicy{ReadOnlyPaths: []string{"/bin"},
+		AllowedExecutables: []string{"/bin/echo"}}, "/usr/bin/true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(connectorSandboxExecutable, "-p", profile, "/bin/echo", "allowed").CombinedOutput(); err != nil {
+		t.Fatalf("explicit executable was denied: %v: %s", err, output)
+	}
+	if output, err := exec.Command(connectorSandboxExecutable, "-p", profile, "/usr/bin/touch", t.TempDir()+"/denied").CombinedOutput(); err == nil {
+		t.Fatalf("undeclared executable was admitted: %s", output)
+	}
+}
+
 func TestDarwinConnectorSandboxProfileRunsManagedNodeEntrypoint(t *testing.T) {
 	nodePath := sandboxCompatibleNodePathForTest(t)
 	artifactRoot := t.TempDir()

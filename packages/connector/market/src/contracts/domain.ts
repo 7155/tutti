@@ -111,6 +111,7 @@ export interface ConnectorCompatibilityRequirements {
 export interface ConnectorManifest {
   schemaVersion: "1";
   displayName: string;
+  iconUrl: string;
   description?: string;
   permissions: string[];
   implementation: ConnectorManifestImplementation;

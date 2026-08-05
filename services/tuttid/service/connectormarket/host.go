@@ -16,6 +16,7 @@ type HostConfig struct {
 	Repository             market.Repository
 	CatalogSource          market.CatalogSource
 	ArtifactPreparer       market.ArtifactPreparer
+	CLIInstallations       market.CLIInstallationManager
 	ImplementationHost     market.ImplementationHost
 	Authorization          market.AuthorizationProvider
 	Compatibility          market.CompatibilityEvaluator
@@ -131,6 +132,7 @@ func NewHost(parent context.Context, config HostConfig) (*Host, error) {
 		Repository:             config.Repository,
 		CatalogSource:          config.CatalogSource,
 		ArtifactPreparer:       config.ArtifactPreparer,
+		CLIInstallations:       config.CLIInstallations,
 		Host:                   activationGate,
 		Authorization:          config.Authorization,
 		Compatibility:          config.Compatibility,

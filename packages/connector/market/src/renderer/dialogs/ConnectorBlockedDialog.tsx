@@ -12,16 +12,16 @@ import type { ConnectorMarketI18nRuntime } from "../../i18n/connectorMarketI18n.
 import { ConnectorIcon } from "../catalog/ConnectorIcon.tsx";
 
 export interface ConnectorBlockedDialogProps {
-  connectorKey: string;
   displayName: string;
+  iconUrl: string;
   i18n: ConnectorMarketI18nRuntime;
   onClose: () => void;
   reason: string;
 }
 
 export function ConnectorBlockedDialog({
-  connectorKey,
   displayName,
+  iconUrl,
   i18n,
   onClose,
   reason
@@ -31,8 +31,8 @@ export function ConnectorBlockedDialog({
       <DialogHeader>
         <div className="flex items-center gap-3 pr-8">
           <ConnectorIcon
-            connectorKey={connectorKey}
             displayName={displayName}
+            iconUrl={iconUrl}
             size="lg"
           />
           <WarningLinedIcon className="size-5 text-[var(--state-warning)]" />

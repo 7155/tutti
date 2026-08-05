@@ -11,14 +11,14 @@ import type { ConnectorMarketI18nRuntime } from "../../i18n/connectorMarketI18n.
 import { ConnectorIcon } from "../catalog/ConnectorIcon.tsx";
 
 export function ConnectorInstallationDialog({
-  connectorKey,
   displayName,
+  iconUrl,
   i18n,
   onClose,
   onInstall
 }: {
-  connectorKey: string;
   displayName: string;
+  iconUrl: string;
   i18n: ConnectorMarketI18nRuntime;
   onClose: () => void;
   onInstall: () => void;
@@ -28,8 +28,8 @@ export function ConnectorInstallationDialog({
       <DialogHeader>
         <div className="flex items-center gap-3 pr-8">
           <ConnectorIcon
-            connectorKey={connectorKey}
             displayName={displayName}
+            iconUrl={iconUrl}
             size="lg"
           />
           <div>

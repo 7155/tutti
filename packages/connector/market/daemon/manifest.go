@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net"
 	"net/url"
@@ -19,6 +20,9 @@ const (
 var connectorKeyPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$`)
 var artifactSHA256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var manifestIdentifierPattern = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,127}$`)
+var nodePackageNamePattern = regexp.MustCompile(`^(?:@[a-z0-9][a-z0-9._-]{0,126}/)?[a-z0-9][a-z0-9._-]{0,126}$`)
+var exactPackageVersionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$`)
+var nodeVersionRangePattern = regexp.MustCompile(`^(?:[<>]=?\s*[0-9]+\.[0-9]+\.[0-9]+(?:\s+|$))+$`)
 
 type ImplementationValidator func(Implementation) error
 
@@ -103,6 +107,9 @@ func ValidateManifestShape(manifest Manifest) error {
 	if strings.TrimSpace(manifest.DisplayName) == "" {
 		return invalidManifest("displayName is required", nil)
 	}
+	if !isSafeConnectorIconURL(manifest.IconURL) {
+		return invalidManifest("iconUrl must be a PNG, WebP, or SVG data URL", nil)
+	}
 	if err := validateUniqueIdentifiers("permission", manifest.Permissions); err != nil {
 		return err
 	}
@@ -156,6 +163,22 @@ func ValidateManifestShape(manifest Manifest) error {
 	return nil
 }
 
+func isSafeConnectorIconURL(value string) bool {
+	value = strings.TrimSpace(value)
+	for _, prefix := range []string{"data:image/png;base64,", "data:image/webp;base64,", "data:image/svg+xml;base64,"} {
+		if !strings.HasPrefix(value, prefix) {
+			continue
+		}
+		encoded := strings.TrimPrefix(value, prefix)
+		if encoded == "" || base64.StdEncoding.DecodedLen(len(encoded)) > 128*1024 {
+			return false
+		}
+		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		return err == nil && len(decoded) > 0 && len(decoded) <= 128*1024
+	}
+	return false
+}
+
 func validateManagedStdio(managed ManagedStdioImplementation, authorizationKind string) error {
 	if managed.Runtime.Language != "node" && managed.Runtime.Language != "python" {
 		return invalidManifest("managed runtime language must be node or python", nil)
@@ -170,8 +193,29 @@ func validateManagedStdio(managed ManagedStdioImplementation, authorizationKind 
 		return invalidManifest("managed MCP entrypoint must be a safe relative path", nil)
 	}
 	if managed.CLI != nil {
-		if !safeRelativeEntrypoint(managed.CLI.Entrypoint) || len(managed.CLI.Commands) == 0 {
-			return invalidManifest("managed CLI entrypoint and commands are required", nil)
+		if managed.Runtime.Language != "node" || managed.Runtime.Profile != "connector-node-static" {
+			return invalidManifest("managed CLI requires the shared connector-node-static runtime", nil)
+		}
+		if !nodeVersionRangePattern.MatchString(strings.TrimSpace(managed.Runtime.VersionRange)) {
+			return invalidManifest("managed CLI requires an explicit comparator-based Node versionRange", nil)
+		}
+		if !safeRelativeEntrypoint(managed.CLI.Entrypoint) {
+			return invalidManifest("managed CLI entrypoint is required", nil)
+		}
+		for _, argument := range managed.CLI.Arguments {
+			if strings.ContainsRune(argument, '\x00') {
+				return invalidManifest("managed CLI arguments must not contain NUL", nil)
+			}
+		}
+		if managed.CLI.Install != nil {
+			if err := validateCLIInstallation(*managed.CLI.Install, managed.Runtime, managed.CLI.Entrypoint); err != nil {
+				return err
+			}
+		}
+		if len(managed.CLI.Commands) == 0 {
+			if managed.CLI.TimeoutMS < 100 || managed.CLI.TimeoutMS > 120_000 {
+				return invalidManifest("managed CLI without command mappings requires timeoutMs between 100 and 120000", nil)
+			}
 		}
 		names := make([]string, 0, len(managed.CLI.Commands))
 		for _, command := range managed.CLI.Commands {
@@ -194,6 +238,71 @@ func validateManagedStdio(managed ManagedStdioImplementation, authorizationKind 
 	}
 	if authorizationKind == "none" && managed.CredentialBrokerProtocol != "" {
 		return invalidManifest("credential broker must not be requested when authorization is none", nil)
+	}
+	return nil
+}
+
+func validateCLIInstallation(install CLIInstallation, runtime RuntimeRequirement, executable string) error {
+	if install.Kind != "node_package" || install.NodePackage == nil {
+		return invalidManifest("managed CLI install must select the node_package branch", nil)
+	}
+	if runtime.Language != "node" || runtime.Profile != "connector-node-static" {
+		return invalidManifest("node package CLI installation requires the shared connector-node-static runtime", nil)
+	}
+	if !nodeVersionRangePattern.MatchString(strings.TrimSpace(runtime.VersionRange)) {
+		return invalidManifest("node package CLI installation requires an explicit comparator-based Node versionRange", nil)
+	}
+	if !manifestIdentifierPattern.MatchString(executable) {
+		return invalidManifest("installed CLI entrypoint must be a stable executable name", nil)
+	}
+	request := install.NodePackage
+	if !nodePackageNamePattern.MatchString(request.Package) {
+		return invalidManifest("node package install package name is invalid", nil)
+	}
+	if !exactPackageVersionPattern.MatchString(request.Version) {
+		return invalidManifest("node package install requires an exact semantic version", nil)
+	}
+	encodedIntegrity, ok := strings.CutPrefix(request.Integrity, "sha512-")
+	decodedIntegrity, decodeErr := base64.StdEncoding.DecodeString(encodedIntegrity)
+	if !ok || decodeErr != nil || len(decodedIntegrity) != 64 {
+		return invalidManifest("node package install requires an exact sha512 integrity", nil)
+	}
+	switch request.Launch.Kind {
+	case "node_script":
+		if strings.TrimSpace(request.Launch.Entrypoint) != "" || strings.TrimSpace(request.Launch.SHA256) != "" {
+			return invalidManifest("node_script package launch uses the declared package bin entrypoint", nil)
+		}
+	case "native":
+		if !safeRelativeEntrypoint(request.Launch.Entrypoint) || !artifactSHA256Pattern.MatchString(request.Launch.SHA256) {
+			return invalidManifest("native node package launch requires a safe package-relative entrypoint and lowercase SHA-256", nil)
+		}
+	default:
+		return invalidManifest("node package launch kind must be node_script or native", nil)
+	}
+	seenEvents := make(map[string]struct{}, len(request.Lifecycle))
+	for _, lifecycle := range request.Lifecycle {
+		if lifecycle.Event != "postinstall" || !safeRelativeEntrypoint(lifecycle.Entrypoint) {
+			return invalidManifest("node package lifecycle only supports a safe postinstall Node entrypoint", nil)
+		}
+		if _, exists := seenEvents[lifecycle.Event]; exists {
+			return invalidManifest("node package lifecycle events must be unique", nil)
+		}
+		seenEvents[lifecycle.Event] = struct{}{}
+		for _, argument := range lifecycle.Arguments {
+			if strings.ContainsRune(argument, '\x00') {
+				return invalidManifest("node package lifecycle arguments must not contain NUL", nil)
+			}
+		}
+		seenExecutables := make(map[string]struct{}, len(lifecycle.AllowedExecutables))
+		for _, executable := range lifecycle.AllowedExecutables {
+			if executable != "curl" && executable != "tar" {
+				return invalidManifest("node package lifecycle executable is not in the host allowlist", nil)
+			}
+			if _, exists := seenExecutables[executable]; exists {
+				return invalidManifest("node package lifecycle executables must be unique", nil)
+			}
+			seenExecutables[executable] = struct{}{}
+		}
 	}
 	return nil
 }

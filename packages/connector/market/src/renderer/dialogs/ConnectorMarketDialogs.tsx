@@ -18,8 +18,8 @@ export function ConnectorMarketDialogs() {
     <Dialog open onOpenChange={(open) => !open && uiState.closeDialog()}>
       {dialog.kind === "installation" ? (
         <ConnectorInstallationDialog
-          connectorKey={dialog.connectorKey}
           displayName={dialog.displayName}
+          iconUrl={dialog.iconUrl}
           i18n={i18n}
           onClose={() => uiState.closeDialog()}
           onInstall={() =>
@@ -31,8 +31,8 @@ export function ConnectorMarketDialogs() {
         />
       ) : dialog.kind === "authorization" ? (
         <ConnectorAuthorizationDialog
-          connectorKey={dialog.connectorKey}
           displayName={dialog.displayName}
+          iconUrl={dialog.iconUrl}
           i18n={i18n}
           pending={dialog.pending}
           permissions={dialog.permissions}
@@ -46,9 +46,9 @@ export function ConnectorMarketDialogs() {
       ) : dialog.kind === "management" ? (
         <ConnectorManagementDialog
           canAuthorize={dialog.canAuthorize}
-          connectorKey={dialog.connectorKey}
           details={dialog.details}
           displayName={dialog.displayName}
+          iconUrl={dialog.iconUrl}
           i18n={i18n}
           permissions={dialog.permissions}
           onAuthorize={() =>
@@ -66,8 +66,8 @@ export function ConnectorMarketDialogs() {
         />
       ) : (
         <ConnectorBlockedDialog
-          connectorKey={dialog.connectorKey}
           displayName={dialog.displayName}
+          iconUrl={dialog.iconUrl}
           i18n={i18n}
           reason={dialog.reason}
           onClose={() => uiState.closeDialog()}

@@ -471,12 +471,13 @@ being advertised is never itself an auth verdict. Authentication actions are
 durable and never persist credentials.
 
 A signed `authentication` profile may bind one runtime-advertised method ID to
-a closed terminal command declaration. Authentication profile v1 currently
-supports only `type: "terminal"` with
-`command.strategy: "runtime-subcommand"` and a bounded argv array. Tutti
-combines that declaration with the verified runtime executable only when its
-type matches the fresh ACP method type, so
-provider-specific subcommands such as a local CLI login remain in the extension
+a closed terminal command declaration. Authentication profile v1 supports only
+`type: "terminal"`. `command.strategy: "runtime"` opens the verified runtime
+executable without arguments, while `runtime-subcommand` appends a bounded,
+non-empty argv array. A declaration may also replace the advertised method's
+display name and description with bounded presentation strings. Tutti applies
+those fields only when the declaration ID and type match the fresh ACP method,
+so provider-specific setup wording and subcommands remain in the extension
 package instead of daemon code. Profile declarations are argv data, never shell
 source, and the daemon quotes every projected argument before exposing the
 ready-to-run command.

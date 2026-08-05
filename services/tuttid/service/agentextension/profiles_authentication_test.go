@@ -18,10 +18,12 @@ func TestLoadAuthenticationMethods(t *testing.T) {
 		"schemaVersion": "tutti.agent.authentication.v1",
 		"methods": [{
 			"id": "login",
+			"name": "Set up Example Agent",
+			"description": "Open the runtime to choose an authentication method.",
 			"type": "terminal",
 			"command": {
-				"strategy": "runtime-subcommand",
-				"args": ["login"]
+				"strategy": "runtime",
+				"args": []
 			}
 		}]
 	}`), 0o600); err != nil {
@@ -35,8 +37,8 @@ func TestLoadAuthenticationMethods(t *testing.T) {
 		t.Fatal(err)
 	}
 	method := methods["login"]
-	if method.Type != "terminal" || method.Command.Strategy != "runtime-subcommand" ||
-		len(method.Command.Args) != 1 || method.Command.Args[0] != "login" {
+	if method.Name != "Set up Example Agent" || method.Description != "Open the runtime to choose an authentication method." ||
+		method.Type != "terminal" || method.Command.Strategy != "runtime" || len(method.Command.Args) != 0 {
 		t.Fatalf("authentication method = %#v", method)
 	}
 }
@@ -67,6 +69,16 @@ func TestValidateAuthenticationProfileRejectsUnsafeDeclarations(t *testing.T) {
 		},
 		"unsupported strategy": func(profile *AuthenticationProfile) {
 			profile.Methods[0].Command.Strategy = "shell"
+		},
+		"runtime command with args": func(profile *AuthenticationProfile) {
+			profile.Methods[0].Command.Strategy = "runtime"
+			profile.Methods[0].Command.Args = []string{"login"}
+		},
+		"control character in name": func(profile *AuthenticationProfile) {
+			profile.Methods[0].Name = "Set up\nAgent"
+		},
+		"leading whitespace in description": func(profile *AuthenticationProfile) {
+			profile.Methods[0].Description = " Open the runtime"
 		},
 		"control character": func(profile *AuthenticationProfile) {
 			profile.Methods[0].Command.Args = []string{"login\nnext"}

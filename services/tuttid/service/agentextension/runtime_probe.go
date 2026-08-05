@@ -94,8 +94,18 @@ func runRuntimeSetup(
 			strings.TrimSpace(method.Type) == strings.TrimSpace(declared.Type) {
 			declaration = &declared
 		}
+		name := method.Name
+		description := method.Description
+		if declaration != nil {
+			if declaredName := strings.TrimSpace(declaration.Name); declaredName != "" {
+				name = declaredName
+			}
+			if declaredDescription := strings.TrimSpace(declaration.Description); declaredDescription != "" {
+				description = declaredDescription
+			}
+		}
 		methods = append(methods, RuntimeAuthMethod{
-			ID: method.ID, Name: method.Name, Description: method.Description,
+			ID: method.ID, Name: name, Description: description,
 			Type:            method.Type,
 			TerminalCommand: terminalLoginCommand(binding.Command, method, declaration),
 		})
@@ -112,9 +122,10 @@ func runRuntimeSetup(
 
 // terminalLoginCommand renders the interactive sign-in command for a terminal
 // auth method. The fresh ACP method type remains authoritative. A compatible
-// signed extension declaration may replace only the terminal command args, so
-// provider-specific subcommands stay in the extension package without turning
-// a future browser or device-code method with the same ID into terminal auth.
+// signed extension declaration may replace terminal presentation and choose
+// either the verified runtime executable or one of its subcommands, without
+// turning a future browser or device-code method with the same ID into terminal
+// auth.
 func terminalLoginCommand(
 	command []string,
 	method agentruntime.StandardACPAuthMethod,
@@ -122,17 +133,17 @@ func terminalLoginCommand(
 ) string {
 	methodType := method.Type
 	args := method.Args
-	runtimeSubcommand := false
+	runtimeCommand := false
 	if declaration != nil &&
 		strings.TrimSpace(method.Type) == strings.TrimSpace(declaration.Type) {
 		args = declaration.Command.Args
-		runtimeSubcommand = declaration.Command.Strategy == "runtime-subcommand"
+		runtimeCommand = declaration.Command.Strategy == "runtime" || declaration.Command.Strategy == "runtime-subcommand"
 	}
 	if methodType != "terminal" || len(command) == 0 || strings.TrimSpace(command[0]) == "" {
 		return ""
 	}
 	base := command[:1]
-	if !runtimeSubcommand && len(args) > 0 && strings.HasPrefix(args[0], "-") {
+	if !runtimeCommand && len(args) > 0 && strings.HasPrefix(args[0], "-") {
 		base = command
 	}
 	parts := make([]string, 0, len(base)+len(args))

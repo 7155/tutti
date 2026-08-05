@@ -367,7 +367,11 @@ func (a *RuntimeController) Close(ctx context.Context, input host.RuntimeCloseIn
 	if err := a.requireBackend(); err != nil {
 		return err
 	}
-	_, err := a.Backend.Close(ctx, agentruntime.CloseInput{RoomID: input.WorkspaceID, AgentSessionID: input.AgentSessionID})
+	_, err := a.Backend.Close(ctx, agentruntime.CloseInput{
+		RoomID:                 input.WorkspaceID,
+		AgentSessionID:         input.AgentSessionID,
+		PreserveCanonicalState: input.PreserveCanonicalState,
+	})
 	return mapRuntimeError(err)
 }
 

@@ -227,17 +227,18 @@ func (h *Host) CreateSession(ctx context.Context, workspaceID string, input Crea
 				return CreateSessionResult{}, errors.Join(ErrSubmitDeliveryUnknown, err, persistErr)
 			}
 			if disposition == RuntimeDispatchDispositionRejected {
-				// A definitive rejection keeps the visible Session/failed Turn. Do
-				// not close the runtime before its terminal report is projected. Keep
-				// the claim as a terminal idempotency fence so a retry can render the
-				// same failed Turn without invoking the provider again.
+				// A definitive rejection keeps the visible Session/failed Turn. The
+				// claim is a terminal idempotency fence, so replay reads the same
+				// failed Turn without invoking the provider again. Once that terminal
+				// report is durable, discard the startup runtime without publishing a
+				// canonical completion over the failure.
 				if strings.TrimSpace(execResult.TurnID) != "" {
 					claimPending = false
 					if rejectErr := h.finalizeRejectedSubmitClaim(ref, firstNonEmpty(claim.ClientSubmitID, input.ClientSubmitID, legacyClientSubmitID(metadata)), execResult.TurnID); rejectErr != nil {
 						return CreateSessionResult{}, errors.Join(ErrSubmitDeliveryUnknown, err, rejectErr)
 					}
 				}
-				return CreateSessionResult{}, h.cleanupPreparedRuntime(ctx, err, workspaceID, input.AgentSessionID, input.Provider)
+				return CreateSessionResult{}, h.discardRejectedPreparedRuntime(ctx, err, workspaceID, session.ID, session.Provider)
 			}
 			claimPending = false
 			return CreateSessionResult{}, errors.Join(ErrSubmitDeliveryUnknown, err)
@@ -403,6 +404,13 @@ func (h *Host) SendInput(ctx context.Context, ref SessionRef, input SendInput) (
 	if h == nil || h.runtime == nil || h.store == nil || ref.WorkspaceID == "" || ref.AgentSessionID == "" {
 		return SendInputResult{}, ErrInvalidArgument
 	}
+	// Guidance is a mutation of an already-running canonical Turn. Host
+	// consumers must bind that mutation to the exact Turn observed at the
+	// interaction boundary; allowing the runtime to infer "current" would make
+	// an A->B transition during transport silently steer B.
+	if input.Guidance && strings.TrimSpace(input.TurnID) == "" {
+		return SendInputResult{}, ErrActiveTurnTargetRequired
+	}
 	normalized, promptText, err := normalizePromptContent(input.Content)
 	if err != nil {
 		return SendInputResult{}, err
@@ -541,6 +549,12 @@ func (h *Host) sendInputSerialized(
 				}
 				return SendInputResult{}, err
 			}
+		}
+		if input.Guidance && execResult.ProviderDispatch.Disposition == RuntimeDispatchDispositionNotDispatched {
+			// The runtime rejected the exact target before provider admission. Keep
+			// claimPending true so the deferred cleanup removes the prepared claim;
+			// this is a known rejection, not an outcome-unknown delivery.
+			return SendInputResult{}, err
 		}
 		if input.Guidance ||
 			execResult.ProviderDispatch.Disposition == RuntimeDispatchDispositionApplied ||

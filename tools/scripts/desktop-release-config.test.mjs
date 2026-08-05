@@ -224,7 +224,7 @@ test("desktop release workflow passes tsh-aligned Feishu card context", async ()
   );
   assert.match(
     workflow,
-    /outputs:\s*\n\s*release_url:\s*\${{\s*steps\.stage-release\.outputs\.url\s*}}/
+    /outputs:\s*\n\s*release_url:\s*\${{\s*github\.server_url\s*}}\/\${{\s*github\.repository\s*}}\/releases\/tag\/\${{\s*needs\.resolve\.outputs\.release_tag\s*}}/
   );
   assert.match(
     workflow,
@@ -275,6 +275,23 @@ test("desktop release workflow defaults Feishu notifications on outside manual d
     workflow,
     /notify_feishu=\${{\s*github\.event_name\s*!=\s*'workflow_dispatch'\s*\|\|\s*inputs\.notify_feishu\s*!=\s*false\s*}}/
   );
+});
+
+test("desktop release post-stage jobs tolerate skipped optional dependencies", async () => {
+  const workflow = await readFile(workflowPath, "utf8");
+  const promoteJob = workflow.match(
+    /promote:[\s\S]*?(?=\n\s{2}[a-z][a-z0-9_-]+:\n|$)/
+  )?.[0];
+  const notifyJob = workflow.match(
+    /notify-draft-feishu:[\s\S]*?(?=\n\s{2}[a-z][a-z0-9_-]+:\n|$)/
+  )?.[0];
+
+  assert.ok(promoteJob, "promote job should exist");
+  assert.ok(notifyJob, "draft notify job should exist");
+  assert.match(promoteJob, /if:\s+\${{\s*always\(\)\s*&&/);
+  assert.match(promoteJob, /needs\.stage\.result\s*==\s*'success'/);
+  assert.match(notifyJob, /if:\s+\${{\s*always\(\)\s*&&/);
+  assert.match(notifyJob, /needs\.stage\.result\s*==\s*'success'/);
 });
 
 test("desktop release workflow does not redownload release assets for Feishu", async () => {

@@ -354,13 +354,16 @@ consumer of the hydrated feature flag and does not add a parallel event center.
 The main-process Replay composition module owns manager/access/control creation
 and all Replay IPC bindings; general runtime IPC supplies only Electron and
 daemon adapters. When disabled, Desktop main does not create the Replay process
-manager, access adapters, control writer, or Replay IPC handlers. The renderer does not create
-the Replay service, recording binding, recorder/observer maps, or Engine
-intent/command observer. Enabled composition creates the renderer recorder only
-for the lifetime of an active Recording and mounts isolated Replay observers
-only inside the Replay runtime. Changing the preference does not claim to
-recompose a running daemon or renderer; the next process composition applies
-the new value.
+manager, access adapters, control writer, or Replay IPC handlers, and the
+renderer keeps the replay activity bridge inert: it creates no recording
+binding, recorder map, or Engine observer. When enabled, the
+`agent-session-replay` feature-local activity bridge owns the recording binding,
+recorder map, and Engine observer fan-out; `WorkspaceAgentActivityService`
+remains the Activity Engine/reconcile facade and delegates that replay boundary
+to the bridge. The renderer creates recorder state only for the lifetime of an
+active Recording and mounts isolated Replay observers only inside the Replay
+runtime. Changing the preference does not claim to recompose a running daemon
+or renderer; the next process composition applies the new value.
 
 A Recording captures a time window over the root SessionGraph. Root Turn
 settlement, child creation, and Goal continuation do not complete it. Explicit
@@ -1034,6 +1037,15 @@ The busy-session prompt queue is ephemeral durable-intent coordination in the wo
 
 - a normal prompt waits for canonical availability
 - a provider with native guidance capability may guide the active Turn
+- guidance captures the canonical `activeTurnId` at the interaction boundary
+  and carries it through the queue, activity adapter, daemon API, Agent Host,
+  and runtime Controller; `turnId` is required for every cross-process
+  guidance request and is never inferred from the latest Session snapshot
+- Host and the runtime Controller compare that target with the live active
+  Turn while holding the lifecycle admission lock. A mismatch is a typed
+  pre-provider rejection (`NotDispatched`), and a prepared submit claim is
+  removed so the failed guidance cannot strand the queue or be redirected to a
+  newer Turn
 - otherwise send-now performs exact cancel-then-send
 - user Stop pauses the queue; cancellation must not leak the next prompt
 - a prompt settings precondition is an explicit preparation stage, not a nested
@@ -2041,10 +2053,10 @@ home composer submit
   -> authoritative Session/Turn replaces optimistic projection
 ```
 
-Initial content is one user-owned submit flow, but provider acceptance is not the prompt's durability boundary. Once the submitted Turn and prompt are durably recorded, a deterministic provider rejection keeps the visible Session, failed Turn, and user prompt so the failure can be rendered and retried. Only a pre-dispatch startup/validation failure may compensate an empty provisional shell; an outcome-unknown delivery keeps its recovery claim instead of guessing whether the provider ran.
+Initial content is one user-owned submit flow, but provider acceptance is not the prompt's durability boundary. Once the submitted Turn and prompt are durably recorded, a deterministic provider rejection keeps the visible Session, failed Turn, and user prompt so the failure can be rendered as history. Host then discards the startup runtime without publishing canonical completion. AgentGUI may offer provider login for an authentication failure, but it does not offer manual activation retry for failed or canceled Sessions; the user starts a new conversation instead. Restarted Sessions already project their canonical canceled state, so this presentation rule does not require a separate provider-history query. Only a pre-dispatch startup/validation failure may compensate an empty provisional shell; an outcome-unknown delivery keeps its recovery claim instead of guessing whether the provider ran.
 The rejected submit claim is terminal and remains bound to that failed Turn, so
-retrying the same `clientSubmitId` reuses the persisted failure and never
-dispatches a second provider Turn.
+replaying the same `clientSubmitId` is an idempotent read of the persisted
+failure and never dispatches a second provider Turn.
 The initiating composer snapshots Tutti activation plus effect and speed with
 that submit. An explicit active or inactive submit snapshot is authoritative
 over a later read of mutable home-draft state; non-composer callers may fall

@@ -489,6 +489,9 @@ type RuntimeCancelResult struct {
 type RuntimeCloseInput struct {
 	WorkspaceID    string
 	AgentSessionID string
+	// PreserveCanonicalState removes the provider runtime without publishing a
+	// canonical Session completion over an already-durable terminal state.
+	PreserveCanonicalState bool
 }
 
 type RuntimeSubmitInteractiveInput struct {
@@ -559,10 +562,11 @@ const (
 	RailPlacementKindProject       RailPlacementKind = "project"
 )
 
-// RailPlacement is the caller-selected canonical conversation-rail identity
-// for a newly created session. SectionKey is opaque to Host and is persisted
-// exactly; ProjectPath is the caller's logical project path, not a prepared
-// runtime or owner-host path.
+// RailPlacement is the caller-selected conversation-rail identity for a newly
+// created session. Host canonicalizes project paths and derives project
+// SectionKey values from them; conversation placement uses the canonical
+// conversations key. ProjectPath is the caller's logical project path, not a
+// prepared runtime or owner-host path.
 type RailPlacement struct {
 	Version     int               `json:"version"`
 	Kind        RailPlacementKind `json:"kind"`

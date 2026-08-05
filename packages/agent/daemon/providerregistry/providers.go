@@ -90,7 +90,8 @@ func tuttiAgentDescriptor() ProviderDescriptor {
 				ThroughTurnMinVersion: TuttiAgentThroughTurnForkMinVersion,
 			},
 			Endpoint: RuntimeEndpointDescriptor{
-				ModelPlanProtocol: ModelPlanProtocolOpenAI,
+				ModelPlanProtocol:        ModelPlanProtocolOpenAI,
+				ModelPlanEndpointAdapter: ModelPlanEndpointAdapterResponsesToChatGateway,
 			},
 		},
 		Status: StatusDescriptor{

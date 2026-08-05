@@ -106,6 +106,9 @@ type ResumeInput struct {
 type CloseInput struct {
 	RoomID         string
 	AgentSessionID string
+	// PreserveCanonicalState removes the live runtime without emitting a
+	// session_completed event over an already-durable terminal state.
+	PreserveCanonicalState bool
 }
 
 // SessionForkCapabilities reports provider-native fork boundaries supported by

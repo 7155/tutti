@@ -207,7 +207,6 @@ export const AgentGUIBottomDockPane = memo(function AgentGUIBottomDockPane({
                 title: composerProps.labels.tuttiBudgetTitle,
                 effectLabel: composerProps.labels.tuttiBudgetEffectLabel,
                 speedLabel: composerProps.labels.tuttiBudgetSpeedLabel,
-                previewTitle: composerProps.labels.tuttiBudgetPreviewTitle,
                 previewHint: composerProps.labels.tuttiBudgetPreviewHint,
                 previewCost: composerProps.labels.tuttiBudgetPreviewCost,
                 previewBalance: composerProps.labels.tuttiBudgetPreviewBalance,
@@ -221,9 +220,6 @@ export const AgentGUIBottomDockPane = memo(function AgentGUIBottomDockPane({
                   composerProps.labels.tuttiBudgetModelPreferenceBalance,
                 modelPreferencePowerful:
                   composerProps.labels.tuttiBudgetModelPreferencePowerful,
-                modelPreferenceFastestSuitable:
-                  composerProps.labels
-                    .tuttiBudgetModelPreferenceFastestSuitable,
                 parallelismLabel:
                   composerProps.labels.tuttiBudgetParallelismLabel,
                 parallelismValue:

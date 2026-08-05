@@ -662,23 +662,35 @@ function AuthorAvatar({
   readonly author: WorkspaceAppAuthorViewModel;
   readonly fallbackIconUrl?: string | null;
 }): ReactElement {
-  if (author.avatarUrl) {
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
+  const avatarUrl = author.avatarUrl?.trim() ?? "";
+  if (avatarUrl && failedImageUrl !== avatarUrl) {
     return (
       <img
         alt=""
         className="size-5 shrink-0 rounded-full border border-[var(--background-fronted)] object-cover"
         draggable={false}
-        src={author.avatarUrl}
+        src={avatarUrl}
+        onError={() => {
+          setFailedImageUrl(avatarUrl);
+        }}
       />
     );
   }
-  if (fallbackIconUrl) {
+  const normalizedFallbackIconUrl = fallbackIconUrl?.trim() ?? "";
+  if (
+    normalizedFallbackIconUrl &&
+    failedImageUrl !== normalizedFallbackIconUrl
+  ) {
     return (
       <img
         alt=""
         className="size-5 shrink-0 rounded-[5px] border border-[var(--background-fronted)] object-contain"
         draggable={false}
-        src={fallbackIconUrl}
+        src={normalizedFallbackIconUrl}
+        onError={() => {
+          setFailedImageUrl(normalizedFallbackIconUrl);
+        }}
       />
     );
   }
@@ -995,14 +1007,19 @@ function AppIcon({
   readonly onReplaceIcon: () => void;
   readonly replaceIconLabel: string;
 }): ReactElement {
+  const [failedIconUrl, setFailedIconUrl] = useState<string | null>(null);
+  const iconUrl = app.icon?.type === "asset" ? app.icon.src.trim() : "";
   const icon =
-    app.icon?.type === "asset" ? (
+    iconUrl && failedIconUrl !== iconUrl ? (
       <img
         alt=""
         className="size-11 flex-none rounded-[10px] object-contain object-center select-none"
         decoding="async"
         draggable={false}
-        src={app.icon.src}
+        src={iconUrl}
+        onError={() => {
+          setFailedIconUrl(iconUrl);
+        }}
       />
     ) : (
       <span className="flex size-11 flex-none items-center justify-center rounded-[10px] bg-[var(--transparency-block)] text-[var(--text-secondary)]">

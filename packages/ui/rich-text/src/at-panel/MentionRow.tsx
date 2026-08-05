@@ -1,6 +1,7 @@
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
+  AgentSessionsIcon,
   Badge,
   FileCodeIcon,
   FileTextIcon,
@@ -8,11 +9,12 @@ import {
   ImageFileIcon,
   ProductIcon,
   StatusDot,
+  UserLinedIcon,
   VideoFileIcon,
   cn,
   type IconProps
 } from "@tutti-os/ui-system";
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import type { MentionFileVisualKind } from "./mentionFileVisualKind.ts";
 import {
   mentionRowDataAttribute,
@@ -447,13 +449,17 @@ function MentionFileIcon({
         {...mentionRowDataAttribute(dataAttributeMode, "fileThumb", "true")}
         aria-hidden="true"
       >
-        <img
+        <MentionImageWithFallback
           src={thumbnailUrl}
           alt=""
           className="rich-text-at-mention-row__media"
-          decoding="async"
-          loading="lazy"
-          draggable={false}
+          fallback={
+            <MentionFileIcon
+              item={{ ...item, thumbnailUrl: null }}
+              classNames={classNames}
+              dataAttributeMode={dataAttributeMode}
+            />
+          }
         />
       </span>
     );
@@ -539,13 +545,18 @@ function MentionEntityIcon({
       aria-hidden="true"
     >
       {normalizedIconUrl ? (
-        <img
+        <MentionImageWithFallback
           src={normalizedIconUrl}
           alt=""
           className="rich-text-at-mention-row__media"
-          decoding="async"
-          loading="lazy"
-          draggable={false}
+          fallback={
+            <span
+              className={cn(
+                kindIconClassName,
+                "rich-text-at-mention-kind-icon--app"
+              )}
+            />
+          }
         />
       ) : (
         <span
@@ -559,6 +570,36 @@ function MentionEntityIcon({
   );
 }
 
+function MentionImageWithFallback({
+  src,
+  alt,
+  className,
+  fallback
+}: {
+  src: string;
+  alt: string;
+  className: string;
+  fallback: React.JSX.Element;
+}): React.JSX.Element {
+  const [failedSource, setFailedSource] = useState<string | null>(null);
+  if (failedSource === src) {
+    return fallback;
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      decoding="async"
+      loading="lazy"
+      draggable={false}
+      onError={() => {
+        setFailedSource(src);
+      }}
+    />
+  );
+}
+
 function MentionSessionAvatarStack({
   item,
   classNames,
@@ -568,6 +609,9 @@ function MentionSessionAvatarStack({
   classNames: Required<MentionRowClassNames>;
   dataAttributeMode: MentionRowDataAttributeMode;
 }): React.JSX.Element {
+  const [failedUserAvatarUrls, setFailedUserAvatarUrls] = useState<
+    readonly string[]
+  >([]);
   const showUserAvatar = item.showUserAvatar !== false;
   if (!showUserAvatar) {
     return (
@@ -582,13 +626,16 @@ function MentionSessionAvatarStack({
           className="rich-text-at-mention-avatar rich-text-at-mention-avatar--agent"
           {...mentionRowDataAttribute(dataAttributeMode, "agentAvatar", "true")}
         >
-          <img
+          <MentionImageWithFallback
             src={item.agentIconUrl}
             alt=""
             className="rich-text-at-mention-row__media"
-            decoding="async"
-            loading="lazy"
-            draggable={false}
+            fallback={
+              <AgentSessionsIcon
+                aria-hidden="true"
+                className="size-4 text-[var(--rich-text-at-mention-text-secondary)]"
+              />
+            }
           />
         </span>
       </span>
@@ -596,48 +643,58 @@ function MentionSessionAvatarStack({
   }
 
   const userAvatarUrl = item.userAvatarUrl?.trim() ?? "";
-  const placeholderUrl = item.userAvatarPlaceholderUrl;
-  const userImageUrl = userAvatarUrl || placeholderUrl;
+  const placeholderUrl = item.userAvatarPlaceholderUrl.trim();
+  const userImageUrl = [userAvatarUrl, placeholderUrl].find(
+    (url) => url && !failedUserAvatarUrls.includes(url)
+  );
   return (
     <span className="rich-text-at-mention-avatar-stack" aria-hidden="true">
       <span
         className="rich-text-at-mention-avatar rich-text-at-mention-avatar--user"
         {...mentionRowDataAttribute(dataAttributeMode, "userAvatar", "true")}
       >
-        <img
-          src={userImageUrl}
-          alt=""
-          className={cn(
-            "rich-text-at-mention-row__media",
-            !userAvatarUrl && classNames.avatarImgUserPlaceholder
-          )}
-          decoding="async"
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          draggable={false}
-          onError={(event) => {
-            if (event.currentTarget.dataset.fallbackAvatarApplied === "true") {
-              return;
-            }
-            event.currentTarget.dataset.fallbackAvatarApplied = "true";
-            event.currentTarget.src = placeholderUrl;
-            event.currentTarget.classList.add(
-              classNames.avatarImgUserPlaceholder
-            );
-          }}
-        />
+        {userImageUrl ? (
+          <img
+            src={userImageUrl}
+            alt=""
+            className={cn(
+              "rich-text-at-mention-row__media",
+              userImageUrl === placeholderUrl &&
+                classNames.avatarImgUserPlaceholder
+            )}
+            decoding="async"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            draggable={false}
+            onError={() => {
+              setFailedUserAvatarUrls((failedUrls) =>
+                failedUrls.includes(userImageUrl)
+                  ? failedUrls
+                  : [...failedUrls, userImageUrl]
+              );
+            }}
+          />
+        ) : (
+          <UserLinedIcon
+            aria-hidden="true"
+            className="size-3.5 text-[var(--rich-text-at-mention-text-secondary)]"
+          />
+        )}
       </span>
       <span
         className="rich-text-at-mention-avatar rich-text-at-mention-avatar--agent"
         {...mentionRowDataAttribute(dataAttributeMode, "agentAvatar", "true")}
       >
-        <img
+        <MentionImageWithFallback
           src={item.agentIconUrl}
           alt=""
           className="rich-text-at-mention-row__media"
-          decoding="async"
-          loading="lazy"
-          draggable={false}
+          fallback={
+            <AgentSessionsIcon
+              aria-hidden="true"
+              className="size-4 text-[var(--rich-text-at-mention-text-secondary)]"
+            />
+          }
         />
       </span>
     </span>

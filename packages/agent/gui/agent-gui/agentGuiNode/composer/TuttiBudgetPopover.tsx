@@ -122,7 +122,8 @@ export function TuttiBudgetPopover({
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent
         align="start"
-        className="nodrag"
+        collisionPadding={16}
+        className="nodrag rounded-[12px]"
         data-agent-tutti-budget-popover="true"
         onEscapeKeyDown={(event) => {
           event.preventDefault();

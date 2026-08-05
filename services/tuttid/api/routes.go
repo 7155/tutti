@@ -793,13 +793,6 @@ func registerConnectorMarketRoutes(mux *http.ServeMux, wrapper *tuttigenerated.S
 		}
 		wrapper.DisconnectConnectorMarketAuthorization(w, r)
 	})
-	mux.HandleFunc("/v1/connector-market/connectors/{connectorKey}/workspace-binding:set", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			tuttitypes.WriteMethodNotAllowed(w)
-			return
-		}
-		wrapper.SetConnectorMarketWorkspaceBinding(w, r)
-	})
 	mux.HandleFunc("/v1/connector-market/operations/{operationID}", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			tuttitypes.WriteMethodNotAllowed(w)

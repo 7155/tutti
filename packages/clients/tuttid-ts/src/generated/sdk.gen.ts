@@ -637,9 +637,6 @@ import type {
   SetCollaborationRunAdoptionData,
   SetCollaborationRunAdoptionErrors,
   SetCollaborationRunAdoptionResponses,
-  SetConnectorMarketWorkspaceBindingData,
-  SetConnectorMarketWorkspaceBindingErrors,
-  SetConnectorMarketWorkspaceBindingResponses,
   SetModelPlanEnabledData,
   SetModelPlanEnabledErrors,
   SetModelPlanEnabledResponses,
@@ -5413,28 +5410,6 @@ export const disconnectConnectorMarketAuthorization = <
   >({
     security: [{ scheme: "bearer", type: "http" }],
     url: "/v1/connector-market/connectors/{connectorKey}/authorization:disconnect",
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers
-    }
-  });
-
-/**
- * Enable or disable a connector for one workspace
- */
-export const setConnectorMarketWorkspaceBinding = <
-  ThrowOnError extends boolean = false
->(
-  options: Options<SetConnectorMarketWorkspaceBindingData, ThrowOnError>
-) =>
-  (options.client ?? client).post<
-    SetConnectorMarketWorkspaceBindingResponses,
-    SetConnectorMarketWorkspaceBindingErrors,
-    ThrowOnError
-  >({
-    security: [{ scheme: "bearer", type: "http" }],
-    url: "/v1/connector-market/connectors/{connectorKey}/workspace-binding:set",
     ...options,
     headers: {
       "Content-Type": "application/json",

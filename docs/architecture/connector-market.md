@@ -11,7 +11,7 @@ Connector market uses two independent APIs:
 - the remote Connector Market API publishes connector releases, manifests,
   and immutable artifact metadata
 - the local daemon API exposes the accepted catalog, installation,
-  authorization, compatibility, workspace binding, and durable operation state
+  authorization, compatibility, and durable operation state
   owned by one desktop host
 
 The remote market service owns its versioned API schema and generated client.
@@ -26,8 +26,8 @@ for every state rendered by the desktop application.
 
 The public package owns:
 
-- connector, catalog, installation, authorization, compatibility, workspace
-  binding, durable operation, revision, and error contracts
+- connector, catalog, installation, authorization, compatibility, durable
+  operation, revision, and error contracts
 - Go state transitions, manifest validation, host ports, application
   orchestration, and recovery rules
 - a default remote-catalog domain adapter built over the authoritative market
@@ -47,8 +47,8 @@ Each host daemon owns:
 - remote market base URL, authentication, HTTP transport, proxy, TLS, logging,
   and tracing configuration
 - the state root supplied to the package artifact preparer
-- runtime activation and observation, including process registration, sandbox
-  policy, permissions, OS integration, and credential binding
+- global runtime reconciliation, including process registration, sandbox policy,
+  permissions, OS integration, invocation admission, and credential binding
 - secure credential storage and authorization callbacks
 - a durable outbox and integration with the host event stream
 - local transport DTO mapping, product compatibility inputs, and diagnostics
@@ -96,8 +96,9 @@ the daemon owns the concrete process runtime. In Tutti, `managed_stdio`
 connectors resolve an exact Node/Python runtime profile. MCP servers are
 long-lived daemon children, while CLI commands are one-shot children. Both use
 the same generation fence, process registry, artifact snapshot, sandbox, and
-workspace deactivation path. TSH may reuse the public contracts while providing a
-different concrete daemon adapter.
+connection-scoped state path. An installed runtime is daemon-global and is
+available to every Agent and the local Tutti CLI. TSH may reuse the public
+contracts while providing a different concrete daemon adapter.
 
 ## Durable Operations And Recovery
 
@@ -168,7 +169,7 @@ synchronizing -> materializing -> ready`; failure is terminal and disposes
   React never resolves or constructs individual services
 - every service exposes a `readonly dataStore = proxy(...)` as its only writable
   state source, and only its owning service mutates it
-- asynchronous responses are fenced by request sequence, workspace generation,
+- asynchronous responses are fenced by request sequence, service generation,
   and daemon revision; `dispose()` is idempotent and terminal
 - event refreshes are coalesced, daemon reconnect performs a full reload, and
   accepted commands are followed through the operation endpoint or events
@@ -181,9 +182,10 @@ synchronizing -> materializing -> ready`; failure is terminal and disposes
   business-state reconciliation
 
 Connector details are represented by one modal state machine, never by a fixed
-right-hand pane. An unconnected installed connector opens the authorization
-dialog; an authorized connector opens the management dialog. Blocked releases
-open the blocked-state dialog. Only one dialog host is mounted at a time, so
+right-hand pane. An uninstalled connector opens an installation confirmation.
+An unconnected installed connector opens the authorization dialog; an
+authorized connector opens the management dialog. Blocked releases open the
+blocked-state dialog. Only one dialog host is mounted at a time, so
 the catalog keeps the full settings content width and never leaves an empty
 right column.
 
@@ -218,8 +220,8 @@ fragment, and the complete reusable renderer module: Root, Runtime, lifecycle,
 per-service StartupJobs, UiState, render-ready View, i18n, catalog, and modal
 state branches.
 
-Tutti now composes that fragment, persists catalog/operations/leases/bindings
-and a transactional outbox in SQLite, reads the typed remote catalog, exposes
+Tutti now composes that fragment, persists catalog/operations/leases and a
+transactional outbox in SQLite, reads the typed remote catalog, exposes
 generated local handlers and clients, publishes invalidation events, and
 registers the shared renderer module through injected daemon-client and event
 adapters, activates it as part of workspace startup, and renders its shared
@@ -229,11 +231,18 @@ authoritative snapshot reload.
 The registered Tutti Host reads the ordinary TSH market item API, downloads an
 artifact directly from the configured artifact base URL, verifies its declared
 SHA-256 and size, prepares a content-addressed snapshot, selects the local
-Node/Python runtime, and exposes daemon-owned MCP and CLI capabilities per
-workspace. Crash recovery adopts every host-touching operation into the current
+Node/Python runtime, and exposes one daemon-owned MCP/CLI runtime per installed
+connector. Crash recovery adopts every host-touching operation into the current
 boot epoch. Startup requires one successful catalog refresh before restoring
 routes; later refresh failures preserve installed last-known-good capabilities
 while the daemon retries.
+
+The public `connector available`, `connector skills`, `connector skill read`,
+and `connector invoke` commands expose installed connectors through the local
+daemon CLI channel to every Agent and the local Tutti CLI. Discovery returns
+connector summary first, Skill frontmatter metadata second, and full `SKILL.md`
+content only on explicit read. Connector invocations use a bounded, serialized
+admission gate by default.
 
 The first production compatibility boundary is deliberately narrow:
 `managed_stdio`, authorization kind `none`, and platforms with the production

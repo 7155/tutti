@@ -283,6 +283,10 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 		return fmt.Errorf("configure connector process sandbox: %w", err)
 	}
 	connectorCommands := connectormarketservice.NewConnectorCommandRegistry()
+	connectorBroker, err := connectormarketservice.NewConnectorBroker(connectorCommands)
+	if err != nil {
+		return fmt.Errorf("configure connector broker: %w", err)
+	}
 	implementationHost, err := connectormarketservice.NewImplementationHost(connectormarketservice.ImplementationHostConfig{
 		Artifacts: artifactPreparer, Runtimes: runtimeResolver, Processes: processTransport, Commands: connectorCommands,
 		StateRoot: filepath.Join(connectorStateRoot, "workspace-state"),
@@ -295,7 +299,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 		return errors.New("connector command registry cannot attach to daemon CLI")
 	}
 	api.CLIRegistry.AppCommands = cliservice.CompositeDynamicCommandRegistry{Registries: []cliservice.DynamicCommandRegistry{
-		api.CLIRegistry.AppCommands, connectorCommands,
+		api.CLIRegistry.AppCommands, connectorBroker,
 	}}
 	connectorMarketHost, err := connectormarketservice.NewHost(ctx, connectormarketservice.HostConfig{
 		Repository: connectorMarketStore, CatalogSource: connectorCatalog,

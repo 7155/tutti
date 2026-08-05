@@ -167,7 +167,10 @@ function buildConnectorDialogView(
     };
   }
   if (!connectorHasInstalledArtifact(connector)) {
-    return null;
+    return {
+      ...base,
+      kind: "installation"
+    };
   }
   if (!["connected", "not_required"].includes(connector.authorization.state)) {
     return {
@@ -180,8 +183,7 @@ function buildConnectorDialogView(
     ...base,
     canAuthorize: connector.release.manifest.authorizationKind !== "none",
     details: buildDetailFields(connector),
-    kind: "management",
-    workspaceEnabled: connector.workspaceBinding?.enabled ?? true
+    kind: "management"
   };
 }
 

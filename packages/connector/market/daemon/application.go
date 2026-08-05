@@ -92,8 +92,8 @@ func NewApplication(config ApplicationConfig) (*Application, error) {
 	return &Application{config: config, inFlight: make(map[string]*operationExecution)}, nil
 }
 
-func (application *Application) Snapshot(ctx context.Context, workspaceID string) (Snapshot, error) {
-	return application.config.Repository.Snapshot(ctx, workspaceID)
+func (application *Application) Snapshot(ctx context.Context) (Snapshot, error) {
+	return application.config.Repository.Snapshot(ctx)
 }
 
 func (application *Application) ListCatalogCategories(ctx context.Context) ([]CatalogCategory, error) {
@@ -119,7 +119,6 @@ func (application *Application) ListCatalogCategories(ctx context.Context) ([]Ca
 func (application *Application) ListCatalogPage(ctx context.Context, query CatalogPageQuery) (CatalogPage, error) {
 	query.SectionID = strings.TrimSpace(query.SectionID)
 	query.PageToken = strings.TrimSpace(query.PageToken)
-	query.WorkspaceID = strings.TrimSpace(query.WorkspaceID)
 	if query.SectionID == "" || query.PageSize < 1 || query.PageSize > 100 {
 		return CatalogPage{}, invalidRequest("sectionId and a pageSize between 1 and 100 are required")
 	}
@@ -193,7 +192,7 @@ func (application *Application) ListCatalogPage(ctx context.Context, query Catal
 
 	result := CatalogPage{SectionID: page.SectionID, Items: make([]CatalogListing, 0, len(page.Entries)), NextPageToken: page.NextPageToken, Revision: revision}
 	for _, entry := range page.Entries {
-		connector, err := application.config.Repository.Connector(ctx, entry.Release.ConnectorKey, query.WorkspaceID)
+		connector, err := application.config.Repository.Connector(ctx, entry.Release.ConnectorKey)
 		if err != nil {
 			return CatalogPage{}, err
 		}
@@ -205,12 +204,11 @@ func (application *Application) ListCatalogPage(ctx context.Context, query Catal
 func (application *Application) GetConnector(
 	ctx context.Context,
 	connectorKey string,
-	workspaceID string,
 ) (Connector, error) {
 	if strings.TrimSpace(connectorKey) == "" {
 		return Connector{}, invalidRequest("connectorKey is required")
 	}
-	return application.config.Repository.Connector(ctx, connectorKey, workspaceID)
+	return application.config.Repository.Connector(ctx, connectorKey)
 }
 
 func (application *Application) GetOperation(ctx context.Context, operationID string) (Operation, error) {
@@ -231,9 +229,6 @@ func (application *Application) Install(
 	ctx context.Context,
 	mutation ConnectorMutation,
 ) (MutationResult, error) {
-	if strings.TrimSpace(mutation.WorkspaceID) == "" {
-		return MutationResult{}, invalidRequest("workspaceId is required for installation")
-	}
 	var target InstallationState
 	result, err := application.acceptConnectorOperation(
 		ctx,
@@ -298,9 +293,6 @@ func (application *Application) BeginAuthorization(
 	ctx context.Context,
 	mutation ConnectorMutation,
 ) (AuthorizationResult, error) {
-	if strings.TrimSpace(mutation.WorkspaceID) == "" {
-		return AuthorizationResult{}, invalidRequest("workspaceId is required for authorization")
-	}
 	accepted, err := application.acceptConnectorOperation(
 		ctx,
 		mutation,
@@ -340,7 +332,7 @@ func (application *Application) BeginAuthorization(
 	if err != nil {
 		return AuthorizationResult{}, err
 	}
-	connector, err := application.config.Repository.Connector(ctx, mutation.ConnectorKey, "")
+	connector, err := application.config.Repository.Connector(ctx, mutation.ConnectorKey)
 	if err != nil {
 		return AuthorizationResult{}, err
 	}
@@ -371,102 +363,6 @@ func (application *Application) DisconnectAuthorization(
 			return connector, nil
 		},
 	)
-}
-
-func (application *Application) SetWorkspaceEnabled(
-	ctx context.Context,
-	command SetWorkspaceEnabledCommand,
-) (WorkspaceBindingResult, error) {
-	if err := validateConnectorMutation(command.ConnectorMutation); err != nil {
-		return WorkspaceBindingResult{}, err
-	}
-	if strings.TrimSpace(command.WorkspaceID) == "" {
-		return WorkspaceBindingResult{}, invalidRequest("workspaceId is required")
-	}
-	installedConnector, err := application.config.Repository.Connector(ctx, command.ConnectorKey, "")
-	if err != nil {
-		return WorkspaceBindingResult{}, err
-	}
-	if installedConnector.Installation.State != InstallationStateInstalled || installedConnector.Installation.InstalledReleaseDigest == "" {
-		return WorkspaceBindingResult{}, invalidTransition("workspace binding", string(installedConnector.Installation.State), "enabled")
-	}
-	installedRelease, err := application.installedReleaseEvidence(ctx, installedConnector)
-	if err != nil {
-		return WorkspaceBindingResult{}, NewDomainError(ErrorCodeUnavailable, "installed connector release evidence is unavailable", false, err)
-	}
-	var result WorkspaceBindingResult
-	err = application.config.Repository.Transaction(ctx, func(tx Transaction) error {
-		existing, err := tx.OperationByClientRequestID(command.ClientRequestID)
-		if err != nil {
-			return err
-		}
-		if existing != nil {
-			if err := verifyIdempotentOperation(*existing, OperationKindSetWorkspaceEnabled, command.ConnectorKey, command.WorkspaceID, &command.Enabled); err != nil {
-				return err
-			}
-			connector, err := tx.Connector(command.ConnectorKey)
-			if err != nil {
-				return err
-			}
-			result = WorkspaceBindingResult{Connector: connector, Operation: *existing, Revision: tx.Revision()}
-			return nil
-		}
-		if err := verifyRevision(tx, command.ExpectedRevision); err != nil {
-			return err
-		}
-		if err := rejectActiveOperation(tx, command.ConnectorKey); err != nil {
-			return err
-		}
-		now := application.config.Now().UTC()
-		revision := tx.AdvanceRevision()
-		operationID, err := application.config.NewID()
-		if err != nil {
-			return NewDomainError(ErrorCodeUnavailable, "connector operation id could not be generated", true, err)
-		}
-		connector, err := tx.Connector(command.ConnectorKey)
-		if err != nil {
-			return err
-		}
-		enabled := command.Enabled
-		target := &OperationTarget{ConnectorKey: installedRelease.ConnectorKey, Version: installedRelease.Version,
-			ReleaseID: installedRelease.ReleaseID, ReleaseDigest: installedRelease.ReleaseDigest,
-			ArtifactSHA256: installedRelease.Artifact.SHA256, Release: &installedRelease}
-		operation := Operation{
-			OperationID:      operationID,
-			ClientRequestID:  command.ClientRequestID,
-			ConnectorKey:     command.ConnectorKey,
-			Kind:             OperationKindSetWorkspaceEnabled,
-			State:            OperationStateAccepted,
-			Stage:            OperationStageAccepted,
-			Target:           target,
-			WorkspaceID:      command.WorkspaceID,
-			WorkspaceEnabled: &enabled,
-			HostGeneration:   HostGeneration{BootEpoch: application.config.BootEpoch, Generation: revision},
-			CreatedAt:        now,
-			UpdatedAt:        now,
-		}
-		if err := tx.SaveOperation(operation); err != nil {
-			return err
-		}
-		if err := tx.EnqueueConnectorMarketChanged(ChangedEvent{
-			ConnectorKey: connector.Key,
-			OperationID:  operation.OperationID,
-			Revision:     revision,
-		}); err != nil {
-			return err
-		}
-		result = WorkspaceBindingResult{Connector: connector, Operation: operation, Revision: revision}
-		return nil
-	})
-	if err != nil {
-		return WorkspaceBindingResult{}, err
-	}
-	if result.Operation.State == OperationStateAccepted || result.Operation.State == OperationStateRunning {
-		if err := application.config.Scheduler.Schedule(ctx, result.Operation.OperationID); err != nil {
-			return WorkspaceBindingResult{}, NewDomainError(ErrorCodeUnavailable, "connector workspace reconcile could not be scheduled", true, err)
-		}
-	}
-	return result, nil
 }
 
 func (application *Application) ExecuteOperation(ctx context.Context, operationID string) error {
@@ -559,16 +455,10 @@ func (application *Application) executeOperation(ctx context.Context, operationI
 		executeErr = application.executeDisconnectAuthorization(executionContext, operation)
 	case OperationKindStartAuthorization:
 		_, executeErr = application.beginAuthorizationSession(executionContext, operation)
-	case OperationKindSetWorkspaceEnabled:
-		executeErr = application.executeWorkspaceReconcile(executionContext, operation)
 	default:
 		executeErr = invalidRequest(fmt.Sprintf("operation kind %q is not executable", operation.Kind))
 	}
 	if executeErr != nil {
-		var recoverableCompletion workspaceReconcileCompletionError
-		if errors.As(executeErr, &recoverableCompletion) {
-			return executeErr
-		}
 		code := ErrorCodeInstallFailed
 		if operation.Kind == OperationKindRefreshCatalog {
 			code = ErrorCodeUpstreamUnavailable
@@ -618,7 +508,7 @@ func (application *Application) Recover(ctx context.Context) error {
 	}
 	for _, operation := range operations {
 		if operationTouchesImplementationHost(operation.Kind) && operation.HostGeneration.BootEpoch != application.config.BootEpoch {
-			operation, err = application.adoptWorkspaceOperation(ctx, operation.OperationID)
+			operation, err = application.adoptRuntimeOperation(ctx, operation.OperationID)
 			if err != nil {
 				return err
 			}
@@ -648,14 +538,14 @@ func (application *Application) Recover(ctx context.Context) error {
 
 func operationTouchesImplementationHost(kind OperationKind) bool {
 	switch kind {
-	case OperationKindInstall, OperationKindUninstall, OperationKindSetWorkspaceEnabled:
+	case OperationKindInstall, OperationKindUninstall:
 		return true
 	default:
 		return false
 	}
 }
 
-func (application *Application) adoptWorkspaceOperation(ctx context.Context, operationID string) (Operation, error) {
+func (application *Application) adoptRuntimeOperation(ctx context.Context, operationID string) (Operation, error) {
 	var adopted Operation
 	err := application.config.Repository.Transaction(ctx, func(tx Transaction) error {
 		operation, err := tx.Operation(operationID)
@@ -681,29 +571,15 @@ func (application *Application) adoptWorkspaceOperation(ctx context.Context, ope
 	return adopted, err
 }
 
-// ReconcileDurableBindings rebuilds the daemon-owned runtime projection from
-// committed workspace intent after every daemon restart. A successful install
-// is only an artifact fact; enabled bindings are the authoritative source for
-// MCP routes and CLI capabilities.
-func (application *Application) ReconcileDurableBindings(ctx context.Context) error {
+// ReconcileInstalledRuntimes rebuilds one global runtime projection for every
+// installed connector.
+func (application *Application) ReconcileInstalledRuntimes(ctx context.Context) error {
 	if application == nil {
 		return NewDomainError(ErrorCodeUnavailable, "connector application is unavailable", false, nil)
 	}
-	snapshot, err := application.config.Repository.Snapshot(ctx, "")
+	snapshot, err := application.config.Repository.Snapshot(ctx)
 	if err != nil {
 		return err
-	}
-	effectiveIntent := make(map[string]Operation)
-	for _, operation := range snapshot.Operations {
-		if operation.Kind != OperationKindSetWorkspaceEnabled || operation.WorkspaceEnabled == nil ||
-			(operation.State != OperationStateAccepted && operation.State != OperationStateRunning) {
-			continue
-		}
-		key := operation.ConnectorKey + "\x00" + operation.WorkspaceID
-		previous, exists := effectiveIntent[key]
-		if !exists || operation.CreatedAt.After(previous.CreatedAt) {
-			effectiveIntent[key] = operation
-		}
 	}
 	for _, connector := range snapshot.Connectors {
 		if connector.Installation.State != InstallationStateInstalled {
@@ -715,82 +591,45 @@ func (application *Application) ReconcileDurableBindings(ctx context.Context) er
 		}
 		installedConnector := connector
 		installedConnector.Release = installedRelease
-		bindings, err := application.config.Repository.WorkspaceBindings(ctx, connector.Key)
+		generation := maxGeneration(connector.Revision)
+		operationID := "reconcile/" + application.config.BootEpoch + "/" + connector.Key
+		receipt, err := application.config.Host.Reconcile(ctx, RuntimeReconcileRequest{
+			OperationID: operationID, ConnectionID: defaultConnectorConnectionID,
+			Connector: installedConnector, Enabled: true,
+			Generation: HostGeneration{BootEpoch: application.config.BootEpoch, Generation: generation},
+		})
 		if err != nil {
+			return NewDomainError(ErrorCodeUnavailable, "connector runtime could not be reconciled", true, err)
+		}
+		if err := validateRuntimeReceipt(receipt, operationID, defaultConnectorConnectionID, connector.Key,
+			installedRelease.ReleaseDigest, HostGeneration{BootEpoch: application.config.BootEpoch, Generation: generation}); err != nil {
 			return err
-		}
-		generation := connector.Revision
-		if generation == 0 {
-			generation = 1
-		}
-		for _, binding := range bindings {
-			desired := binding.Enabled
-			if pending, exists := effectiveIntent[connector.Key+"\x00"+binding.WorkspaceID]; exists {
-				desired = *pending.WorkspaceEnabled
-			}
-			if !desired {
-				deactivationGeneration := maxGeneration(connector.Revision)
-				if pending, exists := effectiveIntent[connector.Key+"\x00"+binding.WorkspaceID]; exists &&
-					pending.HostGeneration.Generation > deactivationGeneration {
-					deactivationGeneration = pending.HostGeneration.Generation
-				}
-				if err := application.config.Host.DeactivateWorkspace(ctx, WorkspaceDeactivationRequest{
-					WorkspaceID: binding.WorkspaceID, ConnectorKey: connector.Key,
-					ReleaseDigest: connector.Installation.InstalledReleaseDigest,
-					Generation:    HostGeneration{BootEpoch: application.config.BootEpoch, Generation: deactivationGeneration},
-					Deadline:      application.config.Now().UTC().Add(5 * time.Second),
-				}); err != nil {
-					return NewDomainError(ErrorCodeUnavailable, "connector pending disable intent could not be fenced", false, err)
-				}
-				continue
-			}
-			operationID := "reconcile/" + application.config.BootEpoch + "/" + connector.Key + "/" + binding.WorkspaceID
-			receipt, err := application.config.Host.Reconcile(ctx, WorkspaceReconcileRequest{
-				OperationID: operationID, WorkspaceID: binding.WorkspaceID,
-				Connector: installedConnector, Enabled: true,
-				Generation: HostGeneration{BootEpoch: application.config.BootEpoch, Generation: generation},
-			})
-			if err != nil {
-				return NewDomainError(ErrorCodeUnavailable, "connector durable workspace intent could not be reconciled", true, err)
-			}
-			if err := validateWorkspaceRuntimeReceipt(receipt, operationID, binding.WorkspaceID, connector.Key,
-				installedRelease.ReleaseDigest, HostGeneration{BootEpoch: application.config.BootEpoch, Generation: generation}); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
 }
 
-// FenceDurableBindings removes every runtime projection without deleting
-// installation facts or workspace intent. Startup and recovery use it to clear
-// processes from an earlier daemon generation before rebuilding current intent.
-func (application *Application) FenceDurableBindings(ctx context.Context) error {
+// FenceInstalledRuntimes removes runtime projections without deleting install
+// facts.
+func (application *Application) FenceInstalledRuntimes(ctx context.Context) error {
 	if application == nil {
 		return NewDomainError(ErrorCodeUnavailable, "connector application is unavailable", false, nil)
 	}
-	snapshot, err := application.config.Repository.Snapshot(ctx, "")
+	snapshot, err := application.config.Repository.Snapshot(ctx)
 	if err != nil {
 		return err
 	}
 	var fenceErrors []error
 	for _, connector := range snapshot.Connectors {
-		bindings, bindingsErr := application.config.Repository.WorkspaceBindings(ctx, connector.Key)
-		if bindingsErr != nil {
-			fenceErrors = append(fenceErrors, bindingsErr)
+		if connector.Installation.State != InstallationStateInstalled {
 			continue
 		}
-		for _, binding := range bindings {
-			if !binding.Enabled {
-				continue
-			}
-			fenceErrors = append(fenceErrors, application.config.Host.DeactivateWorkspace(ctx, WorkspaceDeactivationRequest{
-				WorkspaceID: binding.WorkspaceID, ConnectorKey: connector.Key,
-				ReleaseDigest: connector.Installation.InstalledReleaseDigest,
-				Generation:    HostGeneration{BootEpoch: application.config.BootEpoch, Generation: maxGeneration(connector.Revision)},
-				Deadline:      application.config.Now().UTC().Add(5 * time.Second),
-			}))
-		}
+		fenceErrors = append(fenceErrors, application.config.Host.DeactivateRuntime(ctx, RuntimeDeactivationRequest{
+			ConnectionID: defaultConnectorConnectionID, ConnectorKey: connector.Key,
+			ReleaseDigest: connector.Installation.InstalledReleaseDigest,
+			Generation:    HostGeneration{BootEpoch: application.config.BootEpoch, Generation: maxGeneration(connector.Revision)},
+			Deadline:      application.config.Now().UTC().Add(5 * time.Second),
+		}))
 	}
 	return errors.Join(fenceErrors...)
 }
@@ -818,7 +657,7 @@ func (application *Application) acceptConnectorOperation(
 			return err
 		}
 		if existing != nil {
-			if err := verifyIdempotentOperation(*existing, kind, mutation.ConnectorKey, mutation.WorkspaceID, nil); err != nil {
+			if err := verifyIdempotentOperation(*existing, kind, mutation.ConnectorKey); err != nil {
 				return err
 			}
 			connector, err := tx.Connector(mutation.ConnectorKey)
@@ -857,7 +696,6 @@ func (application *Application) acceptConnectorOperation(
 			State:           OperationStateAccepted,
 			Stage:           OperationStageAccepted,
 			Target:          operationTarget(kind, connector),
-			WorkspaceID:     mutation.WorkspaceID,
 			CreatedAt:       now,
 			UpdatedAt:       now,
 		}
@@ -908,7 +746,7 @@ func (application *Application) acceptOperation(
 			return err
 		}
 		if existing != nil {
-			if err := verifyIdempotentOperation(*existing, kind, connectorKey, "", nil); err != nil {
+			if err := verifyIdempotentOperation(*existing, kind, connectorKey); err != nil {
 				return err
 			}
 			result = MutationResult{Operation: *existing, Revision: tx.Revision()}
@@ -994,11 +832,8 @@ func verifyRevision(tx Transaction, expected uint64) error {
 	)
 }
 
-func verifyIdempotentOperation(operation Operation, kind OperationKind, connectorKey, workspaceID string, enabled *bool) error {
-	if operation.Kind != kind || operation.ConnectorKey != connectorKey || operation.WorkspaceID != workspaceID {
-		return invalidRequest("clientRequestId was already used for a different connector-market command")
-	}
-	if enabled != nil && (operation.WorkspaceEnabled == nil || *operation.WorkspaceEnabled != *enabled) {
+func verifyIdempotentOperation(operation Operation, kind OperationKind, connectorKey string) error {
+	if operation.Kind != kind || operation.ConnectorKey != connectorKey {
 		return invalidRequest("clientRequestId was already used for a different connector-market command")
 	}
 	return nil
@@ -1043,7 +878,7 @@ func randomID() (string, error) {
 
 func operationTarget(kind OperationKind, connector Connector) *OperationTarget {
 	if kind == OperationKindInstall || kind == OperationKindStartAuthorization ||
-		kind == OperationKindDisconnectAuthorization || kind == OperationKindSetWorkspaceEnabled {
+		kind == OperationKindDisconnectAuthorization {
 		release := connector.Release
 		return &OperationTarget{
 			ConnectorKey:   release.ConnectorKey,

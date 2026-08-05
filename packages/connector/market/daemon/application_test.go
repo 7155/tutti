@@ -18,7 +18,6 @@ func TestApplicationInstallIsDurableAndIdempotent(t *testing.T) {
 	command := ConnectorMutation{
 		Mutation:     Mutation{ClientRequestID: "request-1", ExpectedRevision: 0},
 		ConnectorKey: "github",
-		WorkspaceID:  "workspace-1",
 	}
 
 	accepted, err := application.Install(context.Background(), command)
@@ -31,7 +30,6 @@ func TestApplicationInstallIsDurableAndIdempotent(t *testing.T) {
 	if accepted.Operation.State != OperationStateAccepted || accepted.Revision != 1 {
 		t.Fatalf("result = %#v", accepted)
 	}
-
 	retried, err := application.Install(context.Background(), command)
 	if err != nil {
 		t.Fatal(err)
@@ -55,7 +53,6 @@ func TestApplicationExecutesAcceptedInstall(t *testing.T) {
 	accepted, err := application.Install(context.Background(), ConnectorMutation{
 		Mutation:     Mutation{ClientRequestID: "request-1", ExpectedRevision: 0},
 		ConnectorKey: "github",
-		WorkspaceID:  "workspace-1",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +61,7 @@ func TestApplicationExecutesAcceptedInstall(t *testing.T) {
 	if err := application.ExecuteOperation(context.Background(), accepted.Operation.OperationID); err != nil {
 		t.Fatal(err)
 	}
-	installed, err := repository.Connector(context.Background(), "github", "")
+	installed, err := repository.Connector(context.Background(), "github")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,22 +77,21 @@ func TestApplicationExecutesAcceptedInstall(t *testing.T) {
 	}
 }
 
-func TestApplicationReconcilesInstalledDurableWorkspaceIntentAtStartup(t *testing.T) {
+func TestApplicationReconcilesInstalledRuntimeAtStartup(t *testing.T) {
 	connector := testConnector("github")
 	connector.Revision = 7
 	connector.Installation = Installation{
 		State: InstallationStateInstalled, InstalledVersion: connector.Release.Version,
 		InstalledReleaseID: connector.Release.ReleaseID, InstalledReleaseDigest: connector.Release.ReleaseDigest,
 	}
-	connector.WorkspaceBinding = &WorkspaceBinding{WorkspaceID: "workspace-1", Enabled: true}
 	repository := newMemoryRepository(connector)
 	host := &memoryInstallRuntime{}
 	application := newTestApplication(t, repository, &memoryScheduler{}, host, CatalogSnapshot{})
 
-	if err := application.ReconcileDurableBindings(context.Background()); err != nil {
+	if err := application.ReconcileInstalledRuntimes(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if host.reconciles != 1 || host.lastReconcile.WorkspaceID != "workspace-1" ||
+	if host.reconciles != 1 || host.lastReconcile.ConnectionID != defaultConnectorConnectionID ||
 		host.lastReconcile.Generation.Generation != 7 || host.lastReconcile.Generation.BootEpoch == "" {
 		t.Fatalf("startup reconcile = %#v, count=%d", host.lastReconcile, host.reconciles)
 	}
@@ -121,24 +117,10 @@ func TestInstalledReleaseRemainsRunnableAfterCatalogAdvances(t *testing.T) {
 	host := &memoryInstallRuntime{}
 	application := newTestApplication(t, repository, &memoryScheduler{}, host, CatalogSnapshot{})
 
-	result, err := application.SetWorkspaceEnabled(context.Background(), SetWorkspaceEnabledCommand{
-		ConnectorMutation: ConnectorMutation{Mutation: Mutation{ClientRequestID: "enable-request"}, ConnectorKey: connector.Key},
-		WorkspaceID:       "workspace-1",
-		Enabled:           true,
-	})
-	if err != nil {
+	if err := application.ReconcileInstalledRuntimes(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if err := application.ExecuteOperation(context.Background(), result.Operation.OperationID); err != nil {
-		t.Fatal(err)
-	}
-	if host.lastReconcile.Connector.Release.ReleaseDigest != installedRelease.ReleaseDigest {
-		t.Fatalf("enable reconciled release = %q, want installed %q", host.lastReconcile.Connector.Release.ReleaseDigest, installedRelease.ReleaseDigest)
-	}
-	if err := application.ReconcileDurableBindings(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if host.reconciles != 2 || host.lastReconcile.Connector.Release.ReleaseDigest != installedRelease.ReleaseDigest {
+	if host.reconciles != 1 || host.lastReconcile.Connector.Release.ReleaseDigest != installedRelease.ReleaseDigest {
 		t.Fatalf("restart reconcile = %#v, count=%d", host.lastReconcile, host.reconciles)
 	}
 }
@@ -158,8 +140,8 @@ func TestInstallCompletionUsesFrozenReleaseAfterCatalogAdvances(t *testing.T) {
 		Target: &OperationTarget{ConnectorKey: connector.Key, Version: installRelease.Version,
 			ReleaseID: installRelease.ReleaseID, ReleaseDigest: installRelease.ReleaseDigest,
 			ArtifactSHA256: installRelease.Artifact.SHA256, Release: &installRelease},
-		WorkspaceID: "workspace-1", HostGeneration: HostGeneration{BootEpoch: "boot-1", Generation: 1},
-		CreatedAt: time.Unix(1, 0).UTC(), UpdatedAt: time.Unix(1, 0).UTC(),
+		HostGeneration: HostGeneration{BootEpoch: "boot-1", Generation: 1},
+		CreatedAt:      time.Unix(1, 0).UTC(), UpdatedAt: time.Unix(1, 0).UTC(),
 	}
 	repository.operations[operation.OperationID] = operation
 	application := newTestApplication(t, repository, &memoryScheduler{}, &memoryInstallRuntime{}, CatalogSnapshot{})
@@ -174,47 +156,6 @@ func TestInstallCompletionUsesFrozenReleaseAfterCatalogAdvances(t *testing.T) {
 	}
 }
 
-func TestEnableReconcileCompensatesWhenDurableCompletionFails(t *testing.T) {
-	for _, test := range []struct {
-		name            string
-		completionErr   error
-		deactivationErr error
-		wantFailClosed  int
-	}{
-		{name: "transaction failure uses exact deactivation", completionErr: errors.New("simulated transaction failure")},
-		{name: "lease loss uses exact deactivation", completionErr: ErrOperationLeaseLost},
-		{name: "global fence after deactivation failure", completionErr: errors.New("simulated transaction failure"), deactivationErr: errors.New("simulated deactivation failure"), wantFailClosed: 1},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			connector := testConnector("github")
-			connector.Installation = Installation{State: InstallationStateInstalled, InstalledVersion: connector.Release.Version,
-				InstalledReleaseID: connector.Release.ReleaseID, InstalledReleaseDigest: connector.Release.ReleaseDigest}
-			repository := newMemoryRepository(connector)
-			enabled := true
-			operation := Operation{OperationID: "enable-1", ClientRequestID: "enable-request-1", ConnectorKey: connector.Key,
-				Kind: OperationKindSetWorkspaceEnabled, State: OperationStateAccepted, Stage: OperationStageAccepted,
-				Target:      &OperationTarget{ConnectorKey: connector.Key, ReleaseDigest: connector.Release.ReleaseDigest, Release: &connector.Release},
-				WorkspaceID: "workspace-1", WorkspaceEnabled: &enabled, HostGeneration: HostGeneration{BootEpoch: "boot-1", Generation: 2},
-				CreatedAt: time.Now(), UpdatedAt: time.Now()}
-			repository.operations[operation.OperationID] = operation
-			repository.failTransactionCall = 2 // mark running commits; durable completion fails.
-			repository.failTransactionErr = test.completionErr
-			host := &memoryInstallRuntime{deactivationErr: test.deactivationErr}
-			application := newTestApplication(t, repository, &memoryScheduler{}, host, CatalogSnapshot{})
-			if err := application.ExecuteOperation(context.Background(), operation.OperationID); err == nil {
-				t.Fatal("enable completion unexpectedly succeeded")
-			}
-			stored := repository.operations[operation.OperationID]
-			if stored.State != OperationStateRunning {
-				t.Fatalf("operation state = %q, want recoverable running", stored.State)
-			}
-			if host.reconciles != 1 || host.deactivations != 1 || host.failClosed != test.wantFailClosed {
-				t.Fatalf("host reconciles=%d deactivations=%d failClosed=%d", host.reconciles, host.deactivations, host.failClosed)
-			}
-		})
-	}
-}
-
 func TestApplicationRecoveryObservesActivatedRuntimeBeforeCompleting(t *testing.T) {
 	repository := newMemoryRepository(testConnector("github"))
 	installationHost := &memoryInstallRuntime{}
@@ -222,7 +163,6 @@ func TestApplicationRecoveryObservesActivatedRuntimeBeforeCompleting(t *testing.
 	accepted, err := application.Install(context.Background(), ConnectorMutation{
 		Mutation:     Mutation{ClientRequestID: "request-1", ExpectedRevision: 0},
 		ConnectorKey: "github",
-		WorkspaceID:  "workspace-1",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -259,7 +199,7 @@ func TestApplicationRecoveryAdoptsInstallAndUninstallIntoCurrentBootEpoch(t *tes
 	scheduler := &memoryScheduler{}
 	application := newTestApplication(t, repository, scheduler, &memoryInstallRuntime{}, CatalogSnapshot{})
 	accepted, err := application.Install(context.Background(), ConnectorMutation{
-		Mutation: Mutation{ClientRequestID: "request-1", ExpectedRevision: 0}, ConnectorKey: "github", WorkspaceID: "workspace-1",
+		Mutation: Mutation{ClientRequestID: "request-1", ExpectedRevision: 0}, ConnectorKey: "github",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -293,7 +233,6 @@ func TestApplicationWritesChangedEventsInsideRepositoryTransactions(t *testing.T
 	accepted, err := application.Install(context.Background(), ConnectorMutation{
 		Mutation:     Mutation{ClientRequestID: "request-1", ExpectedRevision: 0},
 		ConnectorKey: "github",
-		WorkspaceID:  "workspace-1",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -311,7 +250,6 @@ func TestApplicationDoesNotExecuteOperationHeldByAnotherWorker(t *testing.T) {
 	accepted, err := application.Install(context.Background(), ConnectorMutation{
 		Mutation:     Mutation{ClientRequestID: "request-1", ExpectedRevision: 0},
 		ConnectorKey: "github",
-		WorkspaceID:  "workspace-1",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -338,7 +276,6 @@ func TestApplicationSingleFlightsConcurrentOperationExecution(t *testing.T) {
 	accepted, err := application.Install(context.Background(), ConnectorMutation{
 		Mutation:     Mutation{ClientRequestID: "request-1", ExpectedRevision: 0},
 		ConnectorKey: "github",
-		WorkspaceID:  "workspace-1",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -385,7 +322,6 @@ func TestApplicationSharesConcurrentOperationFailureAndClearsFlight(t *testing.T
 	accepted, err := application.Install(context.Background(), ConnectorMutation{
 		Mutation:     Mutation{ClientRequestID: "request-1", ExpectedRevision: 0},
 		ConnectorKey: "github",
-		WorkspaceID:  "workspace-1",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -442,7 +378,6 @@ func TestApplicationRejectsConcurrentConnectorOperation(t *testing.T) {
 	if _, err := application.Install(context.Background(), ConnectorMutation{
 		Mutation:     Mutation{ClientRequestID: "install-1", ExpectedRevision: 0},
 		ConnectorKey: "github",
-		WorkspaceID:  "workspace-1",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -482,7 +417,6 @@ func TestApplicationRejectsStaleRevisionBeforeMutation(t *testing.T) {
 	_, err := application.Install(context.Background(), ConnectorMutation{
 		Mutation:     Mutation{ClientRequestID: "request-1", ExpectedRevision: 3},
 		ConnectorKey: "github",
-		WorkspaceID:  "workspace-1",
 	})
 	var domainError *DomainError
 	if !errors.As(err, &domainError) || domainError.Code != ErrorCodeRevisionConflict {
@@ -504,7 +438,7 @@ func TestApplicationCatalogPageCachesNewConnectorForImmediateInstall(t *testing.
 	application := newTestApplicationWithCatalogSource(t, repository, &memoryScheduler{}, &memoryInstallRuntime{}, source)
 
 	page, err := application.ListCatalogPage(context.Background(), CatalogPageQuery{
-		SectionID: "development", PageSize: 20, WorkspaceID: "workspace-1",
+		SectionID: "development", PageSize: 20,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -512,7 +446,7 @@ func TestApplicationCatalogPageCachesNewConnectorForImmediateInstall(t *testing.
 	if page.Revision != 1 || page.NextPageToken != "next-page" || len(page.Items) != 1 || page.Items[0].Connector.Key != "github" {
 		t.Fatalf("page = %#v", page)
 	}
-	if _, err := repository.Connector(context.Background(), "github", "workspace-1"); err != nil {
+	if _, err := repository.Connector(context.Background(), "github"); err != nil {
 		t.Fatalf("cached connector: %v", err)
 	}
 
@@ -662,19 +596,19 @@ type memoryInstallRuntime struct {
 	deactivations   int
 	activeDigest    string
 	reconciles      int
-	lastReconcile   WorkspaceReconcileRequest
+	lastReconcile   RuntimeReconcileRequest
 	deactivationErr error
 	failClosed      int
 }
 
-func (host *memoryInstallRuntime) Reconcile(_ context.Context, request WorkspaceReconcileRequest) (WorkspaceRuntimeReceipt, error) {
+func (host *memoryInstallRuntime) Reconcile(_ context.Context, request RuntimeReconcileRequest) (RuntimeReceipt, error) {
 	host.reconciles++
 	host.lastReconcile = request
-	return WorkspaceRuntimeReceipt{OperationID: request.OperationID, WorkspaceID: request.WorkspaceID,
+	return RuntimeReceipt{OperationID: request.OperationID, ConnectionID: request.ConnectionID,
 		ConnectorKey: request.Connector.Key, ReleaseDigest: request.Connector.Release.ReleaseDigest, Generation: request.Generation}, nil
 }
 
-func (host *memoryInstallRuntime) DeactivateWorkspace(context.Context, WorkspaceDeactivationRequest) error {
+func (host *memoryInstallRuntime) DeactivateRuntime(context.Context, RuntimeDeactivationRequest) error {
 	host.deactivations++
 	if host.deactivationErr != nil {
 		return host.deactivationErr
@@ -703,30 +637,6 @@ func (host *memoryInstallRuntime) Prepare(_ context.Context, request PrepareArti
 
 func (host *memoryInstallRuntime) Remove(context.Context, RemoveArtifactRequest) error {
 	host.removes++
-	return nil
-}
-
-func (host *memoryInstallRuntime) Observe(context.Context, RuntimeObserveRequest) (RuntimeObservation, error) {
-	if host.activeDigest == "" {
-		return RuntimeObservation{State: RuntimeStateInactive}, nil
-	}
-	return RuntimeObservation{State: RuntimeStateActive, ReleaseDigest: host.activeDigest}, nil
-}
-
-func (host *memoryInstallRuntime) Activate(_ context.Context, request RuntimeActivationRequest) (RuntimeActivationReceipt, error) {
-	host.activations++
-	host.activeDigest = request.Release.ReleaseDigest
-	return RuntimeActivationReceipt{
-		OperationID:   request.OperationID,
-		ConnectorKey:  request.Release.ConnectorKey,
-		ReleaseDigest: request.Release.ReleaseDigest,
-		RuntimeID:     "runtime-1",
-	}, nil
-}
-
-func (host *memoryInstallRuntime) Deactivate(context.Context, RuntimeDeactivationRequest) error {
-	host.deactivations++
-	host.activeDigest = ""
 	return nil
 }
 
@@ -819,7 +729,7 @@ func newMemoryRepository(connectors ...Connector) *memoryRepository {
 	return repository
 }
 
-func (repository *memoryRepository) Snapshot(_ context.Context, _ string) (Snapshot, error) {
+func (repository *memoryRepository) Snapshot(_ context.Context) (Snapshot, error) {
 	connectors := make([]Connector, 0, len(repository.connectors))
 	for _, connector := range repository.connectors {
 		connectors = append(connectors, connector)
@@ -838,7 +748,7 @@ func (repository *memoryRepository) Snapshot(_ context.Context, _ string) (Snaps
 	}, nil
 }
 
-func (repository *memoryRepository) Connector(_ context.Context, connectorKey, _ string) (Connector, error) {
+func (repository *memoryRepository) Connector(_ context.Context, connectorKey string) (Connector, error) {
 	connector, ok := repository.connectors[connectorKey]
 	if !ok {
 		return Connector{}, ErrNotFound
@@ -964,17 +874,6 @@ func (repository *memoryRepository) RecoverableOperations(context.Context) ([]Op
 	return operations, nil
 }
 
-func (repository *memoryRepository) WorkspaceBindings(_ context.Context, connectorKey string) ([]WorkspaceBinding, error) {
-	connector, ok := repository.connectors[connectorKey]
-	if !ok {
-		return nil, ErrNotFound
-	}
-	if connector.WorkspaceBinding == nil {
-		return nil, nil
-	}
-	return []WorkspaceBinding{*connector.WorkspaceBinding}, nil
-}
-
 type memoryTransaction struct {
 	revision       uint64
 	catalogState   CatalogState
@@ -1059,18 +958,6 @@ func (transaction *memoryTransaction) DeleteConnector(connectorKey string) error
 func (transaction *memoryTransaction) SaveOperation(operation Operation) error {
 	transaction.operations[operation.OperationID] = operation
 	return nil
-}
-
-func (transaction *memoryTransaction) SetWorkspaceBinding(
-	connectorKey string,
-	binding WorkspaceBinding,
-) (Connector, error) {
-	connector, ok := transaction.connectors[connectorKey]
-	if !ok {
-		return Connector{}, ErrNotFound
-	}
-	connector.WorkspaceBinding = &binding
-	return connector, nil
 }
 
 func (transaction *memoryTransaction) EnqueueConnectorMarketChanged(event ChangedEvent) error {

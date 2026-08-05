@@ -53,15 +53,15 @@ type activationGateHost struct {
 	mu         sync.Mutex
 	open       bool
 	failClosed bool
-	staged     map[string]market.WorkspaceReconcileRequest
+	staged     map[string]market.RuntimeReconcileRequest
 }
 
 func newActivationGateHost(delegate market.ImplementationHost) *activationGateHost {
-	return &activationGateHost{delegate: delegate, staged: make(map[string]market.WorkspaceReconcileRequest)}
+	return &activationGateHost{delegate: delegate, staged: make(map[string]market.RuntimeReconcileRequest)}
 }
 
-func (gate *activationGateHost) Reconcile(ctx context.Context, request market.WorkspaceReconcileRequest) (market.WorkspaceRuntimeReceipt, error) {
-	key := request.WorkspaceID + "\x00" + request.Connector.Key
+func (gate *activationGateHost) Reconcile(ctx context.Context, request market.RuntimeReconcileRequest) (market.RuntimeReceipt, error) {
+	key := request.ConnectionID + "\x00" + request.Connector.Key
 	gate.mu.Lock()
 	if !request.Enabled {
 		delete(gate.staged, key)
@@ -77,21 +77,21 @@ func (gate *activationGateHost) Reconcile(ctx context.Context, request market.Wo
 		gate.staged[key] = request
 	}
 	gate.mu.Unlock()
-	return market.WorkspaceRuntimeReceipt{OperationID: request.OperationID, WorkspaceID: request.WorkspaceID,
+	return market.RuntimeReceipt{OperationID: request.OperationID, ConnectionID: request.ConnectionID,
 		ConnectorKey: request.Connector.Key, ReleaseDigest: request.Connector.Release.ReleaseDigest, Generation: request.Generation}, nil
 }
 
-func (gate *activationGateHost) DeactivateWorkspace(ctx context.Context, request market.WorkspaceDeactivationRequest) error {
+func (gate *activationGateHost) DeactivateRuntime(ctx context.Context, request market.RuntimeDeactivationRequest) error {
 	gate.mu.Lock()
-	delete(gate.staged, request.WorkspaceID+"\x00"+request.ConnectorKey)
+	delete(gate.staged, request.ConnectionID+"\x00"+request.ConnectorKey)
 	gate.mu.Unlock()
-	return gate.delegate.DeactivateWorkspace(ctx, request)
+	return gate.delegate.DeactivateRuntime(ctx, request)
 }
 
 func (gate *activationGateHost) FailClosed(ctx context.Context, deadline time.Time) error {
 	gate.mu.Lock()
 	gate.failClosed = true
-	gate.staged = make(map[string]market.WorkspaceReconcileRequest)
+	gate.staged = make(map[string]market.RuntimeReconcileRequest)
 	gate.mu.Unlock()
 	return gate.delegate.FailClosed(ctx, deadline)
 }
@@ -112,7 +112,7 @@ func (gate *activationGateHost) setOpen(open bool) {
 	gate.mu.Lock()
 	gate.open = open
 	if !open {
-		gate.staged = make(map[string]market.WorkspaceReconcileRequest)
+		gate.staged = make(map[string]market.RuntimeReconcileRequest)
 	}
 	gate.mu.Unlock()
 }
@@ -167,7 +167,7 @@ func NewHost(parent context.Context, config HostConfig) (*Host, error) {
 }
 
 // Bootstrap refreshes and accepts the current market catalog before any
-// durable workspace intent is allowed to recreate MCP/CLI routes. Failed
+// installed runtime intent is allowed to recreate MCP/CLI routes. Failed
 // bootstrap attempts leave the connector host fenced and may be retried.
 func (host *Host) Bootstrap(ctx context.Context) error {
 	if host == nil || host.Application == nil {
@@ -203,7 +203,7 @@ func (host *Host) Bootstrap(ctx context.Context) error {
 				slog.Error("connector market bootstrap rollback runtime fence failed", "error", err)
 			}
 		}
-		if err := host.Application.FenceDurableBindings(fenceContext); err != nil {
+		if err := host.Application.FenceInstalledRuntimes(fenceContext); err != nil {
 			slog.Error("connector market bootstrap rollback fence failed", "error", err)
 		}
 	}()
@@ -215,7 +215,7 @@ func (host *Host) Bootstrap(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := host.Application.FenceDurableBindings(ctx); err != nil {
+	if err := host.Application.FenceInstalledRuntimes(ctx); err != nil {
 		return err
 	}
 	if err := host.recoverAndWait(ctx); err != nil {
@@ -225,7 +225,7 @@ func (host *Host) Bootstrap(ctx context.Context) error {
 		return err
 	}
 	host.activationGate.setOpen(true)
-	if err := host.Application.ReconcileDurableBindings(ctx); err != nil {
+	if err := host.Application.ReconcileInstalledRuntimes(ctx); err != nil {
 		return err
 	}
 	if host.publicationGate != nil {
@@ -273,7 +273,7 @@ func (host *Host) recoverAndWait(ctx context.Context) error {
 }
 
 func (host *Host) refreshAndWait(ctx context.Context) error {
-	snapshot, err := host.Application.Snapshot(ctx, "")
+	snapshot, err := host.Application.Snapshot(ctx)
 	if err != nil {
 		return err
 	}
@@ -337,7 +337,7 @@ func (host *Host) runCatalogRefreshWorker() {
 		refreshContext, cancel := context.WithTimeout(host.scheduler.ctx, 45*time.Second)
 		err := host.refreshAndWait(refreshContext)
 		if err == nil {
-			err = host.Application.ReconcileDurableBindings(refreshContext)
+			err = host.Application.ReconcileInstalledRuntimes(refreshContext)
 			if err == nil && host.activationGate.requiresRecovery() {
 				if host.publicationGate != nil {
 					host.publicationGate.SetCapabilityPublication(true)
@@ -397,11 +397,11 @@ func (unavailableArtifactPreparer) Remove(context.Context, market.RemoveArtifact
 
 type unavailableRuntime struct{}
 
-func (unavailableRuntime) Reconcile(context.Context, market.WorkspaceReconcileRequest) (market.WorkspaceRuntimeReceipt, error) {
-	return market.WorkspaceRuntimeReceipt{}, errors.New("connector implementation host is not registered")
+func (unavailableRuntime) Reconcile(context.Context, market.RuntimeReconcileRequest) (market.RuntimeReceipt, error) {
+	return market.RuntimeReceipt{}, errors.New("connector implementation host is not registered")
 }
 
-func (unavailableRuntime) DeactivateWorkspace(context.Context, market.WorkspaceDeactivationRequest) error {
+func (unavailableRuntime) DeactivateRuntime(context.Context, market.RuntimeDeactivationRequest) error {
 	return errors.New("connector runtime is not registered")
 }
 

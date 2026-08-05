@@ -1542,7 +1542,6 @@ const (
 	DisconnectAuthorization ConnectorMarketOperationKind = "disconnect_authorization"
 	Install                 ConnectorMarketOperationKind = "install"
 	RefreshCatalog          ConnectorMarketOperationKind = "refresh_catalog"
-	SetWorkspaceEnabled     ConnectorMarketOperationKind = "set_workspace_enabled"
 	StartAuthorization      ConnectorMarketOperationKind = "start_authorization"
 	Uninstall               ConnectorMarketOperationKind = "uninstall"
 )
@@ -1555,8 +1554,6 @@ func (e ConnectorMarketOperationKind) Valid() bool {
 	case Install:
 		return true
 	case RefreshCatalog:
-		return true
-	case SetWorkspaceEnabled:
 		return true
 	case StartAuthorization:
 		return true
@@ -5925,13 +5922,12 @@ type ConnectorMarketCompatibilityState string
 
 // ConnectorMarketConnector defines model for ConnectorMarketConnector.
 type ConnectorMarketConnector struct {
-	Authorization    ConnectorMarketAuthorization     `json:"authorization"`
-	Compatibility    ConnectorMarketCompatibility     `json:"compatibility"`
-	Installation     ConnectorMarketInstallation      `json:"installation"`
-	Key              string                           `json:"key"`
-	Release          ConnectorMarketRelease           `json:"release"`
-	Revision         int64                            `json:"revision"`
-	WorkspaceBinding *ConnectorMarketWorkspaceBinding `json:"workspaceBinding,omitempty"`
+	Authorization ConnectorMarketAuthorization `json:"authorization"`
+	Compatibility ConnectorMarketCompatibility `json:"compatibility"`
+	Installation  ConnectorMarketInstallation  `json:"installation"`
+	Key           string                       `json:"key"`
+	Release       ConnectorMarketRelease       `json:"release"`
+	Revision      int64                        `json:"revision"`
 }
 
 // ConnectorMarketConnectorResponse defines model for ConnectorMarketConnectorResponse.
@@ -6061,19 +6057,6 @@ type ConnectorMarketSnapshot struct {
 	Operations     []ConnectorMarketOperation  `json:"operations"`
 	Revision       int64                       `json:"revision"`
 	SourceRevision *string                     `json:"sourceRevision,omitempty"`
-}
-
-// ConnectorMarketWorkspaceBinding defines model for ConnectorMarketWorkspaceBinding.
-type ConnectorMarketWorkspaceBinding struct {
-	Enabled     bool   `json:"enabled"`
-	WorkspaceId string `json:"workspaceId"`
-}
-
-// ConnectorMarketWorkspaceMutationRequest defines model for ConnectorMarketWorkspaceMutationRequest.
-type ConnectorMarketWorkspaceMutationRequest struct {
-	ClientRequestId  string `json:"clientRequestId"`
-	ExpectedRevision int64  `json:"expectedRevision"`
-	WorkspaceId      string `json:"workspaceId"`
 }
 
 // CopyWorkspaceFileEntryRequest defines model for CopyWorkspaceFileEntryRequest.
@@ -7703,14 +7686,6 @@ type SetAgentSessionModelPolicyOverrideRequest struct {
 type SetCollaborationRunAdoptionRequest struct {
 	// Adoption Whether the run outcome was taken up by the source task. Fork and handoff runs report not_applicable.
 	Adoption CollaborationRunAdoption `json:"adoption"`
-}
-
-// SetConnectorMarketWorkspaceBindingRequest defines model for SetConnectorMarketWorkspaceBindingRequest.
-type SetConnectorMarketWorkspaceBindingRequest struct {
-	ClientRequestId  string `json:"clientRequestId"`
-	Enabled          bool   `json:"enabled"`
-	ExpectedRevision int64  `json:"expectedRevision"`
-	WorkspaceId      string `json:"workspaceId"`
 }
 
 // SetModelPlanEnabledRequest defines model for SetModelPlanEnabledRequest.
@@ -9520,9 +9495,6 @@ type ConnectorMarketPageToken = string
 // ConnectorMarketSectionID defines model for ConnectorMarketSectionID.
 type ConnectorMarketSectionID = string
 
-// ConnectorMarketWorkspaceID defines model for ConnectorMarketWorkspaceID.
-type ConnectorMarketWorkspaceID = string
-
 // IssueID defines model for IssueID.
 type IssueID = string
 
@@ -9743,22 +9715,11 @@ type ListCliCapabilitiesParams struct {
 	IncludeIntegration *bool `form:"includeIntegration,omitempty" json:"includeIntegration,omitempty"`
 }
 
-// GetConnectorMarketParams defines parameters for GetConnectorMarket.
-type GetConnectorMarketParams struct {
-	WorkspaceId *ConnectorMarketWorkspaceID `form:"workspaceId,omitempty" json:"workspaceId,omitempty"`
-}
-
 // ListConnectorMarketCatalogParams defines parameters for ListConnectorMarketCatalog.
 type ListConnectorMarketCatalogParams struct {
-	SectionId   ConnectorMarketSectionID    `form:"sectionId" json:"sectionId"`
-	PageSize    *ConnectorMarketPageSize    `form:"pageSize,omitempty" json:"pageSize,omitempty"`
-	PageToken   *ConnectorMarketPageToken   `form:"pageToken,omitempty" json:"pageToken,omitempty"`
-	WorkspaceId *ConnectorMarketWorkspaceID `form:"workspaceId,omitempty" json:"workspaceId,omitempty"`
-}
-
-// GetConnectorMarketConnectorParams defines parameters for GetConnectorMarketConnector.
-type GetConnectorMarketConnectorParams struct {
-	WorkspaceId *ConnectorMarketWorkspaceID `form:"workspaceId,omitempty" json:"workspaceId,omitempty"`
+	SectionId ConnectorMarketSectionID  `form:"sectionId" json:"sectionId"`
+	PageSize  *ConnectorMarketPageSize  `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+	PageToken *ConnectorMarketPageToken `form:"pageToken,omitempty" json:"pageToken,omitempty"`
 }
 
 // ListWorkspaceAgentGeneratedFilesParams defines parameters for ListWorkspaceAgentGeneratedFiles.
@@ -10050,13 +10011,10 @@ type InvokeCliCommandJSONRequestBody = CliInvokeRequest
 type DisconnectConnectorMarketAuthorizationJSONRequestBody = ConnectorMarketMutationRequest
 
 // StartConnectorMarketAuthorizationJSONRequestBody defines body for StartConnectorMarketAuthorization for application/json ContentType.
-type StartConnectorMarketAuthorizationJSONRequestBody = ConnectorMarketWorkspaceMutationRequest
-
-// SetConnectorMarketWorkspaceBindingJSONRequestBody defines body for SetConnectorMarketWorkspaceBinding for application/json ContentType.
-type SetConnectorMarketWorkspaceBindingJSONRequestBody = SetConnectorMarketWorkspaceBindingRequest
+type StartConnectorMarketAuthorizationJSONRequestBody = ConnectorMarketMutationRequest
 
 // InstallConnectorMarketConnectorJSONRequestBody defines body for InstallConnectorMarketConnector for application/json ContentType.
-type InstallConnectorMarketConnectorJSONRequestBody = ConnectorMarketWorkspaceMutationRequest
+type InstallConnectorMarketConnectorJSONRequestBody = ConnectorMarketMutationRequest
 
 // UninstallConnectorMarketConnectorJSONRequestBody defines body for UninstallConnectorMarketConnector for application/json ContentType.
 type UninstallConnectorMarketConnectorJSONRequestBody = ConnectorMarketMutationRequest

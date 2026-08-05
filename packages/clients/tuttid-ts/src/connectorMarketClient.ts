@@ -7,7 +7,6 @@ import {
   listConnectorMarketCatalog,
   listConnectorMarketCategories,
   refreshConnectorMarket,
-  setConnectorMarketWorkspaceBinding,
   startConnectorMarketAuthorization,
   uninstallConnectorMarketConnector
 } from "./generated/index.ts";
@@ -16,14 +15,11 @@ import type {
   ConnectorMarketCatalogPage,
   ConnectorMarketCategoriesResponse,
   ConnectorMarketConnector,
-  ConnectorMarketConnectorResponse,
   ConnectorMarketError,
   ConnectorMarketMutationRequest,
   ConnectorMarketMutationResponse,
-  ConnectorMarketWorkspaceMutationRequest,
   ConnectorMarketOperation,
-  ConnectorMarketSnapshot,
-  SetConnectorMarketWorkspaceBindingRequest
+  ConnectorMarketSnapshot
 } from "./generated/index.ts";
 import type { Client } from "./generated/client/index.ts";
 import { unwrapData } from "./tuttidClientResponse.ts";
@@ -59,17 +55,15 @@ export function isConnectorMarketClientError(
 }
 
 export interface ConnectorMarketClient {
-  getConnectorMarket(workspaceId?: string): Promise<ConnectorMarketSnapshot>;
+  getConnectorMarket(): Promise<ConnectorMarketSnapshot>;
   listConnectorMarketCategories(): Promise<ConnectorMarketCategoriesResponse>;
   listConnectorMarketCatalog(input: {
     sectionId: string;
     pageSize?: number;
     pageToken?: string;
-    workspaceId?: string;
   }): Promise<ConnectorMarketCatalogPage>;
   getConnectorMarketConnector(
-    connectorKey: string,
-    workspaceId?: string
+    connectorKey: string
   ): Promise<ConnectorMarketConnector>;
   getConnectorMarketOperation(
     operationId: string
@@ -79,7 +73,7 @@ export interface ConnectorMarketClient {
   ): Promise<ConnectorMarketMutationResponse>;
   installConnectorMarketConnector(
     connectorKey: string,
-    request: ConnectorMarketWorkspaceMutationRequest
+    request: ConnectorMarketMutationRequest
   ): Promise<ConnectorMarketMutationResponse>;
   uninstallConnectorMarketConnector(
     connectorKey: string,
@@ -87,28 +81,21 @@ export interface ConnectorMarketClient {
   ): Promise<ConnectorMarketMutationResponse>;
   startConnectorMarketAuthorization(
     connectorKey: string,
-    request: ConnectorMarketWorkspaceMutationRequest
+    request: ConnectorMarketMutationRequest
   ): Promise<ConnectorMarketAuthorizationResponse>;
   disconnectConnectorMarketAuthorization(
     connectorKey: string,
     request: ConnectorMarketMutationRequest
   ): Promise<ConnectorMarketMutationResponse>;
-  setConnectorMarketWorkspaceBinding(
-    connectorKey: string,
-    request: SetConnectorMarketWorkspaceBindingRequest
-  ): Promise<ConnectorMarketConnectorResponse>;
 }
 
 export function createConnectorMarketClient(
   client: Client
 ): ConnectorMarketClient {
   return {
-    async getConnectorMarket(workspaceId) {
+    async getConnectorMarket() {
       return unwrapConnectorMarketData(
-        await getConnectorMarket({
-          client,
-          ...(workspaceId ? { query: { workspaceId } } : {})
-        }),
+        await getConnectorMarket({ client }),
         "Get connector market request failed."
       );
     },
@@ -124,12 +111,11 @@ export function createConnectorMarketClient(
         "List connector market catalog request failed."
       );
     },
-    async getConnectorMarketConnector(connectorKey, workspaceId) {
+    async getConnectorMarketConnector(connectorKey) {
       return unwrapConnectorMarketData(
         await getConnectorMarketConnector({
           client,
-          path: { connectorKey },
-          ...(workspaceId ? { query: { workspaceId } } : {})
+          path: { connectorKey }
         }),
         "Get connector market connector request failed."
       );
@@ -187,16 +173,6 @@ export function createConnectorMarketClient(
           path: { connectorKey }
         }),
         "Disconnect connector authorization request failed."
-      );
-    },
-    async setConnectorMarketWorkspaceBinding(connectorKey, request) {
-      return unwrapConnectorMarketData(
-        await setConnectorMarketWorkspaceBinding({
-          client,
-          body: request,
-          path: { connectorKey }
-        }),
-        "Set connector workspace binding request failed."
       );
     }
   };

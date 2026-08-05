@@ -28,7 +28,6 @@ export type ConnectorOperationKind =
   | "install"
   | "uninstall"
   | "start_authorization"
-  | "set_workspace_enabled"
   | "disconnect_authorization";
 
 export type ConnectorOperationState =
@@ -150,18 +149,12 @@ export interface ConnectorCompatibility {
   reason?: string;
 }
 
-export interface ConnectorWorkspaceBinding {
-  workspaceId: string;
-  enabled: boolean;
-}
-
 export interface Connector {
   key: string;
   release: ConnectorRelease;
   installation: ConnectorInstallation;
   authorization: ConnectorAuthorization;
   compatibility: ConnectorCompatibility;
-  workspaceBinding?: ConnectorWorkspaceBinding;
   revision: number;
 }
 
@@ -226,14 +219,6 @@ export interface ConnectorMutationInput extends ConnectorMarketMutationInput {
   connectorKey: string;
 }
 
-export interface ConnectorWorkspaceMutationInput extends ConnectorMutationInput {
-  workspaceId: string;
-}
-
-export interface SetConnectorWorkspaceEnabledInput extends ConnectorWorkspaceMutationInput {
-  enabled: boolean;
-}
-
 export interface ConnectorMutationResult {
   connector?: Connector;
   operation: ConnectorOperation;
@@ -244,12 +229,6 @@ export interface ConnectorAuthorizationResult {
   connector: Connector;
   operation: ConnectorOperation;
   authorizationUrl?: string;
-  revision: number;
-}
-
-export interface ConnectorWorkspaceBindingResult {
-  connector: Connector;
-  operation: ConnectorOperation;
   revision: number;
 }
 

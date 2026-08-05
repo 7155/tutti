@@ -2,10 +2,7 @@ import { createDecorator } from "@tutti-os/infra/di";
 
 export type ConnectorMarketSegment = "available" | "installed";
 
-export interface ConnectorMarketScope {
-  workspaceId: string;
-  principalId?: string;
-}
+export type ConnectorMarketScope = Readonly<Record<string, never>>;
 
 export interface ConnectorMarketDialogRequest {
   connectorKey: string;

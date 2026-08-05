@@ -21,6 +21,7 @@ export interface ConnectorCardView {
   connectorKey: string;
   description: string;
   displayName: string;
+  iconUrl: string;
   implementationTags: string[];
   installationState: ConnectorInstallationState;
   operationStage: ConnectorOperationStage | null;
@@ -61,6 +62,7 @@ interface ConnectorDialogBaseView {
   connectorKey: string;
   description: string;
   displayName: string;
+  iconUrl: string;
   permissions: ConnectorPermissionView[];
 }
 

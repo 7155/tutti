@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -134,6 +135,30 @@ func (application *Application) executeInstall(ctx context.Context, operation Op
 	if err != nil {
 		return err
 	}
+	if cliInstall := releaseCLIInstallation(release); cliInstall != nil {
+		if application.config.CLIInstallations == nil {
+			return NewDomainError(ErrorCodeInstallFailed, "connector CLI installation is not registered", false, nil)
+		}
+		operation, err = application.updateOperationStage(ctx, operation.OperationID, OperationStageActivating, nil)
+		if err != nil {
+			return err
+		}
+		installed, installErr := application.config.CLIInstallations.InstallCLI(ctx, InstallCLIRequest{
+			OperationID: operation.OperationID,
+			Release:     release,
+		})
+		if installErr != nil {
+			return NewDomainError(ErrorCodeInstallFailed, "connector CLI installation failed", true, installErr)
+		}
+		if err := validateCLIInstallationReceipt(operation, release, *cliInstall, installed); err != nil {
+			return err
+		}
+		operation, err = application.updateOperationStage(ctx, operation.OperationID, OperationStageActivating,
+			func(current *Operation) { current.Execution.CLIInstallation = &installed })
+		if err != nil {
+			return err
+		}
+	}
 
 	rollout, err := application.rolloutInstalledBindings(ctx, operation, release)
 	if err != nil {
@@ -257,6 +282,17 @@ func (application *Application) executeUninstall(ctx context.Context, operation 
 		Deadline:   application.config.Now().UTC().Add(5 * time.Second),
 	}); err != nil {
 		return NewDomainError(ErrorCodeInstallFailed, "connector runtime routes could not be deactivated", true, err)
+	}
+	if operation.Target.Release != nil && releaseCLIInstallation(*operation.Target.Release) != nil {
+		if application.config.CLIInstallations == nil {
+			return NewDomainError(ErrorCodeInstallFailed, "connector CLI installation is not registered", false, nil)
+		}
+		if err := application.config.CLIInstallations.RemoveCLI(ctx, RemoveCLIRequest{
+			OperationID: operation.OperationID, ConnectorKey: operation.Target.ConnectorKey,
+			ReleaseDigest: operation.Target.ReleaseDigest,
+		}); err != nil {
+			return NewDomainError(ErrorCodeInstallFailed, "connector CLI installation cleanup failed", true, err)
+		}
 	}
 	if err := application.config.ArtifactPreparer.Remove(ctx, RemoveArtifactRequest{
 		OperationID:   operation.OperationID,
@@ -654,6 +690,31 @@ func validatePreparedArtifact(
 		!artifactSHA256Pattern.MatchString(receipt.InventoryDigest) ||
 		strings.TrimSpace(receipt.PreparedPath) == "" {
 		return invalidOperationReceipt("artifact preparer returned a mismatched receipt")
+	}
+	return nil
+}
+
+func releaseCLIInstallation(release Release) *NodePackageInstallation {
+	managed := release.Manifest.Implementation.ManagedStdio
+	if managed == nil || managed.CLI == nil || managed.CLI.Install == nil || managed.CLI.Install.NodePackage == nil {
+		return nil
+	}
+	return managed.CLI.Install.NodePackage
+}
+
+func validateCLIInstallationReceipt(operation Operation, release Release, install NodePackageInstallation, receipt CLIInstallationReceipt) error {
+	if receipt.SchemaVersion != "tutti.connector.cli-installation.v1" ||
+		receipt.OperationID != operation.OperationID || receipt.ConnectorKey != release.ConnectorKey ||
+		receipt.ReleaseDigest != release.ReleaseDigest || receipt.Package != install.Package ||
+		receipt.PackageVersion != install.Version || receipt.PackageIntegrity != install.Integrity ||
+		receipt.LaunchKind != install.Launch.Kind || receipt.EntrypointSize <= 0 ||
+		!artifactSHA256Pattern.MatchString(receipt.NodeSHA256) ||
+		!artifactSHA256Pattern.MatchString(receipt.EntrypointSHA256) ||
+		!artifactSHA256Pattern.MatchString(receipt.LockSHA256) ||
+		strings.TrimSpace(receipt.RuntimeProfile) == "" || strings.TrimSpace(receipt.RuntimeABI) == "" ||
+		strings.TrimSpace(receipt.NodeVersion) == "" || !filepath.IsAbs(receipt.InstallRoot) ||
+		!filepath.IsAbs(receipt.StoreRoot) || !safeRelativeEntrypoint(receipt.Entrypoint) {
+		return invalidOperationReceipt("CLI installer returned a mismatched receipt")
 	}
 	return nil
 }

@@ -239,7 +239,11 @@ func (source *CatalogSource) mapItem(item wireMarketItem) (market.Release, error
 		return market.Release{}, errors.New("connector manifest does not provide the configured market implementation")
 	}
 	releaseDigest := sha256.Sum256([]byte(item.ItemKey + "\x00" + item.Version + "\x00" + item.Artifact.SHA256))
-	manifest := market.Manifest{SchemaVersion: "1", DisplayName: connectorManifest.Display.Name,
+	iconURL := connectorManifest.Display.IconURL
+	if connectorManifest.SchemaVersion == "1" && strings.TrimSpace(iconURL) == "" {
+		iconURL = legacyConnectorIconURL
+	}
+	manifest := market.Manifest{SchemaVersion: connectorManifest.SchemaVersion, DisplayName: connectorManifest.Display.Name, IconURL: iconURL,
 		Description: connectorManifest.Display.Description, Permissions: connectorManifest.Payload.Permissions,
 		Implementation: implementation, AuthorizationKind: connectorManifest.Payload.Authorization.Kind,
 		Compatibility: connectorManifest.Payload.Compatibility}
@@ -321,6 +325,7 @@ type wireConnectorMarketManifest struct {
 type wireConnectorDisplay struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+	IconURL     string `json:"iconUrl"`
 }
 
 type wireConnectorManifestPayload struct {
@@ -334,6 +339,8 @@ type wireConnectorManifestPayload struct {
 type wireConnectorAuthorization struct {
 	Kind string `json:"kind"`
 }
+
+const legacyConnectorIconURL = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTQiIGZpbGw9IiM2YjcyODAiLz48cGF0aCBkPSJNMTggMjBoMjh2MjRIMTh6IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjQiLz48L3N2Zz4="
 
 func artifactMediaType(key string) string {
 	switch {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -74,6 +75,35 @@ func TestApplicationExecutesAcceptedInstall(t *testing.T) {
 	}
 	if operation.State != OperationStateCompleted || installationHost.prepares != 1 || installationHost.activations != 0 {
 		t.Fatalf("operation = %#v, prepares = %d, activations = %d", operation, installationHost.prepares, installationHost.activations)
+	}
+}
+
+func TestApplicationExecutesTypedCLIInstallationBeforeCompletion(t *testing.T) {
+	connector := testConnector("lark")
+	connector.Release.Manifest.SchemaVersion = "1"
+	connector.Release.Manifest.Implementation.ManagedStdio.MCP = nil
+	connector.Release.Manifest.Implementation.ManagedStdio.Runtime.VersionRange = ">=22.0.0 <23.0.0"
+	connector.Release.Manifest.Implementation.ManagedStdio.CLI = &ManagedCLIInterface{Entrypoint: "lark-cli", TimeoutMS: 120_000,
+		Install: &CLIInstallation{Kind: "node_package", NodePackage: &NodePackageInstallation{Package: "@larksuite/cli",
+			Version: "1.0.83", Integrity: "sha512-qbJYoJtNch6dV8RvYBO2wpcKO9+6Io3Cuf5alYFzvLbtkSntOKqoc+xHI7p6wRq4oH4F9fydgNJbTGy79ibPdg==",
+			Launch: NodePackageLaunch{Kind: "native", Entrypoint: "bin/lark-cli", SHA256: strings.Repeat("c", 64)}}}}
+	repository := newMemoryRepository(connector)
+	host := &memoryInstallRuntime{}
+	application := newTestApplication(t, repository, &memoryScheduler{}, host, CatalogSnapshot{})
+	accepted, err := application.Install(context.Background(), ConnectorMutation{Mutation: Mutation{ClientRequestID: "install-lark"},
+		ConnectorKey: "lark"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := application.ExecuteOperation(context.Background(), accepted.Operation.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	operation, err := repository.Operation(context.Background(), accepted.Operation.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if host.cliInstalls != 1 || operation.Execution.CLIInstallation == nil || operation.State != OperationStateCompleted {
+		t.Fatalf("CLI installs = %d, operation = %#v", host.cliInstalls, operation)
 	}
 }
 
@@ -465,6 +495,7 @@ func newTestApplication(
 	scheduler *memoryScheduler,
 	installationHost interface {
 		ArtifactPreparer
+		CLIInstallationManager
 		ImplementationHost
 	},
 	catalog CatalogSnapshot,
@@ -484,6 +515,7 @@ func newTestApplicationWithCatalogSource(
 	scheduler *memoryScheduler,
 	installationHost interface {
 		ArtifactPreparer
+		CLIInstallationManager
 		ImplementationHost
 	},
 	catalogSource CatalogSource,
@@ -494,6 +526,7 @@ func newTestApplicationWithCatalogSource(
 		Repository:             repository,
 		CatalogSource:          catalogSource,
 		ArtifactPreparer:       installationHost,
+		CLIInstallations:       installationHost,
 		Host:                   installationHost,
 		Authorization:          authorizationProviderStub{},
 		Compatibility:          compatibilityEvaluatorStub{},
@@ -539,6 +572,7 @@ func testReleaseWithImplementation(key, version, implementationKind string) Rele
 		Manifest: Manifest{
 			SchemaVersion:     "1",
 			DisplayName:       key,
+			IconURL:           testConnectorIconURL,
 			Implementation:    implementation,
 			AuthorizationKind: "none",
 		},
@@ -599,6 +633,8 @@ type memoryInstallRuntime struct {
 	lastReconcile   RuntimeReconcileRequest
 	deactivationErr error
 	failClosed      int
+	cliInstalls     int
+	cliRemoves      int
 }
 
 func (host *memoryInstallRuntime) Reconcile(_ context.Context, request RuntimeReconcileRequest) (RuntimeReceipt, error) {
@@ -637,6 +673,29 @@ func (host *memoryInstallRuntime) Prepare(_ context.Context, request PrepareArti
 
 func (host *memoryInstallRuntime) Remove(context.Context, RemoveArtifactRequest) error {
 	host.removes++
+	return nil
+}
+
+func (host *memoryInstallRuntime) InstallCLI(_ context.Context, request InstallCLIRequest) (CLIInstallationReceipt, error) {
+	host.cliInstalls++
+	install := releaseCLIInstallation(request.Release)
+	return CLIInstallationReceipt{SchemaVersion: "tutti.connector.cli-installation.v1", OperationID: request.OperationID,
+		ConnectorKey: request.Release.ConnectorKey, ReleaseDigest: request.Release.ReleaseDigest,
+		RuntimeProfile: "connector-node-static", RuntimeABI: request.Release.Manifest.Implementation.ManagedStdio.Runtime.ABI,
+		NodeVersion: "22.22.3", NodeSHA256: "1111111111111111111111111111111111111111111111111111111111111111",
+		Package: install.Package, PackageVersion: install.Version, PackageIntegrity: install.Integrity, LaunchKind: install.Launch.Kind,
+		InstallRoot: "/installed/" + request.Release.ReleaseDigest, StoreRoot: "/store",
+		Entrypoint:       "node_modules/@larksuite/cli/bin/lark-cli",
+		EntrypointSHA256: "2222222222222222222222222222222222222222222222222222222222222222",
+		EntrypointSize:   7, LockSHA256: "3333333333333333333333333333333333333333333333333333333333333333"}, nil
+}
+
+func (host *memoryInstallRuntime) ResolveCLI(context.Context, Release) (CLIInstallationReceipt, error) {
+	return CLIInstallationReceipt{}, nil
+}
+
+func (host *memoryInstallRuntime) RemoveCLI(context.Context, RemoveCLIRequest) error {
+	host.cliRemoves++
 	return nil
 }
 

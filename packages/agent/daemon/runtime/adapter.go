@@ -37,6 +37,7 @@ type ConnectorSandboxPolicy struct {
 	ReadOnlyPaths          []string
 	WritablePaths          []string
 	ReadOnlyTreeIdentities []ReadOnlyTreeIdentity
+	AllowedExecutables     []string
 	Network                bool
 }
 

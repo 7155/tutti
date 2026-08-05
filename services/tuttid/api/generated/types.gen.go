@@ -5974,6 +5974,7 @@ type ConnectorMarketManifest struct {
 	Compatibility     *ConnectorMarketCompatibilityRequirements `json:"compatibility,omitempty"`
 	Description       *string                                   `json:"description,omitempty"`
 	DisplayName       string                                    `json:"displayName"`
+	IconUrl           string                                    `json:"iconUrl"`
 
 	// Implementation Public implementation discriminator; sensitive host configuration is never returned.
 	Implementation ConnectorMarketImplementation        `json:"implementation"`

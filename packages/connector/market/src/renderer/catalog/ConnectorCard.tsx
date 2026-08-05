@@ -31,10 +31,7 @@ export function ConnectorCard({ connectorKey }: { connectorKey: string }) {
       data-testid={`connector-card-${connectorKey}`}
     >
       <div className="flex min-w-0 items-start gap-3">
-        <ConnectorIcon
-          connectorKey={card.connectorKey}
-          displayName={card.displayName}
-        />
+        <ConnectorIcon displayName={card.displayName} iconUrl={card.iconUrl} />
         <div className="min-w-0 flex-1">
           <h4 className="m-0 truncate text-[14px] font-semibold leading-5 text-[var(--text-primary)]">
             {card.displayName}

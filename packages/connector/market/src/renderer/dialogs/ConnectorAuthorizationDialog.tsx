@@ -21,8 +21,8 @@ import { ConnectorDialogSection } from "./ConnectorDialogSection.tsx";
 import { ConnectorPermissionList } from "./ConnectorPermissionList.tsx";
 
 export interface ConnectorAuthorizationDialogProps {
-  connectorKey: string;
   displayName: string;
+  iconUrl: string;
   i18n: ConnectorMarketI18nRuntime;
   onAuthorize: () => void;
   onClose: () => void;
@@ -31,8 +31,8 @@ export interface ConnectorAuthorizationDialogProps {
 }
 
 export function ConnectorAuthorizationDialog({
-  connectorKey,
   displayName,
+  iconUrl,
   i18n,
   onAuthorize,
   onClose,
@@ -44,8 +44,8 @@ export function ConnectorAuthorizationDialog({
       <DialogHeader className="items-center px-5 pt-4 text-center">
         <div className="mb-1 flex items-center gap-3">
           <ConnectorIcon
-            connectorKey={connectorKey}
             displayName={displayName}
+            iconUrl={iconUrl}
             size="lg"
           />
           <LinkIcon className="size-4 text-[var(--text-tertiary)]" />
@@ -68,12 +68,7 @@ export function ConnectorAuthorizationDialog({
       <div className="overflow-hidden rounded-lg border border-[var(--border-1)]">
         <ConnectorDialogInfoRow
           description={i18n.t("accountSelectionDescription")}
-          icon={
-            <ConnectorIcon
-              connectorKey={connectorKey}
-              displayName={displayName}
-            />
-          }
+          icon={<ConnectorIcon displayName={displayName} iconUrl={iconUrl} />}
           title={i18n.t("accountSelectionTitle", { name: displayName })}
         />
       </div>

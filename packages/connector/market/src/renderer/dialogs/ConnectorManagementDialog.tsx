@@ -20,9 +20,9 @@ import { ConnectorPermissionList } from "./ConnectorPermissionList.tsx";
 
 export interface ConnectorManagementDialogProps {
   canAuthorize: boolean;
-  connectorKey: string;
   details: ReadonlyArray<Readonly<ConnectorDetailFieldView>>;
   displayName: string;
+  iconUrl: string;
   i18n: ConnectorMarketI18nRuntime;
   onAuthorize: () => void;
   onClose: () => void;
@@ -32,9 +32,9 @@ export interface ConnectorManagementDialogProps {
 
 export function ConnectorManagementDialog({
   canAuthorize,
-  connectorKey,
   details,
   displayName,
+  iconUrl,
   i18n,
   onAuthorize,
   onClose,
@@ -46,8 +46,8 @@ export function ConnectorManagementDialog({
       <DialogHeader>
         <div className="flex items-center gap-3 pr-8">
           <ConnectorIcon
-            connectorKey={connectorKey}
             displayName={displayName}
+            iconUrl={iconUrl}
             size="lg"
           />
           <div className="min-w-0">

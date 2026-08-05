@@ -93,6 +93,26 @@ type ArtifactPreparer interface {
 	Remove(ctx context.Context, request RemoveArtifactRequest) error
 }
 
+// CLIInstallationManager installs and resolves daemon-managed CLI packages.
+// Implementations must bind installation and launch to the same managed
+// runtime and keep package storage outside the user's global package manager.
+type CLIInstallationManager interface {
+	InstallCLI(ctx context.Context, request InstallCLIRequest) (CLIInstallationReceipt, error)
+	ResolveCLI(ctx context.Context, release Release) (CLIInstallationReceipt, error)
+	RemoveCLI(ctx context.Context, request RemoveCLIRequest) error
+}
+
+type InstallCLIRequest struct {
+	OperationID string
+	Release     Release
+}
+
+type RemoveCLIRequest struct {
+	OperationID   string
+	ConnectorKey  string
+	ReleaseDigest string
+}
+
 type PrepareArtifactRequest struct {
 	OperationID string
 	Release     Release

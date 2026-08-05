@@ -282,13 +282,20 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("configure connector process sandbox: %w", err)
 	}
+	nodePackageInstaller, err := connectormarketservice.NewNodePackageInstaller(connectormarketservice.NodePackageInstallerConfig{
+		RootDir: filepath.Join(connectorStateRoot, "node-packages"), Runtimes: runtimeResolver, Processes: processTransport,
+	})
+	if err != nil {
+		return fmt.Errorf("configure connector node package installer: %w", err)
+	}
 	connectorCommands := connectormarketservice.NewConnectorCommandRegistry()
 	connectorBroker, err := connectormarketservice.NewConnectorBroker(connectorCommands)
 	if err != nil {
 		return fmt.Errorf("configure connector broker: %w", err)
 	}
 	implementationHost, err := connectormarketservice.NewImplementationHost(connectormarketservice.ImplementationHostConfig{
-		Artifacts: artifactPreparer, Runtimes: runtimeResolver, Processes: processTransport, Commands: connectorCommands,
+		Artifacts: artifactPreparer, CLIInstallations: nodePackageInstaller,
+		Runtimes: runtimeResolver, Processes: processTransport, Commands: connectorCommands,
 		StateRoot: filepath.Join(connectorStateRoot, "workspace-state"),
 	})
 	if err != nil {
@@ -303,7 +310,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	}}
 	connectorMarketHost, err := connectormarketservice.NewHost(ctx, connectormarketservice.HostConfig{
 		Repository: connectorMarketStore, CatalogSource: connectorCatalog,
-		ArtifactPreparer: artifactPreparer, ImplementationHost: connectorRuntime,
+		ArtifactPreparer: artifactPreparer, CLIInstallations: nodePackageInstaller, ImplementationHost: connectorRuntime,
 		Authorization: connectorAuthorization, Compatibility: compatibility,
 		ImplementationRegistry: implementations, Outbox: connectorMarketStore,
 		Publisher: eventstreamservice.ConnectorMarketPublisher{Service: events},

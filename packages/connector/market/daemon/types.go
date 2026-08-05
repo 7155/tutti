@@ -102,6 +102,7 @@ type Release struct {
 type Manifest struct {
 	SchemaVersion     string                    `json:"schemaVersion"`
 	DisplayName       string                    `json:"displayName"`
+	IconURL           string                    `json:"iconUrl"`
 	Description       string                    `json:"description,omitempty"`
 	Permissions       []string                  `json:"permissions"`
 	Implementation    Implementation            `json:"implementation"`
@@ -136,9 +137,10 @@ type BuiltinImplementation struct {
 }
 
 type RuntimeRequirement struct {
-	Language string `json:"language"`
-	Profile  string `json:"profile"`
-	ABI      string `json:"abi"`
+	Language     string `json:"language"`
+	Profile      string `json:"profile"`
+	ABI          string `json:"abi"`
+	VersionRange string `json:"versionRange,omitempty"`
 }
 
 type ManagedStdioImplementation struct {
@@ -154,9 +156,42 @@ type ManagedMCPInterface struct {
 }
 
 type ManagedCLIInterface struct {
-	Entrypoint string       `json:"entrypoint"`
-	Arguments  []string     `json:"arguments,omitempty"`
-	Commands   []CLICommand `json:"commands"`
+	Entrypoint string           `json:"entrypoint"`
+	Arguments  []string         `json:"arguments,omitempty"`
+	TimeoutMS  int              `json:"timeoutMs,omitempty"`
+	Install    *CLIInstallation `json:"install,omitempty"`
+	Commands   []CLICommand     `json:"commands,omitempty"`
+}
+
+// CLIInstallation is a typed installation command. The daemon compiles this
+// intent into a package-manager invocation; connector manifests never provide
+// an arbitrary shell command.
+type CLIInstallation struct {
+	Kind        string                   `json:"kind"`
+	NodePackage *NodePackageInstallation `json:"nodePackage,omitempty"`
+}
+
+type NodePackageInstallation struct {
+	Package   string                 `json:"package"`
+	Version   string                 `json:"version"`
+	Integrity string                 `json:"integrity"`
+	Launch    NodePackageLaunch      `json:"launch"`
+	Lifecycle []NodeLifecycleCommand `json:"lifecycle,omitempty"`
+}
+
+type NodePackageLaunch struct {
+	Kind       string `json:"kind"`
+	Entrypoint string `json:"entrypoint,omitempty"`
+	SHA256     string `json:"sha256,omitempty"`
+}
+
+// NodeLifecycleCommand allows a signed connector release to opt into a
+// specific Node script without granting a general-purpose lifecycle shell.
+type NodeLifecycleCommand struct {
+	Event              string   `json:"event"`
+	Entrypoint         string   `json:"entrypoint"`
+	Arguments          []string `json:"arguments,omitempty"`
+	AllowedExecutables []string `json:"allowedExecutables,omitempty"`
 }
 
 type CLICommand struct {
@@ -231,8 +266,30 @@ type OperationTarget struct {
 
 type OperationExecution struct {
 	PreparedArtifact     *PreparedArtifactReceipt  `json:"preparedArtifact,omitempty"`
+	CLIInstallation      *CLIInstallationReceipt   `json:"cliInstallation,omitempty"`
 	RuntimeActivation    *RuntimeActivationReceipt `json:"runtimeActivation,omitempty"`
 	AuthorizationSession *AuthorizationSession     `json:"authorizationSession,omitempty"`
+}
+
+type CLIInstallationReceipt struct {
+	SchemaVersion    string `json:"schemaVersion"`
+	OperationID      string `json:"operationId"`
+	ConnectorKey     string `json:"connectorKey"`
+	ReleaseDigest    string `json:"releaseDigest"`
+	RuntimeProfile   string `json:"runtimeProfile"`
+	RuntimeABI       string `json:"runtimeAbi"`
+	NodeVersion      string `json:"nodeVersion"`
+	NodeSHA256       string `json:"nodeSha256"`
+	Package          string `json:"package"`
+	PackageVersion   string `json:"packageVersion"`
+	PackageIntegrity string `json:"packageIntegrity"`
+	LaunchKind       string `json:"launchKind"`
+	InstallRoot      string `json:"installRoot"`
+	StoreRoot        string `json:"storeRoot"`
+	Entrypoint       string `json:"entrypoint"`
+	EntrypointSHA256 string `json:"entrypointSha256"`
+	EntrypointSize   int64  `json:"entrypointSizeBytes"`
+	LockSHA256       string `json:"lockSha256"`
 }
 
 type PreparedArtifactReceipt struct {

@@ -138,6 +138,7 @@ func testRelease(archive, manifest []byte) market.Release {
 		Manifest: market.Manifest{
 			SchemaVersion: "1",
 			DisplayName:   "GitHub",
+			IconURL:       "data:image/png;base64,iVBORw0KGgo=",
 			Implementation: market.Implementation{
 				Kind: market.ImplementationKindManagedStdio,
 				ManagedStdio: &market.ManagedStdioImplementation{

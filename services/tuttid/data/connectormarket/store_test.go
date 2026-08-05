@@ -224,6 +224,7 @@ func testConnector() market.Connector {
 		ReleaseDigest:  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		ManifestDigest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		Manifest: market.Manifest{
+			IconURL:       "data:image/png;base64,iVBORw0KGgo=",
 			SchemaVersion: "1",
 			DisplayName:   "GitHub",
 			Implementation: market.Implementation{Kind: market.ImplementationKindManagedStdio,

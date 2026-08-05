@@ -24,22 +24,22 @@ const HANDLE_SIZE = 40;
 const HANDLE_INSET = HANDLE_SIZE / 2 + 4;
 
 /**
- * Dot-field coordinate space. The pad is 4:3, so the lattice uses a 100x75
+ * Dot-field coordinate space. The pad is 3:2, so the lattice uses a 150x100
  * view box: one unit measures the same physical length on both axes, which
  * keeps dots round and the gravity well isotropic.
  */
-const FIELD_WIDTH = 100;
-const FIELD_HEIGHT = 75;
+const FIELD_WIDTH = 150;
+const FIELD_HEIGHT = 100;
 /** Dot lattice resolution; the pitch is equal on both axes. */
-const DOT_COLS = 12;
-const DOT_ROWS = 9;
-/** Gravity-well sigma in percent units: how far the handle's pull reaches. */
-const GRAVITY_SIGMA = 24;
-/** Edge fade band in percent units, measured from the pad center. Dots fade
+const DOT_COLS = 18;
+const DOT_ROWS = 12;
+/** Gravity-well sigma in field units: how far the handle's pull reaches. */
+const GRAVITY_SIGMA = 36;
+/** Edge fade band in field units, measured from the pad center. Dots fade
  * out between the start and end of this band so the lattice dissolves before
  * it reaches the pad's rounded corners. */
-const EDGE_FADE_START = 22;
-const EDGE_FADE_END = 50;
+const EDGE_FADE_START = 33;
+const EDGE_FADE_END = 75;
 
 function clampRatio(value: number): number {
   return Math.min(1, Math.max(0, value));
@@ -51,6 +51,11 @@ interface DotSpec {
   r: number;
   opacity: number;
 }
+
+/** Four-point sparkle (smart-lined icon), 24x24 view box centered at 12,12.
+ * Each lattice dot renders this shape scaled to the dot's radius. */
+const STAR_PATH =
+  "M11.2696 1.50911C11.5206 0.830794 12.4805 0.830794 12.7315 1.50911L13.876 4.60189C14.8231 7.16058 16.8406 9.17847 19.3994 10.1253L22.4922 11.2699C23.1693 11.5213 23.1695 12.4795 22.4922 12.7308L19.3994 13.8753C16.8403 14.8223 14.823 16.8406 13.876 19.3997L12.7315 22.4915C12.4804 23.1694 11.5209 23.1692 11.2696 22.4915L10.126 19.3997C9.17911 16.8408 7.16046 14.8224 4.60159 13.8753L1.50882 12.7308C0.831157 12.4796 0.831096 11.521 1.50882 11.2699L4.60159 10.1253C7.1605 9.17836 9.17903 7.16078 10.126 4.60189L11.2696 1.50911Z";
 
 /**
  * Builds the gravity dot field: every dot swells and brightens as the handle
@@ -77,7 +82,7 @@ function buildDotSpecs(handleX: number, handleY: number): DotSpec[] {
       specs.push({
         cx,
         cy,
-        r: 0.5 + 1.4 * pull,
+        r: 0.75 + 2.1 * pull,
         opacity: edgeFade * (0.5 + 0.5 * pull)
       });
     }
@@ -125,7 +130,7 @@ export function TuttiBudgetPad({
 
   // Handle position in field space: x follows speed, y follows effect with
   // the axis flipped so 100 sits at the top.
-  const handleX = speed;
+  const handleX = (speed / 100) * FIELD_WIDTH;
   const handleY = ((100 - effect) / 100) * FIELD_HEIGHT;
   const dots = buildDotSpecs(handleX, handleY);
 
@@ -134,7 +139,7 @@ export function TuttiBudgetPad({
       ref={padRef}
       data-agent-tutti-preference-pad="true"
       data-dragging={dragging ? "true" : undefined}
-      className="group/pad relative aspect-[4/3] w-full cursor-crosshair touch-none overflow-hidden rounded-[12px] select-none"
+      className="group/pad relative mx-1 aspect-[3/2] cursor-crosshair touch-none overflow-hidden rounded-[12px] select-none"
       style={
         {
           backgroundImage:
@@ -158,7 +163,7 @@ export function TuttiBudgetPad({
       onPointerUp={() => setDragging(false)}
       onPointerCancel={() => setDragging(false)}
     >
-      {/* Gravity dot field: dots swell towards the handle and dissolve
+      {/* Gravity star field: sparkles swell towards the handle and dissolve
           towards the pad edges. */}
       <svg
         aria-hidden="true"
@@ -167,11 +172,10 @@ export function TuttiBudgetPad({
         preserveAspectRatio="none"
       >
         {dots.map((dot) => (
-          <circle
+          <path
             key={`${dot.cx}:${dot.cy}`}
-            cx={dot.cx}
-            cy={dot.cy}
-            r={dot.r}
+            d={STAR_PATH}
+            transform={`translate(${dot.cx} ${dot.cy}) scale(${dot.r / 12}) translate(-12 -12)`}
             fill="var(--white-stationary)"
             opacity={dot.opacity}
           />

@@ -488,6 +488,16 @@ reloading the page.
 
 A Session holds identity, target, provider metadata, cwd, title, settings, resume information, a Goal reference, and the current active Turn reference.
 
+Session title has an explicit ownership rule in the runtime. A user title
+(explicit rename) is immutable from the turn-execution path: a running turn may
+fold provider/event titles as candidates, but the controller's current Session
+is the only accepted state, and the turn-completion commit merges only the
+turn-owned lifecycle/status fields back. A title the user set is never
+overwritten by a late provider title or by a stale turn-completion snapshot,
+and neither the stream projection nor the durable report may carry a stale
+provider title over an established user title. On resume the runtime fails
+closed and treats a persisted title as user-established.
+
 A Session does not copy Turn phase/outcome, own pending Interactions, or persist lifecycle inferred from transcript.
 
 Provider-native subagents use child Sessions:

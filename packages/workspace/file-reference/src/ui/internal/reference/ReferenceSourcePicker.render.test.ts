@@ -675,7 +675,14 @@ function buildReferenceSourcePickerRenderModule(tempDir: string): string {
     "file-preview.mjs",
     `
       import { createElement } from "react";
-      export function WorkspaceFilePreviewSurface({ emptyMessage }) {
+      export function WorkspaceFilePreviewSurface({
+        directoryMessage,
+        emptyMessage,
+        state
+      }) {
+        if (state?.status === "directory") {
+          return createElement("div", null, directoryMessage);
+        }
         return createElement("div", null, emptyMessage);
       }
     `

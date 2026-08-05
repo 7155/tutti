@@ -274,6 +274,13 @@ func (s *Service) GetComposerOptions(ctx context.Context, input ComposerOptionsI
 	capabilityErrors := []string(nil)
 	if composerOptionsIncludeCapabilityCatalog(input) {
 		capabilityCatalog, capabilityErrors = s.listComposerCapabilityOptions(ctx, provider, input.Cwd, skills)
+		if s.InstalledConnectorSnapshots != nil {
+			localConnectors, err := installedConnectorCapabilityOptions(ctx, s.InstalledConnectorSnapshots)
+			if err != nil {
+				capabilityErrors = append(capabilityErrors, "load installed connectors: "+err.Error())
+			}
+			capabilityCatalog = replaceComposerConnectorCapabilities(capabilityCatalog, localConnectors)
+		}
 		capabilityCatalog = filterWorkspaceAgentComposerCapabilities(
 			capabilityCatalog,
 			launchInput.AgentTools,

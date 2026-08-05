@@ -147,6 +147,28 @@ test("loads server categories and appends cursor pages", async () => {
   service.dispose();
 });
 
+test("preserves daemon catalog error details for the view layer", async () => {
+  const service = new ConnectorMarketService({
+    backend: backendWith({
+      listCategories: async () => {
+        throw {
+          code: "connector_manifest_invalid",
+          message: "permission scope is invalid",
+          retryable: false
+        };
+      }
+    })
+  });
+
+  await assert.rejects(service.ensureLoaded());
+  assert.deepEqual(service.dataStore.lastError, {
+    code: "connector_manifest_invalid",
+    message: "permission scope is invalid",
+    retryable: false
+  });
+  service.dispose();
+});
+
 test("coalesces concurrent catalog refreshes", async () => {
   const refresh =
     deferred<Awaited<ReturnType<ConnectorMarketBackend["refreshCatalog"]>>>();

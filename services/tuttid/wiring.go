@@ -219,6 +219,9 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 		providerAuthWatcher.Close()
 		return fmt.Errorf("open connector market store: %w", err)
 	}
+	if service, ok := api.AgentSessionService.(*agentservice.Service); ok {
+		service.InstalledConnectorSnapshots = connectorMarketStore
+	}
 	connectorMarketBaseURL := strings.TrimSpace(os.Getenv("TUTTI_CONNECTOR_MARKET_BASE_URL"))
 	if connectorMarketBaseURL == "" {
 		connectorMarketBaseURL = connectorMarketDefaultBaseURL

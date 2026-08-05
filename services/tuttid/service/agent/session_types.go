@@ -69,6 +69,7 @@ type Service struct {
 	ModelGateway                   ModelGatewayRegistry
 	ComputerUseAvailable           func() bool
 	CapabilityLister               ComposerCapabilityLister
+	InstalledConnectorSnapshots    InstalledConnectorSnapshotReader
 	ExtensionComposerProfiles      ExtensionComposerProfileResolver
 	AgentComposerDefaultsReader    AgentComposerDefaultsReader
 	ProviderAvailabilityCacheTTL   time.Duration

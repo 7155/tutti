@@ -20,6 +20,7 @@ const (
 var connectorKeyPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$`)
 var artifactSHA256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var manifestIdentifierPattern = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,127}$`)
+var permissionScopePattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$`)
 var nodePackageNamePattern = regexp.MustCompile(`^(?:@[a-z0-9][a-z0-9._-]{0,126}/)?[a-z0-9][a-z0-9._-]{0,126}$`)
 var exactPackageVersionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$`)
 var nodeVersionRangePattern = regexp.MustCompile(`^(?:[<>]=?\s*[0-9]+\.[0-9]+\.[0-9]+(?:\s+|$))+$`)
@@ -110,7 +111,7 @@ func ValidateManifestShape(manifest Manifest) error {
 	if !isSafeConnectorIconURL(manifest.IconURL) {
 		return invalidManifest("iconUrl must be a PNG, WebP, or SVG data URL", nil)
 	}
-	if err := validateUniqueIdentifiers("permission", manifest.Permissions); err != nil {
+	if err := validateUniquePermissions(manifest.Permissions); err != nil {
 		return err
 	}
 	switch manifest.AuthorizationKind {
@@ -339,6 +340,24 @@ func validateUniqueIdentifiers(label string, values []string) error {
 		}
 		if _, exists := seen[value]; exists {
 			return invalidManifest(label+" values must be unique", nil)
+		}
+		seen[value] = struct{}{}
+	}
+	return nil
+}
+
+func validateUniquePermissions(values []string) error {
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		permission, scope, scoped := strings.Cut(value, ":")
+		if !manifestIdentifierPattern.MatchString(permission) {
+			return invalidManifest("permission must start with a lowercase stable identifier", nil)
+		}
+		if scoped && (strings.Contains(scope, ":") || (scope != "*" && !permissionScopePattern.MatchString(scope))) {
+			return invalidManifest("permission scope must be * or a lowercase stable scope", nil)
+		}
+		if _, exists := seen[value]; exists {
+			return invalidManifest("permission values must be unique", nil)
 		}
 		seen[value] = struct{}{}
 	}

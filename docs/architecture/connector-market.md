@@ -129,6 +129,14 @@ URL. This makes the icon available before installation and removes connector-key
 special cases from the renderer. The data URL is generated from the source
 connector icon during publishing and is limited to 128 KiB after decoding.
 
+Manifest permissions use a lowercase stable permission name with an optional
+scope (`permission`, `permission:scope`, or `permission:*`). The daemon keeps
+fail-closed validation for the permission name, scope grammar, duplicates, and
+all other manifest fields; a scoped permission is not treated as a plain
+identifier. The host may currently collapse a scoped permission to a broader
+sandbox capability, so accepting the syntax does not imply scope-level runtime
+enforcement.
+
 CLI manifests do not require action mappings. When `commands` is absent, the
 host publishes one generic, sandboxed `connector.<key>.cli.run` capability and
 the installed Skill supplies the CLI arguments and workflow. The host rejects

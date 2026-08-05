@@ -74,6 +74,7 @@ type ServiceComposerConfig struct {
 	WorkspaceAgentResolver        WorkspaceAgentResolver
 	AgentComposerDefaultsReader   AgentComposerDefaultsReader
 	CapabilityLister              ComposerCapabilityLister
+	InstalledConnectorSnapshots   InstalledConnectorSnapshotReader
 	ExtensionComposerProfiles     ExtensionComposerProfileResolver
 	ProviderAvailabilityCacheTTL  time.Duration
 	CapabilityCatalogCacheTTL     time.Duration
@@ -148,6 +149,7 @@ func (s *Service) applyConfig(config ServiceConfig) {
 	s.ModelGateway = config.Runtime.ModelGateway
 	s.ComputerUseAvailable = config.Runtime.ComputerUseAvailable
 	s.CapabilityLister = config.Composer.CapabilityLister
+	s.InstalledConnectorSnapshots = config.Composer.InstalledConnectorSnapshots
 	s.ExtensionComposerProfiles = config.Composer.ExtensionComposerProfiles
 	s.AgentComposerDefaultsReader = config.Composer.AgentComposerDefaultsReader
 	s.ProviderAvailabilityCacheTTL = config.Composer.ProviderAvailabilityCacheTTL

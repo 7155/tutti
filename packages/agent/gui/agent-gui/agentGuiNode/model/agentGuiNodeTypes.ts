@@ -119,6 +119,12 @@ export interface AgentGUIProviderSkillOption {
   pluginName?: string;
   path?: string;
   kind?: "skill" | "connector";
+  status?:
+    | "available"
+    | "disabled"
+    | "authRequired"
+    | "setupRequired"
+    | "unsupported";
 }
 
 export interface AgentComposerTextBlock {

@@ -8,6 +8,8 @@ export function ConnectorMarketToolbar() {
   const { i18n, market, uiState, view } = useConnectorMarketServices();
   const ui = useSnapshot(uiState.dataStore);
   const marketView = useSnapshot(view.dataStore);
+  const showCounts =
+    marketView.status === "ready" || marketView.status === "empty";
 
   return (
     <div className="flex flex-col gap-4">
@@ -40,12 +42,12 @@ export function ConnectorMarketToolbar() {
         ariaLabel={i18n.t("title")}
         tabs={[
           {
-            count: marketView.installedCount,
+            ...(showCounts ? { count: marketView.installedCount } : {}),
             label: i18n.t("installedTab"),
             value: "installed" as const
           },
           {
-            count: marketView.availableCount,
+            ...(showCounts ? { count: marketView.availableCount } : {}),
             label: i18n.t("availableTab"),
             value: "available" as const
           }

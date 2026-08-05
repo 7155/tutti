@@ -100,7 +100,7 @@ func (application *Application) Snapshot(ctx context.Context) (Snapshot, error) 
 func (application *Application) ListCatalogCategories(ctx context.Context) ([]CatalogCategory, error) {
 	categories, err := application.config.CatalogSource.ListCategories(ctx)
 	if err != nil {
-		return nil, NewDomainError(ErrorCodeUpstreamUnavailable, "connector catalog categories could not be loaded", true, err)
+		return nil, preserveCatalogSourceError("connector catalog categories could not be loaded", err)
 	}
 	seen := make(map[string]struct{}, len(categories))
 	for _, category := range categories {
@@ -127,7 +127,7 @@ func (application *Application) ListCatalogPage(ctx context.Context, query Catal
 		SectionID: query.SectionID, PageSize: query.PageSize, PageToken: query.PageToken,
 	})
 	if err != nil {
-		return CatalogPage{}, NewDomainError(ErrorCodeUpstreamUnavailable, "connector catalog page could not be loaded", true, err)
+		return CatalogPage{}, preserveCatalogSourceError("connector catalog page could not be loaded", err)
 	}
 	if page.SectionID != query.SectionID {
 		return CatalogPage{}, invalidManifest("connector catalog page section does not match the request", nil)
@@ -462,7 +462,7 @@ func (application *Application) executeOperation(ctx context.Context, operationI
 	if executeErr != nil {
 		code := ErrorCodeInstallFailed
 		if operation.Kind == OperationKindRefreshCatalog {
-			code = ErrorCodeUpstreamUnavailable
+			code = errorCodeOr(executeErr, ErrorCodeUpstreamUnavailable)
 		}
 		if operation.Kind == OperationKindStartAuthorization ||
 			operation.Kind == OperationKindDisconnectAuthorization {

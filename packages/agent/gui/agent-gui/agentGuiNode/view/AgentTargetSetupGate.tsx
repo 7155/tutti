@@ -39,6 +39,7 @@ export function AgentTargetSetupGate({
   gateVisible = true
 }: AgentTargetSetupGateProps): React.JSX.Element {
   const controller = useAgentTargetSetupController();
+  const { terminalLogin } = useAgentHostApi();
   const { t } = useTranslation();
   const state = useExternalStoreSnapshot(controller);
   const {
@@ -71,13 +72,9 @@ export function AgentTargetSetupGate({
     effectiveAuthMethod?.type === "terminal"
       ? (effectiveAuthMethod.terminalCommand?.trim() ?? "") || null
       : null;
-  const terminalStartupInput =
+  const terminalStartupAction =
     effectiveAuthMethod?.type === "terminal"
-      ? (effectiveAuthMethod.terminalStartupInput?.trim() ?? "") || null
-      : null;
-  const terminalStartupReadyText =
-    effectiveAuthMethod?.type === "terminal"
-      ? (effectiveAuthMethod.terminalStartupReadyText?.trim() ?? "") || null
+      ? (effectiveAuthMethod.terminalStartupAction ?? null)
       : null;
 
   if (!enabled) {
@@ -95,13 +92,19 @@ export function AgentTargetSetupGate({
     await controller.authenticate(effectiveAuthMethodId);
   };
   const terminalLoginLaunchAvailable =
-    terminalLoginAvailable && Boolean(terminalLoginCommand);
+    terminalLoginAvailable &&
+    Boolean(terminalLoginCommand) &&
+    (!terminalStartupAction ||
+      Boolean(
+        terminalLogin?.supportedStartupActionTypes?.includes(
+          terminalStartupAction.type
+        )
+      ));
   const handleTerminalLoginStart = async () => {
     if (!terminalLoginCommand) return;
     await controller.startTerminalLogin({
       command: terminalLoginCommand,
-      startupInput: terminalStartupInput,
-      startupReadyText: terminalStartupReadyText
+      startupAction: terminalStartupAction
     });
   };
   const handleTerminalLoginCancel = () => controller.cancelTerminalLogin();

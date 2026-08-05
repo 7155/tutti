@@ -14,15 +14,16 @@ export interface TerminalStartupInputGate {
 const defaultReadyTimeoutMs = 15_000;
 const maxBufferedOutputChars = 4_096;
 const maxBufferedSessions = 8;
+const slashCommandNamePattern = /^[a-z0-9][a-z0-9._:-]{0,63}$/u;
 
 export function createTerminalStartupInputGate(input: {
+  commandName: string;
   readyText: string;
-  startupInput: string;
   timeoutMs?: number;
   transport: Pick<TerminalTransport, "onData" | "write">;
 }): TerminalStartupInputGate {
-  const readyText = input.readyText.trim();
-  const startupInput = input.startupInput.trim();
+  const commandName = input.commandName;
+  const readyText = input.readyText;
   const bufferedOutputBySession = new Map<string, string>();
   let armedSessionId: string | null = null;
   let finished = false;
@@ -50,7 +51,7 @@ export function createTerminalStartupInputGate(input: {
     submitting = true;
     void input.transport
       .write({
-        data: terminalSubmitInput(startupInput),
+        data: terminalSubmitSlashCommand(commandName),
         encoding: "utf8",
         provenance: "auto",
         sessionId: armedSessionId
@@ -62,6 +63,7 @@ export function createTerminalStartupInputGate(input: {
   };
 
   unsubscribe = input.transport.onData((event) => {
+    if (armedSessionId && event.sessionId !== armedSessionId) return;
     const current = bufferedOutputBySession.get(event.sessionId) ?? "";
     bufferedOutputBySession.set(
       event.sessionId,
@@ -79,9 +81,18 @@ export function createTerminalStartupInputGate(input: {
     arm(sessionId) {
       if (armedSessionId || finished) return completion;
       armedSessionId = sessionId.trim();
-      if (!armedSessionId || !readyText || !startupInput) {
+      if (
+        !armedSessionId ||
+        !isValidReadyText(readyText) ||
+        !slashCommandNamePattern.test(commandName)
+      ) {
         finish("cancelled");
         return completion;
+      }
+      for (const bufferedSessionId of bufferedOutputBySession.keys()) {
+        if (bufferedSessionId !== armedSessionId) {
+          bufferedOutputBySession.delete(bufferedSessionId);
+        }
       }
       timeout = setTimeout(
         () => finish("timed_out"),
@@ -96,8 +107,30 @@ export function createTerminalStartupInputGate(input: {
   };
 }
 
-function terminalSubmitInput(input: string): string {
-  return /[\r\n]$/u.test(input) ? input : `${input}\r`;
+function terminalSubmitSlashCommand(commandName: string): string {
+  return `/${commandName}\r`;
+}
+
+function isValidReadyText(value: string): boolean {
+  return (
+    value.length > 0 &&
+    value.length <= 256 &&
+    value === value.trim() &&
+    !containsControlCharacter(value)
+  );
+}
+
+function containsControlCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (
+      codePoint !== undefined &&
+      (codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f))
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function noop(): void {}

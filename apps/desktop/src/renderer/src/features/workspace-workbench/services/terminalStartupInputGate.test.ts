@@ -9,8 +9,8 @@ import { createTerminalStartupInputGate } from "./terminalStartupInputGate.ts";
 test("terminal startup input waits for the declared ready text", async () => {
   const harness = createTransportHarness();
   const gate = createTerminalStartupInputGate({
+    commandName: "login",
     readyText: "Welcome to Kimi Code!",
-    startupInput: "/login",
     transport: harness.transport
   });
   const completion = gate.arm("session-1");
@@ -32,8 +32,8 @@ test("terminal startup input waits for the declared ready text", async () => {
 test("terminal startup input keeps output observed before the session is armed", async () => {
   const harness = createTransportHarness();
   const gate = createTerminalStartupInputGate({
+    commandName: "login",
     readyText: "Runtime ready",
-    startupInput: "/login",
     transport: harness.transport
   });
   harness.emit({ data: "Runtime ready", sessionId: "session-2" });
@@ -45,8 +45,8 @@ test("terminal startup input keeps output observed before the session is armed",
 test("terminal startup input ignores ready text from another terminal", async () => {
   const harness = createTransportHarness();
   const gate = createTerminalStartupInputGate({
+    commandName: "login",
     readyText: "Runtime ready",
-    startupInput: "/login",
     timeoutMs: 5,
     transport: harness.transport
   });
@@ -60,8 +60,8 @@ test("terminal startup input ignores ready text from another terminal", async ()
 test("terminal startup input reports transport write failures", async () => {
   const harness = createTransportHarness({ writeError: new Error("closed") });
   const gate = createTerminalStartupInputGate({
+    commandName: "login",
     readyText: "Runtime ready",
-    startupInput: "/login",
     transport: harness.transport
   });
   const completion = gate.arm("session-4");
@@ -73,8 +73,8 @@ test("terminal startup input reports transport write failures", async () => {
 test("terminal startup input can be cancelled before the runtime is ready", async () => {
   const harness = createTransportHarness();
   const gate = createTerminalStartupInputGate({
+    commandName: "login",
     readyText: "Runtime ready",
-    startupInput: "/login",
     transport: harness.transport
   });
   const completion = gate.arm("session-5");
@@ -82,6 +82,48 @@ test("terminal startup input can be cancelled before the runtime is ready", asyn
   harness.emit({ data: "Runtime ready", sessionId: "session-5" });
 
   assert.equal(await completion, "cancelled");
+  assert.equal(harness.writes.length, 0);
+});
+
+test("terminal startup input ignores noisy terminals after the target is armed", async () => {
+  const harness = createTransportHarness();
+  const gate = createTerminalStartupInputGate({
+    commandName: "login",
+    readyText: "Runtime ready",
+    transport: harness.transport
+  });
+  const completion = gate.arm("target-session");
+  harness.emit({ data: "Runtime ", sessionId: "target-session" });
+  for (let index = 0; index < 16; index += 1) {
+    harness.emit({ data: "noisy output", sessionId: `other-${index}` });
+  }
+  harness.emit({ data: "ready", sessionId: "target-session" });
+
+  assert.equal(await completion, "submitted");
+  assert.equal(harness.writes.length, 1);
+});
+
+test("terminal startup input rejects unsafe slash command names", async () => {
+  const harness = createTransportHarness();
+  const gate = createTerminalStartupInputGate({
+    commandName: "login now",
+    readyText: "Runtime ready",
+    transport: harness.transport
+  });
+
+  assert.equal(await gate.arm("session-6"), "cancelled");
+  assert.equal(harness.writes.length, 0);
+});
+
+test("terminal startup input rejects control characters in the ready marker", async () => {
+  const harness = createTransportHarness();
+  const gate = createTerminalStartupInputGate({
+    commandName: "login",
+    readyText: "Runtime\nready",
+    transport: harness.transport
+  });
+
+  assert.equal(await gate.arm("session-7"), "cancelled");
   assert.equal(harness.writes.length, 0);
 });
 

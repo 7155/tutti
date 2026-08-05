@@ -29,12 +29,15 @@ type RuntimeAuthMethod struct {
 	// methods (runtime executable plus the provider-declared arguments).
 	// Empty for methods driven through ACP authenticate.
 	TerminalCommand string
-	// TerminalStartupInput is optional input submitted only after the terminal
-	// runtime emits TerminalStartupReadyText.
-	TerminalStartupInput string
-	// TerminalStartupReadyText is a bounded literal output marker supplied by
-	// the signed extension declaration.
-	TerminalStartupReadyText string
+	// TerminalStartupAction is an optional typed action submitted only after the
+	// terminal runtime emits its bounded literal ready marker.
+	TerminalStartupAction *RuntimeTerminalStartupAction
+}
+
+type RuntimeTerminalStartupAction struct {
+	Type        string
+	CommandName string
+	ReadyText   string
 }
 
 type RuntimeProbeResult struct {
@@ -113,10 +116,9 @@ func runRuntimeSetup(
 		terminalLaunch := terminalLoginLaunch(binding.Command, method, declaration)
 		methods = append(methods, RuntimeAuthMethod{
 			ID: method.ID, Name: name, Description: description,
-			Type:                     method.Type,
-			TerminalCommand:          terminalLaunch.Command,
-			TerminalStartupInput:     terminalLaunch.StartupInput,
-			TerminalStartupReadyText: terminalLaunch.StartupReadyText,
+			Type:                  method.Type,
+			TerminalCommand:       terminalLaunch.Command,
+			TerminalStartupAction: terminalLaunch.StartupAction,
 		})
 	}
 	var account *RuntimeAuthenticatedAccount
@@ -130,9 +132,8 @@ func runRuntimeSetup(
 }
 
 type terminalAuthLaunch struct {
-	Command          string
-	StartupInput     string
-	StartupReadyText string
+	Command       string
+	StartupAction *RuntimeTerminalStartupAction
 }
 
 // terminalLoginLaunch renders the interactive sign-in launch for a terminal
@@ -160,9 +161,10 @@ func terminalLoginLaunch(
 	}
 	if strategy == "runtime-slash-command" && len(args) == 1 {
 		return terminalAuthLaunch{
-			Command:          shellQuote(command[0]),
-			StartupInput:     "/" + args[0],
-			StartupReadyText: readyText,
+			Command: shellQuote(command[0]),
+			StartupAction: &RuntimeTerminalStartupAction{
+				Type: "slash_command", CommandName: args[0], ReadyText: readyText,
+			},
 		}
 	}
 	base := command[:1]

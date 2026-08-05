@@ -946,6 +946,21 @@ func (e AgentTargetSource) Valid() bool {
 	}
 }
 
+// Defines values for AgentTargetTerminalStartupActionType.
+const (
+	AgentTargetTerminalStartupActionTypeSlashCommand AgentTargetTerminalStartupActionType = "slash_command"
+)
+
+// Valid indicates whether the value is a known member of the AgentTargetTerminalStartupActionType enum.
+func (e AgentTargetTerminalStartupActionType) Valid() bool {
+	switch e {
+	case AgentTargetTerminalStartupActionTypeSlashCommand:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ApiErrorDetailsCode.
 const (
 	AgentQuickPromptConflict              ApiErrorDetailsCode = "agent_quick_prompt_conflict"
@@ -5299,11 +5314,8 @@ type AgentTargetAuthMethod struct {
 	// TerminalCommand Ready-to-run interactive sign-in launch command for terminal-type methods.
 	TerminalCommand *string `json:"terminalCommand,omitempty"`
 
-	// TerminalStartupInput Optional input submitted after the interactive runtime reaches its declared ready marker.
-	TerminalStartupInput *string `json:"terminalStartupInput,omitempty"`
-
-	// TerminalStartupReadyText Optional terminal output marker that must be observed before submitting startup input.
-	TerminalStartupReadyText *string `json:"terminalStartupReadyText,omitempty"`
+	// TerminalStartupAction Optional typed terminal action submitted after the interactive runtime reaches its declared ready marker.
+	TerminalStartupAction *AgentTargetTerminalStartupAction `json:"terminalStartupAction,omitempty"`
 
 	// Type Provider-declared method kind (for example "terminal").
 	Type *string `json:"type,omitempty"`
@@ -5408,6 +5420,16 @@ type AgentTargetSetupStatus string
 
 // AgentTargetSource defines model for AgentTargetSource.
 type AgentTargetSource string
+
+// AgentTargetTerminalStartupAction defines model for AgentTargetTerminalStartupAction.
+type AgentTargetTerminalStartupAction struct {
+	CommandName string                               `json:"commandName"`
+	ReadyText   string                               `json:"readyText"`
+	Type        AgentTargetTerminalStartupActionType `json:"type"`
+}
+
+// AgentTargetTerminalStartupActionType defines model for AgentTargetTerminalStartupAction.Type.
+type AgentTargetTerminalStartupActionType string
 
 // ApiErrorDetails defines model for ApiErrorDetails.
 type ApiErrorDetails struct {

@@ -2231,8 +2231,10 @@ invalid_grant`. Search `tuttid.log` for
   Declare the signed authentication method as `runtime-slash-command`, with one
   safe command name and a bounded literal ready marker. Launch the bare runtime,
   wait for that marker on the matching terminal session, then submit the
-  daemon-generated slash command through the terminal transport. Do not put raw
-  terminal input or shell source in the extension profile.
+  Desktop-generated slash command through the terminal transport. The daemon
+  and AgentGUI Host boundary must carry one typed startup action rather than
+  independent raw input and marker fields. Do not put raw terminal input or
+  shell source in the extension profile.
 - Validation:
   Cover output split across terminal events, output received before the session
   is armed, unrelated terminal sessions, timeout, and transport failure. In a
@@ -2241,7 +2243,7 @@ invalid_grant`. Search `tuttid.log` for
 - References:
   [agent-extensions.md](../../architecture/agent-extensions.md)
   [runtime_probe.go](../../../services/tuttid/service/agentextension/runtime_probe.go)
-  [WorkspaceWorkbench.tsx](../../../apps/desktop/src/renderer/src/features/workspace-workbench/ui/WorkspaceWorkbench.tsx)
+  [workbenchTerminalLoginPresenter.ts](../../../apps/desktop/src/renderer/src/features/workspace-workbench/services/workbenchTerminalLoginPresenter.ts)
 
 ### Kimi Code remains in setup or reports login after authentication
 

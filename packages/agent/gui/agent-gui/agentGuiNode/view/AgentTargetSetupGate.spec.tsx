@@ -275,8 +275,11 @@ describe("AgentTargetSetupGate", () => {
               name: "Login with Kimi account",
               type: "terminal",
               terminalCommand: "/opt/kimi-code/bin/kimi",
-              terminalStartupInput: "/login",
-              terminalStartupReadyText: "Welcome to Kimi Code!"
+              terminalStartupAction: {
+                type: "slash_command",
+                commandName: "login",
+                readyText: "Welcome to Kimi Code!"
+              }
             }
           ]
         },
@@ -293,8 +296,11 @@ describe("AgentTargetSetupGate", () => {
       async (_input: {
         command: string;
         cwd?: string;
-        startupInput?: string;
-        startupReadyText?: string;
+        startupAction?: {
+          type: "slash_command";
+          commandName: string;
+          readyText: string;
+        };
       }) => ({
         close,
         completion: new Promise<"ready" | "timed_out">(() => {})
@@ -302,7 +308,10 @@ describe("AgentTargetSetupGate", () => {
     );
     const setup = terminalLoginSetup();
     installHost(new Map([["extension:gemini", setup.watch]]), {
-      terminalLogin: { run }
+      terminalLogin: {
+        run,
+        supportedStartupActionTypes: ["slash_command"]
+      }
     });
     render(<Harness openDialog target={geminiTarget} />);
 
@@ -313,8 +322,11 @@ describe("AgentTargetSetupGate", () => {
     expect(run.mock.calls[0]?.[0]).toEqual({
       agentTargetId: "extension:gemini",
       command: "/opt/kimi-code/bin/kimi",
-      startupInput: "/login",
-      startupReadyText: "Welcome to Kimi Code!"
+      startupAction: {
+        type: "slash_command",
+        commandName: "login",
+        readyText: "Welcome to Kimi Code!"
+      }
     });
     expect(
       await screen.findByRole("button", { name: "Open setup" })
@@ -333,7 +345,10 @@ describe("AgentTargetSetupGate", () => {
     }));
     const setup = terminalLoginSetup();
     installHost(new Map([["extension:gemini", setup.watch]]), {
-      terminalLogin: { run }
+      terminalLogin: {
+        run,
+        supportedStartupActionTypes: ["slash_command"]
+      }
     });
     render(<Harness openDialog target={geminiTarget} />);
 
@@ -361,7 +376,10 @@ describe("AgentTargetSetupGate", () => {
     });
     const setup = terminalLoginSetup();
     installHost(new Map([["extension:gemini", setup.watch]]), {
-      terminalLogin: { run }
+      terminalLogin: {
+        run,
+        supportedStartupActionTypes: ["slash_command"]
+      }
     });
     render(<Harness openDialog target={geminiTarget} />);
 
@@ -375,6 +393,20 @@ describe("AgentTargetSetupGate", () => {
     expect(screen.getByRole("button", { name: "Copy command" })).toBeTruthy();
   });
 
+  it("keeps the manual fallback when the host does not support the startup action", async () => {
+    const run = vi.fn(async () => undefined);
+    const setup = terminalLoginSetup();
+    installHost(new Map([["extension:gemini", setup.watch]]), {
+      terminalLogin: { run }
+    });
+    render(<Harness openDialog target={geminiTarget} />);
+
+    expect(screen.queryByRole("button", { name: "Start sign in" })).toBeNull();
+    expect(screen.getByText("/opt/kimi-code/bin/kimi")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copy command" })).toBeTruthy();
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it("stops terminal sign-in and keeps the copy fallback after timeout", async () => {
     let complete: ((result: "ready" | "timed_out") => void) | undefined;
     const completion = new Promise<"ready" | "timed_out">((resolve) => {
@@ -384,7 +416,10 @@ describe("AgentTargetSetupGate", () => {
     const run = vi.fn(async () => ({ close, completion }));
     const setup = terminalLoginSetup();
     installHost(new Map([["extension:gemini", setup.watch]]), {
-      terminalLogin: { run }
+      terminalLogin: {
+        run,
+        supportedStartupActionTypes: ["slash_command"]
+      }
     });
     render(<Harness openDialog target={geminiTarget} />);
 

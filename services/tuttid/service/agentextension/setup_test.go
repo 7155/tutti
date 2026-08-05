@@ -563,7 +563,7 @@ func TestTerminalLoginLaunch(t *testing.T) {
 	t.Parallel()
 
 	method := agentruntime.StandardACPAuthMethod{ID: "login", Type: "terminal", Args: []string{"login"}}
-	if got := terminalLoginLaunch([]string{"/opt/agent/bin/kimi", "acp"}, method, nil); got.Command != "/opt/agent/bin/kimi login" || got.StartupInput != "" {
+	if got := terminalLoginLaunch([]string{"/opt/agent/bin/kimi", "acp"}, method, nil); got.Command != "/opt/agent/bin/kimi login" || got.StartupAction != nil {
 		t.Fatalf("terminalLoginLaunch = %#v", got)
 	}
 	flagMethod := agentruntime.StandardACPAuthMethod{ID: "login", Type: "terminal", Args: []string{"--login"}}
@@ -581,9 +581,9 @@ func TestTerminalLoginLaunch(t *testing.T) {
 	declared.Command.Strategy = "runtime-slash-command"
 	declared.Command.Args = []string{"login"}
 	declared.Command.ReadyText = "Welcome to Kimi Code!"
-	if got := terminalLoginLaunch([]string{"/opt/agent/bin/kimi", "acp"}, flagMethod, &declared); got != (terminalAuthLaunch{
-		Command: "/opt/agent/bin/kimi", StartupInput: "/login", StartupReadyText: "Welcome to Kimi Code!",
-	}) {
+	if got := terminalLoginLaunch([]string{"/opt/agent/bin/kimi", "acp"}, flagMethod, &declared); got.Command != "/opt/agent/bin/kimi" ||
+		got.StartupAction == nil || got.StartupAction.Type != "slash_command" ||
+		got.StartupAction.CommandName != "login" || got.StartupAction.ReadyText != "Welcome to Kimi Code!" {
 		t.Fatalf("terminalLoginLaunch with slash command declaration = %#v", got)
 	}
 	browserMethod := agentruntime.StandardACPAuthMethod{ID: "login", Type: "browser", Args: []string{"runtime-browser"}}
@@ -637,7 +637,8 @@ func TestProbeRuntimeAppliesSignedTerminalSetupPresentation(t *testing.T) {
 	method := result.AuthMethods[0]
 	if method.Name != declared.Name || method.Description != declared.Description ||
 		method.Type != "terminal" || method.TerminalCommand != "/opt/example/bin/example" ||
-		method.TerminalStartupInput != "/login" || method.TerminalStartupReadyText != "Example Agent ready" {
+		method.TerminalStartupAction == nil || method.TerminalStartupAction.Type != "slash_command" ||
+		method.TerminalStartupAction.CommandName != "login" || method.TerminalStartupAction.ReadyText != "Example Agent ready" {
 		t.Fatalf("projected auth method = %#v", method)
 	}
 }

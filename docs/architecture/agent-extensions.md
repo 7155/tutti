@@ -475,10 +475,13 @@ a closed terminal command declaration. Authentication profile v1 supports
 `type: "terminal"` with either `command.strategy: "runtime-subcommand"` and a
 bounded, non-empty argv array, or `command.strategy: "runtime-slash-command"`
 with exactly one safe slash-command name and a bounded literal `readyText`
-marker. For a slash command, the daemon exposes only the quoted runtime launch,
-generates the leading `/` itself, and the Desktop submits that input only after
-the matching terminal session emits the declared marker. The extension cannot
-declare raw terminal input, control characters, or shell source.
+marker. For a slash command, the daemon exposes the quoted runtime launch plus
+one atomic typed startup action; it never exposes raw terminal input. The
+Desktop terminal adapter validates the action, generates the leading `/`, and
+submits it only after the matching terminal session emits the declared marker.
+Startup failure terminates setup readiness monitoring instead of leaving a
+background poll running. The extension cannot declare raw terminal input,
+control characters, or shell source.
 
 A declaration may also replace the advertised method's display name and
 description with bounded presentation strings. Tutti applies those fields only

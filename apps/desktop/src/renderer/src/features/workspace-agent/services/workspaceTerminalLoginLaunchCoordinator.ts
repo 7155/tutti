@@ -1,13 +1,22 @@
+import type { AgentHostTerminalStartupAction } from "@tutti-os/agent-gui";
+
 export interface WorkspaceTerminalLoginLaunchRequest {
   command: string;
   cwd?: string;
-  startupInput?: string;
-  startupReadyText?: string;
+  startupAction?: AgentHostTerminalStartupAction;
   workspaceId: string;
 }
 
+export type WorkspaceTerminalLoginStartupResult =
+  | "cancelled"
+  | "not_required"
+  | "submitted"
+  | "timed_out"
+  | "write_failed";
+
 export interface WorkspaceTerminalLoginLaunchHandle {
   close(): void;
+  startupCompletion: Promise<WorkspaceTerminalLoginStartupResult>;
 }
 
 export type WorkspaceTerminalLoginLaunchHandler = (

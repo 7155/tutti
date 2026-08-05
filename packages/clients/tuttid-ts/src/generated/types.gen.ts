@@ -721,13 +721,15 @@ export type AgentTargetAuthMethod = {
    */
   terminalCommand?: string | null;
   /**
-   * Optional input submitted after the interactive runtime reaches its declared ready marker.
+   * Optional typed terminal action submitted after the interactive runtime reaches its declared ready marker.
    */
-  terminalStartupInput?: string | null;
-  /**
-   * Optional terminal output marker that must be observed before submitting startup input.
-   */
-  terminalStartupReadyText?: string | null;
+  terminalStartupAction?: AgentTargetTerminalStartupAction | null;
+};
+
+export type AgentTargetTerminalStartupAction = {
+  type: "slash_command";
+  commandName: string;
+  readyText: string;
 };
 
 export type InstallAgentTargetRuntimeRequest = {

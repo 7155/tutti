@@ -25,16 +25,22 @@ export type AgentHostClipboardApi = {
 
 export type AgentHostTerminalLoginHandle = {
   close: () => void;
-  completion: Promise<"ready" | "timed_out">;
+  completion: Promise<"ready" | "timed_out" | "unavailable">;
+};
+
+export type AgentHostTerminalStartupAction = {
+  type: "slash_command";
+  commandName: string;
+  readyText: string;
 };
 
 export type AgentHostTerminalLoginApi = {
+  supportedStartupActionTypes?: readonly AgentHostTerminalStartupAction["type"][];
   run: (input: {
     agentTargetId: string;
     command: string;
     cwd?: string;
-    startupInput?: string;
-    startupReadyText?: string;
+    startupAction?: AgentHostTerminalStartupAction;
   }) => AgentHostAsyncResult<AgentHostTerminalLoginHandle | void>;
 };
 
@@ -302,10 +308,8 @@ export interface AgentHostAgentTargetAuthMethod {
   type?: string | null;
   /** Ready-to-run interactive sign-in launch command for terminal-type methods. */
   terminalCommand?: string | null;
-  /** Optional input submitted after the terminal runtime is ready. */
-  terminalStartupInput?: string | null;
-  /** Literal terminal output marker observed before startup input is submitted. */
-  terminalStartupReadyText?: string | null;
+  /** Optional typed action submitted after the terminal runtime is ready. */
+  terminalStartupAction?: AgentHostTerminalStartupAction | null;
 }
 
 export interface AgentHostAgentTargetSetupState {

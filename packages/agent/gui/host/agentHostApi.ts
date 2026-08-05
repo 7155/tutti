@@ -33,6 +33,8 @@ export type AgentHostTerminalLoginApi = {
     agentTargetId: string;
     command: string;
     cwd?: string;
+    startupInput?: string;
+    startupReadyText?: string;
   }) => AgentHostAsyncResult<AgentHostTerminalLoginHandle | void>;
 };
 
@@ -298,8 +300,12 @@ export interface AgentHostAgentTargetAuthMethod {
   description?: string | null;
   /** Provider-declared method kind (for example "terminal"). */
   type?: string | null;
-  /** Ready-to-run interactive sign-in command for terminal-type methods. */
+  /** Ready-to-run interactive sign-in launch command for terminal-type methods. */
   terminalCommand?: string | null;
+  /** Optional input submitted after the terminal runtime is ready. */
+  terminalStartupInput?: string | null;
+  /** Literal terminal output marker observed before startup input is submitted. */
+  terminalStartupReadyText?: string | null;
 }
 
 export interface AgentHostAgentTargetSetupState {

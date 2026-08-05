@@ -165,8 +165,9 @@ type AuthenticationMethodProfile struct {
 	Description string `json:"description,omitempty"`
 	Type        string `json:"type"`
 	Command     struct {
-		Strategy string   `json:"strategy"`
-		Args     []string `json:"args"`
+		Strategy  string   `json:"strategy"`
+		Args      []string `json:"args"`
+		ReadyText string   `json:"readyText,omitempty"`
 	} `json:"command"`
 }
 
@@ -568,16 +569,29 @@ func validateAuthenticationProfile(profile AuthenticationProfile) error {
 		if strings.TrimSpace(method.Type) != "terminal" {
 			return errors.New("authentication method type is unsupported")
 		}
-		if strings.TrimSpace(method.Command.Strategy) != "runtime-subcommand" {
-			return errors.New("authentication terminal command strategy is unsupported")
-		}
-		if len(method.Command.Args) == 0 || len(method.Command.Args) > 16 {
-			return errors.New("authentication terminal command must declare 1..16 args")
-		}
-		for _, argument := range method.Command.Args {
-			if !validAuthenticationCommandArgument(argument) {
-				return errors.New("authentication terminal command arg is invalid")
+		strategy := strings.TrimSpace(method.Command.Strategy)
+		switch strategy {
+		case "runtime-subcommand":
+			if len(method.Command.Args) == 0 || len(method.Command.Args) > 16 {
+				return errors.New("authentication terminal command must declare 1..16 args")
 			}
+			for _, argument := range method.Command.Args {
+				if !validAuthenticationCommandArgument(argument) {
+					return errors.New("authentication terminal command arg is invalid")
+				}
+			}
+			if method.Command.ReadyText != "" {
+				return errors.New("authentication runtime subcommand must not declare ready text")
+			}
+		case "runtime-slash-command":
+			if len(method.Command.Args) != 1 || !composerSlashCommandName.MatchString(method.Command.Args[0]) {
+				return errors.New("authentication runtime slash command must declare one safe command name")
+			}
+			if !validAuthenticationPresentation(method.Command.ReadyText, 256) {
+				return errors.New("authentication runtime slash command ready text is invalid")
+			}
+		default:
+			return errors.New("authentication terminal command strategy is unsupported")
 		}
 	}
 	return nil

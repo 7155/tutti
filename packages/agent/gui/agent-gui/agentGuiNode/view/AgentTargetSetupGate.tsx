@@ -71,6 +71,14 @@ export function AgentTargetSetupGate({
     effectiveAuthMethod?.type === "terminal"
       ? (effectiveAuthMethod.terminalCommand?.trim() ?? "") || null
       : null;
+  const terminalStartupInput =
+    effectiveAuthMethod?.type === "terminal"
+      ? (effectiveAuthMethod.terminalStartupInput?.trim() ?? "") || null
+      : null;
+  const terminalStartupReadyText =
+    effectiveAuthMethod?.type === "terminal"
+      ? (effectiveAuthMethod.terminalStartupReadyText?.trim() ?? "") || null
+      : null;
 
   if (!enabled) {
     return <>{children}</>;
@@ -90,7 +98,11 @@ export function AgentTargetSetupGate({
     terminalLoginAvailable && Boolean(terminalLoginCommand);
   const handleTerminalLoginStart = async () => {
     if (!terminalLoginCommand) return;
-    await controller.startTerminalLogin(terminalLoginCommand);
+    await controller.startTerminalLogin({
+      command: terminalLoginCommand,
+      startupInput: terminalStartupInput,
+      startupReadyText: terminalStartupReadyText
+    });
   };
   const handleTerminalLoginCancel = () => controller.cancelTerminalLogin();
   const actionRunning = isSetupActionRunning(snapshot?.action?.status);

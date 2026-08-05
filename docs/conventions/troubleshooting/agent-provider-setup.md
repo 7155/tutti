@@ -2211,6 +2211,38 @@ invalid_grant`. Search `tuttid.log` for
   [manager.go](../../../services/tuttid/service/agentextension/manager.go)
   [wiring_daemon_api.go](../../../services/tuttid/wiring_daemon_api.go)
 
+### Kimi setup opens a browser before showing the platform selector
+
+- Symptom:
+  Clicking the Kimi setup action immediately opens the Kimi website instead of
+  showing the Kimi Code TUI selector for OAuth or a Platform API key.
+- Quick checks:
+  Inspect the exact terminal launch. `kimi login` and starting `kimi` followed
+  by `/login` are different interfaces: the former may start a device-code flow
+  and open a browser, while the latter opens the interactive platform selector
+  inside the running TUI. Confirm the installed runtime's `login --help` and
+  verify the welcome marker still appears before assuming the two paths are
+  equivalent.
+- Root cause:
+  A terminal authentication profile projected the TUI slash command as a CLI
+  subcommand. Provider-owned commands with the same spelling do not necessarily
+  share behavior across those two command surfaces.
+- Fix:
+  Declare the signed authentication method as `runtime-slash-command`, with one
+  safe command name and a bounded literal ready marker. Launch the bare runtime,
+  wait for that marker on the matching terminal session, then submit the
+  daemon-generated slash command through the terminal transport. Do not put raw
+  terminal input or shell source in the extension profile.
+- Validation:
+  Cover output split across terminal events, output received before the session
+  is armed, unrelated terminal sessions, timeout, and transport failure. In a
+  fresh isolated Kimi home, verify setup first shows the in-TUI platform
+  selector and opens a browser only after the user chooses OAuth.
+- References:
+  [agent-extensions.md](../../architecture/agent-extensions.md)
+  [runtime_probe.go](../../../services/tuttid/service/agentextension/runtime_probe.go)
+  [WorkspaceWorkbench.tsx](../../../apps/desktop/src/renderer/src/features/workspace-workbench/ui/WorkspaceWorkbench.tsx)
+
 ### Kimi Code remains in setup or reports login after authentication
 
 - Symptom:

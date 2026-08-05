@@ -471,15 +471,21 @@ being advertised is never itself an auth verdict. Authentication actions are
 durable and never persist credentials.
 
 A signed `authentication` profile may bind one runtime-advertised method ID to
-a closed terminal command declaration. Authentication profile v1 supports only
-`type: "terminal"` with `command.strategy: "runtime-subcommand"` and a bounded,
-non-empty argv array. A declaration may also replace the advertised method's
-display name and description with bounded presentation strings. Tutti applies
-those fields only when the declaration ID and type match the fresh ACP method,
-so provider-specific setup wording and subcommands remain in the extension
-package instead of daemon code. Profile declarations are argv data, never shell
-source, and the daemon quotes every projected argument before exposing the
-ready-to-run command.
+a closed terminal command declaration. Authentication profile v1 supports
+`type: "terminal"` with either `command.strategy: "runtime-subcommand"` and a
+bounded, non-empty argv array, or `command.strategy: "runtime-slash-command"`
+with exactly one safe slash-command name and a bounded literal `readyText`
+marker. For a slash command, the daemon exposes only the quoted runtime launch,
+generates the leading `/` itself, and the Desktop submits that input only after
+the matching terminal session emits the declared marker. The extension cannot
+declare raw terminal input, control characters, or shell source.
+
+A declaration may also replace the advertised method's display name and
+description with bounded presentation strings. Tutti applies those fields only
+when the declaration ID and type match the fresh ACP method, so
+provider-specific setup wording and commands remain in the extension package
+instead of daemon code. For runtime subcommands, the daemon quotes every
+projected argument before exposing the ready-to-run launch command.
 
 Without a signed declaration, Tutti retains compatibility with provider
 metadata: it reads top-level ACP `type`/`args` fields first and falls back to

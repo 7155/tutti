@@ -29,6 +29,12 @@ type RuntimeAuthMethod struct {
 	// methods (runtime executable plus the provider-declared arguments).
 	// Empty for methods driven through ACP authenticate.
 	TerminalCommand string
+	// TerminalStartupInput is optional input submitted only after the terminal
+	// runtime emits TerminalStartupReadyText.
+	TerminalStartupInput string
+	// TerminalStartupReadyText is a bounded literal output marker supplied by
+	// the signed extension declaration.
+	TerminalStartupReadyText string
 }
 
 type RuntimeProbeResult struct {
@@ -104,10 +110,13 @@ func runRuntimeSetup(
 				description = declaredDescription
 			}
 		}
+		terminalLaunch := terminalLoginLaunch(binding.Command, method, declaration)
 		methods = append(methods, RuntimeAuthMethod{
 			ID: method.ID, Name: name, Description: description,
-			Type:            method.Type,
-			TerminalCommand: terminalLoginCommand(binding.Command, method, declaration),
+			Type:                     method.Type,
+			TerminalCommand:          terminalLaunch.Command,
+			TerminalStartupInput:     terminalLaunch.StartupInput,
+			TerminalStartupReadyText: terminalLaunch.StartupReadyText,
 		})
 	}
 	var account *RuntimeAuthenticatedAccount
@@ -120,30 +129,44 @@ func runRuntimeSetup(
 	return RuntimeProbeResult{Status: RuntimeProbeStatus(result.Status), AuthMethods: methods, Account: account}, nil
 }
 
-// terminalLoginCommand renders the interactive sign-in command for a terminal
+type terminalAuthLaunch struct {
+	Command          string
+	StartupInput     string
+	StartupReadyText string
+}
+
+// terminalLoginLaunch renders the interactive sign-in launch for a terminal
 // auth method. The fresh ACP method type remains authoritative. A compatible
-// signed extension declaration may replace terminal presentation and command
-// args, so provider-specific subcommands stay in the extension package without
-// turning a future browser or device-code method with the same ID into terminal
-// auth.
-func terminalLoginCommand(
+// signed extension declaration may select either a runtime subcommand or a
+// bounded TUI slash command that is submitted only after a literal ready marker
+// is observed.
+func terminalLoginLaunch(
 	command []string,
 	method agentruntime.StandardACPAuthMethod,
 	declaration *AuthenticationMethodProfile,
-) string {
+) terminalAuthLaunch {
 	methodType := method.Type
 	args := method.Args
-	runtimeSubcommand := false
+	strategy := ""
+	readyText := ""
 	if declaration != nil &&
 		strings.TrimSpace(method.Type) == strings.TrimSpace(declaration.Type) {
 		args = declaration.Command.Args
-		runtimeSubcommand = declaration.Command.Strategy == "runtime-subcommand"
+		strategy = declaration.Command.Strategy
+		readyText = declaration.Command.ReadyText
 	}
 	if methodType != "terminal" || len(command) == 0 || strings.TrimSpace(command[0]) == "" {
-		return ""
+		return terminalAuthLaunch{}
+	}
+	if strategy == "runtime-slash-command" && len(args) == 1 {
+		return terminalAuthLaunch{
+			Command:          shellQuote(command[0]),
+			StartupInput:     "/" + args[0],
+			StartupReadyText: readyText,
+		}
 	}
 	base := command[:1]
-	if !runtimeSubcommand && len(args) > 0 && strings.HasPrefix(args[0], "-") {
+	if strategy != "runtime-subcommand" && len(args) > 0 && strings.HasPrefix(args[0], "-") {
 		base = command
 	}
 	parts := make([]string, 0, len(base)+len(args))
@@ -153,7 +176,7 @@ func terminalLoginCommand(
 	for _, arg := range args {
 		parts = append(parts, shellQuote(arg))
 	}
-	return strings.Join(parts, " ")
+	return terminalAuthLaunch{Command: strings.Join(parts, " ")}
 }
 
 func shellQuote(value string) string {

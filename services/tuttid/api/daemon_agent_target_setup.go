@@ -132,6 +132,12 @@ func projectAgentTargetSetupSnapshot(snapshot agentextensionservice.SetupSnapsho
 		if method.TerminalCommand != "" {
 			projected.TerminalCommand = &method.TerminalCommand
 		}
+		if method.TerminalStartupInput != "" {
+			projected.TerminalStartupInput = &method.TerminalStartupInput
+		}
+		if method.TerminalStartupReadyText != "" {
+			projected.TerminalStartupReadyText = &method.TerminalStartupReadyText
+		}
 		result.AuthMethods = append(result.AuthMethods, projected)
 	}
 	if snapshot.Account != nil {

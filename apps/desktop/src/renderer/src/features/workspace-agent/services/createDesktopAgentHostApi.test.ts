@@ -47,6 +47,8 @@ test("desktop agent host api routes terminal login through the launch coordinato
   const requests: Array<{
     command: string;
     cwd?: string;
+    startupInput?: string;
+    startupReadyText?: string;
     workspaceId: string;
   }> = [];
   const unregister = registerWorkspaceTerminalLoginLaunchHandler(
@@ -63,10 +65,18 @@ test("desktop agent host api routes terminal login through the launch coordinato
   try {
     const handle = await api.terminalLogin?.run({
       agentTargetId: "extension:kimi-code",
-      command: "/opt/kimi/bin/kimi login"
+      command: "/opt/kimi/bin/kimi",
+      startupInput: "/login",
+      startupReadyText: "Welcome to Kimi Code!"
     });
     assert.deepEqual(requests, [
-      { command: "/opt/kimi/bin/kimi login", cwd: undefined, workspaceId }
+      {
+        command: "/opt/kimi/bin/kimi",
+        cwd: undefined,
+        startupInput: "/login",
+        startupReadyText: "Welcome to Kimi Code!",
+        workspaceId
+      }
     ]);
     assert.equal(await handle?.completion, "ready");
     handle?.close();
@@ -219,7 +229,9 @@ test("desktop agent host api explicitly projects daemon target setup snapshots",
         id: "login",
         name: "Login with Kimi account",
         type: "terminal",
-        terminalCommand: "/opt/kimi-code/bin/kimi login"
+        terminalCommand: "/opt/kimi-code/bin/kimi",
+        terminalStartupInput: "/login",
+        terminalStartupReadyText: "Welcome to Kimi Code!"
       }
     ],
     account: {
@@ -269,14 +281,18 @@ test("desktop agent host api explicitly projects daemon target setup snapshots",
         name: "Log in with Google",
         description: "Personal account",
         type: null,
-        terminalCommand: null
+        terminalCommand: null,
+        terminalStartupInput: null,
+        terminalStartupReadyText: null
       },
       {
         id: "login",
         name: "Login with Kimi account",
         description: null,
         type: "terminal",
-        terminalCommand: "/opt/kimi-code/bin/kimi login"
+        terminalCommand: "/opt/kimi-code/bin/kimi",
+        terminalStartupInput: "/login",
+        terminalStartupReadyText: "Welcome to Kimi Code!"
       }
     ],
     account: {

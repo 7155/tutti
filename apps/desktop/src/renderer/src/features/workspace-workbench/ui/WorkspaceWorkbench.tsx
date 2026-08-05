@@ -106,6 +106,8 @@ import type { WorkspaceWorkbenchHostSessionBinding } from "../services/workspace
 import { useWorkspaceOnboardingAutoOpen } from "./useWorkspaceOnboardingAutoOpen.ts";
 import { resolveWorkspaceWorkbenchLayoutConstraints } from "./workspaceWorkbenchLayoutConstraints.ts";
 import { defaultWorkspaceTerminalWorkbenchTypeId } from "../services/workspaceWorkbenchNodeIds.ts";
+import { createTerminalStartupInputGate } from "../services/terminalStartupInputGate.ts";
+import { getWorkspaceTerminalSurfaceRuntime } from "../services/workspaceTerminalSurfaceRuntime.ts";
 import type {
   DesktopRuntimeApi,
   DesktopWorkspaceAppExternalHostApi
@@ -488,28 +490,85 @@ function ReadyWorkspaceWorkbenchWithSession({
 
       releaseAgentEnvHostRef.current = agentEnvService.bindWorkbenchHost(host);
 
+      const terminalSurfaceRuntime = (hostInput.contributions ?? [])
+        .map((contribution) => getWorkspaceTerminalSurfaceRuntime(contribution))
+        .find((candidate) => candidate !== null);
+
       unregisterTerminalLoginLaunchRef.current =
         registerWorkspaceTerminalLoginLaunchHandler(
           state.workspace.id,
-          async ({ command, cwd }) => {
-            const nodeId = await host.launchNode({
-              payload: {
-                cwd,
-                initialInput: /[\r\n]$/u.test(command)
-                  ? command
-                  : `${command}\n`
-              },
-              reason: "host",
-              typeId: defaultWorkspaceTerminalWorkbenchTypeId
-            });
-            if (!nodeId) {
-              throw new Error("Terminal login did not open a workbench node.");
+          async ({ command, cwd, startupInput, startupReadyText }) => {
+            const normalizedStartupInput = startupInput?.trim() ?? "";
+            const normalizedReadyText = startupReadyText?.trim() ?? "";
+            if (
+              Boolean(normalizedStartupInput) !== Boolean(normalizedReadyText)
+            ) {
+              throw new Error(
+                "Terminal startup input declaration is incomplete."
+              );
             }
-            return {
-              close: () => {
-                host.closeNode(nodeId);
+            if (
+              (normalizedStartupInput || normalizedReadyText) &&
+              !terminalSurfaceRuntime
+            ) {
+              throw new Error("Terminal startup input is unavailable.");
+            }
+            const startupGate =
+              terminalSurfaceRuntime &&
+              normalizedStartupInput &&
+              normalizedReadyText
+                ? createTerminalStartupInputGate({
+                    readyText: normalizedReadyText,
+                    startupInput: normalizedStartupInput,
+                    transport: terminalSurfaceRuntime.feature.transport
+                  })
+                : null;
+            try {
+              const nodeId = await host.launchNode({
+                payload: {
+                  cwd,
+                  initialInput: /[\r\n]$/u.test(command)
+                    ? command
+                    : `${command}\n`
+                },
+                reason: "host",
+                typeId: defaultWorkspaceTerminalWorkbenchTypeId
+              });
+              if (!nodeId) {
+                throw new Error(
+                  "Terminal login did not open a workbench node."
+                );
               }
-            };
+              if (startupGate) {
+                const sessionId = host
+                  .getSnapshot()
+                  .nodes.find((node) => node.id === nodeId)?.data.instanceKey;
+                if (!sessionId) {
+                  startupGate.cancel();
+                  throw new Error("Terminal login session is unavailable.");
+                }
+                void startupGate.arm(sessionId).then((result) => {
+                  void runtimeApi
+                    .logTerminalDiagnostic({
+                      details: { result },
+                      event: "agent.gui.terminal-login.startup-input",
+                      level: result === "submitted" ? "info" : "warn",
+                      nodeId,
+                      workspaceId: state.workspace.id
+                    })
+                    .catch(() => undefined);
+                });
+              }
+              return {
+                close: () => {
+                  startupGate?.cancel();
+                  host.closeNode(nodeId);
+                }
+              };
+            } catch (error) {
+              startupGate?.cancel();
+              throw error;
+            }
           }
         );
 
@@ -638,7 +697,9 @@ function ReadyWorkspaceWorkbenchWithSession({
     [
       agentEnvService,
       appCenterService,
+      hostInput.contributions,
       runtime,
+      runtimeApi,
       state.workspace.id,
       workspaceAppExternalApi
     ]

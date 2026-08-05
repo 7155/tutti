@@ -274,7 +274,9 @@ describe("AgentTargetSetupGate", () => {
               id: "login",
               name: "Login with Kimi account",
               type: "terminal",
-              terminalCommand: "/opt/kimi-code/bin/kimi login"
+              terminalCommand: "/opt/kimi-code/bin/kimi",
+              terminalStartupInput: "/login",
+              terminalStartupReadyText: "Welcome to Kimi Code!"
             }
           ]
         },
@@ -287,10 +289,17 @@ describe("AgentTargetSetupGate", () => {
 
   it("launches an in-app terminal for terminal sign-in and closes it once ready", async () => {
     const close = vi.fn();
-    const run = vi.fn(async (_input: { command: string; cwd?: string }) => ({
-      close,
-      completion: new Promise<"ready" | "timed_out">(() => {})
-    }));
+    const run = vi.fn(
+      async (_input: {
+        command: string;
+        cwd?: string;
+        startupInput?: string;
+        startupReadyText?: string;
+      }) => ({
+        close,
+        completion: new Promise<"ready" | "timed_out">(() => {})
+      })
+    );
     const setup = terminalLoginSetup();
     installHost(new Map([["extension:gemini", setup.watch]]), {
       terminalLogin: { run }
@@ -303,7 +312,9 @@ describe("AgentTargetSetupGate", () => {
     await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
     expect(run.mock.calls[0]?.[0]).toEqual({
       agentTargetId: "extension:gemini",
-      command: "/opt/kimi-code/bin/kimi login"
+      command: "/opt/kimi-code/bin/kimi",
+      startupInput: "/login",
+      startupReadyText: "Welcome to Kimi Code!"
     });
     expect(
       await screen.findByRole("button", { name: "Open setup" })
@@ -360,7 +371,7 @@ describe("AgentTargetSetupGate", () => {
     expect(
       await screen.findByText(/could not be opened in this window/)
     ).toBeTruthy();
-    expect(screen.getByText("/opt/kimi-code/bin/kimi login")).toBeTruthy();
+    expect(screen.getByText("/opt/kimi-code/bin/kimi")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Copy command" })).toBeTruthy();
   });
 

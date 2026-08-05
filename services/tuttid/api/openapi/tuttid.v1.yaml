@@ -8555,7 +8555,15 @@ components:
         terminalCommand:
           type: string
           nullable: true
-          description: Ready-to-run interactive sign-in command for terminal-type methods.
+          description: Ready-to-run interactive sign-in launch command for terminal-type methods.
+        terminalStartupInput:
+          type: string
+          nullable: true
+          description: Optional input submitted after the interactive runtime reaches its declared ready marker.
+        terminalStartupReadyText:
+          type: string
+          nullable: true
+          description: Optional terminal output marker that must be observed before submitting startup input.
     InstallAgentTargetRuntimeRequest:
       type: object
       additionalProperties: false

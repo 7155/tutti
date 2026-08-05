@@ -1,6 +1,8 @@
 export interface WorkspaceTerminalLoginLaunchRequest {
   command: string;
   cwd?: string;
+  startupInput?: string;
+  startupReadyText?: string;
   workspaceId: string;
 }
 

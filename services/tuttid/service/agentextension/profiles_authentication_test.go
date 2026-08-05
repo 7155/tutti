@@ -22,8 +22,9 @@ func TestLoadAuthenticationMethods(t *testing.T) {
 			"description": "Open the runtime to choose an authentication method.",
 			"type": "terminal",
 			"command": {
-				"strategy": "runtime-subcommand",
-				"args": ["login"]
+				"strategy": "runtime-slash-command",
+				"args": ["login"],
+				"readyText": "Example Agent is ready"
 			}
 		}]
 	}`), 0o600); err != nil {
@@ -38,8 +39,9 @@ func TestLoadAuthenticationMethods(t *testing.T) {
 	}
 	method := methods["login"]
 	if method.Name != "Set up Example Agent" || method.Description != "Open the runtime to choose an authentication method." ||
-		method.Type != "terminal" || method.Command.Strategy != "runtime-subcommand" ||
-		len(method.Command.Args) != 1 || method.Command.Args[0] != "login" {
+		method.Type != "terminal" || method.Command.Strategy != "runtime-slash-command" ||
+		len(method.Command.Args) != 1 || method.Command.Args[0] != "login" ||
+		method.Command.ReadyText != "Example Agent is ready" {
 		t.Fatalf("authentication method = %#v", method)
 	}
 }
@@ -79,6 +81,18 @@ func TestValidateAuthenticationProfileRejectsUnsafeDeclarations(t *testing.T) {
 		},
 		"control character": func(profile *AuthenticationProfile) {
 			profile.Methods[0].Command.Args = []string{"login\nnext"}
+		},
+		"subcommand ready text": func(profile *AuthenticationProfile) {
+			profile.Methods[0].Command.ReadyText = "Unexpected"
+		},
+		"slash command without ready text": func(profile *AuthenticationProfile) {
+			profile.Methods[0].Command.Strategy = "runtime-slash-command"
+			profile.Methods[0].Command.ReadyText = ""
+		},
+		"unsafe slash command name": func(profile *AuthenticationProfile) {
+			profile.Methods[0].Command.Strategy = "runtime-slash-command"
+			profile.Methods[0].Command.Args = []string{"login now"}
+			profile.Methods[0].Command.ReadyText = "Example Agent is ready"
 		},
 	}
 	for name, mutate := range tests {

@@ -51,7 +51,11 @@ export interface AgentTargetSetupController {
   refresh(): Promise<void>;
   selectAuthMethod(methodId: string): void;
   setDialogOpen(open: boolean): void;
-  startTerminalLogin(command: string): Promise<void>;
+  startTerminalLogin(input: {
+    command: string;
+    startupInput?: string | null;
+    startupReadyText?: string | null;
+  }): Promise<void>;
   subscribe(listener: () => void): () => void;
 }
 
@@ -258,9 +262,15 @@ function createAgentTargetSetupController(input: {
       });
     }
   };
-  const startTerminalLogin = async (command: string) => {
-    const normalizedCommand = command.trim();
+  const startTerminalLogin = async (request: {
+    command: string;
+    startupInput?: string | null;
+    startupReadyText?: string | null;
+  }) => {
+    const normalizedCommand = request.command.trim();
     if (!input.terminalLogin || !normalizedCommand) return;
+    const startupInput = request.startupInput?.trim() || undefined;
+    const startupReadyText = request.startupReadyText?.trim() || undefined;
     cancelTerminalLogin(false);
     const generation = terminalLoginGeneration;
     update({
@@ -271,7 +281,10 @@ function createAgentTargetSetupController(input: {
     try {
       handle = await input.terminalLogin.run({
         agentTargetId: input.agentTargetId,
-        command: normalizedCommand
+        command: normalizedCommand,
+        ...(startupInput && startupReadyText
+          ? { startupInput, startupReadyText }
+          : {})
       });
     } catch {
       settleTerminalLogin(generation, "unavailable");

@@ -59,7 +59,9 @@ export function projectDesktopAgentTargetSetupSnapshot(
       name: method.name,
       description: method.description ?? null,
       type: method.type ?? null,
-      terminalCommand: method.terminalCommand ?? null
+      terminalCommand: method.terminalCommand ?? null,
+      terminalStartupInput: method.terminalStartupInput ?? null,
+      terminalStartupReadyText: method.terminalStartupReadyText ?? null
     })),
     account: snapshot.account
       ? {
@@ -201,10 +203,14 @@ export function createDesktopAgentHostApi({
         agentTargetId: string;
         command: string;
         cwd?: string;
+        startupInput?: string;
+        startupReadyText?: string;
       }) => {
         const launchHandle = await requestWorkspaceTerminalLoginLaunch({
           command: input.command,
           cwd: input.cwd,
+          startupInput: input.startupInput,
+          startupReadyText: input.startupReadyText,
           workspaceId
         });
         if (!launchHandle) {

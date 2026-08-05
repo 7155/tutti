@@ -5299,8 +5299,14 @@ type AgentTargetAuthMethod struct {
 	Id          string  `json:"id"`
 	Name        string  `json:"name"`
 
-	// TerminalCommand Ready-to-run interactive sign-in command for terminal-type methods.
+	// TerminalCommand Ready-to-run interactive sign-in launch command for terminal-type methods.
 	TerminalCommand *string `json:"terminalCommand,omitempty"`
+
+	// TerminalStartupInput Optional input submitted after the interactive runtime reaches its declared ready marker.
+	TerminalStartupInput *string `json:"terminalStartupInput,omitempty"`
+
+	// TerminalStartupReadyText Optional terminal output marker that must be observed before submitting startup input.
+	TerminalStartupReadyText *string `json:"terminalStartupReadyText,omitempty"`
 
 	// Type Provider-declared method kind (for example "terminal").
 	Type *string `json:"type,omitempty"`

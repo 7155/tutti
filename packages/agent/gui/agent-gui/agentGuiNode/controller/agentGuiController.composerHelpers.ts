@@ -226,22 +226,32 @@ export function providerSkillsFromComposerOptions(
         : {})
     })),
     ...(options.capabilityCatalog ?? [])
-      .filter(
-        (capability) =>
+      .filter((capability) => {
+        if (capability.kind === "connector") {
+          return (
+            capability.invocation !== "none" && Boolean(capability.trigger)
+          );
+        }
+        return (
+          capability.kind === "skill" &&
           capability.invocation === "promptItem" &&
-          (capability.kind === "skill" || capability.kind === "connector") &&
           capability.status === "available" &&
           Boolean(capability.trigger) &&
           Boolean(capability.path)
-      )
+        );
+      })
       .map((capability): AgentGUIProviderSkillOption => {
         const isConnector = capability.kind === "connector";
         return {
           name: isConnector ? capability.label : capability.name,
           trigger: capability.trigger!,
-          invocation: "promptItem",
+          invocation:
+            capability.invocation === "textTrigger"
+              ? "textTrigger"
+              : "promptItem",
           sourceKind: isConnector ? "connector" : "plugin",
           kind: isConnector ? "connector" : "skill",
+          ...(isConnector ? { status: capability.status } : {}),
           ...(capability.description
             ? { description: capability.description }
             : {}),
@@ -266,7 +276,8 @@ export function areProviderSkillOptionsEqual(
     left.description === right.description &&
     left.pluginName === right.pluginName &&
     left.path === right.path &&
-    left.kind === right.kind
+    left.kind === right.kind &&
+    left.status === right.status
   );
 }
 

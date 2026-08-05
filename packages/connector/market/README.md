@@ -34,7 +34,7 @@ const connectorMarketModule = new ConnectorMarketModule({
     canRequest: () => hostAccountState.authenticated,
     events: hostConnectorMarketEvents
   },
-  scope: { workspaceId }
+  scope: {}
 });
 
 serviceRegistry.registerInstance(
@@ -58,7 +58,7 @@ while still allowing the module lifecycle to reach `ready`; after the host
 observes an authenticated transition it calls `root.market.reload()`.
 Starting an event subscription and every observed `connected` state trigger an
 authoritative reconciliation, including the first connection. Snapshot reads
-are coalesced per workspace generation and a connection/event arriving during
+are coalesced per service generation and a connection/event arriving during
 an in-flight read schedules a serialized follow-up. Mutation responses are
 revision-fenced so an older response cannot overwrite a newer daemon snapshot;
 host generated-client adapters must preserve connector-market error code,

@@ -13,12 +13,12 @@ type activationGateDelegate struct {
 	deactivations int
 }
 
-func (delegate *activationGateDelegate) Reconcile(_ context.Context, request market.WorkspaceReconcileRequest) (market.WorkspaceRuntimeReceipt, error) {
+func (delegate *activationGateDelegate) Reconcile(_ context.Context, request market.RuntimeReconcileRequest) (market.RuntimeReceipt, error) {
 	delegate.reconciles++
-	return market.WorkspaceRuntimeReceipt{OperationID: request.OperationID, WorkspaceID: request.WorkspaceID,
+	return market.RuntimeReceipt{OperationID: request.OperationID, ConnectionID: request.ConnectionID,
 		ConnectorKey: request.Connector.Key, ReleaseDigest: request.Connector.Release.ReleaseDigest, Generation: request.Generation}, nil
 }
-func (delegate *activationGateDelegate) DeactivateWorkspace(context.Context, market.WorkspaceDeactivationRequest) error {
+func (delegate *activationGateDelegate) DeactivateRuntime(context.Context, market.RuntimeDeactivationRequest) error {
 	delegate.deactivations++
 	return nil
 }
@@ -27,7 +27,7 @@ func (*activationGateDelegate) FailClosed(context.Context, time.Time) error { re
 func TestActivationGateStagesRecoveryUntilInitialCatalogRefresh(t *testing.T) {
 	delegate := &activationGateDelegate{}
 	gate := newActivationGateHost(delegate)
-	request := market.WorkspaceReconcileRequest{OperationID: "recover-1", WorkspaceID: "workspace-1", Enabled: true,
+	request := market.RuntimeReconcileRequest{OperationID: "recover-1", ConnectionID: "workspace-1", Enabled: true,
 		Generation: market.HostGeneration{BootEpoch: "boot-1", Generation: 7}, Connector: market.Connector{Key: "github",
 			Release: market.Release{ReleaseDigest: "release-1"}}}
 	receipt, err := gate.Reconcile(context.Background(), request)
@@ -49,7 +49,7 @@ func TestActivationGateStagesRecoveryUntilInitialCatalogRefresh(t *testing.T) {
 func TestActivationGateNeverStagesWorkspaceDeactivation(t *testing.T) {
 	delegate := &activationGateDelegate{}
 	gate := newActivationGateHost(delegate)
-	if err := gate.DeactivateWorkspace(context.Background(), market.WorkspaceDeactivationRequest{WorkspaceID: "workspace-1", ConnectorKey: "github"}); err != nil {
+	if err := gate.DeactivateRuntime(context.Background(), market.RuntimeDeactivationRequest{ConnectionID: "workspace-1", ConnectorKey: "github"}); err != nil {
 		t.Fatal(err)
 	}
 	if delegate.deactivations != 1 {

@@ -45,6 +45,12 @@ export interface ConnectorPermissionView {
   name: string;
 }
 
+export interface ConnectorAgentOptionView {
+  principalId: string;
+  name: string;
+  description: string;
+}
+
 export interface ConnectorDetailFieldView {
   id:
     | "authorization"
@@ -69,11 +75,17 @@ export interface ConnectorAuthorizationDialogView extends ConnectorDialogBaseVie
   pending: boolean;
 }
 
+export interface ConnectorInstallationDialogView extends ConnectorDialogBaseView {
+  agents: ConnectorAgentOptionView[];
+  kind: "installation";
+}
+
 export interface ConnectorManagementDialogView extends ConnectorDialogBaseView {
   canAuthorize: boolean;
   details: ConnectorDetailFieldView[];
+  agents: ConnectorAgentOptionView[];
   kind: "management";
-  workspaceEnabled: boolean;
+  selectedPrincipalIds: string[];
 }
 
 export interface ConnectorBlockedDialogView extends ConnectorDialogBaseView {
@@ -84,6 +96,7 @@ export interface ConnectorBlockedDialogView extends ConnectorDialogBaseView {
 export type ConnectorDialogView =
   | ConnectorAuthorizationDialogView
   | ConnectorBlockedDialogView
+  | ConnectorInstallationDialogView
   | ConnectorManagementDialogView;
 
 export interface ConnectorMarketViewState {

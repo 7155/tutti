@@ -156,16 +156,12 @@ func (application *Application) executeInstall(ctx context.Context, operation Op
 
 type installRollout struct {
 	previous *Release
-	applied  []WorkspaceBinding
+	applied  []string
 }
 
 func (application *Application) rolloutInstalledBindings(ctx context.Context, operation Operation, release Release) (installRollout, error) {
-	bindingSnapshot, err := application.config.Repository.WorkspaceBindings(ctx, operation.ConnectorKey)
-	if err != nil {
-		return installRollout{}, err
-	}
 	rollout := installRollout{}
-	connector, err := application.config.Repository.Connector(ctx, operation.ConnectorKey, "")
+	connector, err := application.config.Repository.Connector(ctx, operation.ConnectorKey)
 	if err != nil {
 		return rollout, err
 	}
@@ -183,23 +179,20 @@ func (application *Application) rolloutInstalledBindings(ctx context.Context, op
 	if strings.TrimSpace(generation.BootEpoch) == "" || generation.Generation == 0 {
 		return rollout, invalidOperationReceipt("install rollout generation is missing")
 	}
-	for _, binding := range bindingSnapshot {
-		if !binding.Enabled {
-			continue
-		}
-		operationID := operation.OperationID + "/rollout/" + binding.WorkspaceID
-		receipt, reconcileErr := application.config.Host.Reconcile(ctx, WorkspaceReconcileRequest{
-			OperationID: operationID, WorkspaceID: binding.WorkspaceID, Connector: connector, Enabled: true, Generation: generation,
+	for _, connectionID := range []string{defaultConnectorConnectionID} {
+		operationID := operation.OperationID + "/rollout/" + connectionID
+		receipt, reconcileErr := application.config.Host.Reconcile(ctx, RuntimeReconcileRequest{
+			OperationID: operationID, ConnectionID: connectionID, Connector: connector, Enabled: true, Generation: generation,
 		})
 		if reconcileErr == nil {
-			reconcileErr = validateWorkspaceRuntimeReceipt(receipt, operationID, binding.WorkspaceID,
+			reconcileErr = validateRuntimeReceipt(receipt, operationID, connectionID,
 				operation.ConnectorKey, release.ReleaseDigest, generation)
 		}
 		if reconcileErr != nil {
 			rollbackErr := application.rollbackInstalledBindings(context.WithoutCancel(ctx), operation, rollout)
-			return rollout, NewDomainError(ErrorCodeInstallFailed, "enabled connector workspaces could not be rolled forward", true, errors.Join(reconcileErr, rollbackErr))
+			return rollout, NewDomainError(ErrorCodeInstallFailed, "connector runtime could not be rolled forward", true, errors.Join(reconcileErr, rollbackErr))
 		}
-		rollout.applied = append(rollout.applied, binding)
+		rollout.applied = append(rollout.applied, connectionID)
 	}
 	return rollout, nil
 }
@@ -210,16 +203,16 @@ func (application *Application) rollbackInstalledBindings(ctx context.Context, o
 	}
 	var rollbackErrors []error
 	for index := len(rollout.applied) - 1; index >= 0; index-- {
-		binding := rollout.applied[index]
+		connectionID := rollout.applied[index]
 		if rollout.previous == nil {
-			rollbackErrors = append(rollbackErrors, application.config.Host.DeactivateWorkspace(ctx, WorkspaceDeactivationRequest{
-				WorkspaceID: binding.WorkspaceID, ConnectorKey: operation.ConnectorKey,
+			rollbackErrors = append(rollbackErrors, application.config.Host.DeactivateRuntime(ctx, RuntimeDeactivationRequest{
+				ConnectionID: connectionID, ConnectorKey: operation.ConnectorKey,
 				ReleaseDigest: operation.Target.ReleaseDigest, Generation: operation.HostGeneration,
 				Deadline: application.config.Now().UTC().Add(5 * time.Second),
 			}))
 			continue
 		}
-		previousConnector, err := application.config.Repository.Connector(ctx, operation.ConnectorKey, "")
+		previousConnector, err := application.config.Repository.Connector(ctx, operation.ConnectorKey)
 		if err != nil {
 			rollbackErrors = append(rollbackErrors, err)
 			continue
@@ -227,11 +220,11 @@ func (application *Application) rollbackInstalledBindings(ctx context.Context, o
 		previousConnector.Release = *rollout.previous
 		previousConnector.Installation = Installation{State: InstallationStateInstalled, InstalledVersion: rollout.previous.Version,
 			InstalledReleaseID: rollout.previous.ReleaseID, InstalledReleaseDigest: rollout.previous.ReleaseDigest}
-		rollbackOperationID := operation.OperationID + "/rollback/" + binding.WorkspaceID
-		receipt, err := application.config.Host.Reconcile(ctx, WorkspaceReconcileRequest{OperationID: rollbackOperationID,
-			WorkspaceID: binding.WorkspaceID, Connector: previousConnector, Enabled: true, Generation: operation.HostGeneration})
+		rollbackOperationID := operation.OperationID + "/rollback/" + connectionID
+		receipt, err := application.config.Host.Reconcile(ctx, RuntimeReconcileRequest{OperationID: rollbackOperationID,
+			ConnectionID: connectionID, Connector: previousConnector, Enabled: true, Generation: operation.HostGeneration})
 		if err == nil {
-			err = validateWorkspaceRuntimeReceipt(receipt, rollbackOperationID, binding.WorkspaceID,
+			err = validateRuntimeReceipt(receipt, rollbackOperationID, connectionID,
 				operation.ConnectorKey, rollout.previous.ReleaseDigest, operation.HostGeneration)
 		}
 		rollbackErrors = append(rollbackErrors, err)
@@ -258,21 +251,12 @@ func (application *Application) executeUninstall(ctx context.Context, operation 
 	if err != nil {
 		return err
 	}
-	bindings, err := application.config.Repository.WorkspaceBindings(ctx, operation.Target.ConnectorKey)
-	if err != nil {
-		return err
-	}
-	for _, binding := range bindings {
-		if !binding.Enabled {
-			continue
-		}
-		if err := application.config.Host.DeactivateWorkspace(ctx, WorkspaceDeactivationRequest{
-			WorkspaceID: binding.WorkspaceID, ConnectorKey: operation.Target.ConnectorKey, ReleaseDigest: operation.Target.ReleaseDigest,
-			Generation: operation.HostGeneration,
-			Deadline:   application.config.Now().UTC().Add(5 * time.Second),
-		}); err != nil {
-			return NewDomainError(ErrorCodeInstallFailed, "connector workspace routes could not be deactivated", true, err)
-		}
+	if err := application.config.Host.DeactivateRuntime(ctx, RuntimeDeactivationRequest{
+		ConnectionID: defaultConnectorConnectionID, ConnectorKey: operation.Target.ConnectorKey, ReleaseDigest: operation.Target.ReleaseDigest,
+		Generation: operation.HostGeneration,
+		Deadline:   application.config.Now().UTC().Add(5 * time.Second),
+	}); err != nil {
+		return NewDomainError(ErrorCodeInstallFailed, "connector runtime routes could not be deactivated", true, err)
 	}
 	if err := application.config.ArtifactPreparer.Remove(ctx, RemoveArtifactRequest{
 		OperationID:   operation.OperationID,
@@ -282,10 +266,10 @@ func (application *Application) executeUninstall(ctx context.Context, operation 
 	}); err != nil {
 		return NewDomainError(ErrorCodeInstallFailed, "connector prepared artifact cleanup failed", true, err)
 	}
-	return application.completeUninstall(ctx, operation.OperationID, bindings)
+	return application.completeUninstall(ctx, operation.OperationID)
 }
 
-func (application *Application) completeUninstall(ctx context.Context, operationID string, bindings []WorkspaceBinding) error {
+func (application *Application) completeUninstall(ctx context.Context, operationID string) error {
 	return application.config.Repository.Transaction(ctx, func(tx Transaction) error {
 		operation, err := tx.Operation(operationID)
 		if err != nil {
@@ -299,14 +283,11 @@ func (application *Application) completeUninstall(ctx context.Context, operation
 			return err
 		}
 		revision := tx.AdvanceRevision()
-		for _, binding := range bindings {
-			if _, err := tx.SetWorkspaceBinding(operation.ConnectorKey, WorkspaceBinding{WorkspaceID: binding.WorkspaceID, Enabled: false}); err != nil {
-				return err
-			}
-		}
 		connector.Installation = Installation{State: InstallationStateNotInstalled}
 		connector.Authorization = initialAuthorization(connector.Release.Manifest.AuthorizationKind)
-		connector.WorkspaceBinding = nil
+		if err := tx.ReplaceAgentGrants(operation.ConnectorKey, nil); err != nil {
+			return err
+		}
 		connector.Revision = revision
 		operation.State, operation.Stage, operation.FailureCode = OperationStateCompleted, OperationStageCompleted, ""
 		operation.UpdatedAt = application.config.Now().UTC()
@@ -320,97 +301,15 @@ func (application *Application) completeUninstall(ctx context.Context, operation
 	})
 }
 
-func (application *Application) executeWorkspaceReconcile(ctx context.Context, operation Operation) error {
-	if operation.Target == nil || operation.Target.Release == nil || operation.WorkspaceEnabled == nil ||
-		strings.TrimSpace(operation.WorkspaceID) == "" || strings.TrimSpace(operation.HostGeneration.BootEpoch) == "" {
-		return invalidOperationReceipt("workspace reconcile target is missing")
-	}
-	connector, err := application.config.Repository.Connector(ctx, operation.ConnectorKey, operation.WorkspaceID)
-	if err != nil {
-		return err
-	}
-	if *operation.WorkspaceEnabled {
-		if connector.Installation.State != InstallationStateInstalled ||
-			connector.Installation.InstalledReleaseDigest != operation.Target.ReleaseDigest {
-			return invalidOperationReceipt("workspace reconcile release is not installed")
-		}
-	}
-	connector.Release = *operation.Target.Release
-	receipt, err := application.config.Host.Reconcile(ctx, WorkspaceReconcileRequest{
-		OperationID: operation.OperationID, WorkspaceID: operation.WorkspaceID,
-		Connector: connector, Enabled: *operation.WorkspaceEnabled, Generation: operation.HostGeneration,
-	})
-	if err != nil {
-		return NewDomainError(ErrorCodeUnavailable, "connector workspace reconcile failed", true, err)
-	}
-	if err := validateWorkspaceRuntimeReceipt(receipt, operation.OperationID, operation.WorkspaceID,
-		operation.ConnectorKey, operation.Target.ReleaseDigest, operation.HostGeneration); err != nil {
-		return err
-	}
-	completionErr := application.completeWorkspaceReconcile(ctx, operation.OperationID)
-	if completionErr == nil || !*operation.WorkspaceEnabled {
-		return completionErr
-	}
-	compensationContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	compensationErr := application.config.Host.DeactivateWorkspace(compensationContext, WorkspaceDeactivationRequest{
-		WorkspaceID: operation.WorkspaceID, ConnectorKey: operation.ConnectorKey,
-		ReleaseDigest: operation.Target.ReleaseDigest, Generation: operation.HostGeneration,
-		Deadline: application.config.Now().UTC().Add(5 * time.Second),
-	})
-	if compensationErr != nil {
-		compensationErr = errors.Join(compensationErr, application.config.Host.FailClosed(compensationContext, application.config.Now().UTC().Add(5*time.Second)))
-	}
-	return workspaceReconcileCompletionError{err: errors.Join(completionErr, compensationErr)}
-}
+const defaultConnectorConnectionID = "default"
 
-type workspaceReconcileCompletionError struct{ err error }
-
-func (failure workspaceReconcileCompletionError) Error() string { return failure.err.Error() }
-func (failure workspaceReconcileCompletionError) Unwrap() error { return failure.err }
-
-func validateWorkspaceRuntimeReceipt(receipt WorkspaceRuntimeReceipt, operationID, workspaceID, connectorKey,
+func validateRuntimeReceipt(receipt RuntimeReceipt, operationID, connectionID, connectorKey,
 	releaseDigest string, generation HostGeneration) error {
-	if receipt.OperationID != operationID || receipt.WorkspaceID != workspaceID ||
+	if receipt.OperationID != operationID || receipt.ConnectionID != connectionID ||
 		receipt.ConnectorKey != connectorKey || receipt.ReleaseDigest != releaseDigest || receipt.Generation != generation {
-		return invalidOperationReceipt("implementation host returned a mismatched workspace receipt")
+		return invalidOperationReceipt("implementation host returned a mismatched runtime receipt")
 	}
 	return nil
-}
-
-func (application *Application) completeWorkspaceReconcile(ctx context.Context, operationID string) error {
-	return application.config.Repository.Transaction(ctx, func(tx Transaction) error {
-		operation, err := tx.Operation(operationID)
-		if err != nil {
-			return err
-		}
-		if operation.State == OperationStateCompleted {
-			return nil
-		}
-		if operation.WorkspaceEnabled == nil || strings.TrimSpace(operation.WorkspaceID) == "" {
-			return invalidOperationReceipt("workspace reconcile completion is missing desired state")
-		}
-		revision := tx.AdvanceRevision()
-		connector, err := tx.SetWorkspaceBinding(operation.ConnectorKey, WorkspaceBinding{
-			WorkspaceID: operation.WorkspaceID,
-			Enabled:     *operation.WorkspaceEnabled,
-		})
-		if err != nil {
-			return err
-		}
-		connector.Revision = revision
-		operation.State = OperationStateCompleted
-		operation.Stage = OperationStageCompleted
-		operation.FailureCode = ""
-		operation.UpdatedAt = application.config.Now().UTC()
-		if err := tx.SaveConnector(connector); err != nil {
-			return err
-		}
-		if err := tx.SaveOperation(operation); err != nil {
-			return err
-		}
-		return tx.EnqueueConnectorMarketChanged(ChangedEvent{ConnectorKey: connector.Key, OperationID: operation.OperationID, Revision: revision})
-	})
 }
 
 func (application *Application) beginAuthorizationSession(
@@ -427,7 +326,7 @@ func (application *Application) beginAuthorizationSession(
 			return AuthorizationSession{}, err
 		}
 	}
-	connector, err := application.config.Repository.Connector(ctx, operation.ConnectorKey, "")
+	connector, err := application.config.Repository.Connector(ctx, operation.ConnectorKey)
 	if err != nil {
 		return AuthorizationSession{}, err
 	}
@@ -468,7 +367,7 @@ func (application *Application) executeDisconnectAuthorization(ctx context.Conte
 	if err != nil {
 		return err
 	}
-	connector, err := application.config.Repository.Connector(ctx, operation.ConnectorKey, "")
+	connector, err := application.config.Repository.Connector(ctx, operation.ConnectorKey)
 	if err != nil {
 		return err
 	}
@@ -574,6 +473,11 @@ func (application *Application) completeConnectorOperation(
 		revision := tx.AdvanceRevision()
 		connector = update(connector)
 		connector.Revision = revision
+		if operation.Kind == OperationKindInstall && operation.PrincipalIDs != nil {
+			if err := tx.ReplaceAgentGrants(operation.ConnectorKey, operation.PrincipalIDs); err != nil {
+				return err
+			}
+		}
 		operation.State = OperationStateCompleted
 		operation.Stage = OperationStageCompleted
 		operation.FailureCode = ""

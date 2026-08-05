@@ -59,11 +59,12 @@ func TestDefaultPreparerCodexWritesInstructionsSkillManifestAndEnv(t *testing.T)
 	}
 
 	prepared, err := newTestPreparer(stateDir).Prepare(t.Context(), PrepareInput{
-		WorkspaceID:    "workspace-1",
-		AgentSessionID: "session-1",
-		AgentTargetID:  "local:codex",
-		Provider:       "codex",
-		Cwd:            cwd,
+		WorkspaceID:                "workspace-1",
+		AgentSessionID:             "session-1",
+		AgentTargetID:              "local:codex",
+		ConnectorSessionCapability: "connector-session-capability",
+		Provider:                   "codex",
+		Cwd:                        cwd,
 		ExtraSkills: []ProviderSkillBundle{
 			{
 				Name: "app-factory",
@@ -321,6 +322,9 @@ func TestDefaultPreparerCodexWritesInstructionsSkillManifestAndEnv(t *testing.T)
 	}
 	if envValue(prepared.Env, "TUTTI_AGENT_CWD") != cwd {
 		t.Fatalf("prepared env = %#v, want TUTTI_AGENT_CWD", prepared.Env)
+	}
+	if envValue(prepared.Env, "TUTTI_CONNECTOR_SESSION_CAPABILITY") != "connector-session-capability" {
+		t.Fatalf("prepared env = %#v, want Connector Session capability", prepared.Env)
 	}
 	workspaceAppSkill, err := os.ReadFile(filepath.Join(codexHome, "skills", "workspace-app", "SKILL.md"))
 	if err != nil {

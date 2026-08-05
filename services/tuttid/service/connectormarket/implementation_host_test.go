@@ -241,7 +241,7 @@ func TestImplementationHostRegistersWorkspaceFencedCLIAndDeactivatesIt(t *testin
 				InputSchema: map[string]any{"type": "object"}, TimeoutMS: 1_000}}},
 		}}}}
 	generation := market.HostGeneration{BootEpoch: "boot-1", Generation: 2}
-	receipt, err := host.Reconcile(context.Background(), market.WorkspaceReconcileRequest{OperationID: "op-1", WorkspaceID: "workspace-1",
+	receipt, err := host.Reconcile(context.Background(), market.RuntimeReconcileRequest{OperationID: "op-1", ConnectionID: "workspace-1",
 		Connector: connector, Enabled: true, Generation: generation})
 	if err != nil {
 		t.Fatal(err)
@@ -253,15 +253,15 @@ func TestImplementationHostRegistersWorkspaceFencedCLIAndDeactivatesIt(t *testin
 	if len(capabilities) != 1 || capabilities[0].ID != "connector.github.cli.status" {
 		t.Fatalf("capabilities = %#v", capabilities)
 	}
-	if capabilities := commands.Capabilities(context.Background(), cliservice.InvokeContext{WorkspaceID: "workspace-2"}); len(capabilities) != 0 {
-		t.Fatalf("cross-workspace capabilities = %#v", capabilities)
+	if capabilities := commands.Capabilities(context.Background(), cliservice.InvokeContext{WorkspaceID: "workspace-2"}); len(capabilities) != 1 {
+		t.Fatalf("global connector capabilities = %#v", capabilities)
 	}
 	output, err := commands.Invoke(context.Background(), cliservice.InvokeRequest{CommandID: receipt.RouteIDs[0], Input: map[string]any{},
 		Context: cliservice.InvokeContext{WorkspaceID: "workspace-1"}})
 	if err != nil || output.Value["ok"] != true || processes.starts != 1 {
 		t.Fatalf("invoke = %#v, %v starts=%d", output, err, processes.starts)
 	}
-	if err := host.DeactivateWorkspace(context.Background(), market.WorkspaceDeactivationRequest{WorkspaceID: "workspace-1", ConnectorKey: "github",
+	if err := host.DeactivateRuntime(context.Background(), market.RuntimeDeactivationRequest{ConnectionID: "workspace-1", ConnectorKey: "github",
 		ReleaseDigest: "release-digest", Generation: market.HostGeneration{BootEpoch: "boot-1", Generation: 3}}); err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +273,7 @@ func TestImplementationHostRegistersWorkspaceFencedCLIAndDeactivatesIt(t *testin
 func TestImplementationHostExecutesFromVerifiedSnapshotAfterPreparedTreeReplacement(t *testing.T) {
 	processes := &recordingConnectorProcessStub{}
 	host, commands, connector, generation := testCLIHost(t, processes)
-	receipt, err := host.Reconcile(context.Background(), market.WorkspaceReconcileRequest{OperationID: "op-1", WorkspaceID: "workspace-1",
+	receipt, err := host.Reconcile(context.Background(), market.RuntimeReconcileRequest{OperationID: "op-1", ConnectionID: "workspace-1",
 		Connector: connector, Enabled: true, Generation: generation})
 	if err != nil {
 		t.Fatal(err)
@@ -308,7 +308,7 @@ func TestImplementationHostExecutesFromVerifiedSnapshotAfterPreparedTreeReplacem
 func TestImplementationHostPublishesStagedRoutesAtomically(t *testing.T) {
 	host, commands, connector, generation := testCLIHost(t, &connectorProcessStub{})
 	host.SetCapabilityPublication(false)
-	receipt, err := host.Reconcile(context.Background(), market.WorkspaceReconcileRequest{OperationID: "op-1", WorkspaceID: "workspace-1",
+	receipt, err := host.Reconcile(context.Background(), market.RuntimeReconcileRequest{OperationID: "op-1", ConnectionID: "workspace-1",
 		Connector: connector, Enabled: true, Generation: generation})
 	if err != nil {
 		t.Fatal(err)
@@ -332,7 +332,7 @@ func TestImplementationHostPublishesStagedRoutesAtomically(t *testing.T) {
 func TestImplementationHostDeactivationCancelsBlockingStartWithoutWaitingForCLICommandTimeout(t *testing.T) {
 	processes := &blockingStartProcessStub{started: make(chan struct{})}
 	host, commands, connector, generation := testCLIHost(t, processes)
-	receipt, err := host.Reconcile(context.Background(), market.WorkspaceReconcileRequest{OperationID: "op-1", WorkspaceID: "workspace-1",
+	receipt, err := host.Reconcile(context.Background(), market.RuntimeReconcileRequest{OperationID: "op-1", ConnectionID: "workspace-1",
 		Connector: connector, Enabled: true, Generation: generation})
 	if err != nil {
 		t.Fatal(err)
@@ -349,7 +349,7 @@ func TestImplementationHostDeactivationCancelsBlockingStartWithoutWaitingForCLIC
 		t.Fatal("CLI process start did not block")
 	}
 	deadline := time.Now().Add(100 * time.Millisecond)
-	if err := host.DeactivateWorkspace(context.Background(), market.WorkspaceDeactivationRequest{WorkspaceID: "workspace-1", ConnectorKey: "github",
+	if err := host.DeactivateRuntime(context.Background(), market.RuntimeDeactivationRequest{ConnectionID: "workspace-1", ConnectorKey: "github",
 		ReleaseDigest: "release-digest", Generation: market.HostGeneration{BootEpoch: "boot-1", Generation: 3}, Deadline: deadline}); err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +366,7 @@ func TestImplementationHostDeactivationCancelsBlockingStartWithoutWaitingForCLIC
 func TestImplementationHostRetainsFencedRouteUntilCloseCanBeRetried(t *testing.T) {
 	connection := &retryCloseConnection{closed: make(chan struct{})}
 	host, commands, connector, generation := testCLIHost(t, &retryCloseProcessStub{connection: connection})
-	receipt, err := host.Reconcile(context.Background(), market.WorkspaceReconcileRequest{OperationID: "op-1", WorkspaceID: "workspace-1",
+	receipt, err := host.Reconcile(context.Background(), market.RuntimeReconcileRequest{OperationID: "op-1", ConnectionID: "workspace-1",
 		Connector: connector, Enabled: true, Generation: generation})
 	if err != nil {
 		t.Fatal(err)
@@ -395,16 +395,16 @@ func TestImplementationHostRetainsFencedRouteUntilCloseCanBeRetried(t *testing.T
 		}
 		time.Sleep(time.Millisecond)
 	}
-	deactivation := market.WorkspaceDeactivationRequest{WorkspaceID: "workspace-1", ConnectorKey: "github", ReleaseDigest: "release-digest",
+	deactivation := market.RuntimeDeactivationRequest{ConnectionID: "workspace-1", ConnectorKey: "github", ReleaseDigest: "release-digest",
 		Generation: market.HostGeneration{BootEpoch: "boot-1", Generation: 3}, Deadline: time.Now().Add(time.Second)}
-	if err := host.DeactivateWorkspace(context.Background(), deactivation); err == nil {
+	if err := host.DeactivateRuntime(context.Background(), deactivation); err == nil {
 		t.Fatal("first deactivation unexpectedly hid close failure")
 	}
 	if capabilities := commands.Capabilities(context.Background(), cliservice.InvokeContext{WorkspaceID: "workspace-1"}); len(capabilities) != 0 {
 		t.Fatalf("fenced capabilities remained visible: %#v", capabilities)
 	}
 	deactivation.Deadline = time.Now().Add(time.Second)
-	if err := host.DeactivateWorkspace(context.Background(), deactivation); err != nil {
+	if err := host.DeactivateRuntime(context.Background(), deactivation); err != nil {
 		t.Fatalf("retry deactivation failed: %v", err)
 	}
 	connection.mu.Lock()
@@ -425,7 +425,7 @@ func TestImplementationHostPaginatesMCPToolsSeparatesCLIPathAndRemovesDeadMCPRou
 	host, commands, connector, generation := testCLIHost(t, &mcpProcessStub{connection: connection})
 	managed := connector.Release.Manifest.Implementation.ManagedStdio
 	managed.MCP = &market.ManagedMCPInterface{Entrypoint: "connector.js"}
-	if _, err := host.Reconcile(context.Background(), market.WorkspaceReconcileRequest{OperationID: "op-1", WorkspaceID: "workspace-1",
+	if _, err := host.Reconcile(context.Background(), market.RuntimeReconcileRequest{OperationID: "op-1", ConnectionID: "workspace-1",
 		Connector: connector, Enabled: true, Generation: generation}); err != nil {
 		t.Fatal(err)
 	}
@@ -458,7 +458,7 @@ func TestImplementationHostBoundsMCPProcessStart(t *testing.T) {
 	connector.Release.Manifest.Implementation.ManagedStdio.MCP = &market.ManagedMCPInterface{Entrypoint: "connector.js"}
 	host.mcpStartupTimeout = 20 * time.Millisecond
 	startedAt := time.Now()
-	if _, err := host.Reconcile(context.Background(), market.WorkspaceReconcileRequest{OperationID: "op-1", WorkspaceID: "workspace-1",
+	if _, err := host.Reconcile(context.Background(), market.RuntimeReconcileRequest{OperationID: "op-1", ConnectionID: "workspace-1",
 		Connector: connector, Enabled: true, Generation: generation}); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Reconcile() error = %v, want deadline", err)
 	}

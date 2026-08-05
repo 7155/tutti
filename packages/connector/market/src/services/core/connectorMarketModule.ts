@@ -10,7 +10,7 @@ import type { IConnectorMarketRoot } from "./connectorMarketRoot.interface.ts";
 import { ConnectorMarketRuntime } from "./connectorMarketRuntime.ts";
 
 export interface ConnectorMarketModuleDependencies {
-  market: Omit<ConnectorMarketServiceDependencies, "workspaceId">;
+  market: ConnectorMarketServiceDependencies;
   scope: ConnectorMarketScope;
 }
 
@@ -56,10 +56,7 @@ export class ConnectorMarketModule implements IConnectorMarketModule {
     }
     if (!this.activationPromise) {
       this.runtime = new ConnectorMarketRuntime({
-        marketDependencies: {
-          ...this.dependencies.market,
-          workspaceId: this.dependencies.scope.workspaceId
-        },
+        marketDependencies: this.dependencies.market,
         parentInstantiationService,
         scope: this.dependencies.scope
       });

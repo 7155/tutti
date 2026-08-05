@@ -30,22 +30,26 @@ type SkillBundleRenderer interface {
 }
 
 type PrepareInput struct {
-	WorkspaceID            string
-	AgentSessionID         string
-	AgentTargetID          string
-	Provider               string
-	Cwd                    string
-	CLICommand             string
-	CodexSaverMode         bool
-	Title                  string
-	PermissionModeID       string
-	PlanMode               bool
-	BrowserUse             bool
-	ComputerUse            bool
-	ProviderTargetRef      map[string]any
-	Model                  string
-	ReasoningEffort        string
-	ConversationDetailMode string
+	WorkspaceID    string
+	AgentSessionID string
+	AgentTargetID  string
+	// ConnectorSessionCapability is a daemon-local, stateless credential scoped to the
+	// Connector broker and bound to the exact Agent Session and global Agent
+	// Principal. It is never persisted in manifests or provider instructions.
+	ConnectorSessionCapability string
+	Provider                   string
+	Cwd                        string
+	CLICommand                 string
+	CodexSaverMode             bool
+	Title                      string
+	PermissionModeID           string
+	PlanMode                   bool
+	BrowserUse                 bool
+	ComputerUse                bool
+	ProviderTargetRef          map[string]any
+	Model                      string
+	ReasoningEffort            string
+	ConversationDetailMode     string
 	// AgentInstructions and the accompanying capability lists come from the
 	// immutable WorkspaceAgent revision selected for this session. They are
 	// non-secret and may be materialized into provider instructions.

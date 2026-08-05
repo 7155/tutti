@@ -5,8 +5,11 @@ export function createDesktopConnectorMarketBackend(
   client: ConnectorMarketClient
 ): ConnectorMarketBackend {
   return {
-    getSnapshot({ workspaceId }) {
-      return client.getConnectorMarket(workspaceId);
+    getSnapshot() {
+      return client.getConnectorMarket();
+    },
+    async listAgents() {
+      return (await client.listConnectorMarketAgents()).agents;
     },
     async listCategories() {
       return (await client.listConnectorMarketCategories()).categories;
@@ -14,8 +17,8 @@ export function createDesktopConnectorMarketBackend(
     listCatalogPage(input) {
       return client.listConnectorMarketCatalog(input);
     },
-    getConnector({ connectorKey, workspaceId }) {
-      return client.getConnectorMarketConnector(connectorKey, workspaceId);
+    getConnector({ connectorKey }) {
+      return client.getConnectorMarketConnector(connectorKey);
     },
     getOperation({ operationId }) {
       return client.getConnectorMarketOperation(operationId);
@@ -38,8 +41,11 @@ export function createDesktopConnectorMarketBackend(
         request
       );
     },
-    setWorkspaceEnabled({ connectorKey, ...request }) {
-      return client.setConnectorMarketWorkspaceBinding(connectorKey, request);
+    getAgentGrants({ connectorKey }) {
+      return client.getConnectorMarketAgentGrants(connectorKey);
+    },
+    setAgentGrants({ connectorKey, ...request }) {
+      return client.putConnectorMarketAgentGrants(connectorKey, request);
     }
   };
 }

@@ -50,7 +50,7 @@ test("module activation runs all service startup jobs before ready", async () =>
         }
       })
     },
-    scope: { principalId: "user-1", workspaceId: "workspace-1" }
+    scope: {}
   });
 
   await module.activate(new InstantiationService());
@@ -88,7 +88,7 @@ test("module activation skips market requests until the host admits them", async
       canRequest: () => requestAllowed,
       events: eventSource({})
     },
-    scope: { workspaceId: "workspace-1" }
+    scope: {}
   });
 
   await module.activate(new InstantiationService());
@@ -120,7 +120,7 @@ test("module activation rejects and releases started services when synchronizati
         }
       })
     },
-    scope: { workspaceId: "workspace-1" }
+    scope: {}
   });
 
   await assert.rejects(module.activate(new InstantiationService()), failure);
@@ -161,7 +161,7 @@ test("one dialog host projects authorization and management as mutually exclusiv
       }),
       events: eventSource({})
     },
-    scope: { workspaceId: "workspace-1" }
+    scope: {}
   });
 
   await module.activate(new InstantiationService());
@@ -192,13 +192,15 @@ test("a failed first install remains available for retry", async () => {
       }),
       events: eventSource({})
     },
-    scope: { workspaceId: "workspace-1" }
+    scope: {}
   });
 
   await module.activate(new InstantiationService());
   assert.equal(module.root.view.dataStore.availableCount, 1);
   assert.equal(module.root.view.dataStore.installedCount, 0);
   assert.equal(module.root.view.dataStore.cardsByKey.github?.action, "install");
+  module.root.uiState.openConnector("github");
+  assert.equal(module.root.view.dataStore.dialog?.kind, "installation");
   module.dispose();
 });
 
@@ -237,8 +239,7 @@ function connector(key: string, overrides: Partial<Connector> = {}): Connector {
       status: "available",
       version: "1.0.0"
     },
-    revision: 1,
-    workspaceBinding: { enabled: false, workspaceId: "workspace-1" }
+    revision: 1
   };
   return { ...value, ...overrides };
 }
@@ -266,7 +267,13 @@ function backendWith(
     listCatalogPage: unsupported,
     installConnector: unsupported,
     refreshCatalog: unsupported,
-    setWorkspaceEnabled: unsupported,
+    getAgentGrants: async ({ connectorKey }) => ({
+      connectorKey,
+      principalIds: [],
+      revision: 0
+    }),
+    listAgents: async () => [],
+    setAgentGrants: unsupported,
     uninstallConnector: unsupported,
     ...overrides
   };

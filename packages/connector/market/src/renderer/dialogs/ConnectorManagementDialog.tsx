@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Button,
   DialogContent,
@@ -5,22 +6,24 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  StatusDot,
-  Switch
+  StatusDot
 } from "@tutti-os/ui-system/components";
 
 import type { ConnectorMarketI18nRuntime } from "../../i18n/connectorMarketI18n.ts";
 import type {
   ConnectorDetailFieldView,
+  ConnectorAgentOptionView,
   ConnectorPermissionView
 } from "../../services/view/connectorMarketViewTypes.ts";
 import { ConnectorIcon } from "../catalog/ConnectorIcon.tsx";
 import { ConnectorDialogSection } from "./ConnectorDialogSection.tsx";
+import { ConnectorAgentGrantEditor } from "./ConnectorAgentGrantEditor.tsx";
 import { connectorDetailLabel } from "./connectorDetailLabel.ts";
 import { ConnectorPermissionList } from "./ConnectorPermissionList.tsx";
 
 export interface ConnectorManagementDialogProps {
   canAuthorize: boolean;
+  agents: ReadonlyArray<Readonly<ConnectorAgentOptionView>>;
   connectorKey: string;
   details: ReadonlyArray<Readonly<ConnectorDetailFieldView>>;
   displayName: string;
@@ -28,12 +31,13 @@ export interface ConnectorManagementDialogProps {
   onAuthorize: () => void;
   onClose: () => void;
   onUninstall: () => void;
-  onWorkspaceEnabledChange: (enabled: boolean) => void;
+  onAgentGrantsChange: (principalIds: string[]) => void;
   permissions: ReadonlyArray<Readonly<ConnectorPermissionView>>;
-  workspaceEnabled: boolean;
+  selectedPrincipalIds: ReadonlyArray<string>;
 }
 
 export function ConnectorManagementDialog({
+  agents,
   canAuthorize,
   connectorKey,
   details,
@@ -42,10 +46,13 @@ export function ConnectorManagementDialog({
   onAuthorize,
   onClose,
   onUninstall,
-  onWorkspaceEnabledChange,
+  onAgentGrantsChange,
   permissions,
-  workspaceEnabled
+  selectedPrincipalIds
 }: ConnectorManagementDialogProps) {
+  const [selection, setSelection] = useState<string[]>([
+    ...selectedPrincipalIds
+  ]);
   return (
     <DialogContent className="max-h-[min(720px,calc(100vh-32px))] overflow-y-auto sm:max-w-[520px]">
       <DialogHeader>
@@ -95,20 +102,24 @@ export function ConnectorManagementDialog({
         <ConnectorPermissionList i18n={i18n} permissions={permissions} />
       </ConnectorDialogSection>
 
-      <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--border-1)] px-3 py-3">
-        <div className="min-w-0">
-          <div className="text-[12px] font-medium text-[var(--text-primary)]">
-            {i18n.t("workspaceAccess")}
-          </div>
-          <div className="mt-0.5 text-[11px] leading-[1.4] text-[var(--text-secondary)]">
-            {i18n.t("workspaceAccessDescription")}
-          </div>
-        </div>
-        <Switch
-          checked={workspaceEnabled}
-          onCheckedChange={onWorkspaceEnabledChange}
+      <ConnectorDialogSection title={i18n.t("agentAccessTitle")}>
+        <ConnectorAgentGrantEditor
+          agents={agents}
+          emptyLabel={i18n.t("agentAccessEmpty")}
+          selectedPrincipalIds={selection}
+          onChange={setSelection}
         />
-      </div>
+        <div className="mt-2 flex justify-end">
+          <Button
+            size="sm"
+            type="button"
+            variant="secondary"
+            onClick={() => onAgentGrantsChange(selection)}
+          >
+            {i18n.t("actionSaveAgentAccess")}
+          </Button>
+        </div>
+      </ConnectorDialogSection>
 
       <DialogFooter className="sm:justify-between">
         <Button

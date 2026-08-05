@@ -227,8 +227,7 @@ export async function createWorkspaceWindowContainer(): Promise<WorkspaceWindowC
           source: "workspace-renderer"
         })
         .catch(() => undefined);
-    },
-    workspaceId: activeWorkspaceID
+    }
   });
   const workspaceAgentServices = registerWorkspaceAgentServices(registry, {
     accountLogin: accountService,

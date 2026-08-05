@@ -8,7 +8,7 @@ import { ConnectorMarketClientError } from "@tutti-os/client-tuttid-ts";
 import { createDesktopConnectorMarketBackend } from "./desktopConnectorMarketBackend.ts";
 
 test("desktop connector market backend delegates snapshot reads to the daemon client", async () => {
-  const calls: Array<string | undefined> = [];
+  let calls = 0;
   const snapshot: ConnectorMarketSnapshot = {
     catalogState: "ready",
     connectors: [],
@@ -17,19 +17,16 @@ test("desktop connector market backend delegates snapshot reads to the daemon cl
     sourceRevision: "sha256:catalog"
   };
   const client = {
-    async getConnectorMarket(workspaceId?: string) {
-      calls.push(workspaceId);
+    async getConnectorMarket() {
+      calls += 1;
       return snapshot;
     }
   } as ConnectorMarketClient;
 
   const backend = createDesktopConnectorMarketBackend(client);
 
-  assert.equal(
-    await backend.getSnapshot({ workspaceId: "workspace-1" }),
-    snapshot
-  );
-  assert.deepEqual(calls, ["workspace-1"]);
+  assert.equal(await backend.getSnapshot(), snapshot);
+  assert.equal(calls, 1);
 });
 
 test("desktop connector market backend preserves mutation idempotency fields", async () => {
@@ -59,7 +56,7 @@ test("desktop connector market backend preserves mutation idempotency fields", a
   const backend = createDesktopConnectorMarketBackend(client);
   await backend.installConnector({
     connectorKey: "notion",
-    workspaceId: "workspace-1",
+    principalIds: ["principal-1"],
     clientRequestId: "request-1",
     expectedRevision: 8
   });
@@ -68,7 +65,7 @@ test("desktop connector market backend preserves mutation idempotency fields", a
     {
       connectorKey: "notion",
       request: {
-        workspaceId: "workspace-1",
+        principalIds: ["principal-1"],
         clientRequestId: "request-1",
         expectedRevision: 8
       }
@@ -93,7 +90,7 @@ test("desktop connector market backend preserves structured daemon errors", asyn
   } as unknown as ConnectorMarketClient;
   const backend = createDesktopConnectorMarketBackend(client);
 
-  await assert.rejects(backend.getSnapshot({}), (error: unknown) => {
+  await assert.rejects(backend.getSnapshot(), (error: unknown) => {
     assert.equal(error, structuredError);
     assert.equal(
       (error as ConnectorMarketClientError).code,

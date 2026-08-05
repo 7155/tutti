@@ -1,29 +1,32 @@
 import {
   disconnectConnectorMarketAuthorization,
   getConnectorMarket,
+  getConnectorMarketAgentGrants,
   getConnectorMarketConnector,
   getConnectorMarketOperation,
   installConnectorMarketConnector,
+  listConnectorMarketAgents,
   listConnectorMarketCatalog,
   listConnectorMarketCategories,
   refreshConnectorMarket,
-  setConnectorMarketWorkspaceBinding,
+  putConnectorMarketAgentGrants,
   startConnectorMarketAuthorization,
   uninstallConnectorMarketConnector
 } from "./generated/index.ts";
 import type {
   ConnectorMarketAuthorizationResponse,
+  ConnectorMarketAgentGrantSet,
+  ConnectorMarketAgentsResponse,
   ConnectorMarketCatalogPage,
   ConnectorMarketCategoriesResponse,
   ConnectorMarketConnector,
-  ConnectorMarketConnectorResponse,
   ConnectorMarketError,
   ConnectorMarketMutationRequest,
   ConnectorMarketMutationResponse,
-  ConnectorMarketWorkspaceMutationRequest,
+  ConnectorMarketInstallRequest,
   ConnectorMarketOperation,
   ConnectorMarketSnapshot,
-  SetConnectorMarketWorkspaceBindingRequest
+  PutConnectorMarketAgentGrantsRequest
 } from "./generated/index.ts";
 import type { Client } from "./generated/client/index.ts";
 import { unwrapData } from "./tuttidClientResponse.ts";
@@ -59,17 +62,16 @@ export function isConnectorMarketClientError(
 }
 
 export interface ConnectorMarketClient {
-  getConnectorMarket(workspaceId?: string): Promise<ConnectorMarketSnapshot>;
+  getConnectorMarket(): Promise<ConnectorMarketSnapshot>;
+  listConnectorMarketAgents(): Promise<ConnectorMarketAgentsResponse>;
   listConnectorMarketCategories(): Promise<ConnectorMarketCategoriesResponse>;
   listConnectorMarketCatalog(input: {
     sectionId: string;
     pageSize?: number;
     pageToken?: string;
-    workspaceId?: string;
   }): Promise<ConnectorMarketCatalogPage>;
   getConnectorMarketConnector(
-    connectorKey: string,
-    workspaceId?: string
+    connectorKey: string
   ): Promise<ConnectorMarketConnector>;
   getConnectorMarketOperation(
     operationId: string
@@ -79,7 +81,7 @@ export interface ConnectorMarketClient {
   ): Promise<ConnectorMarketMutationResponse>;
   installConnectorMarketConnector(
     connectorKey: string,
-    request: ConnectorMarketWorkspaceMutationRequest
+    request: ConnectorMarketInstallRequest
   ): Promise<ConnectorMarketMutationResponse>;
   uninstallConnectorMarketConnector(
     connectorKey: string,
@@ -87,29 +89,35 @@ export interface ConnectorMarketClient {
   ): Promise<ConnectorMarketMutationResponse>;
   startConnectorMarketAuthorization(
     connectorKey: string,
-    request: ConnectorMarketWorkspaceMutationRequest
+    request: ConnectorMarketMutationRequest
   ): Promise<ConnectorMarketAuthorizationResponse>;
   disconnectConnectorMarketAuthorization(
     connectorKey: string,
     request: ConnectorMarketMutationRequest
   ): Promise<ConnectorMarketMutationResponse>;
-  setConnectorMarketWorkspaceBinding(
+  getConnectorMarketAgentGrants(
+    connectorKey: string
+  ): Promise<ConnectorMarketAgentGrantSet>;
+  putConnectorMarketAgentGrants(
     connectorKey: string,
-    request: SetConnectorMarketWorkspaceBindingRequest
-  ): Promise<ConnectorMarketConnectorResponse>;
+    request: PutConnectorMarketAgentGrantsRequest
+  ): Promise<ConnectorMarketAgentGrantSet>;
 }
 
 export function createConnectorMarketClient(
   client: Client
 ): ConnectorMarketClient {
   return {
-    async getConnectorMarket(workspaceId) {
+    async getConnectorMarket() {
       return unwrapConnectorMarketData(
-        await getConnectorMarket({
-          client,
-          ...(workspaceId ? { query: { workspaceId } } : {})
-        }),
+        await getConnectorMarket({ client }),
         "Get connector market request failed."
+      );
+    },
+    async listConnectorMarketAgents() {
+      return unwrapConnectorMarketData(
+        await listConnectorMarketAgents({ client }),
+        "List connector market Agents request failed."
       );
     },
     async listConnectorMarketCategories() {
@@ -124,12 +132,11 @@ export function createConnectorMarketClient(
         "List connector market catalog request failed."
       );
     },
-    async getConnectorMarketConnector(connectorKey, workspaceId) {
+    async getConnectorMarketConnector(connectorKey) {
       return unwrapConnectorMarketData(
         await getConnectorMarketConnector({
           client,
-          path: { connectorKey },
-          ...(workspaceId ? { query: { workspaceId } } : {})
+          path: { connectorKey }
         }),
         "Get connector market connector request failed."
       );
@@ -189,14 +196,23 @@ export function createConnectorMarketClient(
         "Disconnect connector authorization request failed."
       );
     },
-    async setConnectorMarketWorkspaceBinding(connectorKey, request) {
+    async getConnectorMarketAgentGrants(connectorKey) {
       return unwrapConnectorMarketData(
-        await setConnectorMarketWorkspaceBinding({
+        await getConnectorMarketAgentGrants({
+          client,
+          path: { connectorKey }
+        }),
+        "Get connector Agent grants request failed."
+      );
+    },
+    async putConnectorMarketAgentGrants(connectorKey, request) {
+      return unwrapConnectorMarketData(
+        await putConnectorMarketAgentGrants({
           client,
           body: request,
           path: { connectorKey }
         }),
-        "Set connector workspace binding request failed."
+        "Set connector Agent grants request failed."
       );
     }
   };

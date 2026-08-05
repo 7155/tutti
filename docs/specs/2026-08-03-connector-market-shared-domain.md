@@ -58,8 +58,9 @@ local daemon OpenAPI fragment.
 
 `packages/connector/market/openapi/connector-market.v1.yaml` is the shared
 local daemon fragment. It exposes accepted catalog state, local installation,
-authorization, compatibility, workspace bindings, revisions, and durable
-operations to renderers.
+authorization, compatibility, global Agent grants, revisions, and durable
+operations to renderers. Connector access is keyed by a durable Agent principal;
+it is never granted to a workspace.
 
 Each host composes this fragment into its aggregate OpenAPI document, generates
 its own server and client, and provides transport mapping. The local daemon is
@@ -194,8 +195,8 @@ replace the authoritative local snapshot.
 
 Before durable replay is available, a transitional Host may use best-effort
 events only with full reload on daemon reconnect, window resume, and command
-completion. Renderer sequence, workspace-generation, and revision fencing stay
-enabled.
+completion. Renderer request-sequence, service-generation, and revision fencing
+stay enabled.
 
 ## Pre-Release Breaking Transition
 
@@ -229,11 +230,13 @@ Market, UiState, and View StartupJobs through the shared lifecycle. The Market
 job blocks `synchronizing` on the initial authoritative snapshot; View starts
 in `materializing`; only `ready` exposes the Root to React.
 
-The shared services own Valtio state, command flow, workspace scoping, revision
-fencing, coalesced invalidation reloads, and the render-ready projection. The
-Host activates the module in its workspace startup flow. React receives only
-the Root through stable context and does not create clients, connect
-WebSockets, start loads, dispose services, or merge daemon business state.
+The shared services own global Valtio state, command flow, Agent-grant editing,
+revision fencing, coalesced invalidation reloads, and the render-ready
+projection. A Host window may activate the module from its workspace startup
+flow for lifecycle purposes, but the connector scope and daemon runtime remain
+global. React receives only the Root through stable context and does not create
+clients, connect WebSockets, start loads, dispose services, or merge daemon
+business state.
 
 The shared renderer provides the settings catalog and one modal state machine:
 unconnected connectors render authorization content, connected connectors
@@ -295,7 +298,7 @@ The shared package includes:
 - package-resolved fragment support for cross-repository hosts
 - the Root/Runtime/lifecycle/StartupJob renderer module with Market, UiState,
   and View Valtio services, stale-response fencing, refresh singleflight,
-  mutation locks, workspace scoping, invalidation reload, and reconnect
+  mutation locks, global Agent-grant state, invalidation reload, and reconnect
   reconciliation
 - the reusable `@tutti-os/ui-system` catalog, toolbar, authorization,
   management, and blocked-state dialogs plus scoped i18n resources
@@ -303,12 +306,13 @@ The shared package includes:
 The Tutti Host includes:
 
 - a typed remote catalog adapter for the TSH Connector Market endpoint
-- SQLite persistence for metadata, accepted releases, bindings, operations,
-  leases, and the transactional changed-event outbox
+- SQLite persistence for metadata, accepted releases, global Agent principals
+  and grants, session execution credentials, operations, leases, and the
+  transactional changed-event outbox
 - operation scheduling and startup recovery
 - aggregate OpenAPI composition, generated Go handlers and TypeScript client
-- a generated-client/event-stream Renderer adapter registered in the workspace
-  service container and activated by the workspace startup flow
+- a generated-client/event-stream Renderer adapter activated with the Host
+  window lifecycle while exposing one global connector domain
 - the shared connector-market panel mounted in Settings > Agent > Connectors
 
 Tutti now advertises the production `managed_stdio` implementation when its
@@ -316,9 +320,11 @@ platform/runtime constraints match. It reads the TSH market item API, downloads
 the artifact directly from configured storage, verifies and prepares an
 immutable artifact snapshot, and hosts MCP as a daemon-owned long-lived child
 or CLI as a sandboxed one-shot Node/Python child. Routes and every child process
-are fenced by workspace generation and boot epoch. Startup waits for a catalog
-refresh, while later market outages preserve the installed last-known-good
-runtime projection.
+are global, identified by connector plus connection ID, and fenced by boot
+epoch. Agent Sessions may reach those routes only through a short-lived
+execution credential and a matching global Agent grant. Startup waits for a
+catalog refresh, while later market outages preserve the installed
+last-known-good runtime projection.
 
 Authorization remains intentionally limited to `none`; connectors that require
 credentials remain visible as unsupported until the daemon credential broker

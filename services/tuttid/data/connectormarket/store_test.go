@@ -71,9 +71,6 @@ func TestStorePersistsRevisionOperationBindingAndOutboxAtomically(t *testing.T) 
 		if err := tx.SaveOperation(operation); err != nil {
 			return err
 		}
-		if _, err := tx.SetWorkspaceBinding(connector.Key, market.WorkspaceBinding{WorkspaceID: "workspace-1", Enabled: true}); err != nil {
-			return err
-		}
 		return tx.EnqueueConnectorMarketChanged(market.ChangedEvent{
 			ConnectorKey: connector.Key, OperationID: operation.OperationID, Revision: revision,
 		})
@@ -81,12 +78,11 @@ func TestStorePersistsRevisionOperationBindingAndOutboxAtomically(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	snapshot, err := store.Snapshot(ctx, "workspace-1")
+	snapshot, err := store.Snapshot(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.Revision != 1 || len(snapshot.Connectors) != 1 || len(snapshot.Operations) != 1 ||
-		snapshot.Connectors[0].WorkspaceBinding == nil || !snapshot.Connectors[0].WorkspaceBinding.Enabled {
+	if snapshot.Revision != 1 || len(snapshot.Connectors) != 1 || len(snapshot.Operations) != 1 {
 		t.Fatalf("snapshot = %#v", snapshot)
 	}
 	entries, err := store.PendingChangedEvents(ctx, 10)

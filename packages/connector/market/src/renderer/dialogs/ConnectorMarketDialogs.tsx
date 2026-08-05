@@ -5,6 +5,7 @@ import { useConnectorMarketServices } from "../ConnectorMarketServicesContext.ts
 import { ConnectorAuthorizationDialog } from "./ConnectorAuthorizationDialog.tsx";
 import { ConnectorBlockedDialog } from "./ConnectorBlockedDialog.tsx";
 import { ConnectorManagementDialog } from "./ConnectorManagementDialog.tsx";
+import { ConnectorInstallationDialog } from "./ConnectorInstallationDialog.tsx";
 
 export function ConnectorMarketDialogs() {
   const { i18n, market, uiState, view } = useConnectorMarketServices();
@@ -15,7 +16,21 @@ export function ConnectorMarketDialogs() {
 
   return (
     <Dialog open onOpenChange={(open) => !open && uiState.closeDialog()}>
-      {dialog.kind === "authorization" ? (
+      {dialog.kind === "installation" ? (
+        <ConnectorInstallationDialog
+          agents={dialog.agents}
+          connectorKey={dialog.connectorKey}
+          displayName={dialog.displayName}
+          i18n={i18n}
+          onClose={() => uiState.closeDialog()}
+          onInstall={(principalIds) =>
+            void market
+              .install(dialog.connectorKey, principalIds)
+              .then(() => uiState.closeDialog())
+              .catch(() => undefined)
+          }
+        />
+      ) : dialog.kind === "authorization" ? (
         <ConnectorAuthorizationDialog
           connectorKey={dialog.connectorKey}
           displayName={dialog.displayName}
@@ -31,13 +46,14 @@ export function ConnectorMarketDialogs() {
         />
       ) : dialog.kind === "management" ? (
         <ConnectorManagementDialog
+          agents={dialog.agents}
           canAuthorize={dialog.canAuthorize}
           connectorKey={dialog.connectorKey}
           details={dialog.details}
           displayName={dialog.displayName}
           i18n={i18n}
           permissions={dialog.permissions}
-          workspaceEnabled={dialog.workspaceEnabled}
+          selectedPrincipalIds={dialog.selectedPrincipalIds}
           onAuthorize={() =>
             void market
               .beginAuthorization(dialog.connectorKey)
@@ -50,9 +66,9 @@ export function ConnectorMarketDialogs() {
               .then(() => uiState.closeDialog())
               .catch(() => undefined);
           }}
-          onWorkspaceEnabledChange={(enabled) =>
+          onAgentGrantsChange={(principalIds) =>
             void market
-              .setWorkspaceEnabled(dialog.connectorKey, enabled)
+              .setAgentGrants(dialog.connectorKey, principalIds)
               .catch(() => undefined)
           }
         />

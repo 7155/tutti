@@ -12,14 +12,24 @@ import (
 
 type stubConnectorMarketService struct {
 	market.Service
-	snapshotFn   func(context.Context, string) (market.Snapshot, error)
+	snapshotFn   func(context.Context) (market.Snapshot, error)
 	categoriesFn func(context.Context) ([]market.CatalogCategory, error)
 	pageFn       func(context.Context, market.CatalogPageQuery) (market.CatalogPage, error)
 	installFn    func(context.Context, market.ConnectorMutation) (market.MutationResult, error)
+	agentsFn     func(context.Context) ([]market.AgentPrincipal, error)
+	grantsFn     func(context.Context, market.SetAgentGrantsCommand) (market.AgentGrantSet, error)
 }
 
-func (service stubConnectorMarketService) Snapshot(ctx context.Context, workspaceID string) (market.Snapshot, error) {
-	return service.snapshotFn(ctx, workspaceID)
+func (service stubConnectorMarketService) ListAgentPrincipals(ctx context.Context) ([]market.AgentPrincipal, error) {
+	return service.agentsFn(ctx)
+}
+
+func (service stubConnectorMarketService) SetAgentGrants(ctx context.Context, command market.SetAgentGrantsCommand) (market.AgentGrantSet, error) {
+	return service.grantsFn(ctx, command)
+}
+
+func (service stubConnectorMarketService) Snapshot(ctx context.Context) (market.Snapshot, error) {
+	return service.snapshotFn(ctx)
 }
 
 func (service stubConnectorMarketService) Install(ctx context.Context, mutation market.ConnectorMutation) (market.MutationResult, error) {
@@ -36,10 +46,7 @@ func (service stubConnectorMarketService) ListCatalogPage(ctx context.Context, q
 
 func TestDaemonAPIConnectorMarketSnapshotHidesImplementationConfig(t *testing.T) {
 	service := stubConnectorMarketService{
-		snapshotFn: func(_ context.Context, workspaceID string) (market.Snapshot, error) {
-			if workspaceID != "workspace-1" {
-				t.Fatalf("workspaceID = %q, want workspace-1", workspaceID)
-			}
+		snapshotFn: func(_ context.Context) (market.Snapshot, error) {
 			return market.Snapshot{
 				CatalogState:   market.CatalogStateReady,
 				Connectors:     []market.Connector{connectorMarketTestConnector()},
@@ -52,7 +59,7 @@ func TestDaemonAPIConnectorMarketSnapshotHidesImplementationConfig(t *testing.T)
 	mux := http.NewServeMux()
 	RegisterRoutes(mux, NewRoutes(DaemonAPI{ConnectorMarketService: service}))
 
-	recorder := performGeneratedRouteRequest(t, mux, http.MethodGet, "/v1/connector-market?workspaceId=workspace-1", nil)
+	recorder := performGeneratedRouteRequest(t, mux, http.MethodGet, "/v1/connector-market", nil)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
@@ -75,7 +82,7 @@ func TestDaemonAPIConnectorMarketSnapshotHidesImplementationConfig(t *testing.T)
 func TestDaemonAPIConnectorMarketInstallMapsUnsupportedImplementation(t *testing.T) {
 	service := stubConnectorMarketService{
 		installFn: func(_ context.Context, mutation market.ConnectorMutation) (market.MutationResult, error) {
-			if mutation.ConnectorKey != "notion" || mutation.WorkspaceID != "workspace-1" || mutation.ClientRequestID != "request-1" || mutation.ExpectedRevision != 7 {
+			if mutation.ConnectorKey != "notion" || mutation.ClientRequestID != "request-1" || mutation.ExpectedRevision != 7 || len(mutation.PrincipalIDs) != 1 || mutation.PrincipalIDs[0] != "principal-1" {
 				t.Fatalf("mutation = %#v", mutation)
 			}
 			return market.MutationResult{}, market.NewDomainError(
@@ -92,7 +99,7 @@ func TestDaemonAPIConnectorMarketInstallMapsUnsupportedImplementation(t *testing
 	recorder := performGeneratedRouteRequest(t, mux, http.MethodPost, "/v1/connector-market/connectors/notion:install", map[string]any{
 		"clientRequestId":  "request-1",
 		"expectedRevision": 7,
-		"workspaceId":      "workspace-1",
+		"principalIds":     []string{"principal-1"},
 	})
 	if recorder.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want %d; body: %s", recorder.Code, http.StatusUnprocessableEntity, recorder.Body.String())
@@ -117,13 +124,39 @@ func TestDaemonAPIConnectorMarketRefreshRejectsNegativeRevision(t *testing.T) {
 	}
 }
 
+func TestDaemonAPIConnectorMarketListsAgentsAndReplacesGrants(t *testing.T) {
+	service := stubConnectorMarketService{
+		agentsFn: func(context.Context) ([]market.AgentPrincipal, error) {
+			return []market.AgentPrincipal{{PrincipalID: "principal-1", Kind: "workspace_agent", Name: "Research Agent"}}, nil
+		},
+		grantsFn: func(_ context.Context, command market.SetAgentGrantsCommand) (market.AgentGrantSet, error) {
+			if command.ConnectorKey != "notion" || command.ExpectedRevision != 2 || len(command.PrincipalIDs) != 1 {
+				t.Fatalf("command = %#v", command)
+			}
+			return market.AgentGrantSet{ConnectorKey: "notion", PrincipalIDs: command.PrincipalIDs, Revision: 3}, nil
+		},
+	}
+	mux := http.NewServeMux()
+	RegisterRoutes(mux, NewRoutes(DaemonAPI{ConnectorMarketService: service}))
+	agents := performGeneratedRouteRequest(t, mux, http.MethodGet, "/v1/connector-market/agents", nil)
+	if agents.Code != http.StatusOK {
+		t.Fatalf("agents status = %d; body: %s", agents.Code, agents.Body.String())
+	}
+	grants := performGeneratedRouteRequest(t, mux, http.MethodPut, "/v1/connector-market/connectors/notion/agent-grants", map[string]any{
+		"clientRequestId": "request-1", "expectedRevision": 2, "principalIds": []string{"principal-1"},
+	})
+	if grants.Code != http.StatusOK {
+		t.Fatalf("grants status = %d; body: %s", grants.Code, grants.Body.String())
+	}
+}
+
 func TestDaemonAPIConnectorMarketServesCategoriesAndCursorPage(t *testing.T) {
 	service := stubConnectorMarketService{
 		categoriesFn: func(context.Context) ([]market.CatalogCategory, error) {
 			return []market.CatalogCategory{{CategoryID: "development", Kind: "category", SortOrder: 20, ItemCount: 1}}, nil
 		},
 		pageFn: func(_ context.Context, query market.CatalogPageQuery) (market.CatalogPage, error) {
-			if query.SectionID != "development" || query.PageSize != 20 || query.PageToken != "cursor-1" || query.WorkspaceID != "workspace-1" {
+			if query.SectionID != "development" || query.PageSize != 20 || query.PageToken != "cursor-1" {
 				t.Fatalf("query = %#v", query)
 			}
 			return market.CatalogPage{
@@ -141,7 +174,7 @@ func TestDaemonAPIConnectorMarketServesCategoriesAndCursorPage(t *testing.T) {
 	if categories.Code != http.StatusOK {
 		t.Fatalf("categories status = %d; body: %s", categories.Code, categories.Body.String())
 	}
-	page := performGeneratedRouteRequest(t, mux, http.MethodGet, "/v1/connector-market/catalog?sectionId=development&pageSize=20&pageToken=cursor-1&workspaceId=workspace-1", nil)
+	page := performGeneratedRouteRequest(t, mux, http.MethodGet, "/v1/connector-market/catalog?sectionId=development&pageSize=20&pageToken=cursor-1", nil)
 	if page.Code != http.StatusOK {
 		t.Fatalf("page status = %d; body: %s", page.Code, page.Body.String())
 	}

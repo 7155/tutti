@@ -17,9 +17,7 @@ export interface ConnectorMarketModuleRegistrationInput {
   client: ConnectorMarketClient;
   eventStreamClient: TuttidEventStreamClient;
   openAuthorizationUrl?: (url: string) => Promise<void>;
-  principalId?: string;
   reportDiagnostic?: (error: unknown) => void;
-  workspaceId: string;
 }
 
 export function registerConnectorMarketModule(
@@ -34,10 +32,7 @@ export function registerConnectorMarketModule(
       openAuthorizationUrl: input.openAuthorizationUrl,
       reportDiagnostic: input.reportDiagnostic
     },
-    scope: {
-      principalId: input.principalId,
-      workspaceId: input.workspaceId
-    }
+    scope: {}
   });
   registry.registerInstance(IConnectorMarketModule, module, {
     ownership: ServiceOwnership.Owned

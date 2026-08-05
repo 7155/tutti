@@ -74,13 +74,6 @@ VALUES (1, 0, 'stale', '') ON CONFLICT(id) DO NOTHING`,
   connector_key TEXT PRIMARY KEY,
   connector_json TEXT NOT NULL
 )`,
-		`CREATE TABLE IF NOT EXISTS connector_market_workspace_bindings (
-  connector_key TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  enabled INTEGER NOT NULL,
-  PRIMARY KEY (connector_key, workspace_id),
-  FOREIGN KEY (connector_key) REFERENCES connector_market_connectors(connector_key) ON DELETE CASCADE
-)`,
 		`CREATE TABLE IF NOT EXISTS connector_market_operations (
   operation_id TEXT PRIMARY KEY,
   client_request_id TEXT NOT NULL UNIQUE,
@@ -113,10 +106,10 @@ ON connector_market_outbox(published_at_unix_ms, sequence)`,
 		!strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
 		return fmt.Errorf("migrate connector market operation lease token: %w", err)
 	}
-	return nil
+	return store.migrateAgentPrincipals(ctx)
 }
 
-func (store *Store) Snapshot(ctx context.Context, workspaceID string) (market.Snapshot, error) {
+func (store *Store) Snapshot(ctx context.Context) (market.Snapshot, error) {
 	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return market.Snapshot{}, err
@@ -129,7 +122,7 @@ FROM connector_market_metadata WHERE id = ?`, metadataID).
 		Scan(&result.Revision, &result.CatalogState, &result.SourceRevision); err != nil {
 		return market.Snapshot{}, fmt.Errorf("read connector market metadata: %w", err)
 	}
-	connectors, err := listConnectorsOn(ctx, tx, workspaceID)
+	connectors, err := listConnectorsOn(ctx, tx)
 	if err != nil {
 		return market.Snapshot{}, err
 	}
@@ -145,7 +138,7 @@ FROM connector_market_metadata WHERE id = ?`, metadataID).
 	return result, nil
 }
 
-func (store *Store) Connector(ctx context.Context, connectorKey, workspaceID string) (market.Connector, error) {
+func (store *Store) Connector(ctx context.Context, connectorKey string) (market.Connector, error) {
 	var payload string
 	if err := store.db.QueryRowContext(ctx, `
 SELECT connector_json FROM connector_market_connectors WHERE connector_key = ?`, connectorKey).Scan(&payload); err != nil {
@@ -154,15 +147,6 @@ SELECT connector_json FROM connector_market_connectors WHERE connector_key = ?`,
 	connector, err := decodeConnector(payload)
 	if err != nil {
 		return market.Connector{}, err
-	}
-	if strings.TrimSpace(workspaceID) != "" {
-		binding, ok, err := store.workspaceBinding(ctx, connectorKey, workspaceID)
-		if err != nil {
-			return market.Connector{}, err
-		}
-		if ok {
-			connector.WorkspaceBinding = &binding
-		}
 	}
 	return connector, nil
 }
@@ -346,27 +330,6 @@ ORDER BY operation_id`)
 	return operations, rows.Err()
 }
 
-func (store *Store) WorkspaceBindings(ctx context.Context, connectorKey string) ([]market.WorkspaceBinding, error) {
-	rows, err := store.db.QueryContext(ctx, `
-SELECT workspace_id, enabled
-FROM connector_market_workspace_bindings
-WHERE connector_key = ?
-ORDER BY workspace_id`, connectorKey)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	bindings := make([]market.WorkspaceBinding, 0)
-	for rows.Next() {
-		var binding market.WorkspaceBinding
-		if err := rows.Scan(&binding.WorkspaceID, &binding.Enabled); err != nil {
-			return nil, err
-		}
-		bindings = append(bindings, binding)
-	}
-	return bindings, rows.Err()
-}
-
 func (store *Store) Transaction(ctx context.Context, fn func(market.Transaction) error) error {
 	tx, err := store.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -524,7 +487,7 @@ UPDATE connector_market_metadata SET catalog_state = ? WHERE id = ?`, state, met
 }
 
 func (transaction *transaction) SaveConnector(connector market.Connector) error {
-	payload, err := json.Marshal(connectorWithoutBinding(connector))
+	payload, err := json.Marshal(connector)
 	if err != nil {
 		return err
 	}
@@ -546,23 +509,34 @@ func (transaction *transaction) SaveOperation(operation market.Operation) error 
 	return saveOperationOn(transaction.ctx, transaction.tx, operation)
 }
 
-func (transaction *transaction) SetWorkspaceBinding(
-	connectorKey string,
-	binding market.WorkspaceBinding,
-) (market.Connector, error) {
-	connector, err := transaction.Connector(connectorKey)
-	if err != nil {
-		return market.Connector{}, err
+func (transaction *transaction) ReplaceAgentGrants(connectorKey string, principalIDs []string) error {
+	principalIDs = normalizeIDs(principalIDs)
+	for _, principalID := range principalIDs {
+		var exists bool
+		if err := transaction.tx.QueryRowContext(transaction.ctx,
+			`SELECT EXISTS(SELECT 1 FROM agent_principals WHERE principal_id = ?)`, principalID).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return market.NewDomainError(market.ErrorCodeInvalidRequest, "unknown Agent principal: "+principalID, false, ErrAgentPrincipalNotFound)
+		}
 	}
-	if _, err := transaction.tx.ExecContext(transaction.ctx, `
-INSERT INTO connector_market_workspace_bindings (connector_key, workspace_id, enabled)
-VALUES (?, ?, ?)
-ON CONFLICT(connector_key, workspace_id) DO UPDATE SET enabled = excluded.enabled`,
-		connectorKey, binding.WorkspaceID, binding.Enabled); err != nil {
-		return market.Connector{}, err
+	if _, err := transaction.tx.ExecContext(transaction.ctx,
+		`DELETE FROM connector_agent_grants WHERE connector_key = ?`, connectorKey); err != nil {
+		return err
 	}
-	connector.WorkspaceBinding = &binding
-	return connector, nil
+	now := time.Now().UTC().UnixMilli()
+	for _, principalID := range principalIDs {
+		if _, err := transaction.tx.ExecContext(transaction.ctx, `
+INSERT INTO connector_agent_grants (connector_key, principal_id, created_at_unix_ms)
+VALUES (?, ?, ?)`, connectorKey, principalID, now); err != nil {
+			return err
+		}
+	}
+	_, err := transaction.tx.ExecContext(transaction.ctx, `
+INSERT INTO connector_agent_grant_metadata (connector_key, revision) VALUES (?, 1)
+ON CONFLICT(connector_key) DO UPDATE SET revision = revision + 1`, connectorKey)
+	return err
 }
 
 func (transaction *transaction) EnqueueConnectorMarketChanged(event market.ChangedEvent) error {
@@ -581,7 +555,7 @@ type queryer interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
-func listConnectorsOn(ctx context.Context, database queryer, workspaceID string) ([]market.Connector, error) {
+func listConnectorsOn(ctx context.Context, database queryer) ([]market.Connector, error) {
 	rows, err := database.QueryContext(ctx, `
 SELECT connector_json FROM connector_market_connectors ORDER BY connector_key`)
 	if err != nil {
@@ -606,17 +580,6 @@ SELECT connector_json FROM connector_market_connectors ORDER BY connector_key`)
 	if err := rows.Close(); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(workspaceID) != "" {
-		for index := range connectors {
-			binding, ok, err := workspaceBindingOn(ctx, database, connectors[index].Key, workspaceID)
-			if err != nil {
-				return nil, err
-			}
-			if ok {
-				connectors[index].WorkspaceBinding = &binding
-			}
-		}
-	}
 	return connectors, nil
 }
 
@@ -640,32 +603,6 @@ SELECT operation_json FROM connector_market_operations ORDER BY operation_id`)
 		operations = append(operations, publicOperation(operation))
 	}
 	return operations, rows.Err()
-}
-
-func (store *Store) workspaceBinding(
-	ctx context.Context,
-	connectorKey string,
-	workspaceID string,
-) (market.WorkspaceBinding, bool, error) {
-	return workspaceBindingOn(ctx, store.db, connectorKey, workspaceID)
-}
-
-func workspaceBindingOn(
-	ctx context.Context,
-	database queryer,
-	connectorKey string,
-	workspaceID string,
-) (market.WorkspaceBinding, bool, error) {
-	var enabled bool
-	if err := database.QueryRowContext(ctx, `
-SELECT enabled FROM connector_market_workspace_bindings
-WHERE connector_key = ? AND workspace_id = ?`, connectorKey, workspaceID).Scan(&enabled); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return market.WorkspaceBinding{}, false, nil
-		}
-		return market.WorkspaceBinding{}, false, err
-	}
-	return market.WorkspaceBinding{WorkspaceID: workspaceID, Enabled: enabled}, true, nil
 }
 
 func operationOn(ctx context.Context, tx *sql.Tx, operationID string) (market.Operation, error) {
@@ -730,11 +667,6 @@ func decodeOperation(payload string) (market.Operation, error) {
 		return market.Operation{}, fmt.Errorf("decode connector market operation: %w", err)
 	}
 	return operation, nil
-}
-
-func connectorWithoutBinding(connector market.Connector) market.Connector {
-	connector.WorkspaceBinding = nil
-	return connector
 }
 
 func publicOperation(operation market.Operation) market.Operation {

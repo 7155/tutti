@@ -13,11 +13,7 @@ import {
   ConnectorMarketService
 } from "./connectorMarketService.ts";
 
-function connector(
-  key: string,
-  revision: number,
-  workspaceId = "workspace-1"
-): Connector {
+function connector(key: string, revision: number): Connector {
   return {
     key,
     release: {
@@ -52,7 +48,6 @@ function connector(
     installation: { state: "not_installed" },
     authorization: { state: "not_required" },
     compatibility: { state: "supported" },
-    workspaceBinding: { workspaceId, enabled: false },
     revision
   };
 }
@@ -86,7 +81,13 @@ function backendWith(
     uninstallConnector: unsupported,
     beginAuthorization: unsupported,
     disconnectAuthorization: unsupported,
-    setWorkspaceEnabled: unsupported,
+    getAgentGrants: async ({ connectorKey }) => ({
+      connectorKey,
+      principalIds: [],
+      revision: 0
+    }),
+    listAgents: async () => [],
+    setAgentGrants: unsupported,
     ...overrides
   };
 }
@@ -152,30 +153,6 @@ test("loads server categories and appends cursor pages", async () => {
   service.dispose();
 });
 
-test("ignores a stale workspace response after switching workspaces", async () => {
-  const first = deferred<ConnectorMarketSnapshot>();
-  const second = deferred<ConnectorMarketSnapshot>();
-  const backend = backendWith({
-    getSnapshot: async ({ workspaceId }) =>
-      workspaceId === "workspace-1" ? first.promise : second.promise
-  });
-  const service = new ConnectorMarketService({
-    backend,
-    workspaceId: "workspace-1"
-  });
-
-  const initialLoad = service.ensureLoaded();
-  const switchWorkspace = service.setWorkspace("workspace-2");
-  second.resolve(snapshot(2, [connector("linear", 2, "workspace-2")]));
-  await switchWorkspace;
-  first.resolve(snapshot(1, [connector("github", 1)]));
-  await initialLoad;
-
-  assert.deepEqual(service.dataStore.connectorKeys, ["linear"]);
-  assert.equal(service.dataStore.workspaceId, "workspace-2");
-  service.dispose();
-});
-
 test("coalesces concurrent catalog refreshes", async () => {
   const refresh =
     deferred<Awaited<ReturnType<ConnectorMarketBackend["refreshCatalog"]>>>();
@@ -219,10 +196,8 @@ test("rejects overlapping mutations for one connector", async () => {
     backend: backendWith({ installConnector: async () => install.promise }),
     createRequestId: () => "request-1"
   });
-  await service.setWorkspace("workspace-1");
-
-  const first = service.install("github");
-  await assert.rejects(service.install("github"), ConnectorMarketBusyError);
+  const first = service.install("github", []);
+  await assert.rejects(service.install("github", []), ConnectorMarketBusyError);
   install.resolve({
     connector: connector("github", 1),
     operation: {
@@ -246,32 +221,68 @@ test("rejects overlapping mutations for one connector", async () => {
   service.dispose();
 });
 
-test("rolls back optimistic workspace enablement when the daemon rejects it", async () => {
-  const update =
-    deferred<
-      Awaited<ReturnType<ConnectorMarketBackend["setWorkspaceEnabled"]>>
-    >();
+test("forwards selected Agent principals on install and uses grant revision on reconfiguration", async () => {
+  const installInputs: Parameters<
+    ConnectorMarketBackend["installConnector"]
+  >[0][] = [];
+  const grantInputs: Parameters<ConnectorMarketBackend["setAgentGrants"]>[0][] =
+    [];
+  const installed = connector("github", 1);
+  installed.installation = {
+    state: "installed",
+    installedReleaseDigest: installed.release.releaseDigest
+  };
   const service = new ConnectorMarketService({
     backend: backendWith({
-      getSnapshot: async () => snapshot(1, [connector("github", 1)]),
-      setWorkspaceEnabled: async () => update.promise
+      getSnapshot: async () => snapshot(1, [installed]),
+      getAgentGrants: async () => ({
+        connectorKey: "github",
+        principalIds: ["principal-1"],
+        revision: 4
+      }),
+      installConnector: async (input) => {
+        installInputs.push(input);
+        return {
+          connector: installed,
+          operation: {
+            operationId: "operation-install-2",
+            clientRequestId: "request-install-2",
+            connectorKey: "github",
+            kind: "install",
+            state: "accepted",
+            attempt: 0,
+            createdAt: "2026-08-03T00:00:00Z",
+            updatedAt: "2026-08-03T00:00:00Z"
+          },
+          revision: 2
+        };
+      },
+      setAgentGrants: async (input) => {
+        grantInputs.push(input);
+        return {
+          connectorKey: input.connectorKey,
+          principalIds: input.principalIds,
+          revision: 5
+        };
+      }
     }),
-    workspaceId: "workspace-1"
+    createRequestId: () => "request-1"
   });
+
   await service.ensureLoaded();
+  await service.install("github", ["principal-1", "principal-2"]);
+  await service.setAgentGrants("github", ["principal-2"]);
 
-  const mutation = service.setWorkspaceEnabled("github", true);
-  assert.equal(
-    service.dataStore.connectorsByKey.github?.workspaceBinding?.enabled,
-    true
-  );
-  update.reject(new Error("daemon rejected mutation"));
-  await assert.rejects(mutation, /daemon rejected mutation/);
-
-  assert.equal(
-    service.dataStore.connectorsByKey.github?.workspaceBinding?.enabled,
-    false
-  );
+  assert.deepEqual(installInputs[0]?.principalIds, [
+    "principal-1",
+    "principal-2"
+  ]);
+  assert.equal(grantInputs[0]?.expectedRevision, 4);
+  assert.deepEqual(service.dataStore.grantsByConnectorKey.github, {
+    connectorKey: "github",
+    principalIds: ["principal-2"],
+    revision: 5
+  });
   service.dispose();
 });
 
@@ -293,7 +304,6 @@ test("does not let a stale authorization response overwrite a newer daemon snaps
       },
       beginAuthorization: async () => authorization.promise
     }),
-    workspaceId: "workspace-1",
     openAuthorizationUrl: async (url) => {
       openedUrls.push(url);
     }
@@ -319,45 +329,6 @@ test("does not let a stale authorization response overwrite a newer daemon snaps
     "connected"
   );
   assert.deepEqual(openedUrls, ["https://authorization.example/start"]);
-  service.dispose();
-});
-
-test("does not let a stale workspace-binding response overwrite a newer daemon snapshot", async () => {
-  const binding =
-    deferred<
-      Awaited<ReturnType<ConnectorMarketBackend["setWorkspaceEnabled"]>>
-    >();
-  let snapshotRevision = 1;
-  const service = new ConnectorMarketService({
-    backend: backendWith({
-      getSnapshot: async () =>
-        snapshot(snapshotRevision, [connector("github", snapshotRevision)]),
-      setWorkspaceEnabled: async () => binding.promise
-    }),
-    workspaceId: "workspace-1"
-  });
-  await service.ensureLoaded();
-
-  const mutation = service.setWorkspaceEnabled("github", true);
-  snapshotRevision = 3;
-  await service.reload();
-  const staleConnector = connector("github", 2);
-  staleConnector.workspaceBinding = {
-    workspaceId: "workspace-1",
-    enabled: true
-  };
-  binding.resolve({
-    connector: staleConnector,
-    operation: operation("set_workspace_enabled", 2),
-    revision: 2
-  });
-  await mutation;
-
-  assert.equal(service.dataStore.revision, 3);
-  assert.equal(
-    service.dataStore.connectorsByKey.github?.workspaceBinding?.enabled,
-    false
-  );
   service.dispose();
 });
 
@@ -411,7 +382,7 @@ test("does not publish an in-flight response after disposal", async () => {
 
   assert.deepEqual(service.dataStore.connectorKeys, []);
   assert.equal(service.dataStore.loadState, "idle");
-  assert.equal(service.dataStore.workspaceId, undefined);
+  assert.deepEqual(service.dataStore.agents, []);
 });
 
 test("reconciles on the first connection and every daemon event-stream reconnect", async () => {
@@ -527,10 +498,7 @@ function deferred<T>() {
   return { promise, reject, resolve };
 }
 
-function operation(
-  kind: "start_authorization" | "set_workspace_enabled",
-  revision: number
-) {
+function operation(kind: "start_authorization", revision: number) {
   return {
     operationId: `${kind}-${revision}`,
     clientRequestId: `request-${revision}`,

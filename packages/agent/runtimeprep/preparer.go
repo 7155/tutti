@@ -260,6 +260,9 @@ func defaultRuntimeEnv(input PrepareInput, stateDir string) []string {
 		"TUTTI_AGENT_PROVIDER=" + strings.TrimSpace(input.Provider),
 		"TUTTI_AGENT_CWD=" + strings.TrimSpace(input.Cwd),
 	}
+	if capability := strings.TrimSpace(input.ConnectorSessionCapability); capability != "" {
+		env = append(env, "TUTTI_CONNECTOR_SESSION_CAPABILITY="+capability)
+	}
 	if pathEnv := runtimePathEnv(stateDir); pathEnv != "" {
 		env = append(env, pathEnv)
 	}

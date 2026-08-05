@@ -2,6 +2,8 @@ import { createDecorator } from "@tutti-os/infra/di";
 
 import type {
   Connector,
+  ConnectorAgentGrantSet,
+  ConnectorAgentPrincipal,
   ConnectorCatalogState,
   ConnectorMarketCategory,
   ConnectorMarketBackend,
@@ -28,7 +30,8 @@ export interface ConnectorMarketStoreState {
   operationsByConnectorKey: Record<string, ConnectorOperation>;
   lastError: ConnectorMarketErrorShape | null;
   revision: number;
-  workspaceId?: string;
+  agents: ConnectorAgentPrincipal[];
+  grantsByConnectorKey: Record<string, ConnectorAgentGrantSet>;
 }
 
 export interface ConnectorMarketServiceDependencies {
@@ -36,7 +39,6 @@ export interface ConnectorMarketServiceDependencies {
   /** Host-owned admission check for transport requests. */
   canRequest?: () => boolean;
   events?: ConnectorMarketEventSource;
-  workspaceId?: string;
   createRequestId?: () => string;
   openAuthorizationUrl?: (url: string) => Promise<void>;
   reportDiagnostic?: (error: unknown) => void;
@@ -56,12 +58,11 @@ export interface IConnectorMarketService {
   reload(): Promise<void>;
   refreshCatalog(): Promise<void>;
   loadMore(sectionId: string): Promise<void>;
-  install(connectorKey: string): Promise<void>;
+  install(connectorKey: string, principalIds: string[]): Promise<void>;
   uninstall(connectorKey: string): Promise<void>;
   beginAuthorization(connectorKey: string): Promise<void>;
   disconnectAuthorization(connectorKey: string): Promise<void>;
-  setWorkspaceEnabled(connectorKey: string, enabled: boolean): Promise<void>;
-  setWorkspace(workspaceId?: string): Promise<void>;
+  setAgentGrants(connectorKey: string, principalIds: string[]): Promise<void>;
 
   /** Releases subscriptions and makes the service terminal. */
   dispose(): void;

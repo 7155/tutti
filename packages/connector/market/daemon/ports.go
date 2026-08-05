@@ -18,10 +18,9 @@ type CatalogSourcePageQuery struct {
 }
 
 type CatalogPageQuery struct {
-	SectionID   string
-	PageSize    int
-	PageToken   string
-	WorkspaceID string
+	SectionID string
+	PageSize  int
+	PageToken string
 }
 
 type CatalogCategory struct {
@@ -62,16 +61,23 @@ type CatalogSnapshot struct {
 }
 
 type Repository interface {
-	Snapshot(ctx context.Context, workspaceID string) (Snapshot, error)
-	Connector(ctx context.Context, connectorKey, workspaceID string) (Connector, error)
+	Snapshot(ctx context.Context) (Snapshot, error)
+	Connector(ctx context.Context, connectorKey string) (Connector, error)
 	Operation(ctx context.Context, operationID string) (Operation, error)
 	ClaimOperation(ctx context.Context, operationID, owner string, now, leaseExpiresAt time.Time) (Operation, bool, error)
 	RenewOperationLease(ctx context.Context, operationID, owner string, token uint64, now, leaseExpiresAt time.Time) error
 	ReleaseOperationLease(ctx context.Context, operationID, owner string, token uint64) error
 	Transaction(ctx context.Context, fn func(Transaction) error) error
 	RecoverableOperations(ctx context.Context) ([]Operation, error)
-	WorkspaceBindings(ctx context.Context, connectorKey string) ([]WorkspaceBinding, error)
 	InstalledRelease(ctx context.Context, connectorKey, releaseDigest string) (Release, error)
+}
+
+// AgentAccessRepository owns the global connector-to-Agent authorization
+// projection. Source workspace identifiers are intentionally not exposed.
+type AgentAccessRepository interface {
+	ListConnectorAgentPrincipals(context.Context) ([]AgentPrincipal, error)
+	AgentGrants(context.Context, string) ([]string, uint64, error)
+	ReplaceAgentGrants(context.Context, string, []string, uint64) (uint64, error)
 }
 
 type Transaction interface {
@@ -87,7 +93,7 @@ type Transaction interface {
 	SaveConnector(Connector) error
 	DeleteConnector(connectorKey string) error
 	SaveOperation(Operation) error
-	SetWorkspaceBinding(connectorKey string, binding WorkspaceBinding) (Connector, error)
+	ReplaceAgentGrants(connectorKey string, principalIDs []string) error
 	EnqueueConnectorMarketChanged(ChangedEvent) error
 }
 
@@ -121,47 +127,29 @@ type RuntimeObservation struct {
 	ReleaseDigest string
 }
 
-// ImplementationHost reconciles durable workspace intent into MCP routes and
-// CLI registrations. Installing an artifact never starts a connector process.
+// ImplementationHost reconciles installed connector releases into global MCP
+// routes and CLI registrations.
 type ImplementationHost interface {
-	Reconcile(ctx context.Context, request WorkspaceReconcileRequest) (WorkspaceRuntimeReceipt, error)
-	DeactivateWorkspace(ctx context.Context, request WorkspaceDeactivationRequest) error
+	Reconcile(ctx context.Context, request RuntimeReconcileRequest) (RuntimeReceipt, error)
+	DeactivateRuntime(ctx context.Context, request RuntimeDeactivationRequest) error
 	// FailClosed stops all capability publication before best-effort fencing.
 	FailClosed(ctx context.Context, deadline time.Time) error
 }
 
-type WorkspaceReconcileRequest struct {
-	OperationID string
-	WorkspaceID string
-	Connector   Connector
-	Enabled     bool
-	Generation  HostGeneration
+type RuntimeReconcileRequest struct {
+	OperationID  string
+	ConnectionID string
+	Connector    Connector
+	Enabled      bool
+	Generation   HostGeneration
 }
 
-type WorkspaceDeactivationRequest struct {
-	WorkspaceID   string
+type RuntimeDeactivationRequest struct {
+	ConnectionID  string
 	ConnectorKey  string
 	ReleaseDigest string
 	Generation    HostGeneration
 	Deadline      time.Time
-}
-
-type RuntimeObserveRequest struct {
-	ConnectorKey string
-}
-
-type RuntimeActivationRequest struct {
-	OperationID string
-	Release     Release
-	Prepared    PreparedArtifactReceipt
-}
-
-type RuntimeDeactivationRequest struct {
-	OperationID   string
-	ConnectorKey  string
-	Version       string
-	ReleaseID     string
-	ReleaseDigest string
 }
 
 type AuthorizationProvider interface {

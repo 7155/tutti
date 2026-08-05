@@ -256,6 +256,9 @@ import type {
   GetAutomationRuleData,
   GetAutomationRuleErrors,
   GetAutomationRuleResponses,
+  GetConnectorMarketAgentGrantsData,
+  GetConnectorMarketAgentGrantsErrors,
+  GetConnectorMarketAgentGrantsResponses,
   GetConnectorMarketConnectorData,
   GetConnectorMarketConnectorErrors,
   GetConnectorMarketConnectorResponses,
@@ -403,6 +406,9 @@ import type {
   ListCollaborationRunsData,
   ListCollaborationRunsErrors,
   ListCollaborationRunsResponses,
+  ListConnectorMarketAgentsData,
+  ListConnectorMarketAgentsErrors,
+  ListConnectorMarketAgentsResponses,
   ListConnectorMarketCatalogData,
   ListConnectorMarketCatalogErrors,
   ListConnectorMarketCatalogResponses,
@@ -538,6 +544,9 @@ import type {
   PurgeDeletedAgentConversationsData,
   PurgeDeletedAgentConversationsErrors,
   PurgeDeletedAgentConversationsResponses,
+  PutConnectorMarketAgentGrantsData,
+  PutConnectorMarketAgentGrantsErrors,
+  PutConnectorMarketAgentGrantsResponses,
   PutDesktopPreferencesData,
   PutDesktopPreferencesErrors,
   PutDesktopPreferencesResponses,
@@ -637,9 +646,6 @@ import type {
   SetCollaborationRunAdoptionData,
   SetCollaborationRunAdoptionErrors,
   SetCollaborationRunAdoptionResponses,
-  SetConnectorMarketWorkspaceBindingData,
-  SetConnectorMarketWorkspaceBindingErrors,
-  SetConnectorMarketWorkspaceBindingResponses,
   SetModelPlanEnabledData,
   SetModelPlanEnabledErrors,
   SetModelPlanEnabledResponses,
@@ -5421,20 +5427,54 @@ export const disconnectConnectorMarketAuthorization = <
   });
 
 /**
- * Enable or disable a connector for one workspace
+ * List globally addressable Agent principals
  */
-export const setConnectorMarketWorkspaceBinding = <
-  ThrowOnError extends boolean = false
->(
-  options: Options<SetConnectorMarketWorkspaceBindingData, ThrowOnError>
+export const listConnectorMarketAgents = <ThrowOnError extends boolean = false>(
+  options?: Options<ListConnectorMarketAgentsData, ThrowOnError>
 ) =>
-  (options.client ?? client).post<
-    SetConnectorMarketWorkspaceBindingResponses,
-    SetConnectorMarketWorkspaceBindingErrors,
+  (options?.client ?? client).get<
+    ListConnectorMarketAgentsResponses,
+    ListConnectorMarketAgentsErrors,
     ThrowOnError
   >({
     security: [{ scheme: "bearer", type: "http" }],
-    url: "/v1/connector-market/connectors/{connectorKey}/workspace-binding:set",
+    url: "/v1/connector-market/agents",
+    ...options
+  });
+
+/**
+ * Get the Agents authorized to use one connector
+ */
+export const getConnectorMarketAgentGrants = <
+  ThrowOnError extends boolean = false
+>(
+  options: Options<GetConnectorMarketAgentGrantsData, ThrowOnError>
+) =>
+  (options.client ?? client).get<
+    GetConnectorMarketAgentGrantsResponses,
+    GetConnectorMarketAgentGrantsErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/v1/connector-market/connectors/{connectorKey}/agent-grants",
+    ...options
+  });
+
+/**
+ * Atomically replace the Agents authorized to use one connector
+ */
+export const putConnectorMarketAgentGrants = <
+  ThrowOnError extends boolean = false
+>(
+  options: Options<PutConnectorMarketAgentGrantsData, ThrowOnError>
+) =>
+  (options.client ?? client).put<
+    PutConnectorMarketAgentGrantsResponses,
+    PutConnectorMarketAgentGrantsErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/v1/connector-market/connectors/{connectorKey}/agent-grants",
     ...options,
     headers: {
       "Content-Type": "application/json",

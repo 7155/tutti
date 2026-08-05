@@ -1,50 +1,48 @@
 import type {
   Connector,
+  ConnectorAgentGrantSet,
+  ConnectorAgentPrincipal,
   ConnectorAuthorizationResult,
   ConnectorMarketCatalogPage,
   ConnectorMarketCategory,
   ConnectorMarketMutationInput,
   ConnectorMarketSnapshot,
   ConnectorMutationInput,
-  ConnectorWorkspaceMutationInput,
+  InstallConnectorInput,
   ConnectorMutationResult,
-  ConnectorOperation,
-  ConnectorWorkspaceBindingResult,
-  SetConnectorWorkspaceEnabledInput
+  ConnectorOperation
 } from "./domain.ts";
 
 export interface ConnectorMarketBackend {
-  getSnapshot(input: {
-    workspaceId?: string;
-  }): Promise<ConnectorMarketSnapshot>;
+  getSnapshot(): Promise<ConnectorMarketSnapshot>;
+  listAgents(): Promise<ConnectorAgentPrincipal[]>;
   listCategories(): Promise<ConnectorMarketCategory[]>;
   listCatalogPage(input: {
     sectionId: string;
     pageSize: number;
     pageToken?: string;
-    workspaceId?: string;
   }): Promise<ConnectorMarketCatalogPage>;
-  getConnector(input: {
-    connectorKey: string;
-    workspaceId?: string;
-  }): Promise<Connector>;
+  getConnector(input: { connectorKey: string }): Promise<Connector>;
   getOperation(input: { operationId: string }): Promise<ConnectorOperation>;
   refreshCatalog(
     input: ConnectorMarketMutationInput
   ): Promise<ConnectorMutationResult>;
   installConnector(
-    input: ConnectorWorkspaceMutationInput
+    input: InstallConnectorInput
   ): Promise<ConnectorMutationResult>;
   uninstallConnector(
     input: ConnectorMutationInput
   ): Promise<ConnectorMutationResult>;
   beginAuthorization(
-    input: ConnectorWorkspaceMutationInput
+    input: ConnectorMutationInput
   ): Promise<ConnectorAuthorizationResult>;
   disconnectAuthorization(
     input: ConnectorMutationInput
   ): Promise<ConnectorMutationResult>;
-  setWorkspaceEnabled(
-    input: SetConnectorWorkspaceEnabledInput
-  ): Promise<ConnectorWorkspaceBindingResult>;
+  getAgentGrants(input: {
+    connectorKey: string;
+  }): Promise<ConnectorAgentGrantSet>;
+  setAgentGrants(
+    input: ConnectorMutationInput & { principalIds: string[] }
+  ): Promise<ConnectorAgentGrantSet>;
 }

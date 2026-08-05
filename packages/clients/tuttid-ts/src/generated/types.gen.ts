@@ -225,7 +225,7 @@ export type CliCapabilitiesResponse = {
 };
 
 /**
- * Client-supplied invocation context. These fields are hints for routing and audit only; authorization and workspace validation remain daemon-owned.
+ * Client invocation context. Routing fields are hints; connectorSessionCapability is a stateless daemon-local credential used only by protected Connector broker commands.
  */
 export type CliInvokeContext = {
   /**
@@ -242,6 +242,10 @@ export type CliInvokeContext = {
    * Caller agent session id hint. This is not an authorization boundary.
    */
   agentSessionId?: string | null;
+  /**
+   * Stateless credential bound to the exact live Agent Session and global Agent Principal. It is validated against current Session state and never treated as Connector, account, artifact, or download credentials.
+   */
+  connectorSessionCapability?: string | null;
 };
 
 export type CliInvokeRequest = {
@@ -4578,7 +4582,6 @@ export type ConnectorMarketConnector = {
   installation: ConnectorMarketInstallation;
   authorization: ConnectorMarketAuthorization;
   compatibility: ConnectorMarketCompatibility;
-  workspaceBinding?: ConnectorMarketWorkspaceBinding;
   revision: number;
 };
 
@@ -4643,11 +4646,6 @@ export type ConnectorMarketCompatibility = {
   reason?: string;
 };
 
-export type ConnectorMarketWorkspaceBinding = {
-  workspaceId: string;
-  enabled: boolean;
-};
-
 export type ConnectorMarketOperation = {
   operationId: string;
   clientRequestId: string;
@@ -4656,6 +4654,10 @@ export type ConnectorMarketOperation = {
   state: ConnectorMarketOperationState;
   stage?: ConnectorMarketOperationStage;
   target?: ConnectorMarketOperationTarget;
+  /**
+   * Agent grants frozen when an installation operation is accepted.
+   */
+  principalIds?: Array<string>;
   attempt: number;
   failureCode?: string;
   createdAt: string;
@@ -4675,17 +4677,37 @@ export type ConnectorMarketMutationRequest = {
   expectedRevision: number;
 };
 
-export type ConnectorMarketWorkspaceMutationRequest = {
+export type ConnectorMarketInstallRequest = {
   clientRequestId: string;
   expectedRevision: number;
-  workspaceId: string;
+  /**
+   * Complete initial Agent grant set committed with successful installation.
+   */
+  principalIds: Array<string>;
 };
 
-export type SetConnectorMarketWorkspaceBindingRequest = {
+export type PutConnectorMarketAgentGrantsRequest = {
   clientRequestId: string;
   expectedRevision: number;
-  workspaceId: string;
-  enabled: boolean;
+  principalIds: Array<string>;
+};
+
+export type ConnectorMarketAgentPrincipal = {
+  principalId: string;
+  kind: "workspace_agent" | "system_target";
+  name: string;
+  description?: string;
+  harnessAgentTargetId?: string;
+};
+
+export type ConnectorMarketAgentsResponse = {
+  agents: Array<ConnectorMarketAgentPrincipal>;
+};
+
+export type ConnectorMarketAgentGrantSet = {
+  connectorKey: string;
+  principalIds: Array<string>;
+  revision: number;
 };
 
 export type ConnectorMarketMutationResponse = {
@@ -4748,7 +4770,6 @@ export type ConnectorMarketOperationKind =
   | "install"
   | "uninstall"
   | "start_authorization"
-  | "set_workspace_enabled"
   | "disconnect_authorization";
 
 export type ConnectorMarketOperationState =
@@ -4918,8 +4939,6 @@ export type IssueManagerSearchQuery = string;
 export type ConnectorMarketConnectorKey = string;
 
 export type ConnectorMarketOperationId = string;
-
-export type ConnectorMarketWorkspaceId = string;
 
 export type ConnectorMarketSectionId = string;
 
@@ -16106,9 +16125,7 @@ export type CompleteWorkspaceIssueTaskRunResponse =
 export type GetConnectorMarketData = {
   body?: never;
   path?: never;
-  query?: {
-    workspaceId?: string;
-  };
+  query?: never;
   url: "/v1/connector-market";
 };
 
@@ -16178,7 +16195,6 @@ export type ListConnectorMarketCatalogData = {
     sectionId: string;
     pageSize?: number;
     pageToken?: string;
-    workspaceId?: string;
   };
   url: "/v1/connector-market/catalog";
 };
@@ -16216,9 +16232,7 @@ export type GetConnectorMarketConnectorData = {
   path: {
     connectorKey: string;
   };
-  query?: {
-    workspaceId?: string;
-  };
+  query?: never;
   url: "/v1/connector-market/connectors/{connectorKey}";
 };
 
@@ -16294,7 +16308,7 @@ export type RefreshConnectorMarketResponse =
   RefreshConnectorMarketResponses[keyof RefreshConnectorMarketResponses];
 
 export type InstallConnectorMarketConnectorData = {
-  body: ConnectorMarketWorkspaceMutationRequest;
+  body: ConnectorMarketInstallRequest;
   path: {
     connectorKey: string;
   };
@@ -16388,7 +16402,7 @@ export type UninstallConnectorMarketConnectorResponse =
   UninstallConnectorMarketConnectorResponses[keyof UninstallConnectorMarketConnectorResponses];
 
 export type StartConnectorMarketAuthorizationData = {
-  body: ConnectorMarketWorkspaceMutationRequest;
+  body: ConnectorMarketMutationRequest;
   path: {
     connectorKey: string;
   };
@@ -16477,16 +16491,80 @@ export type DisconnectConnectorMarketAuthorizationResponses = {
 export type DisconnectConnectorMarketAuthorizationResponse =
   DisconnectConnectorMarketAuthorizationResponses[keyof DisconnectConnectorMarketAuthorizationResponses];
 
-export type SetConnectorMarketWorkspaceBindingData = {
-  body: SetConnectorMarketWorkspaceBindingRequest;
+export type ListConnectorMarketAgentsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/connector-market/agents";
+};
+
+export type ListConnectorMarketAgentsErrors = {
+  /**
+   * Daemon authorization is required
+   */
+  401: ConnectorMarketError;
+  /**
+   * Connector-market capability is temporarily unavailable
+   */
+  503: ConnectorMarketError;
+};
+
+export type ListConnectorMarketAgentsError =
+  ListConnectorMarketAgentsErrors[keyof ListConnectorMarketAgentsErrors];
+
+export type ListConnectorMarketAgentsResponses = {
+  /**
+   * Redaction-safe Agent directory
+   */
+  200: ConnectorMarketAgentsResponse;
+};
+
+export type ListConnectorMarketAgentsResponse =
+  ListConnectorMarketAgentsResponses[keyof ListConnectorMarketAgentsResponses];
+
+export type GetConnectorMarketAgentGrantsData = {
+  body?: never;
   path: {
     connectorKey: string;
   };
   query?: never;
-  url: "/v1/connector-market/connectors/{connectorKey}/workspace-binding:set";
+  url: "/v1/connector-market/connectors/{connectorKey}/agent-grants";
 };
 
-export type SetConnectorMarketWorkspaceBindingErrors = {
+export type GetConnectorMarketAgentGrantsErrors = {
+  /**
+   * Connector or operation was not found
+   */
+  404: ConnectorMarketError;
+  /**
+   * Connector-market capability is temporarily unavailable
+   */
+  503: ConnectorMarketError;
+};
+
+export type GetConnectorMarketAgentGrantsError =
+  GetConnectorMarketAgentGrantsErrors[keyof GetConnectorMarketAgentGrantsErrors];
+
+export type GetConnectorMarketAgentGrantsResponses = {
+  /**
+   * Connector Agent grants
+   */
+  200: ConnectorMarketAgentGrantSet;
+};
+
+export type GetConnectorMarketAgentGrantsResponse =
+  GetConnectorMarketAgentGrantsResponses[keyof GetConnectorMarketAgentGrantsResponses];
+
+export type PutConnectorMarketAgentGrantsData = {
+  body: PutConnectorMarketAgentGrantsRequest;
+  path: {
+    connectorKey: string;
+  };
+  query?: never;
+  url: "/v1/connector-market/connectors/{connectorKey}/agent-grants";
+};
+
+export type PutConnectorMarketAgentGrantsErrors = {
   /**
    * Invalid connector-market request
    */
@@ -16509,18 +16587,18 @@ export type SetConnectorMarketWorkspaceBindingErrors = {
   503: ConnectorMarketError;
 };
 
-export type SetConnectorMarketWorkspaceBindingError =
-  SetConnectorMarketWorkspaceBindingErrors[keyof SetConnectorMarketWorkspaceBindingErrors];
+export type PutConnectorMarketAgentGrantsError =
+  PutConnectorMarketAgentGrantsErrors[keyof PutConnectorMarketAgentGrantsErrors];
 
-export type SetConnectorMarketWorkspaceBindingResponses = {
+export type PutConnectorMarketAgentGrantsResponses = {
   /**
-   * Updated connector projection
+   * Updated connector Agent grants
    */
-  200: ConnectorMarketConnectorResponse;
+  200: ConnectorMarketAgentGrantSet;
 };
 
-export type SetConnectorMarketWorkspaceBindingResponse =
-  SetConnectorMarketWorkspaceBindingResponses[keyof SetConnectorMarketWorkspaceBindingResponses];
+export type PutConnectorMarketAgentGrantsResponse =
+  PutConnectorMarketAgentGrantsResponses[keyof PutConnectorMarketAgentGrantsResponses];
 
 export type GetConnectorMarketOperationData = {
   body?: never;

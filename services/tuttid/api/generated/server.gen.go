@@ -100,7 +100,10 @@ type ServerInterface interface {
 	InvokeCliCommand(w http.ResponseWriter, r *http.Request, commandID CliCommandID)
 	// Get the authoritative connector-market snapshot
 	// (GET /v1/connector-market)
-	GetConnectorMarket(w http.ResponseWriter, r *http.Request, params GetConnectorMarketParams)
+	GetConnectorMarket(w http.ResponseWriter, r *http.Request)
+	// List globally addressable Agent principals
+	// (GET /v1/connector-market/agents)
+	ListConnectorMarketAgents(w http.ResponseWriter, r *http.Request)
 	// List one server-owned connector-market section
 	// (GET /v1/connector-market/catalog)
 	ListConnectorMarketCatalog(w http.ResponseWriter, r *http.Request, params ListConnectorMarketCatalogParams)
@@ -109,16 +112,19 @@ type ServerInterface interface {
 	ListConnectorMarketCategories(w http.ResponseWriter, r *http.Request)
 	// Get one connector projection
 	// (GET /v1/connector-market/connectors/{connectorKey})
-	GetConnectorMarketConnector(w http.ResponseWriter, r *http.Request, connectorKey ConnectorMarketConnectorKey, params GetConnectorMarketConnectorParams)
+	GetConnectorMarketConnector(w http.ResponseWriter, r *http.Request, connectorKey ConnectorMarketConnectorKey)
+	// Get the Agents authorized to use one connector
+	// (GET /v1/connector-market/connectors/{connectorKey}/agent-grants)
+	GetConnectorMarketAgentGrants(w http.ResponseWriter, r *http.Request, connectorKey ConnectorMarketConnectorKey)
+	// Atomically replace the Agents authorized to use one connector
+	// (PUT /v1/connector-market/connectors/{connectorKey}/agent-grants)
+	PutConnectorMarketAgentGrants(w http.ResponseWriter, r *http.Request, connectorKey ConnectorMarketConnectorKey)
 	// Disconnect connector authorization
 	// (POST /v1/connector-market/connectors/{connectorKey}/authorization:disconnect)
 	DisconnectConnectorMarketAuthorization(w http.ResponseWriter, r *http.Request, connectorKey ConnectorMarketConnectorKey)
 	// Start connector authorization
 	// (POST /v1/connector-market/connectors/{connectorKey}/authorization:start)
 	StartConnectorMarketAuthorization(w http.ResponseWriter, r *http.Request, connectorKey ConnectorMarketConnectorKey)
-	// Enable or disable a connector for one workspace
-	// (POST /v1/connector-market/connectors/{connectorKey}/workspace-binding:set)
-	SetConnectorMarketWorkspaceBinding(w http.ResponseWriter, r *http.Request, connectorKey ConnectorMarketConnectorKey)
 	// Install or update one connector
 	// (POST /v1/connector-market/connectors/{connectorKey}:install)
 	InstallConnectorMarketConnector(w http.ResponseWriter, r *http.Request, connectorKey ConnectorMarketConnectorKey)
@@ -1617,8 +1623,25 @@ func (siw *ServerInterfaceWrapper) InvokeCliCommand(w http.ResponseWriter, r *ht
 // GetConnectorMarket operation middleware
 func (siw *ServerInterfaceWrapper) GetConnectorMarket(w http.ResponseWriter, r *http.Request) {
 
-	var err error
-	_ = err
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetConnectorMarket(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListConnectorMarketAgents operation middleware
+func (siw *ServerInterfaceWrapper) ListConnectorMarketAgents(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
@@ -1626,24 +1649,8 @@ func (siw *ServerInterfaceWrapper) GetConnectorMarket(w http.ResponseWriter, r *
 
 	r = r.WithContext(ctx)
 
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GetConnectorMarketParams
-
-	// ------------- Optional query parameter "workspaceId" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "workspaceId", r.URL.Query(), &params.WorkspaceId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "workspaceId"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workspaceId", Err: err})
-		}
-		return
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetConnectorMarket(w, r, params)
+		siw.Handler.ListConnectorMarketAgents(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1707,19 +1714,6 @@ func (siw *ServerInterfaceWrapper) ListConnectorMarketCatalog(w http.ResponseWri
 		return
 	}
 
-	// ------------- Optional query parameter "workspaceId" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "workspaceId", r.URL.Query(), &params.WorkspaceId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "workspaceId"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workspaceId", Err: err})
-		}
-		return
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListConnectorMarketCatalog(w, r, params)
 	}))
@@ -1772,24 +1766,72 @@ func (siw *ServerInterfaceWrapper) GetConnectorMarketConnector(w http.ResponseWr
 
 	r = r.WithContext(ctx)
 
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GetConnectorMarketConnectorParams
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetConnectorMarketConnector(w, r, connectorKey)
+	}))
 
-	// ------------- Optional query parameter "workspaceId" -------------
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
 
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "workspaceId", r.URL.Query(), &params.WorkspaceId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	handler.ServeHTTP(w, r)
+}
+
+// GetConnectorMarketAgentGrants operation middleware
+func (siw *ServerInterfaceWrapper) GetConnectorMarketAgentGrants(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "connectorKey" -------------
+	var connectorKey ConnectorMarketConnectorKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "connectorKey", r.PathValue("connectorKey"), &connectorKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
 	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "workspaceId"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workspaceId", Err: err})
-		}
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "connectorKey", Err: err})
 		return
 	}
 
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetConnectorMarketConnector(w, r, connectorKey, params)
+		siw.Handler.GetConnectorMarketAgentGrants(w, r, connectorKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutConnectorMarketAgentGrants operation middleware
+func (siw *ServerInterfaceWrapper) PutConnectorMarketAgentGrants(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "connectorKey" -------------
+	var connectorKey ConnectorMarketConnectorKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "connectorKey", r.PathValue("connectorKey"), &connectorKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "connectorKey", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutConnectorMarketAgentGrants(w, r, connectorKey)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1854,38 +1896,6 @@ func (siw *ServerInterfaceWrapper) StartConnectorMarketAuthorization(w http.Resp
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.StartConnectorMarketAuthorization(w, r, connectorKey)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// SetConnectorMarketWorkspaceBinding operation middleware
-func (siw *ServerInterfaceWrapper) SetConnectorMarketWorkspaceBinding(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "connectorKey" -------------
-	var connectorKey ConnectorMarketConnectorKey
-
-	err = runtime.BindStyledParameterWithOptions("simple", "connectorKey", r.PathValue("connectorKey"), &connectorKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "connectorKey", Err: err})
-		return
-	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.SetConnectorMarketWorkspaceBinding(w, r, connectorKey)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -10969,12 +10979,14 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/cli/capabilities", wrapper.ListCliCapabilities)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/cli/commands/{commandID}/invoke", wrapper.InvokeCliCommand)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/connector-market", wrapper.GetConnectorMarket)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/connector-market/agents", wrapper.ListConnectorMarketAgents)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/connector-market/catalog", wrapper.ListConnectorMarketCatalog)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/connector-market/categories", wrapper.ListConnectorMarketCategories)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/connector-market/connectors/{connectorKey}", wrapper.GetConnectorMarketConnector)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/connector-market/connectors/{connectorKey}/agent-grants", wrapper.GetConnectorMarketAgentGrants)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/connector-market/connectors/{connectorKey}/agent-grants", wrapper.PutConnectorMarketAgentGrants)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/connector-market/connectors/{connectorKey}/authorization:disconnect", wrapper.DisconnectConnectorMarketAuthorization)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/connector-market/connectors/{connectorKey}/authorization:start", wrapper.StartConnectorMarketAuthorization)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/connector-market/connectors/{connectorKey}/workspace-binding:set", wrapper.SetConnectorMarketWorkspaceBinding)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/connector-market/connectors/{connectorKey}:install", wrapper.InstallConnectorMarketConnector)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/connector-market/connectors/{connectorKey}:uninstall", wrapper.UninstallConnectorMarketConnector)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/connector-market/operations/{operationID}", wrapper.GetConnectorMarketOperation)
@@ -13484,7 +13496,6 @@ func (response InvokeCliCommand503JSONResponse) VisitInvokeCliCommandResponse(w 
 }
 
 type GetConnectorMarketRequestObject struct {
-	Params GetConnectorMarketParams
 }
 
 type GetConnectorMarketResponseObject interface {
@@ -13542,6 +13553,59 @@ type GetConnectorMarket503JSONResponse struct {
 }
 
 func (response GetConnectorMarket503JSONResponse) VisitGetConnectorMarketResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListConnectorMarketAgentsRequestObject struct {
+}
+
+type ListConnectorMarketAgentsResponseObject interface {
+	VisitListConnectorMarketAgentsResponse(w http.ResponseWriter) error
+}
+
+type ListConnectorMarketAgents200JSONResponse ConnectorMarketAgentsResponse
+
+func (response ListConnectorMarketAgents200JSONResponse) VisitListConnectorMarketAgentsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListConnectorMarketAgents401JSONResponse struct {
+	ConnectorMarketUnauthorizedErrorJSONResponse
+}
+
+func (response ListConnectorMarketAgents401JSONResponse) VisitListConnectorMarketAgentsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListConnectorMarketAgents503JSONResponse struct {
+	ConnectorMarketUnavailableErrorJSONResponse
+}
+
+func (response ListConnectorMarketAgents503JSONResponse) VisitListConnectorMarketAgentsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -13678,7 +13742,6 @@ func (response ListConnectorMarketCategories503JSONResponse) VisitListConnectorM
 
 type GetConnectorMarketConnectorRequestObject struct {
 	ConnectorKey ConnectorMarketConnectorKey `json:"connectorKey"`
-	Params       GetConnectorMarketConnectorParams
 }
 
 type GetConnectorMarketConnectorResponseObject interface {
@@ -13752,6 +13815,163 @@ type GetConnectorMarketConnector503JSONResponse struct {
 }
 
 func (response GetConnectorMarketConnector503JSONResponse) VisitGetConnectorMarketConnectorResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetConnectorMarketAgentGrantsRequestObject struct {
+	ConnectorKey ConnectorMarketConnectorKey `json:"connectorKey"`
+}
+
+type GetConnectorMarketAgentGrantsResponseObject interface {
+	VisitGetConnectorMarketAgentGrantsResponse(w http.ResponseWriter) error
+}
+
+type GetConnectorMarketAgentGrants200JSONResponse ConnectorMarketAgentGrantSet
+
+func (response GetConnectorMarketAgentGrants200JSONResponse) VisitGetConnectorMarketAgentGrantsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetConnectorMarketAgentGrants404JSONResponse struct {
+	ConnectorMarketNotFoundErrorJSONResponse
+}
+
+func (response GetConnectorMarketAgentGrants404JSONResponse) VisitGetConnectorMarketAgentGrantsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetConnectorMarketAgentGrants503JSONResponse struct {
+	ConnectorMarketUnavailableErrorJSONResponse
+}
+
+func (response GetConnectorMarketAgentGrants503JSONResponse) VisitGetConnectorMarketAgentGrantsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutConnectorMarketAgentGrantsRequestObject struct {
+	ConnectorKey ConnectorMarketConnectorKey `json:"connectorKey"`
+	Body         *PutConnectorMarketAgentGrantsJSONRequestBody
+}
+
+type PutConnectorMarketAgentGrantsResponseObject interface {
+	VisitPutConnectorMarketAgentGrantsResponse(w http.ResponseWriter) error
+}
+
+type PutConnectorMarketAgentGrants200JSONResponse ConnectorMarketAgentGrantSet
+
+func (response PutConnectorMarketAgentGrants200JSONResponse) VisitPutConnectorMarketAgentGrantsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutConnectorMarketAgentGrants400JSONResponse struct {
+	ConnectorMarketInvalidRequestErrorJSONResponse
+}
+
+func (response PutConnectorMarketAgentGrants400JSONResponse) VisitPutConnectorMarketAgentGrantsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutConnectorMarketAgentGrants401JSONResponse struct {
+	ConnectorMarketUnauthorizedErrorJSONResponse
+}
+
+func (response PutConnectorMarketAgentGrants401JSONResponse) VisitPutConnectorMarketAgentGrantsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutConnectorMarketAgentGrants404JSONResponse struct {
+	ConnectorMarketNotFoundErrorJSONResponse
+}
+
+func (response PutConnectorMarketAgentGrants404JSONResponse) VisitPutConnectorMarketAgentGrantsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutConnectorMarketAgentGrants409JSONResponse struct {
+	ConnectorMarketConflictErrorJSONResponse
+}
+
+func (response PutConnectorMarketAgentGrants409JSONResponse) VisitPutConnectorMarketAgentGrantsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutConnectorMarketAgentGrants503JSONResponse struct {
+	ConnectorMarketUnavailableErrorJSONResponse
+}
+
+func (response PutConnectorMarketAgentGrants503JSONResponse) VisitPutConnectorMarketAgentGrantsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -13958,109 +14178,6 @@ type StartConnectorMarketAuthorization503JSONResponse struct {
 }
 
 func (response StartConnectorMarketAuthorization503JSONResponse) VisitStartConnectorMarketAuthorizationResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(503)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type SetConnectorMarketWorkspaceBindingRequestObject struct {
-	ConnectorKey ConnectorMarketConnectorKey `json:"connectorKey"`
-	Body         *SetConnectorMarketWorkspaceBindingJSONRequestBody
-}
-
-type SetConnectorMarketWorkspaceBindingResponseObject interface {
-	VisitSetConnectorMarketWorkspaceBindingResponse(w http.ResponseWriter) error
-}
-
-type SetConnectorMarketWorkspaceBinding200JSONResponse ConnectorMarketConnectorResponse
-
-func (response SetConnectorMarketWorkspaceBinding200JSONResponse) VisitSetConnectorMarketWorkspaceBindingResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type SetConnectorMarketWorkspaceBinding400JSONResponse struct {
-	ConnectorMarketInvalidRequestErrorJSONResponse
-}
-
-func (response SetConnectorMarketWorkspaceBinding400JSONResponse) VisitSetConnectorMarketWorkspaceBindingResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type SetConnectorMarketWorkspaceBinding401JSONResponse struct {
-	ConnectorMarketUnauthorizedErrorJSONResponse
-}
-
-func (response SetConnectorMarketWorkspaceBinding401JSONResponse) VisitSetConnectorMarketWorkspaceBindingResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type SetConnectorMarketWorkspaceBinding404JSONResponse struct {
-	ConnectorMarketNotFoundErrorJSONResponse
-}
-
-func (response SetConnectorMarketWorkspaceBinding404JSONResponse) VisitSetConnectorMarketWorkspaceBindingResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type SetConnectorMarketWorkspaceBinding409JSONResponse struct {
-	ConnectorMarketConflictErrorJSONResponse
-}
-
-func (response SetConnectorMarketWorkspaceBinding409JSONResponse) VisitSetConnectorMarketWorkspaceBindingResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type SetConnectorMarketWorkspaceBinding503JSONResponse struct {
-	ConnectorMarketUnavailableErrorJSONResponse
-}
-
-func (response SetConnectorMarketWorkspaceBinding503JSONResponse) VisitSetConnectorMarketWorkspaceBindingResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -38092,6 +38209,9 @@ type StrictServerInterface interface {
 	// Get the authoritative connector-market snapshot
 	// (GET /v1/connector-market)
 	GetConnectorMarket(ctx context.Context, request GetConnectorMarketRequestObject) (GetConnectorMarketResponseObject, error)
+	// List globally addressable Agent principals
+	// (GET /v1/connector-market/agents)
+	ListConnectorMarketAgents(ctx context.Context, request ListConnectorMarketAgentsRequestObject) (ListConnectorMarketAgentsResponseObject, error)
 	// List one server-owned connector-market section
 	// (GET /v1/connector-market/catalog)
 	ListConnectorMarketCatalog(ctx context.Context, request ListConnectorMarketCatalogRequestObject) (ListConnectorMarketCatalogResponseObject, error)
@@ -38101,15 +38221,18 @@ type StrictServerInterface interface {
 	// Get one connector projection
 	// (GET /v1/connector-market/connectors/{connectorKey})
 	GetConnectorMarketConnector(ctx context.Context, request GetConnectorMarketConnectorRequestObject) (GetConnectorMarketConnectorResponseObject, error)
+	// Get the Agents authorized to use one connector
+	// (GET /v1/connector-market/connectors/{connectorKey}/agent-grants)
+	GetConnectorMarketAgentGrants(ctx context.Context, request GetConnectorMarketAgentGrantsRequestObject) (GetConnectorMarketAgentGrantsResponseObject, error)
+	// Atomically replace the Agents authorized to use one connector
+	// (PUT /v1/connector-market/connectors/{connectorKey}/agent-grants)
+	PutConnectorMarketAgentGrants(ctx context.Context, request PutConnectorMarketAgentGrantsRequestObject) (PutConnectorMarketAgentGrantsResponseObject, error)
 	// Disconnect connector authorization
 	// (POST /v1/connector-market/connectors/{connectorKey}/authorization:disconnect)
 	DisconnectConnectorMarketAuthorization(ctx context.Context, request DisconnectConnectorMarketAuthorizationRequestObject) (DisconnectConnectorMarketAuthorizationResponseObject, error)
 	// Start connector authorization
 	// (POST /v1/connector-market/connectors/{connectorKey}/authorization:start)
 	StartConnectorMarketAuthorization(ctx context.Context, request StartConnectorMarketAuthorizationRequestObject) (StartConnectorMarketAuthorizationResponseObject, error)
-	// Enable or disable a connector for one workspace
-	// (POST /v1/connector-market/connectors/{connectorKey}/workspace-binding:set)
-	SetConnectorMarketWorkspaceBinding(ctx context.Context, request SetConnectorMarketWorkspaceBindingRequestObject) (SetConnectorMarketWorkspaceBindingResponseObject, error)
 	// Install or update one connector
 	// (POST /v1/connector-market/connectors/{connectorKey}:install)
 	InstallConnectorMarketConnector(ctx context.Context, request InstallConnectorMarketConnectorRequestObject) (InstallConnectorMarketConnectorResponseObject, error)
@@ -39535,10 +39658,8 @@ func (sh *strictHandler) InvokeCliCommand(w http.ResponseWriter, r *http.Request
 }
 
 // GetConnectorMarket operation middleware
-func (sh *strictHandler) GetConnectorMarket(w http.ResponseWriter, r *http.Request, params GetConnectorMarketParams) {
+func (sh *strictHandler) GetConnectorMarket(w http.ResponseWriter, r *http.Request) {
 	var request GetConnectorMarketRequestObject
-
-	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.GetConnectorMarket(ctx, request.(GetConnectorMarketRequestObject))
@@ -39553,6 +39674,30 @@ func (sh *strictHandler) GetConnectorMarket(w http.ResponseWriter, r *http.Reque
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetConnectorMarketResponseObject); ok {
 		if err := validResponse.VisitGetConnectorMarketResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListConnectorMarketAgents operation middleware
+func (sh *strictHandler) ListConnectorMarketAgents(w http.ResponseWriter, r *http.Request) {
+	var request ListConnectorMarketAgentsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListConnectorMarketAgents(ctx, request.(ListConnectorMarketAgentsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListConnectorMarketAgents")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListConnectorMarketAgentsResponseObject); ok {
+		if err := validResponse.VisitListConnectorMarketAgentsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -39611,11 +39756,10 @@ func (sh *strictHandler) ListConnectorMarketCategories(w http.ResponseWriter, r 
 }
 
 // GetConnectorMarketConnector operation middleware
-func (sh *strictHandler) GetConnectorMarketConnector(w http.ResponseWriter, r *http.Request, connectorKey ConnectorMarketConnectorKey, params GetConnectorMarketConnectorParams) {
+func (sh *strictHandler) GetConnectorMarketConnector(w http.ResponseWriter, r *http.Request, connectorKey ConnectorMarketConnectorKey) {
 	var request GetConnectorMarketConnectorRequestObject
 
 	request.ConnectorKey = connectorKey
-	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.GetConnectorMarketConnector(ctx, request.(GetConnectorMarketConnectorRequestObject))
@@ -39630,6 +39774,67 @@ func (sh *strictHandler) GetConnectorMarketConnector(w http.ResponseWriter, r *h
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetConnectorMarketConnectorResponseObject); ok {
 		if err := validResponse.VisitGetConnectorMarketConnectorResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetConnectorMarketAgentGrants operation middleware
+func (sh *strictHandler) GetConnectorMarketAgentGrants(w http.ResponseWriter, r *http.Request, connectorKey ConnectorMarketConnectorKey) {
+	var request GetConnectorMarketAgentGrantsRequestObject
+
+	request.ConnectorKey = connectorKey
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetConnectorMarketAgentGrants(ctx, request.(GetConnectorMarketAgentGrantsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetConnectorMarketAgentGrants")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetConnectorMarketAgentGrantsResponseObject); ok {
+		if err := validResponse.VisitGetConnectorMarketAgentGrantsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PutConnectorMarketAgentGrants operation middleware
+func (sh *strictHandler) PutConnectorMarketAgentGrants(w http.ResponseWriter, r *http.Request, connectorKey ConnectorMarketConnectorKey) {
+	var request PutConnectorMarketAgentGrantsRequestObject
+
+	request.ConnectorKey = connectorKey
+
+	var body PutConnectorMarketAgentGrantsJSONRequestBody
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PutConnectorMarketAgentGrants(ctx, request.(PutConnectorMarketAgentGrantsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PutConnectorMarketAgentGrants")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PutConnectorMarketAgentGrantsResponseObject); ok {
+		if err := validResponse.VisitPutConnectorMarketAgentGrantsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -39700,41 +39905,6 @@ func (sh *strictHandler) StartConnectorMarketAuthorization(w http.ResponseWriter
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(StartConnectorMarketAuthorizationResponseObject); ok {
 		if err := validResponse.VisitStartConnectorMarketAuthorizationResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// SetConnectorMarketWorkspaceBinding operation middleware
-func (sh *strictHandler) SetConnectorMarketWorkspaceBinding(w http.ResponseWriter, r *http.Request, connectorKey ConnectorMarketConnectorKey) {
-	var request SetConnectorMarketWorkspaceBindingRequestObject
-
-	request.ConnectorKey = connectorKey
-
-	var body SetConnectorMarketWorkspaceBindingJSONRequestBody
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&body); err != nil {
-		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.SetConnectorMarketWorkspaceBinding(ctx, request.(SetConnectorMarketWorkspaceBindingRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "SetConnectorMarketWorkspaceBinding")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(SetConnectorMarketWorkspaceBindingResponseObject); ok {
-		if err := validResponse.VisitSetConnectorMarketWorkspaceBindingResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

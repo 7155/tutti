@@ -9,9 +9,7 @@ import type {
 } from "../contracts/index.ts";
 import type { ConnectorMarketStoreState } from "./connectorMarketService.interface.ts";
 
-export function createConnectorMarketStoreState(
-  workspaceId?: string
-): ConnectorMarketStoreState {
+export function createConnectorMarketStoreState(): ConnectorMarketStoreState {
   return {
     loadState: "idle",
     catalogState: "stale",
@@ -22,22 +20,9 @@ export function createConnectorMarketStoreState(
     operationsByConnectorKey: {},
     lastError: null,
     revision: 0,
-    workspaceId
+    agents: [],
+    grantsByConnectorKey: {}
   };
-}
-
-export function resetConnectorMarketWorkspaceState(
-  state: ConnectorMarketStoreState,
-  workspaceId?: string
-): void {
-  state.workspaceId = workspaceId;
-  state.loadState = "loading";
-  state.connectorsByKey = {};
-  state.connectorKeys = [];
-  state.catalogSections = [];
-  state.operationsByConnectorKey = {};
-  state.catalogOperation = null;
-  state.lastError = null;
 }
 
 export function clearConnectorMarketStoreState(
@@ -53,7 +38,8 @@ export function clearConnectorMarketStoreState(
   state.operationsByConnectorKey = initial.operationsByConnectorKey;
   state.lastError = initial.lastError;
   state.revision = initial.revision;
-  state.workspaceId = initial.workspaceId;
+  state.agents = initial.agents;
+  state.grantsByConnectorKey = initial.grantsByConnectorKey;
 }
 
 export function applyConnectorMarketCategories(

@@ -1,21 +1,17 @@
 import type {
   Connector,
-  ConnectorAgentGrantSet,
-  ConnectorAgentPrincipal,
   ConnectorAuthorizationResult,
   ConnectorMarketCatalogPage,
   ConnectorMarketCategory,
   ConnectorMarketMutationInput,
   ConnectorMarketSnapshot,
   ConnectorMutationInput,
-  InstallConnectorInput,
   ConnectorMutationResult,
   ConnectorOperation
 } from "./domain.ts";
 
 export interface ConnectorMarketBackend {
   getSnapshot(): Promise<ConnectorMarketSnapshot>;
-  listAgents(): Promise<ConnectorAgentPrincipal[]>;
   listCategories(): Promise<ConnectorMarketCategory[]>;
   listCatalogPage(input: {
     sectionId: string;
@@ -28,7 +24,7 @@ export interface ConnectorMarketBackend {
     input: ConnectorMarketMutationInput
   ): Promise<ConnectorMutationResult>;
   installConnector(
-    input: InstallConnectorInput
+    input: ConnectorMutationInput
   ): Promise<ConnectorMutationResult>;
   uninstallConnector(
     input: ConnectorMutationInput
@@ -39,10 +35,4 @@ export interface ConnectorMarketBackend {
   disconnectAuthorization(
     input: ConnectorMutationInput
   ): Promise<ConnectorMutationResult>;
-  getAgentGrants(input: {
-    connectorKey: string;
-  }): Promise<ConnectorAgentGrantSet>;
-  setAgentGrants(
-    input: ConnectorMutationInput & { principalIds: string[] }
-  ): Promise<ConnectorAgentGrantSet>;
 }

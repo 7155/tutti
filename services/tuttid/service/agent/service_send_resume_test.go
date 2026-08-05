@@ -439,7 +439,6 @@ func TestServiceResumesPersistedSessionWithPreparedRuntime(t *testing.T) {
 	var prepareInput runtimeprep.PrepareInput
 	service := newIsolatedAgentService(runtime)
 	service.AgentTargetStore = fakeAgentTargetStore{targets: defaultTestAgentTargets()}
-	service.ConnectorSessionCapabilityIssuer = &recordingSessionCapabilityIssuer{capability: "resumed-session-capability"}
 	service.RuntimePreparer = fakeRuntimePreparer{
 		input: &prepareInput,
 		result: runtimeprep.PreparedRuntime{
@@ -474,7 +473,6 @@ func TestServiceResumesPersistedSessionWithPreparedRuntime(t *testing.T) {
 	}
 	if prepareInput.WorkspaceID != "ws-1" ||
 		prepareInput.AgentSessionID != "session-1" ||
-		prepareInput.ConnectorSessionCapability != "resumed-session-capability" ||
 		prepareInput.Provider != "codex" ||
 		prepareInput.Cwd != "/persisted/workdir" ||
 		prepareInput.Model != "gpt-5" ||

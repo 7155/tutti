@@ -160,11 +160,10 @@ export class ConnectorMarketService implements IConnectorMarketService {
     return promise;
   }
 
-  install(connectorKey: string, principalIds: string[]): Promise<void> {
+  install(connectorKey: string): Promise<void> {
     return this.runConnectorMutation(connectorKey, () =>
       this.dependencies.backend.installConnector({
         connectorKey,
-        principalIds,
         clientRequestId: this.createRequestId(),
         expectedRevision: this.dataStore.revision
       })
@@ -218,37 +217,6 @@ export class ConnectorMarketService implements IConnectorMarketService {
         expectedRevision: this.dataStore.revision
       })
     );
-  }
-
-  async setAgentGrants(
-    connectorKey: string,
-    principalIds: string[]
-  ): Promise<void> {
-    if (this.disposed || !this.canRequest()) {
-      return;
-    }
-    const token = this.acquireConnectorMutation(connectorKey);
-    const generation = this.dataGeneration;
-    const previous = this.dataStore.grantsByConnectorKey[connectorKey];
-    try {
-      const result = await this.dependencies.backend.setAgentGrants({
-        connectorKey,
-        principalIds,
-        clientRequestId: this.createRequestId(),
-        expectedRevision: previous?.revision ?? 0
-      });
-      if (!this.isCurrentMutation(connectorKey, token, generation)) {
-        return;
-      }
-      this.dataStore.grantsByConnectorKey[connectorKey] = result;
-    } catch (error) {
-      if (this.isCurrentMutation(connectorKey, token, generation)) {
-        this.recordError(error);
-      }
-      throw error;
-    } finally {
-      this.releaseConnectorMutation(connectorKey, token);
-    }
   }
 
   dispose(): void {
@@ -320,33 +288,15 @@ export class ConnectorMarketService implements IConnectorMarketService {
       this.dataStore.loadState = "loading";
     }
     try {
-      const [next, categories, agents] = await Promise.all([
+      const [next, categories] = await Promise.all([
         this.dependencies.backend.getSnapshot(),
-        this.dependencies.backend.listCategories(),
-        this.dependencies.backend.listAgents()
+        this.dependencies.backend.listCategories()
       ]);
       if (!this.isCurrent(generation)) {
         return;
       }
       applyConnectorMarketSnapshot(this.dataStore, next);
       applyConnectorMarketCategories(this.dataStore, categories);
-      this.dataStore.agents = agents;
-      const installed = next.connectors.filter((connector) =>
-        Boolean(connector.installation.installedReleaseDigest)
-      );
-      const grantSets = await Promise.all(
-        installed.map((connector) =>
-          this.dependencies.backend.getAgentGrants({
-            connectorKey: connector.key
-          })
-        )
-      );
-      if (!this.isCurrent(generation)) {
-        return;
-      }
-      this.dataStore.grantsByConnectorKey = Object.fromEntries(
-        grantSets.map((grants) => [grants.connectorKey, grants])
-      );
       await Promise.all(
         categories
           .filter((category) => category.itemCount > 0)

@@ -8,9 +8,6 @@ export function createDesktopConnectorMarketBackend(
     getSnapshot() {
       return client.getConnectorMarket();
     },
-    async listAgents() {
-      return (await client.listConnectorMarketAgents()).agents;
-    },
     async listCategories() {
       return (await client.listConnectorMarketCategories()).categories;
     },
@@ -40,12 +37,6 @@ export function createDesktopConnectorMarketBackend(
         connectorKey,
         request
       );
-    },
-    getAgentGrants({ connectorKey }) {
-      return client.getConnectorMarketAgentGrants(connectorKey);
-    },
-    setAgentGrants({ connectorKey, ...request }) {
-      return client.putConnectorMarketAgentGrants(connectorKey, request);
     }
   };
 }

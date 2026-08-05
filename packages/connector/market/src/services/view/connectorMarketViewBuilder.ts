@@ -78,8 +78,7 @@ export function buildConnectorMarketView(
     dialog: buildConnectorDialogView(
       uiState.dialog
         ? market.connectorsByKey[uiState.dialog.connectorKey]
-        : undefined,
-      market
+        : undefined
     ),
     installedCount,
     lastErrorCode: market.lastError?.code ?? null,
@@ -146,8 +145,7 @@ function buildConnectorCardView(
 }
 
 function buildConnectorDialogView(
-  connector: Connector | undefined,
-  market: ConnectorMarketStoreState
+  connector: Connector | undefined
 ): ConnectorDialogView | null {
   if (!connector) {
     return null;
@@ -171,7 +169,6 @@ function buildConnectorDialogView(
   if (!connectorHasInstalledArtifact(connector)) {
     return {
       ...base,
-      agents: buildAgentOptions(market),
       kind: "installation"
     };
   }
@@ -186,19 +183,8 @@ function buildConnectorDialogView(
     ...base,
     canAuthorize: connector.release.manifest.authorizationKind !== "none",
     details: buildDetailFields(connector),
-    agents: buildAgentOptions(market),
-    kind: "management",
-    selectedPrincipalIds:
-      market.grantsByConnectorKey[connector.key]?.principalIds ?? []
+    kind: "management"
   };
-}
-
-function buildAgentOptions(market: ConnectorMarketStoreState) {
-  return market.agents.map((agent) => ({
-    principalId: agent.principalId,
-    name: agent.name,
-    description: agent.description ?? ""
-  }));
 }
 
 function connectorHasInstalledArtifact(connector: Connector): boolean {

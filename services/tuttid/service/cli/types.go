@@ -78,7 +78,6 @@ type InvokeContext struct {
 	WorkspaceID                    string
 	ParentCommandID                string
 	AgentSessionID                 string
-	ConnectorSessionCapability     string
 	SkipCapabilityFilters          bool
 	IncludeIntegrationCapabilities bool
 }

@@ -207,7 +207,6 @@ type Operation struct {
 	State           OperationState     `json:"state"`
 	Stage           OperationStage     `json:"stage,omitempty"`
 	Target          *OperationTarget   `json:"target,omitempty"`
-	PrincipalIDs    []string           `json:"principalIds,omitempty"`
 	HostGeneration  HostGeneration     `json:"hostGeneration,omitempty"`
 	Execution       OperationExecution `json:"execution,omitempty"`
 	Attempt         uint32             `json:"attempt"`
@@ -292,12 +291,7 @@ type Mutation struct {
 
 type ConnectorMutation struct {
 	Mutation
-	ConnectorKey string   `json:"connectorKey"`
-	PrincipalIDs []string `json:"principalIds,omitempty"`
-}
-
-type SetAgentGrantsCommand struct {
-	ConnectorMutation
+	ConnectorKey string `json:"connectorKey"`
 }
 
 type MutationResult struct {
@@ -311,18 +305,4 @@ type AuthorizationResult struct {
 	Operation        Operation `json:"operation"`
 	AuthorizationURL string    `json:"authorizationUrl,omitempty"`
 	Revision         uint64    `json:"revision"`
-}
-
-type AgentPrincipal struct {
-	PrincipalID          string `json:"principalId"`
-	Kind                 string `json:"kind"`
-	Name                 string `json:"name"`
-	Description          string `json:"description,omitempty"`
-	HarnessAgentTargetID string `json:"harnessAgentTargetId,omitempty"`
-}
-
-type AgentGrantSet struct {
-	ConnectorKey string   `json:"connectorKey"`
-	PrincipalIDs []string `json:"principalIds"`
-	Revision     uint64   `json:"revision"`
 }

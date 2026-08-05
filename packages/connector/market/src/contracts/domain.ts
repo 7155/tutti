@@ -166,7 +166,6 @@ export interface ConnectorOperation {
   state: ConnectorOperationState;
   stage?: ConnectorOperationStage;
   target?: ConnectorOperationTarget;
-  principalIds?: string[];
   attempt: number;
   failureCode?: string;
   createdAt: string;
@@ -220,18 +219,6 @@ export interface ConnectorMutationInput extends ConnectorMarketMutationInput {
   connectorKey: string;
 }
 
-export interface InstallConnectorInput extends ConnectorMutationInput {
-  principalIds: string[];
-}
-
-export interface ConnectorAgentPrincipal {
-  principalId: string;
-  kind: "workspace_agent" | "system_target";
-  name: string;
-  description?: string;
-  harnessAgentTargetId?: string;
-}
-
 export interface ConnectorMutationResult {
   connector?: Connector;
   operation: ConnectorOperation;
@@ -242,12 +229,6 @@ export interface ConnectorAuthorizationResult {
   connector: Connector;
   operation: ConnectorOperation;
   authorizationUrl?: string;
-  revision: number;
-}
-
-export interface ConnectorAgentGrantSet {
-  connectorKey: string;
-  principalIds: string[];
   revision: number;
 }
 

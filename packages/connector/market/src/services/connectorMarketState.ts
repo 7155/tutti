@@ -19,9 +19,7 @@ export function createConnectorMarketStoreState(): ConnectorMarketStoreState {
     connectorKeys: [],
     operationsByConnectorKey: {},
     lastError: null,
-    revision: 0,
-    agents: [],
-    grantsByConnectorKey: {}
+    revision: 0
   };
 }
 
@@ -38,8 +36,6 @@ export function clearConnectorMarketStoreState(
   state.operationsByConnectorKey = initial.operationsByConnectorKey;
   state.lastError = initial.lastError;
   state.revision = initial.revision;
-  state.agents = initial.agents;
-  state.grantsByConnectorKey = initial.grantsByConnectorKey;
 }
 
 export function applyConnectorMarketCategories(

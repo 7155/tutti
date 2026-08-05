@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   Button,
   DialogContent,
@@ -12,18 +11,15 @@ import {
 import type { ConnectorMarketI18nRuntime } from "../../i18n/connectorMarketI18n.ts";
 import type {
   ConnectorDetailFieldView,
-  ConnectorAgentOptionView,
   ConnectorPermissionView
 } from "../../services/view/connectorMarketViewTypes.ts";
 import { ConnectorIcon } from "../catalog/ConnectorIcon.tsx";
 import { ConnectorDialogSection } from "./ConnectorDialogSection.tsx";
-import { ConnectorAgentGrantEditor } from "./ConnectorAgentGrantEditor.tsx";
 import { connectorDetailLabel } from "./connectorDetailLabel.ts";
 import { ConnectorPermissionList } from "./ConnectorPermissionList.tsx";
 
 export interface ConnectorManagementDialogProps {
   canAuthorize: boolean;
-  agents: ReadonlyArray<Readonly<ConnectorAgentOptionView>>;
   connectorKey: string;
   details: ReadonlyArray<Readonly<ConnectorDetailFieldView>>;
   displayName: string;
@@ -31,13 +27,10 @@ export interface ConnectorManagementDialogProps {
   onAuthorize: () => void;
   onClose: () => void;
   onUninstall: () => void;
-  onAgentGrantsChange: (principalIds: string[]) => void;
   permissions: ReadonlyArray<Readonly<ConnectorPermissionView>>;
-  selectedPrincipalIds: ReadonlyArray<string>;
 }
 
 export function ConnectorManagementDialog({
-  agents,
   canAuthorize,
   connectorKey,
   details,
@@ -46,13 +39,8 @@ export function ConnectorManagementDialog({
   onAuthorize,
   onClose,
   onUninstall,
-  onAgentGrantsChange,
-  permissions,
-  selectedPrincipalIds
+  permissions
 }: ConnectorManagementDialogProps) {
-  const [selection, setSelection] = useState<string[]>([
-    ...selectedPrincipalIds
-  ]);
   return (
     <DialogContent className="max-h-[min(720px,calc(100vh-32px))] overflow-y-auto sm:max-w-[520px]">
       <DialogHeader>
@@ -100,25 +88,6 @@ export function ConnectorManagementDialog({
 
       <ConnectorDialogSection title={i18n.t("permissionsTitle")}>
         <ConnectorPermissionList i18n={i18n} permissions={permissions} />
-      </ConnectorDialogSection>
-
-      <ConnectorDialogSection title={i18n.t("agentAccessTitle")}>
-        <ConnectorAgentGrantEditor
-          agents={agents}
-          emptyLabel={i18n.t("agentAccessEmpty")}
-          selectedPrincipalIds={selection}
-          onChange={setSelection}
-        />
-        <div className="mt-2 flex justify-end">
-          <Button
-            size="sm"
-            type="button"
-            variant="secondary"
-            onClick={() => onAgentGrantsChange(selection)}
-          >
-            {i18n.t("actionSaveAgentAccess")}
-          </Button>
-        </div>
       </ConnectorDialogSection>
 
       <DialogFooter className="sm:justify-between">

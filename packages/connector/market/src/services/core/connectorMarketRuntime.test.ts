@@ -267,13 +267,6 @@ function backendWith(
     listCatalogPage: unsupported,
     installConnector: unsupported,
     refreshCatalog: unsupported,
-    getAgentGrants: async ({ connectorKey }) => ({
-      connectorKey,
-      principalIds: [],
-      revision: 0
-    }),
-    listAgents: async () => [],
-    setAgentGrants: unsupported,
     uninstallConnector: unsupported,
     ...overrides
   };

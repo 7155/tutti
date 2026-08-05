@@ -81,13 +81,6 @@ function backendWith(
     uninstallConnector: unsupported,
     beginAuthorization: unsupported,
     disconnectAuthorization: unsupported,
-    getAgentGrants: async ({ connectorKey }) => ({
-      connectorKey,
-      principalIds: [],
-      revision: 0
-    }),
-    listAgents: async () => [],
-    setAgentGrants: unsupported,
     ...overrides
   };
 }
@@ -196,8 +189,8 @@ test("rejects overlapping mutations for one connector", async () => {
     backend: backendWith({ installConnector: async () => install.promise }),
     createRequestId: () => "request-1"
   });
-  const first = service.install("github", []);
-  await assert.rejects(service.install("github", []), ConnectorMarketBusyError);
+  const first = service.install("github");
+  await assert.rejects(service.install("github"), ConnectorMarketBusyError);
   install.resolve({
     connector: connector("github", 1),
     operation: {
@@ -221,12 +214,10 @@ test("rejects overlapping mutations for one connector", async () => {
   service.dispose();
 });
 
-test("forwards selected Agent principals on install and uses grant revision on reconfiguration", async () => {
+test("installs one connector with the current catalog revision", async () => {
   const installInputs: Parameters<
     ConnectorMarketBackend["installConnector"]
   >[0][] = [];
-  const grantInputs: Parameters<ConnectorMarketBackend["setAgentGrants"]>[0][] =
-    [];
   const installed = connector("github", 1);
   installed.installation = {
     state: "installed",
@@ -235,11 +226,6 @@ test("forwards selected Agent principals on install and uses grant revision on r
   const service = new ConnectorMarketService({
     backend: backendWith({
       getSnapshot: async () => snapshot(1, [installed]),
-      getAgentGrants: async () => ({
-        connectorKey: "github",
-        principalIds: ["principal-1"],
-        revision: 4
-      }),
       installConnector: async (input) => {
         installInputs.push(input);
         return {
@@ -256,32 +242,18 @@ test("forwards selected Agent principals on install and uses grant revision on r
           },
           revision: 2
         };
-      },
-      setAgentGrants: async (input) => {
-        grantInputs.push(input);
-        return {
-          connectorKey: input.connectorKey,
-          principalIds: input.principalIds,
-          revision: 5
-        };
       }
     }),
     createRequestId: () => "request-1"
   });
 
   await service.ensureLoaded();
-  await service.install("github", ["principal-1", "principal-2"]);
-  await service.setAgentGrants("github", ["principal-2"]);
+  await service.install("github");
 
-  assert.deepEqual(installInputs[0]?.principalIds, [
-    "principal-1",
-    "principal-2"
-  ]);
-  assert.equal(grantInputs[0]?.expectedRevision, 4);
-  assert.deepEqual(service.dataStore.grantsByConnectorKey.github, {
+  assert.deepEqual(installInputs[0], {
     connectorKey: "github",
-    principalIds: ["principal-2"],
-    revision: 5
+    clientRequestId: "request-1",
+    expectedRevision: 1
   });
   service.dispose();
 });
@@ -382,7 +354,6 @@ test("does not publish an in-flight response after disposal", async () => {
 
   assert.deepEqual(service.dataStore.connectorKeys, []);
   assert.equal(service.dataStore.loadState, "idle");
-  assert.deepEqual(service.dataStore.agents, []);
 });
 
 test("reconciles on the first connection and every daemon event-stream reconnect", async () => {

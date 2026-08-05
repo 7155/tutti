@@ -16,16 +16,6 @@ type stubConnectorMarketService struct {
 	categoriesFn func(context.Context) ([]market.CatalogCategory, error)
 	pageFn       func(context.Context, market.CatalogPageQuery) (market.CatalogPage, error)
 	installFn    func(context.Context, market.ConnectorMutation) (market.MutationResult, error)
-	agentsFn     func(context.Context) ([]market.AgentPrincipal, error)
-	grantsFn     func(context.Context, market.SetAgentGrantsCommand) (market.AgentGrantSet, error)
-}
-
-func (service stubConnectorMarketService) ListAgentPrincipals(ctx context.Context) ([]market.AgentPrincipal, error) {
-	return service.agentsFn(ctx)
-}
-
-func (service stubConnectorMarketService) SetAgentGrants(ctx context.Context, command market.SetAgentGrantsCommand) (market.AgentGrantSet, error) {
-	return service.grantsFn(ctx, command)
 }
 
 func (service stubConnectorMarketService) Snapshot(ctx context.Context) (market.Snapshot, error) {
@@ -82,7 +72,7 @@ func TestDaemonAPIConnectorMarketSnapshotHidesImplementationConfig(t *testing.T)
 func TestDaemonAPIConnectorMarketInstallMapsUnsupportedImplementation(t *testing.T) {
 	service := stubConnectorMarketService{
 		installFn: func(_ context.Context, mutation market.ConnectorMutation) (market.MutationResult, error) {
-			if mutation.ConnectorKey != "notion" || mutation.ClientRequestID != "request-1" || mutation.ExpectedRevision != 7 || len(mutation.PrincipalIDs) != 1 || mutation.PrincipalIDs[0] != "principal-1" {
+			if mutation.ConnectorKey != "notion" || mutation.ClientRequestID != "request-1" || mutation.ExpectedRevision != 7 {
 				t.Fatalf("mutation = %#v", mutation)
 			}
 			return market.MutationResult{}, market.NewDomainError(
@@ -99,7 +89,6 @@ func TestDaemonAPIConnectorMarketInstallMapsUnsupportedImplementation(t *testing
 	recorder := performGeneratedRouteRequest(t, mux, http.MethodPost, "/v1/connector-market/connectors/notion:install", map[string]any{
 		"clientRequestId":  "request-1",
 		"expectedRevision": 7,
-		"principalIds":     []string{"principal-1"},
 	})
 	if recorder.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want %d; body: %s", recorder.Code, http.StatusUnprocessableEntity, recorder.Body.String())
@@ -121,32 +110,6 @@ func TestDaemonAPIConnectorMarketRefreshRejectsNegativeRevision(t *testing.T) {
 	})
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body: %s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
-	}
-}
-
-func TestDaemonAPIConnectorMarketListsAgentsAndReplacesGrants(t *testing.T) {
-	service := stubConnectorMarketService{
-		agentsFn: func(context.Context) ([]market.AgentPrincipal, error) {
-			return []market.AgentPrincipal{{PrincipalID: "principal-1", Kind: "workspace_agent", Name: "Research Agent"}}, nil
-		},
-		grantsFn: func(_ context.Context, command market.SetAgentGrantsCommand) (market.AgentGrantSet, error) {
-			if command.ConnectorKey != "notion" || command.ExpectedRevision != 2 || len(command.PrincipalIDs) != 1 {
-				t.Fatalf("command = %#v", command)
-			}
-			return market.AgentGrantSet{ConnectorKey: "notion", PrincipalIDs: command.PrincipalIDs, Revision: 3}, nil
-		},
-	}
-	mux := http.NewServeMux()
-	RegisterRoutes(mux, NewRoutes(DaemonAPI{ConnectorMarketService: service}))
-	agents := performGeneratedRouteRequest(t, mux, http.MethodGet, "/v1/connector-market/agents", nil)
-	if agents.Code != http.StatusOK {
-		t.Fatalf("agents status = %d; body: %s", agents.Code, agents.Body.String())
-	}
-	grants := performGeneratedRouteRequest(t, mux, http.MethodPut, "/v1/connector-market/connectors/notion/agent-grants", map[string]any{
-		"clientRequestId": "request-1", "expectedRevision": 2, "principalIds": []string{"principal-1"},
-	})
-	if grants.Code != http.StatusOK {
-		t.Fatalf("grants status = %d; body: %s", grants.Code, grants.Body.String())
 	}
 }
 

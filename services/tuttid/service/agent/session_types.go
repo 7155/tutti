@@ -24,80 +24,79 @@ import (
 )
 
 type Service struct {
-	Runtime                          RuntimeController
-	AnalyticsReporter                reporterservice.Reporter
-	AvailabilityChecker              ProviderAvailabilityChecker
-	ModelCatalog                     AgentModelCatalog
-	ReplayMode                       bool
-	ModelCapabilities                ModelCapabilitiesResolver
-	AgentTargetStore                 AgentTargetStore
-	SessionInitializer               SessionInitializer
-	WorkspaceAgentResolver           WorkspaceAgentResolver
-	SessionReader                    SessionReader
-	SessionPurgeStore                agenthost.SessionPurgeStore
-	SessionDeletionGuard             agenthost.SessionDeletionGuard
-	AgentSessionResourceReleaser     AgentSessionResourceReleaser
-	UserProjectReader                UserProjectReader
-	MessageReader                    MessageReader
-	ExternalImportStore              agentactivitybiz.Repository
-	TurnStore                        TurnStore
-	TurnSummaryReader                agentactivitybiz.SessionTurnSummaryReader
-	RuntimeOperationStore            RuntimeOperationStore
-	GoalStateStore                   GoalStateStore
-	GoalGenerationFenceStore         agenthost.GoalGenerationFenceStore
-	CommitObserver                   agenthost.CommitObserver
-	GoalReconcileInboxStore          GoalReconcileInboxStore
-	SubmitClaimStore                 SubmitClaimStore
-	RuntimeOperationEventPublisher   RuntimeOperationEventPublisher
-	TuttiModeActivations             TuttiModeActivationPort
-	TuttiModeSourceActivity          TuttiModeSourceActivityObserver
-	TurnCancelObserver               TurnCancelObserver
-	RuntimeOperationClock            func() time.Time
-	RuntimeOperationOwner            string
-	StaleTurnSettler                 agenthost.StaleTurnSettler
-	GoalOperationOwner               string
-	GoalOperationClock               func() time.Time
-	GoalOperationAttemptTimeout      time.Duration
-	GoalOperationRecoveryBudget      time.Duration
-	GoalOperationMaxAttempts         int
-	GoalOperationDispatchDeadline    time.Duration
-	SessionDirectoryAllocator        SessionDirectoryAllocator
-	WorktreeStateDir                 string
-	WorkspaceIDs                     func(context.Context) ([]string, error)
-	PromptAttachmentStore            PromptAttachmentStore
-	RuntimePreparer                  runtimeprep.Preparer
-	ConnectorSessionCapabilityIssuer ConnectorSessionCapabilityIssuer
-	ModelGateway                     ModelGatewayRegistry
-	ComputerUseAvailable             func() bool
-	CapabilityLister                 ComposerCapabilityLister
-	ExtensionComposerProfiles        ExtensionComposerProfileResolver
-	AgentComposerDefaultsReader      AgentComposerDefaultsReader
-	ProviderAvailabilityCacheTTL     time.Duration
-	CapabilityCatalogCacheTTL        time.Duration
-	LiveModelCacheTTL                time.Duration
-	GeneratedFilesClock              func() time.Time
-	LiveModelDiscoveryDeleteDelay    time.Duration
-	skillOptionsCache                *composerSkillOptionsCache
-	providerAvailabilityCache        *providerAvailabilityCache
-	capabilityCatalogCache           *composerCapabilityCatalogCache
-	liveModelCache                   *composerLiveModelCache
-	claudeStartupLock                *claudecodeservice.StartupGate
-	liveModelDiscoveryMu             sync.Mutex
-	liveModelDiscoveryAttempted      map[string]struct{}
-	liveModelInvalidatedAtUnixMS     map[string]int64
-	liveModelDiscoverySessions       map[string]liveModelDiscoverySessionRef
-	liveModelDiscoveryGroup          singleflight.Group
-	sessionSettingsMu                sync.Mutex
-	sessionSettingsLocks             map[string]*serviceSessionSettingsLock
-	sessionSettingsState             *serviceSessionSettingsState
-	applicationHostMu                sync.Mutex
-	applicationHost                  *agenthost.Host
-	applicationHostProvider          func() *agenthost.Host
-	hostRuntimePreparation           serviceHostRuntimePreparationSupport
-	worktreeIsolationMu              sync.RWMutex
-	worktreeIsolationLock            *sync.RWMutex
-	generatedFilesCacheMu            sync.Mutex
-	generatedFilesCache              map[string]generatedFilesCacheEntry
+	Runtime                        RuntimeController
+	AnalyticsReporter              reporterservice.Reporter
+	AvailabilityChecker            ProviderAvailabilityChecker
+	ModelCatalog                   AgentModelCatalog
+	ReplayMode                     bool
+	ModelCapabilities              ModelCapabilitiesResolver
+	AgentTargetStore               AgentTargetStore
+	SessionInitializer             SessionInitializer
+	WorkspaceAgentResolver         WorkspaceAgentResolver
+	SessionReader                  SessionReader
+	SessionPurgeStore              agenthost.SessionPurgeStore
+	SessionDeletionGuard           agenthost.SessionDeletionGuard
+	AgentSessionResourceReleaser   AgentSessionResourceReleaser
+	UserProjectReader              UserProjectReader
+	MessageReader                  MessageReader
+	ExternalImportStore            agentactivitybiz.Repository
+	TurnStore                      TurnStore
+	TurnSummaryReader              agentactivitybiz.SessionTurnSummaryReader
+	RuntimeOperationStore          RuntimeOperationStore
+	GoalStateStore                 GoalStateStore
+	GoalGenerationFenceStore       agenthost.GoalGenerationFenceStore
+	CommitObserver                 agenthost.CommitObserver
+	GoalReconcileInboxStore        GoalReconcileInboxStore
+	SubmitClaimStore               SubmitClaimStore
+	RuntimeOperationEventPublisher RuntimeOperationEventPublisher
+	TuttiModeActivations           TuttiModeActivationPort
+	TuttiModeSourceActivity        TuttiModeSourceActivityObserver
+	TurnCancelObserver             TurnCancelObserver
+	RuntimeOperationClock          func() time.Time
+	RuntimeOperationOwner          string
+	StaleTurnSettler               agenthost.StaleTurnSettler
+	GoalOperationOwner             string
+	GoalOperationClock             func() time.Time
+	GoalOperationAttemptTimeout    time.Duration
+	GoalOperationRecoveryBudget    time.Duration
+	GoalOperationMaxAttempts       int
+	GoalOperationDispatchDeadline  time.Duration
+	SessionDirectoryAllocator      SessionDirectoryAllocator
+	WorktreeStateDir               string
+	WorkspaceIDs                   func(context.Context) ([]string, error)
+	PromptAttachmentStore          PromptAttachmentStore
+	RuntimePreparer                runtimeprep.Preparer
+	ModelGateway                   ModelGatewayRegistry
+	ComputerUseAvailable           func() bool
+	CapabilityLister               ComposerCapabilityLister
+	ExtensionComposerProfiles      ExtensionComposerProfileResolver
+	AgentComposerDefaultsReader    AgentComposerDefaultsReader
+	ProviderAvailabilityCacheTTL   time.Duration
+	CapabilityCatalogCacheTTL      time.Duration
+	LiveModelCacheTTL              time.Duration
+	GeneratedFilesClock            func() time.Time
+	LiveModelDiscoveryDeleteDelay  time.Duration
+	skillOptionsCache              *composerSkillOptionsCache
+	providerAvailabilityCache      *providerAvailabilityCache
+	capabilityCatalogCache         *composerCapabilityCatalogCache
+	liveModelCache                 *composerLiveModelCache
+	claudeStartupLock              *claudecodeservice.StartupGate
+	liveModelDiscoveryMu           sync.Mutex
+	liveModelDiscoveryAttempted    map[string]struct{}
+	liveModelInvalidatedAtUnixMS   map[string]int64
+	liveModelDiscoverySessions     map[string]liveModelDiscoverySessionRef
+	liveModelDiscoveryGroup        singleflight.Group
+	sessionSettingsMu              sync.Mutex
+	sessionSettingsLocks           map[string]*serviceSessionSettingsLock
+	sessionSettingsState           *serviceSessionSettingsState
+	applicationHostMu              sync.Mutex
+	applicationHost                *agenthost.Host
+	applicationHostProvider        func() *agenthost.Host
+	hostRuntimePreparation         serviceHostRuntimePreparationSupport
+	worktreeIsolationMu            sync.RWMutex
+	worktreeIsolationLock          *sync.RWMutex
+	generatedFilesCacheMu          sync.Mutex
+	generatedFilesCache            map[string]generatedFilesCacheEntry
 	// liveModelPersistedScanMissAtUnixMS memoizes, per live-model cache key,
 	// when the persisted-session fallback scan last found nothing, so the
 	// full session scan is not repeated on every composer-options fetch.
@@ -105,10 +104,6 @@ type Service struct {
 	// modelPlanBinding wires the optional workspace model access plan
 	// integration; see ConfigureModelPlanBinding.
 	modelPlanBinding modelPlanBindingRuntime
-}
-
-type ConnectorSessionCapabilityIssuer interface {
-	IssueSessionCapability(context.Context, string, string, string) (string, error)
 }
 
 type TuttiModeSourceActivity struct {

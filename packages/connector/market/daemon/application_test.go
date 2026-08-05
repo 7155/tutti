@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -19,7 +18,6 @@ func TestApplicationInstallIsDurableAndIdempotent(t *testing.T) {
 	command := ConnectorMutation{
 		Mutation:     Mutation{ClientRequestID: "request-1", ExpectedRevision: 0},
 		ConnectorKey: "github",
-		PrincipalIDs: []string{"principal-2", "principal-1", "principal-1"},
 	}
 
 	accepted, err := application.Install(context.Background(), command)
@@ -32,10 +30,6 @@ func TestApplicationInstallIsDurableAndIdempotent(t *testing.T) {
 	if accepted.Operation.State != OperationStateAccepted || accepted.Revision != 1 {
 		t.Fatalf("result = %#v", accepted)
 	}
-	if !slices.Equal(accepted.Operation.PrincipalIDs, []string{"principal-1", "principal-2"}) {
-		t.Fatalf("frozen Agent grants = %#v", accepted.Operation.PrincipalIDs)
-	}
-
 	retried, err := application.Install(context.Background(), command)
 	if err != nil {
 		t.Fatal(err)
@@ -51,16 +45,6 @@ func TestApplicationInstallIsDurableAndIdempotent(t *testing.T) {
 	}
 }
 
-func TestApplicationGetAgentGrantsRejectsUnknownConnector(t *testing.T) {
-	repository := newMemoryRepository(testConnector("github"))
-	application := newTestApplication(t, repository, &memoryScheduler{}, &memoryInstallRuntime{}, CatalogSnapshot{})
-
-	_, err := application.GetAgentGrants(context.Background(), "missing")
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("GetAgentGrants error = %v, want ErrNotFound", err)
-	}
-}
-
 func TestApplicationExecutesAcceptedInstall(t *testing.T) {
 	repository := newMemoryRepository(testConnector("github"))
 	scheduler := &memoryScheduler{}
@@ -69,7 +53,6 @@ func TestApplicationExecutesAcceptedInstall(t *testing.T) {
 	accepted, err := application.Install(context.Background(), ConnectorMutation{
 		Mutation:     Mutation{ClientRequestID: "request-1", ExpectedRevision: 0},
 		ConnectorKey: "github",
-		PrincipalIDs: []string{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -732,39 +715,18 @@ type memoryRepository struct {
 	transactionCalls    int
 	failTransactionCall int
 	failTransactionErr  error
-	agentGrants         map[string][]string
-	agentGrantRevisions map[string]uint64
 }
 
 func newMemoryRepository(connectors ...Connector) *memoryRepository {
 	repository := &memoryRepository{
-		catalogState:        CatalogStateStale,
-		connectors:          map[string]Connector{},
-		operations:          map[string]Operation{},
-		agentGrants:         map[string][]string{},
-		agentGrantRevisions: map[string]uint64{},
+		catalogState: CatalogStateStale,
+		connectors:   map[string]Connector{},
+		operations:   map[string]Operation{},
 	}
 	for _, connector := range connectors {
 		repository.connectors[connector.Key] = connector
 	}
 	return repository
-}
-
-func (repository *memoryRepository) ListConnectorAgentPrincipals(context.Context) ([]AgentPrincipal, error) {
-	return nil, nil
-}
-
-func (repository *memoryRepository) AgentGrants(_ context.Context, connectorKey string) ([]string, uint64, error) {
-	return slices.Clone(repository.agentGrants[connectorKey]), repository.agentGrantRevisions[connectorKey], nil
-}
-
-func (repository *memoryRepository) ReplaceAgentGrants(_ context.Context, connectorKey string, ids []string, expectedRevision uint64) (uint64, error) {
-	if repository.agentGrantRevisions[connectorKey] != expectedRevision {
-		return 0, NewDomainError(ErrorCodeRevisionConflict, "revision conflict", true, nil)
-	}
-	repository.agentGrantRevisions[connectorKey]++
-	repository.agentGrants[connectorKey] = slices.Clone(ids)
-	return repository.agentGrantRevisions[connectorKey], nil
 }
 
 func (repository *memoryRepository) Snapshot(_ context.Context) (Snapshot, error) {
@@ -920,8 +882,6 @@ type memoryTransaction struct {
 	operations     map[string]Operation
 	events         []ChangedEvent
 }
-
-func (transaction *memoryTransaction) ReplaceAgentGrants(_ string, _ []string) error { return nil }
 
 func (transaction *memoryTransaction) Revision() uint64 { return transaction.revision }
 

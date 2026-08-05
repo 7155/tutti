@@ -2,8 +2,6 @@ import { createDecorator } from "@tutti-os/infra/di";
 
 import type {
   Connector,
-  ConnectorAgentGrantSet,
-  ConnectorAgentPrincipal,
   ConnectorCatalogState,
   ConnectorMarketCategory,
   ConnectorMarketBackend,
@@ -30,8 +28,6 @@ export interface ConnectorMarketStoreState {
   operationsByConnectorKey: Record<string, ConnectorOperation>;
   lastError: ConnectorMarketErrorShape | null;
   revision: number;
-  agents: ConnectorAgentPrincipal[];
-  grantsByConnectorKey: Record<string, ConnectorAgentGrantSet>;
 }
 
 export interface ConnectorMarketServiceDependencies {
@@ -58,12 +54,10 @@ export interface IConnectorMarketService {
   reload(): Promise<void>;
   refreshCatalog(): Promise<void>;
   loadMore(sectionId: string): Promise<void>;
-  install(connectorKey: string, principalIds: string[]): Promise<void>;
+  install(connectorKey: string): Promise<void>;
   uninstall(connectorKey: string): Promise<void>;
   beginAuthorization(connectorKey: string): Promise<void>;
   disconnectAuthorization(connectorKey: string): Promise<void>;
-  setAgentGrants(connectorKey: string, principalIds: string[]): Promise<void>;
-
   /** Releases subscriptions and makes the service terminal. */
   dispose(): void;
 }

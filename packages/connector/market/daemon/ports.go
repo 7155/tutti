@@ -72,14 +72,6 @@ type Repository interface {
 	InstalledRelease(ctx context.Context, connectorKey, releaseDigest string) (Release, error)
 }
 
-// AgentAccessRepository owns the global connector-to-Agent authorization
-// projection. Source workspace identifiers are intentionally not exposed.
-type AgentAccessRepository interface {
-	ListConnectorAgentPrincipals(context.Context) ([]AgentPrincipal, error)
-	AgentGrants(context.Context, string) ([]string, uint64, error)
-	ReplaceAgentGrants(context.Context, string, []string, uint64) (uint64, error)
-}
-
 type Transaction interface {
 	Revision() uint64
 	AdvanceRevision() uint64
@@ -93,7 +85,6 @@ type Transaction interface {
 	SaveConnector(Connector) error
 	DeleteConnector(connectorKey string) error
 	SaveOperation(Operation) error
-	ReplaceAgentGrants(connectorKey string, principalIDs []string) error
 	EnqueueConnectorMarketChanged(ChangedEvent) error
 }
 

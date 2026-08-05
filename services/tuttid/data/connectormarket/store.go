@@ -106,7 +106,7 @@ ON connector_market_outbox(published_at_unix_ms, sequence)`,
 		!strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
 		return fmt.Errorf("migrate connector market operation lease token: %w", err)
 	}
-	return store.migrateAgentPrincipals(ctx)
+	return nil
 }
 
 func (store *Store) Snapshot(ctx context.Context) (market.Snapshot, error) {
@@ -507,36 +507,6 @@ DELETE FROM connector_market_connectors WHERE connector_key = ?`, connectorKey)
 
 func (transaction *transaction) SaveOperation(operation market.Operation) error {
 	return saveOperationOn(transaction.ctx, transaction.tx, operation)
-}
-
-func (transaction *transaction) ReplaceAgentGrants(connectorKey string, principalIDs []string) error {
-	principalIDs = normalizeIDs(principalIDs)
-	for _, principalID := range principalIDs {
-		var exists bool
-		if err := transaction.tx.QueryRowContext(transaction.ctx,
-			`SELECT EXISTS(SELECT 1 FROM agent_principals WHERE principal_id = ?)`, principalID).Scan(&exists); err != nil {
-			return err
-		}
-		if !exists {
-			return market.NewDomainError(market.ErrorCodeInvalidRequest, "unknown Agent principal: "+principalID, false, ErrAgentPrincipalNotFound)
-		}
-	}
-	if _, err := transaction.tx.ExecContext(transaction.ctx,
-		`DELETE FROM connector_agent_grants WHERE connector_key = ?`, connectorKey); err != nil {
-		return err
-	}
-	now := time.Now().UTC().UnixMilli()
-	for _, principalID := range principalIDs {
-		if _, err := transaction.tx.ExecContext(transaction.ctx, `
-INSERT INTO connector_agent_grants (connector_key, principal_id, created_at_unix_ms)
-VALUES (?, ?, ?)`, connectorKey, principalID, now); err != nil {
-			return err
-		}
-	}
-	_, err := transaction.tx.ExecContext(transaction.ctx, `
-INSERT INTO connector_agent_grant_metadata (connector_key, revision) VALUES (?, 1)
-ON CONFLICT(connector_key) DO UPDATE SET revision = revision + 1`, connectorKey)
-	return err
 }
 
 func (transaction *transaction) EnqueueConnectorMarketChanged(event market.ChangedEvent) error {

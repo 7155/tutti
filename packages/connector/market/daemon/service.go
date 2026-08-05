@@ -16,9 +16,6 @@ type Service interface {
 	Uninstall(ctx context.Context, mutation ConnectorMutation) (MutationResult, error)
 	BeginAuthorization(ctx context.Context, mutation ConnectorMutation) (AuthorizationResult, error)
 	DisconnectAuthorization(ctx context.Context, mutation ConnectorMutation) (MutationResult, error)
-	ListAgentPrincipals(ctx context.Context) ([]AgentPrincipal, error)
-	GetAgentGrants(ctx context.Context, connectorKey string) (AgentGrantSet, error)
-	SetAgentGrants(ctx context.Context, command SetAgentGrantsCommand) (AgentGrantSet, error)
 	ExecuteOperation(ctx context.Context, operationID string) error
 	Recover(ctx context.Context) error
 }

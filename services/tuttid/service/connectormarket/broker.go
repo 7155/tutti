@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 
-	agentprincipalbiz "github.com/tutti-os/tutti/services/tuttid/biz/agentprincipal"
 	cliservice "github.com/tutti-os/tutti/services/tuttid/service/cli"
 )
 
@@ -22,19 +21,8 @@ const (
 	connectorInvokeCommandID    = "connector.invoke"
 )
 
-type SessionCapabilityResolver interface {
-	ResolveSessionCapability(context.Context, string) (agentprincipalbiz.SessionIdentity, error)
-}
-
-type ConnectorBrokerAccess interface {
-	GrantedConnectorKeys(context.Context, string) ([]string, uint64, error)
-	PrincipalHasConnectorGrant(context.Context, string, string) (bool, error)
-}
-
 type ConnectorBroker struct {
 	commands *ConnectorCommandRegistry
-	identity SessionCapabilityResolver
-	access   ConnectorBrokerAccess
 	gatesMu  sync.Mutex
 	gates    map[string]*connectorInvocationGate
 }
@@ -47,21 +35,21 @@ type connectorInvocationGate struct {
 
 const connectorInvocationQueueLimit = 16
 
-func NewConnectorBroker(commands *ConnectorCommandRegistry, identity SessionCapabilityResolver, access ConnectorBrokerAccess) (*ConnectorBroker, error) {
-	if commands == nil || identity == nil || access == nil {
-		return nil, errors.New("connector broker dependencies are required")
+func NewConnectorBroker(commands *ConnectorCommandRegistry) (*ConnectorBroker, error) {
+	if commands == nil {
+		return nil, errors.New("connector command registry is required")
 	}
-	return &ConnectorBroker{commands: commands, identity: identity, access: access, gates: make(map[string]*connectorInvocationGate)}, nil
+	return &ConnectorBroker{commands: commands, gates: make(map[string]*connectorInvocationGate)}, nil
 }
 
 func (*ConnectorBroker) Capabilities(context.Context, cliservice.InvokeContext) []cliservice.Capability {
 	return []cliservice.Capability{
-		brokerCapability(connectorAvailableCommandID, []string{"connector", "available"}, "List connectors available to this Agent", objectSchema(nil, nil)),
+		brokerCapability(connectorAvailableCommandID, []string{"connector", "available"}, "List installed connectors available to every Agent", objectSchema(nil, nil)),
 		brokerCapability(connectorSkillsCommandID, []string{"connector", "skills"}, "List a connector's Skills", objectSchema(
 			map[string]any{"connector": map[string]any{"type": "string"}}, []string{"connector"})),
 		brokerCapability(connectorSkillReadCommandID, []string{"connector", "skill", "read"}, "Read one connector Skill", objectSchema(
 			map[string]any{"connector": map[string]any{"type": "string"}, "skill": map[string]any{"type": "string"}}, []string{"connector", "skill"})),
-		brokerCapability(connectorInvokeCommandID, []string{"connector", "invoke"}, "Invoke an authorized connector capability", objectSchema(
+		brokerCapability(connectorInvokeCommandID, []string{"connector", "invoke"}, "Invoke an installed connector capability", objectSchema(
 			map[string]any{
 				"connector":  map[string]any{"type": "string"},
 				"capability": map[string]any{"type": "string"},
@@ -71,51 +59,35 @@ func (*ConnectorBroker) Capabilities(context.Context, cliservice.InvokeContext) 
 }
 
 func (broker *ConnectorBroker) Invoke(ctx context.Context, request cliservice.InvokeRequest) (cliservice.CommandOutput, error) {
-	identity, err := broker.identity.ResolveSessionCapability(ctx, request.Context.ConnectorSessionCapability)
-	if err != nil {
-		return cliservice.CommandOutput{}, cliservice.InvalidInputReasonError("connector_session_identity_invalid", "a valid Connector Session capability is required", err)
-	}
 	switch request.CommandID {
 	case connectorAvailableCommandID:
-		return broker.available(ctx, identity)
+		return broker.available()
 	case connectorSkillsCommandID:
-		return broker.skills(ctx, identity, stringInput(request.Input, "connector"))
+		return broker.skills(stringInput(request.Input, "connector"))
 	case connectorSkillReadCommandID:
-		return broker.readSkill(ctx, identity, stringInput(request.Input, "connector"), stringInput(request.Input, "skill"))
+		return broker.readSkill(stringInput(request.Input, "connector"), stringInput(request.Input, "skill"))
 	case connectorInvokeCommandID:
-		return broker.invokeConnector(ctx, identity, request)
+		return broker.invokeConnector(ctx, request)
 	default:
 		return cliservice.CommandOutput{}, cliservice.ErrCommandNotFound
 	}
 }
 
-func (broker *ConnectorBroker) available(ctx context.Context, identity agentprincipalbiz.SessionIdentity) (cliservice.CommandOutput, error) {
-	keys, revision, err := broker.access.GrantedConnectorKeys(ctx, identity.Principal.ID)
-	if err != nil {
-		return cliservice.CommandOutput{}, cliservice.ServiceUnavailableError("load Connector grants", err)
-	}
+func (broker *ConnectorBroker) available() (cliservice.CommandOutput, error) {
 	routes := broker.commands.routesFor()
-	byKey := make(map[string]connectorBrokerRoute, len(routes))
+	connectors := make([]any, 0, len(routes))
 	for _, route := range routes {
-		byKey[route.connectorKey] = route
-	}
-	connectors := make([]any, 0, len(keys))
-	for _, key := range keys {
-		route, active := byKey[key]
-		if !active {
-			continue
-		}
 		descriptor, err := loadConnectorDescriptor(route.installedRoot)
 		if err != nil {
 			return cliservice.CommandOutput{}, cliservice.ServiceUnavailableError("load Connector description", err)
 		}
-		connectors = append(connectors, map[string]any{"key": key, "name": descriptor.Name, "description": descriptor.Description})
+		connectors = append(connectors, map[string]any{"key": route.connectorKey, "name": descriptor.Name, "description": descriptor.Description})
 	}
-	return jsonValue(map[string]any{"connectors": connectors, "grantRevision": revision, "nextCursor": nil}), nil
+	return jsonValue(map[string]any{"connectors": connectors, "nextCursor": nil}), nil
 }
 
-func (broker *ConnectorBroker) skills(ctx context.Context, identity agentprincipalbiz.SessionIdentity, connectorKey string) (cliservice.CommandOutput, error) {
-	route, err := broker.authorizedRoute(ctx, identity, connectorKey)
+func (broker *ConnectorBroker) skills(connectorKey string) (cliservice.CommandOutput, error) {
+	route, err := broker.activeRoute(connectorKey)
 	if err != nil {
 		return cliservice.CommandOutput{}, err
 	}
@@ -130,8 +102,8 @@ func (broker *ConnectorBroker) skills(ctx context.Context, identity agentprincip
 	return jsonValue(map[string]any{"connectorKey": connectorKey, "skills": items, "nextCursor": nil}), nil
 }
 
-func (broker *ConnectorBroker) readSkill(ctx context.Context, identity agentprincipalbiz.SessionIdentity, connectorKey, skillName string) (cliservice.CommandOutput, error) {
-	route, err := broker.authorizedRoute(ctx, identity, connectorKey)
+func (broker *ConnectorBroker) readSkill(connectorKey, skillName string) (cliservice.CommandOutput, error) {
+	route, err := broker.activeRoute(connectorKey)
 	if err != nil {
 		return cliservice.CommandOutput{}, err
 	}
@@ -152,10 +124,10 @@ func (broker *ConnectorBroker) readSkill(ctx context.Context, identity agentprin
 	return cliservice.CommandOutput{}, cliservice.InvalidInputReasonError("connector_skill_not_found", "Connector Skill was not found", nil)
 }
 
-func (broker *ConnectorBroker) invokeConnector(ctx context.Context, identity agentprincipalbiz.SessionIdentity, request cliservice.InvokeRequest) (cliservice.CommandOutput, error) {
+func (broker *ConnectorBroker) invokeConnector(ctx context.Context, request cliservice.InvokeRequest) (cliservice.CommandOutput, error) {
 	connectorKey := stringInput(request.Input, "connector")
 	capabilityName := stringInput(request.Input, "capability")
-	if _, err := broker.authorizedRoute(ctx, identity, connectorKey); err != nil {
+	if _, err := broker.activeRoute(connectorKey); err != nil {
 		return cliservice.CommandOutput{}, err
 	}
 	release, err := broker.acquireInvocation(ctx, connectorKey)
@@ -204,17 +176,10 @@ func (broker *ConnectorBroker) acquireInvocation(ctx context.Context, connectorK
 	}
 }
 
-func (broker *ConnectorBroker) authorizedRoute(ctx context.Context, identity agentprincipalbiz.SessionIdentity, connectorKey string) (connectorBrokerRoute, error) {
+func (broker *ConnectorBroker) activeRoute(connectorKey string) (connectorBrokerRoute, error) {
 	connectorKey = strings.TrimSpace(connectorKey)
 	if connectorKey == "" {
 		return connectorBrokerRoute{}, cliservice.InvalidInputReasonError("connector_key_required", "connector is required", nil)
-	}
-	granted, err := broker.access.PrincipalHasConnectorGrant(ctx, identity.Principal.ID, connectorKey)
-	if err != nil {
-		return connectorBrokerRoute{}, cliservice.ServiceUnavailableError("check Connector grant", err)
-	}
-	if !granted {
-		return connectorBrokerRoute{}, cliservice.InvalidInputReasonError("connector_access_denied", "this Agent is not authorized to use the connector", nil)
 	}
 	for _, route := range broker.commands.routesFor() {
 		if route.connectorKey == connectorKey {

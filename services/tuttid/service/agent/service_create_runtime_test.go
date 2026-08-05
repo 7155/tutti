@@ -17,8 +17,6 @@ import (
 func TestServiceCreateUsesRuntimePreparerResult(t *testing.T) {
 	runtime := newFakeRuntime()
 	service := newTestService(runtime)
-	issuer := &recordingSessionCapabilityIssuer{capability: "session-capability"}
-	service.ConnectorSessionCapabilityIssuer = issuer
 	var prepareInput runtimeprep.PrepareInput
 	service.RuntimePreparer = fakeRuntimePreparer{
 		result: runtimeprep.PreparedRuntime{
@@ -56,31 +54,6 @@ func TestServiceCreateUsesRuntimePreparerResult(t *testing.T) {
 	if prepareInput.ConversationDetailMode != "general" {
 		t.Fatalf("prepare conversationDetailMode = %q, want general", prepareInput.ConversationDetailMode)
 	}
-	if prepareInput.ConnectorSessionCapability != "session-capability" {
-		t.Fatalf("prepare Connector Session capability = %q", prepareInput.ConnectorSessionCapability)
-	}
-	if issuer.workspaceID != "ws-1" || issuer.agentSessionID != "11111111-1111-4111-8111-111111111111" || issuer.agentTargetID != agenttargetbiz.IDLocalCodex {
-		t.Fatalf("capability issue input = %#v", issuer)
-	}
-}
-
-type recordingSessionCapabilityIssuer struct {
-	capability     string
-	workspaceID    string
-	agentSessionID string
-	agentTargetID  string
-}
-
-func (issuer *recordingSessionCapabilityIssuer) IssueSessionCapability(
-	_ context.Context,
-	workspaceID string,
-	agentSessionID string,
-	agentTargetID string,
-) (string, error) {
-	issuer.workspaceID = workspaceID
-	issuer.agentSessionID = agentSessionID
-	issuer.agentTargetID = agentTargetID
-	return issuer.capability, nil
 }
 
 func TestServiceCreateRejectsInvalidCatalogModelBeforePreparingRuntime(t *testing.T) {

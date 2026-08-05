@@ -2321,8 +2321,7 @@ test("shared tuttid client preserves connector market read and install routes", 
   assert.deepEqual(
     await client.installConnectorMarketConnector("notion", {
       clientRequestId: "request-1",
-      expectedRevision: 7,
-      principalIds: ["principal-1"]
+      expectedRevision: 7
     }),
     mutation
   );
@@ -2337,8 +2336,7 @@ test("shared tuttid client preserves connector market read and install routes", 
     authorization: null,
     body: {
       clientRequestId: "request-1",
-      expectedRevision: 7,
-      principalIds: ["principal-1"]
+      expectedRevision: 7
     },
     method: "POST",
     path: "/v1/connector-market/connectors/notion:install",
@@ -2358,8 +2356,7 @@ test("shared tuttid connector client preserves structured market errors", async 
   await assert.rejects(
     client.installConnectorMarketConnector("notion", {
       clientRequestId: "request-1",
-      expectedRevision: 11,
-      principalIds: []
+      expectedRevision: 11
     }),
     (error: unknown) => {
       assert.ok(error instanceof ConnectorMarketClientError);

@@ -285,9 +285,6 @@ func (application *Application) completeUninstall(ctx context.Context, operation
 		revision := tx.AdvanceRevision()
 		connector.Installation = Installation{State: InstallationStateNotInstalled}
 		connector.Authorization = initialAuthorization(connector.Release.Manifest.AuthorizationKind)
-		if err := tx.ReplaceAgentGrants(operation.ConnectorKey, nil); err != nil {
-			return err
-		}
 		connector.Revision = revision
 		operation.State, operation.Stage, operation.FailureCode = OperationStateCompleted, OperationStageCompleted, ""
 		operation.UpdatedAt = application.config.Now().UTC()
@@ -473,11 +470,6 @@ func (application *Application) completeConnectorOperation(
 		revision := tx.AdvanceRevision()
 		connector = update(connector)
 		connector.Revision = revision
-		if operation.Kind == OperationKindInstall && operation.PrincipalIDs != nil {
-			if err := tx.ReplaceAgentGrants(operation.ConnectorKey, operation.PrincipalIDs); err != nil {
-				return err
-			}
-		}
 		operation.State = OperationStateCompleted
 		operation.Stage = OperationStageCompleted
 		operation.FailureCode = ""

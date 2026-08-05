@@ -1327,24 +1327,6 @@ func (e CollaborationRunTriggerSource) Valid() bool {
 	}
 }
 
-// Defines values for ConnectorMarketAgentPrincipalKind.
-const (
-	ConnectorMarketAgentPrincipalKindSystemTarget   ConnectorMarketAgentPrincipalKind = "system_target"
-	ConnectorMarketAgentPrincipalKindWorkspaceAgent ConnectorMarketAgentPrincipalKind = "workspace_agent"
-)
-
-// Valid indicates whether the value is a known member of the ConnectorMarketAgentPrincipalKind enum.
-func (e ConnectorMarketAgentPrincipalKind) Valid() bool {
-	switch e {
-	case ConnectorMarketAgentPrincipalKindSystemTarget:
-		return true
-	case ConnectorMarketAgentPrincipalKindWorkspaceAgent:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for ConnectorMarketAuthorizationState.
 const (
 	ConnectorMarketAuthorizationStateConnected    ConnectorMarketAuthorizationState = "connected"
@@ -5741,17 +5723,14 @@ type CliCommandWarning struct {
 	Message string `json:"message"`
 }
 
-// CliInvokeContext Client invocation context. Routing fields are hints; connectorSessionCapability is a stateless daemon-local credential used only by protected Connector broker commands.
+// CliInvokeContext Client-supplied invocation context. These fields are hints for routing and audit only; authorization and workspace validation remain daemon-owned.
 type CliInvokeContext struct {
 	// AgentSessionId Caller agent session id hint. This is not an authorization boundary.
 	AgentSessionId *string `json:"agentSessionId,omitempty"`
 
 	// AppId Calling workspace app id hint. Managed-model commands validate it against their grant binding.
-	AppId *string `json:"appId,omitempty"`
-
-	// ConnectorSessionCapability Stateless credential bound to the exact live Agent Session and global Agent Principal. It is validated against current Session state and never treated as Connector, account, artifact, or download credentials.
-	ConnectorSessionCapability *string `json:"connectorSessionCapability,omitempty"`
-	ParentCommandId            *string `json:"parentCommandId,omitempty"`
+	AppId           *string `json:"appId,omitempty"`
+	ParentCommandId *string `json:"parentCommandId,omitempty"`
 
 	// Source Client source label such as cli. This is not an authorization boundary.
 	Source      string  `json:"source"`
@@ -5866,30 +5845,6 @@ type CompleteWorkspaceAppUploadResponse struct {
 	File WorkspaceAppUploadedFile `json:"file"`
 }
 
-// ConnectorMarketAgentGrantSet defines model for ConnectorMarketAgentGrantSet.
-type ConnectorMarketAgentGrantSet struct {
-	ConnectorKey string   `json:"connectorKey"`
-	PrincipalIds []string `json:"principalIds"`
-	Revision     int64    `json:"revision"`
-}
-
-// ConnectorMarketAgentPrincipal defines model for ConnectorMarketAgentPrincipal.
-type ConnectorMarketAgentPrincipal struct {
-	Description          *string                           `json:"description,omitempty"`
-	HarnessAgentTargetId *string                           `json:"harnessAgentTargetId,omitempty"`
-	Kind                 ConnectorMarketAgentPrincipalKind `json:"kind"`
-	Name                 string                            `json:"name"`
-	PrincipalId          string                            `json:"principalId"`
-}
-
-// ConnectorMarketAgentPrincipalKind defines model for ConnectorMarketAgentPrincipal.Kind.
-type ConnectorMarketAgentPrincipalKind string
-
-// ConnectorMarketAgentsResponse defines model for ConnectorMarketAgentsResponse.
-type ConnectorMarketAgentsResponse struct {
-	Agents []ConnectorMarketAgentPrincipal `json:"agents"`
-}
-
 // ConnectorMarketArtifact defines model for ConnectorMarketArtifact.
 type ConnectorMarketArtifact struct {
 	Key       string `json:"key"`
@@ -6001,15 +5956,6 @@ type ConnectorMarketImplementation struct {
 // ConnectorMarketImplementationKind defines model for ConnectorMarketImplementation.Kind.
 type ConnectorMarketImplementationKind string
 
-// ConnectorMarketInstallRequest defines model for ConnectorMarketInstallRequest.
-type ConnectorMarketInstallRequest struct {
-	ClientRequestId  string `json:"clientRequestId"`
-	ExpectedRevision int64  `json:"expectedRevision"`
-
-	// PrincipalIds Complete initial Agent grant set committed with successful installation.
-	PrincipalIds []string `json:"principalIds"`
-}
-
 // ConnectorMarketInstallation defines model for ConnectorMarketInstallation.
 type ConnectorMarketInstallation struct {
 	FailureCode            *string                          `json:"failureCode,omitempty"`
@@ -6053,20 +5999,17 @@ type ConnectorMarketMutationResponse struct {
 
 // ConnectorMarketOperation defines model for ConnectorMarketOperation.
 type ConnectorMarketOperation struct {
-	Attempt         int32                        `json:"attempt"`
-	ClientRequestId string                       `json:"clientRequestId"`
-	ConnectorKey    *string                      `json:"connectorKey,omitempty"`
-	CreatedAt       time.Time                    `json:"createdAt"`
-	FailureCode     *string                      `json:"failureCode,omitempty"`
-	Kind            ConnectorMarketOperationKind `json:"kind"`
-	OperationId     string                       `json:"operationId"`
-
-	// PrincipalIds Agent grants frozen when an installation operation is accepted.
-	PrincipalIds *[]string                       `json:"principalIds,omitempty"`
-	Stage        *ConnectorMarketOperationStage  `json:"stage,omitempty"`
-	State        ConnectorMarketOperationState   `json:"state"`
-	Target       *ConnectorMarketOperationTarget `json:"target,omitempty"`
-	UpdatedAt    time.Time                       `json:"updatedAt"`
+	Attempt         int32                           `json:"attempt"`
+	ClientRequestId string                          `json:"clientRequestId"`
+	ConnectorKey    *string                         `json:"connectorKey,omitempty"`
+	CreatedAt       time.Time                       `json:"createdAt"`
+	FailureCode     *string                         `json:"failureCode,omitempty"`
+	Kind            ConnectorMarketOperationKind    `json:"kind"`
+	OperationId     string                          `json:"operationId"`
+	Stage           *ConnectorMarketOperationStage  `json:"stage,omitempty"`
+	State           ConnectorMarketOperationState   `json:"state"`
+	Target          *ConnectorMarketOperationTarget `json:"target,omitempty"`
+	UpdatedAt       time.Time                       `json:"updatedAt"`
 }
 
 // ConnectorMarketOperationKind defines model for ConnectorMarketOperationKind.
@@ -7565,13 +7508,6 @@ type PutAutomationRuleRequest struct {
 
 	// Trigger Lifecycle outcome that evaluates the rule. A failed-turn rule can delegate to a stronger WorkspaceAgent as a bounded escalation attempt; automated outcomes never final-accept the source task.
 	Trigger AutomationRuleTrigger `json:"trigger"`
-}
-
-// PutConnectorMarketAgentGrantsRequest defines model for PutConnectorMarketAgentGrantsRequest.
-type PutConnectorMarketAgentGrantsRequest struct {
-	ClientRequestId  string   `json:"clientRequestId"`
-	ExpectedRevision int64    `json:"expectedRevision"`
-	PrincipalIds     []string `json:"principalIds"`
 }
 
 // PutDesktopPreferencesRequest defines model for PutDesktopPreferencesRequest.
@@ -10070,9 +10006,6 @@ type SetSystemAgentTargetEnabledJSONRequestBody = SetSystemAgentTargetEnabledReq
 // InvokeCliCommandJSONRequestBody defines body for InvokeCliCommand for application/json ContentType.
 type InvokeCliCommandJSONRequestBody = CliInvokeRequest
 
-// PutConnectorMarketAgentGrantsJSONRequestBody defines body for PutConnectorMarketAgentGrants for application/json ContentType.
-type PutConnectorMarketAgentGrantsJSONRequestBody = PutConnectorMarketAgentGrantsRequest
-
 // DisconnectConnectorMarketAuthorizationJSONRequestBody defines body for DisconnectConnectorMarketAuthorization for application/json ContentType.
 type DisconnectConnectorMarketAuthorizationJSONRequestBody = ConnectorMarketMutationRequest
 
@@ -10080,7 +10013,7 @@ type DisconnectConnectorMarketAuthorizationJSONRequestBody = ConnectorMarketMuta
 type StartConnectorMarketAuthorizationJSONRequestBody = ConnectorMarketMutationRequest
 
 // InstallConnectorMarketConnectorJSONRequestBody defines body for InstallConnectorMarketConnector for application/json ContentType.
-type InstallConnectorMarketConnectorJSONRequestBody = ConnectorMarketInstallRequest
+type InstallConnectorMarketConnectorJSONRequestBody = ConnectorMarketMutationRequest
 
 // UninstallConnectorMarketConnectorJSONRequestBody defines body for UninstallConnectorMarketConnector for application/json ContentType.
 type UninstallConnectorMarketConnectorJSONRequestBody = ConnectorMarketMutationRequest

@@ -7378,7 +7378,7 @@ components:
             $ref: "#/components/schemas/CliCapability"
     CliInvokeContext:
       type: object
-      description: Client invocation context. Routing fields are hints; connectorSessionCapability is a stateless daemon-local credential used only by protected Connector broker commands.
+      description: Client-supplied invocation context. These fields are hints for routing and audit only; authorization and workspace validation remain daemon-owned.
       additionalProperties: false
       required:
         - source
@@ -7400,10 +7400,6 @@ components:
         agentSessionId:
           type: string
           description: Caller agent session id hint. This is not an authorization boundary.
-          nullable: true
-        connectorSessionCapability:
-          type: string
-          description: Stateless credential bound to the exact live Agent Session and global Agent Principal. It is validated against current Session state and never treated as Connector, account, artifact, or download credentials.
           nullable: true
     CliInvokeRequest:
       type: object

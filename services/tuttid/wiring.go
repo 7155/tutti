@@ -18,7 +18,6 @@ import (
 
 	agentdaemon "github.com/tutti-os/tutti/packages/agent/daemon"
 	agentruntime "github.com/tutti-os/tutti/packages/agent/daemon/runtime"
-	agenthost "github.com/tutti-os/tutti/packages/agent/host"
 	runtimeprep "github.com/tutti-os/tutti/packages/agent/runtimeprep"
 	marketartifact "github.com/tutti-os/tutti/packages/connector/market/artifact"
 	tuttiapi "github.com/tutti-os/tutti/services/tuttid/api"
@@ -220,38 +219,6 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 		providerAuthWatcher.Close()
 		return fmt.Errorf("open connector market store: %w", err)
 	}
-	agentSessionService, ok := api.AgentSessionService.(*agentservice.Service)
-	if !ok || agentSessionService == nil {
-		_ = connectorMarketStore.Close()
-		agentRuntime.Close()
-		providerAuthWatcher.Close()
-		return errors.New("connector Agent Principal session integration is unavailable")
-	}
-	sessionCapabilityAuthority, err := connectormarketservice.NewSessionCapabilityAuthority(connectormarketservice.SessionCapabilityAuthorityConfig{
-		Principals: connectorMarketStore,
-		ResolveActiveSession: func(ctx context.Context, workspaceID, agentSessionID string) (string, bool, error) {
-			result, err := agentSessionService.ApplicationHost().GetSession(ctx, agenthost.SessionRef{
-				WorkspaceID: workspaceID, AgentSessionID: agentSessionID,
-			})
-			if errors.Is(err, agenthost.ErrSessionNotFound) {
-				return "", false, nil
-			}
-			if err != nil {
-				return "", false, err
-			}
-			if !result.Live {
-				return "", false, nil
-			}
-			return strings.TrimSpace(result.Canonical.AgentTargetID), true, nil
-		},
-	})
-	if err != nil {
-		_ = connectorMarketStore.Close()
-		agentRuntime.Close()
-		providerAuthWatcher.Close()
-		return fmt.Errorf("configure Connector Session capability authority: %w", err)
-	}
-	agentSessionService.ConnectorSessionCapabilityIssuer = sessionCapabilityAuthority
 	connectorMarketBaseURL := strings.TrimSpace(os.Getenv("TUTTI_CONNECTOR_MARKET_BASE_URL"))
 	if connectorMarketBaseURL == "" {
 		connectorMarketBaseURL = connectorMarketDefaultBaseURL
@@ -316,7 +283,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 		return fmt.Errorf("configure connector process sandbox: %w", err)
 	}
 	connectorCommands := connectormarketservice.NewConnectorCommandRegistry()
-	connectorBroker, err := connectormarketservice.NewConnectorBroker(connectorCommands, sessionCapabilityAuthority, connectorMarketStore)
+	connectorBroker, err := connectormarketservice.NewConnectorBroker(connectorCommands)
 	if err != nil {
 		return fmt.Errorf("configure connector broker: %w", err)
 	}

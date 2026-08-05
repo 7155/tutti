@@ -793,23 +793,6 @@ func registerConnectorMarketRoutes(mux *http.ServeMux, wrapper *tuttigenerated.S
 		}
 		wrapper.DisconnectConnectorMarketAuthorization(w, r)
 	})
-	mux.HandleFunc("/v1/connector-market/agents", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			tuttitypes.WriteMethodNotAllowed(w)
-			return
-		}
-		wrapper.ListConnectorMarketAgents(w, r)
-	})
-	mux.HandleFunc("/v1/connector-market/connectors/{connectorKey}/agent-grants", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			wrapper.GetConnectorMarketAgentGrants(w, r)
-		case http.MethodPut:
-			wrapper.PutConnectorMarketAgentGrants(w, r)
-		default:
-			tuttitypes.WriteMethodNotAllowed(w)
-		}
-	})
 	mux.HandleFunc("/v1/connector-market/operations/{operationID}", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			tuttitypes.WriteMethodNotAllowed(w)

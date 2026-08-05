@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -230,7 +229,6 @@ func (application *Application) Install(
 	ctx context.Context,
 	mutation ConnectorMutation,
 ) (MutationResult, error) {
-	mutation.PrincipalIDs = normalizePrincipalIDs(mutation.PrincipalIDs)
 	var target InstallationState
 	result, err := application.acceptConnectorOperation(
 		ctx,
@@ -365,74 +363,6 @@ func (application *Application) DisconnectAuthorization(
 			return connector, nil
 		},
 	)
-}
-
-func (application *Application) ListAgentPrincipals(ctx context.Context) ([]AgentPrincipal, error) {
-	repository, ok := application.config.Repository.(AgentAccessRepository)
-	if !ok {
-		return nil, NewDomainError(ErrorCodeUnavailable, "Agent access repository is unavailable", false, nil)
-	}
-	return repository.ListConnectorAgentPrincipals(ctx)
-}
-
-func (application *Application) GetAgentGrants(ctx context.Context, connectorKey string) (AgentGrantSet, error) {
-	connectorKey = strings.TrimSpace(connectorKey)
-	if connectorKey == "" {
-		return AgentGrantSet{}, invalidRequest("connectorKey is required")
-	}
-	if _, err := application.config.Repository.Connector(ctx, connectorKey); err != nil {
-		return AgentGrantSet{}, err
-	}
-	repository, ok := application.config.Repository.(AgentAccessRepository)
-	if !ok {
-		return AgentGrantSet{}, NewDomainError(ErrorCodeUnavailable, "Agent access repository is unavailable", false, nil)
-	}
-	ids, revision, err := repository.AgentGrants(ctx, connectorKey)
-	return AgentGrantSet{ConnectorKey: connectorKey, PrincipalIDs: ids, Revision: revision}, err
-}
-
-func (application *Application) SetAgentGrants(ctx context.Context, command SetAgentGrantsCommand) (AgentGrantSet, error) {
-	if err := validateConnectorMutation(command.ConnectorMutation); err != nil {
-		return AgentGrantSet{}, err
-	}
-	repository, ok := application.config.Repository.(AgentAccessRepository)
-	if !ok {
-		return AgentGrantSet{}, NewDomainError(ErrorCodeUnavailable, "Agent access repository is unavailable", false, nil)
-	}
-	connector, err := application.config.Repository.Connector(ctx, command.ConnectorKey)
-	if err != nil {
-		return AgentGrantSet{}, err
-	}
-	if connector.Installation.State != InstallationStateInstalled {
-		return AgentGrantSet{}, invalidTransition("Agent grants", string(connector.Installation.State), "configured")
-	}
-	ids := normalizePrincipalIDs(command.PrincipalIDs)
-	revision, err := repository.ReplaceAgentGrants(ctx, command.ConnectorKey, ids, command.ExpectedRevision)
-	if err != nil {
-		return AgentGrantSet{}, err
-	}
-	return AgentGrantSet{ConnectorKey: command.ConnectorKey, PrincipalIDs: ids, Revision: revision}, nil
-}
-
-func normalizePrincipalIDs(ids []string) []string {
-	if ids == nil {
-		return nil
-	}
-	seen := make(map[string]struct{}, len(ids))
-	result := make([]string, 0, len(ids))
-	for _, id := range ids {
-		id = strings.TrimSpace(id)
-		if id == "" {
-			continue
-		}
-		if _, exists := seen[id]; exists {
-			continue
-		}
-		seen[id] = struct{}{}
-		result = append(result, id)
-	}
-	slices.Sort(result)
-	return result
 }
 
 func (application *Application) ExecuteOperation(ctx context.Context, operationID string) error {
@@ -642,8 +572,7 @@ func (application *Application) adoptRuntimeOperation(ctx context.Context, opera
 }
 
 // ReconcileInstalledRuntimes rebuilds one global runtime projection for every
-// installed connector. Agent grants control discovery and invocation, never
-// process ownership or runtime identity.
+// installed connector.
 func (application *Application) ReconcileInstalledRuntimes(ctx context.Context) error {
 	if application == nil {
 		return NewDomainError(ErrorCodeUnavailable, "connector application is unavailable", false, nil)
@@ -681,7 +610,7 @@ func (application *Application) ReconcileInstalledRuntimes(ctx context.Context) 
 }
 
 // FenceInstalledRuntimes removes runtime projections without deleting install
-// facts or Agent grants.
+// facts.
 func (application *Application) FenceInstalledRuntimes(ctx context.Context) error {
 	if application == nil {
 		return NewDomainError(ErrorCodeUnavailable, "connector application is unavailable", false, nil)
@@ -731,9 +660,6 @@ func (application *Application) acceptConnectorOperation(
 			if err := verifyIdempotentOperation(*existing, kind, mutation.ConnectorKey); err != nil {
 				return err
 			}
-			if kind == OperationKindInstall && !slices.Equal(existing.PrincipalIDs, mutation.PrincipalIDs) {
-				return invalidRequest("clientRequestId was already used with different Agent grants")
-			}
 			connector, err := tx.Connector(mutation.ConnectorKey)
 			if err != nil {
 				return err
@@ -770,7 +696,6 @@ func (application *Application) acceptConnectorOperation(
 			State:           OperationStateAccepted,
 			Stage:           OperationStageAccepted,
 			Target:          operationTarget(kind, connector),
-			PrincipalIDs:    append([]string(nil), mutation.PrincipalIDs...),
 			CreatedAt:       now,
 			UpdatedAt:       now,
 		}

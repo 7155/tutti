@@ -56,7 +56,6 @@ test("desktop connector market backend preserves mutation idempotency fields", a
   const backend = createDesktopConnectorMarketBackend(client);
   await backend.installConnector({
     connectorKey: "notion",
-    principalIds: ["principal-1"],
     clientRequestId: "request-1",
     expectedRevision: 8
   });
@@ -65,7 +64,6 @@ test("desktop connector market backend preserves mutation idempotency fields", a
     {
       connectorKey: "notion",
       request: {
-        principalIds: ["principal-1"],
         clientRequestId: "request-1",
         expectedRevision: 8
       }

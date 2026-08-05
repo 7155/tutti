@@ -4,33 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	agentprincipalbiz "github.com/tutti-os/tutti/services/tuttid/biz/agentprincipal"
 	cliservice "github.com/tutti-os/tutti/services/tuttid/service/cli"
 )
-
-type brokerAccessStub struct {
-	granted bool
-}
-
-type sessionCapabilityResolverStub struct{}
-
-func (sessionCapabilityResolverStub) ResolveSessionCapability(context.Context, string) (agentprincipalbiz.SessionIdentity, error) {
-	return agentprincipalbiz.SessionIdentity{WorkspaceID: "workspace-1", AgentSessionID: "session-1",
-		Principal: agentprincipalbiz.Principal{ID: "principal-1"}}, nil
-}
-
-func (stub brokerAccessStub) GrantedConnectorKeys(context.Context, string) ([]string, uint64, error) {
-	if !stub.granted {
-		return []string{}, 2, nil
-	}
-	return []string{"demo"}, 2, nil
-}
-
-func (stub brokerAccessStub) PrincipalHasConnectorGrant(context.Context, string, string) (bool, error) {
-	return stub.granted, nil
-}
 
 func TestConnectorBrokerDiscoversSkillsAndInvokesInternalCapability(t *testing.T) {
 	root := t.TempDir()
@@ -54,7 +32,7 @@ func TestConnectorBrokerDiscoversSkillsAndInvokesInternalCapability(t *testing.T
 				return jsonValue(map[string]any{"ok": true}), nil
 			},
 		}}}
-	broker, err := NewConnectorBroker(commands, sessionCapabilityResolverStub{}, brokerAccessStub{granted: true})
+	broker, err := NewConnectorBroker(commands)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +40,7 @@ func TestConnectorBrokerDiscoversSkillsAndInvokesInternalCapability(t *testing.T
 	if len(capabilities) != 4 || capabilities[0].ID != connectorAvailableCommandID || capabilities[3].ID != connectorInvokeCommandID {
 		t.Fatalf("broker capabilities = %#v", capabilities)
 	}
-	contextValue := cliservice.InvokeContext{ConnectorSessionCapability: "capability"}
+	contextValue := cliservice.InvokeContext{}
 	available, err := broker.Invoke(context.Background(), cliservice.InvokeRequest{CommandID: connectorAvailableCommandID, Context: contextValue})
 	if err != nil || len(available.Value["connectors"].([]any)) != 1 {
 		t.Fatalf("available = %#v err = %v", available, err)
@@ -91,14 +69,14 @@ func TestConnectorBrokerDiscoversSkillsAndInvokesInternalCapability(t *testing.T
 	}
 }
 
-func TestConnectorBrokerDeniesConnectorWithoutGrant(t *testing.T) {
-	broker, err := NewConnectorBroker(NewConnectorCommandRegistry(), sessionCapabilityResolverStub{}, brokerAccessStub{})
+func TestConnectorBrokerRejectsInactiveConnector(t *testing.T) {
+	broker, err := NewConnectorBroker(NewConnectorCommandRegistry())
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = broker.Invoke(context.Background(), cliservice.InvokeRequest{CommandID: connectorSkillsCommandID,
-		Input: map[string]any{"connector": "demo"}, Context: cliservice.InvokeContext{ConnectorSessionCapability: "capability"}})
-	if err == nil || cliservice.InvokeErrorReason(err) != "connector_access_denied" {
-		t.Fatalf("denied error = %v", err)
+		Input: map[string]any{"connector": "demo"}, Context: cliservice.InvokeContext{}})
+	if err == nil || !strings.Contains(err.Error(), "runtime is not active") {
+		t.Fatalf("inactive connector error = %v", err)
 	}
 }

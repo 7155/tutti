@@ -444,19 +444,6 @@ func (s *Service) prepareRuntimeWithModelEndpoint(
 		return preparedRuntime{Cwd: cwd}, nil
 	}
 	provider := strings.TrimSpace(input.Provider)
-	sessionCapability := ""
-	if s.ConnectorSessionCapabilityIssuer != nil {
-		issued, issueErr := s.ConnectorSessionCapabilityIssuer.IssueSessionCapability(
-			ctx,
-			strings.TrimSpace(workspaceID),
-			strings.TrimSpace(input.AgentSessionID),
-			strings.TrimSpace(input.AgentTargetID),
-		)
-		if issueErr != nil {
-			return preparedRuntime{}, fmt.Errorf("issue Connector Session capability: %w", issueErr)
-		}
-		sessionCapability = issued
-	}
 	effectiveEndpoint := planEndpoint
 	gatewayRegistered := false
 	if agentprovider.ModelPlanUsesResponsesToChatGateway(provider) && modelEndpointUsesOpenAIProtocol(planEndpoint) {
@@ -493,33 +480,32 @@ func (s *Service) prepareRuntimeWithModelEndpoint(
 		gatewayRegistered = true
 	}
 	prepared, err := s.RuntimePreparer.Prepare(ctx, runtimeprep.PrepareInput{
-		WorkspaceID:                workspaceID,
-		AgentSessionID:             strings.TrimSpace(input.AgentSessionID),
-		AgentTargetID:              strings.TrimSpace(input.AgentTargetID),
-		ConnectorSessionCapability: sessionCapability,
-		Provider:                   provider,
-		Cwd:                        cwd,
-		ModelEndpoint:              effectiveEndpoint,
-		Title:                      value(input.Title),
-		PermissionModeID:           value(input.PermissionModeID),
-		PlanMode:                   clampComposerPlanModeForLaunch(provider, input.ProviderTargetRef, valueBool(input.PlanMode)),
-		BrowserUse:                 s.clampComposerBrowserUseForLaunch(ctx, provider, input.ProviderTargetRef, input.BrowserUse),
-		ComputerUse:                s.clampComposerComputerUseForLaunch(ctx, provider, input.ProviderTargetRef, input.ComputerUse),
-		CodexSaverMode:             valueBool(input.CodexSaverMode),
-		ProviderTargetRef:          clonePayload(input.ProviderTargetRef),
-		ExtensionSkillRoots:        s.resolveExtensionSkillRoots(ctx, input.ProviderTargetRef),
-		ExtensionRuntimePrep:       s.resolveExtensionRuntimePrep(ctx, input.ProviderTargetRef),
-		Model:                      clampComposerModelForLaunch(provider, input.ProviderTargetRef, value(input.Model)),
-		ReasoningEffort:            normalizeReasoningEffortForLaunch(provider, input.ProviderTargetRef, value(input.ReasoningEffort)),
-		ConversationDetailMode:     input.ConversationDetailMode,
-		AgentName:                  input.AgentName,
-		AgentDescription:           input.AgentDescription,
-		AgentInstructions:          input.AgentInstructions,
-		AgentCapabilitiesExplicit:  input.AgentCapabilitiesExplicit,
-		AgentSkills:                append([]string(nil), input.AgentSkills...),
-		AgentTools:                 append([]string(nil), input.AgentTools...),
-		ExtraSkills:                sessionSkillBundlesToProviderSkillBundles(input.ExtraSkills),
-		Metadata:                   input.Metadata,
+		WorkspaceID:               workspaceID,
+		AgentSessionID:            strings.TrimSpace(input.AgentSessionID),
+		AgentTargetID:             strings.TrimSpace(input.AgentTargetID),
+		Provider:                  provider,
+		Cwd:                       cwd,
+		ModelEndpoint:             effectiveEndpoint,
+		Title:                     value(input.Title),
+		PermissionModeID:          value(input.PermissionModeID),
+		PlanMode:                  clampComposerPlanModeForLaunch(provider, input.ProviderTargetRef, valueBool(input.PlanMode)),
+		BrowserUse:                s.clampComposerBrowserUseForLaunch(ctx, provider, input.ProviderTargetRef, input.BrowserUse),
+		ComputerUse:               s.clampComposerComputerUseForLaunch(ctx, provider, input.ProviderTargetRef, input.ComputerUse),
+		CodexSaverMode:            valueBool(input.CodexSaverMode),
+		ProviderTargetRef:         clonePayload(input.ProviderTargetRef),
+		ExtensionSkillRoots:       s.resolveExtensionSkillRoots(ctx, input.ProviderTargetRef),
+		ExtensionRuntimePrep:      s.resolveExtensionRuntimePrep(ctx, input.ProviderTargetRef),
+		Model:                     clampComposerModelForLaunch(provider, input.ProviderTargetRef, value(input.Model)),
+		ReasoningEffort:           normalizeReasoningEffortForLaunch(provider, input.ProviderTargetRef, value(input.ReasoningEffort)),
+		ConversationDetailMode:    input.ConversationDetailMode,
+		AgentName:                 input.AgentName,
+		AgentDescription:          input.AgentDescription,
+		AgentInstructions:         input.AgentInstructions,
+		AgentCapabilitiesExplicit: input.AgentCapabilitiesExplicit,
+		AgentSkills:               append([]string(nil), input.AgentSkills...),
+		AgentTools:                append([]string(nil), input.AgentTools...),
+		ExtraSkills:               sessionSkillBundlesToProviderSkillBundles(input.ExtraSkills),
+		Metadata:                  input.Metadata,
 		CommandCapabilityProjection: cloneCommandCapabilityProjection(
 			input.CommandCapabilityProjection,
 		),

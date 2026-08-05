@@ -11,7 +11,7 @@ Connector market uses two independent APIs:
 - the remote Connector Market API publishes connector releases, manifests,
   and immutable artifact metadata
 - the local daemon API exposes the accepted catalog, installation,
-  authorization, compatibility, global Agent grants, and durable operation state
+  authorization, compatibility, and durable operation state
   owned by one desktop host
 
 The remote market service owns its versioned API schema and generated client.
@@ -26,8 +26,8 @@ for every state rendered by the desktop application.
 
 The public package owns:
 
-- connector, catalog, installation, authorization, compatibility, global Agent
-  grant, durable operation, revision, and error contracts
+- connector, catalog, installation, authorization, compatibility, durable
+  operation, revision, and error contracts
 - Go state transitions, manifest validation, host ports, application
   orchestration, and recovery rules
 - a default remote-catalog domain adapter built over the authoritative market
@@ -96,9 +96,9 @@ the daemon owns the concrete process runtime. In Tutti, `managed_stdio`
 connectors resolve an exact Node/Python runtime profile. MCP servers are
 long-lived daemon children, while CLI commands are one-shot children. Both use
 the same generation fence, process registry, artifact snapshot, sandbox, and
-connection-scoped state path. Agent grants do not create runtime instances and
-are checked only by the daemon connector broker. TSH may reuse the public contracts while providing a
-different concrete daemon adapter.
+connection-scoped state path. An installed runtime is daemon-global and is
+available to every Agent and the local Tutti CLI. TSH may reuse the public
+contracts while providing a different concrete daemon adapter.
 
 ## Durable Operations And Recovery
 
@@ -106,10 +106,8 @@ Remote refresh, install, update, uninstall, and recoverable authorization work
 use at-least-once execution. Exactly-once execution is not assumed across
 SQLite, the filesystem, runtime activation, and process restarts.
 
-An installation request carries an immutable operation identity, release
-identity, and initial `principalIds`. The selected grant set is frozen at
-acceptance and committed in the same SQLite transaction as successful install
-completion. Each stage is idempotent for at least:
+An installation request carries an immutable operation identity and release
+identity. Each stage is idempotent for at least:
 
 ```text
 operationId + connectorKey + version + releaseDigest
@@ -184,11 +182,10 @@ synchronizing -> materializing -> ready`; failure is terminal and disposes
   business-state reconciliation
 
 Connector details are represented by one modal state machine, never by a fixed
-right-hand pane. An uninstalled connector opens an installation dialog with an
-Agent selector. An unconnected installed connector opens the authorization
-dialog; an authorized connector opens the management dialog with a reconfigurable
-Agent grant set. Blocked releases
-open the blocked-state dialog. Only one dialog host is mounted at a time, so
+right-hand pane. An uninstalled connector opens an installation confirmation.
+An unconnected installed connector opens the authorization dialog; an
+authorized connector opens the management dialog. Blocked releases open the
+blocked-state dialog. Only one dialog host is mounted at a time, so
 the catalog keeps the full settings content width and never leaves an empty
 right column.
 
@@ -223,8 +220,8 @@ fragment, and the complete reusable renderer module: Root, Runtime, lifecycle,
 per-service StartupJobs, UiState, render-ready View, i18n, catalog, and modal
 state branches.
 
-Tutti now composes that fragment, persists catalog/operations/leases/Agent grants
-and a transactional outbox in SQLite, reads the typed remote catalog, exposes
+Tutti now composes that fragment, persists catalog/operations/leases and a
+transactional outbox in SQLite, reads the typed remote catalog, exposes
 generated local handlers and clients, publishes invalidation events, and
 registers the shared renderer module through injected daemon-client and event
 adapters, activates it as part of workspace startup, and renders its shared
@@ -240,20 +237,12 @@ boot epoch. Startup requires one successful catalog refresh before restoring
 routes; later refresh failures preserve installed last-known-good capabilities
 while the daemon retries.
 
-Every Agent runtime receives a daemon-local, stateless Session capability bound
-to its Session id, exact Agent target, and durable global Agent principal. The
-capability is HMAC-authenticated with an ephemeral daemon secret, scoped only to
-the Connector broker, and is not persisted. The public `connector available`,
-`connector skills`, `connector skill read`, and `connector invoke` commands
-validate the capability against the current live Host Session and current
-Principal before enforcing the connector-to-Agent grant and routing to the
-global runtime. Closing or deleting the Session, deleting or retargeting the
-Agent, or restarting the daemon therefore invalidates the old capability
-without a token lease or revocation table. It is never an account, artifact,
-download, or Connector credential. Discovery returns connector summary first,
-Skill frontmatter metadata second, and full `SKILL.md` content only on explicit
-read. Connector invocations use a bounded, serialized admission gate by
-default.
+The public `connector available`, `connector skills`, `connector skill read`,
+and `connector invoke` commands expose installed connectors through the local
+daemon CLI channel to every Agent and the local Tutti CLI. Discovery returns
+connector summary first, Skill frontmatter metadata second, and full `SKILL.md`
+content only on explicit read. Connector invocations use a bounded, serialized
+admission gate by default.
 
 The first production compatibility boundary is deliberately narrow:
 `managed_stdio`, authorization kind `none`, and platforms with the production

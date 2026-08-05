@@ -9,20 +9,6 @@ import (
 	cliservice "github.com/tutti-os/tutti/services/tuttid/service/cli"
 )
 
-func TestServiceCliContextPreservesConnectorSessionCapability(t *testing.T) {
-	workspaceID := "workspace-1"
-	agentSessionID := "session-1"
-	sessionCapability := "capability-1"
-	contextValue := serviceCliContext(&tuttigenerated.CliInvokeContext{
-		Source: "cli", WorkspaceID: &workspaceID, AgentSessionId: &agentSessionID,
-		ConnectorSessionCapability: &sessionCapability,
-	})
-	if contextValue.WorkspaceID != workspaceID || contextValue.AgentSessionID != agentSessionID ||
-		contextValue.ConnectorSessionCapability != sessionCapability {
-		t.Fatalf("service CLI context = %#v", contextValue)
-	}
-}
-
 func TestListCliCapabilitiesAppliesProviderFiltersByDefault(t *testing.T) {
 	api := DaemonAPI{CLIRegistry: newTestFilteredCLIRegistry(t)}
 

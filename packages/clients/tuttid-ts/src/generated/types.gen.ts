@@ -225,7 +225,7 @@ export type CliCapabilitiesResponse = {
 };
 
 /**
- * Client invocation context. Routing fields are hints; connectorSessionCapability is a stateless daemon-local credential used only by protected Connector broker commands.
+ * Client-supplied invocation context. These fields are hints for routing and audit only; authorization and workspace validation remain daemon-owned.
  */
 export type CliInvokeContext = {
   /**
@@ -242,10 +242,6 @@ export type CliInvokeContext = {
    * Caller agent session id hint. This is not an authorization boundary.
    */
   agentSessionId?: string | null;
-  /**
-   * Stateless credential bound to the exact live Agent Session and global Agent Principal. It is validated against current Session state and never treated as Connector, account, artifact, or download credentials.
-   */
-  connectorSessionCapability?: string | null;
 };
 
 export type CliInvokeRequest = {
@@ -4654,10 +4650,6 @@ export type ConnectorMarketOperation = {
   state: ConnectorMarketOperationState;
   stage?: ConnectorMarketOperationStage;
   target?: ConnectorMarketOperationTarget;
-  /**
-   * Agent grants frozen when an installation operation is accepted.
-   */
-  principalIds?: Array<string>;
   attempt: number;
   failureCode?: string;
   createdAt: string;
@@ -4675,39 +4667,6 @@ export type ConnectorMarketOperationTarget = {
 export type ConnectorMarketMutationRequest = {
   clientRequestId: string;
   expectedRevision: number;
-};
-
-export type ConnectorMarketInstallRequest = {
-  clientRequestId: string;
-  expectedRevision: number;
-  /**
-   * Complete initial Agent grant set committed with successful installation.
-   */
-  principalIds: Array<string>;
-};
-
-export type PutConnectorMarketAgentGrantsRequest = {
-  clientRequestId: string;
-  expectedRevision: number;
-  principalIds: Array<string>;
-};
-
-export type ConnectorMarketAgentPrincipal = {
-  principalId: string;
-  kind: "workspace_agent" | "system_target";
-  name: string;
-  description?: string;
-  harnessAgentTargetId?: string;
-};
-
-export type ConnectorMarketAgentsResponse = {
-  agents: Array<ConnectorMarketAgentPrincipal>;
-};
-
-export type ConnectorMarketAgentGrantSet = {
-  connectorKey: string;
-  principalIds: Array<string>;
-  revision: number;
 };
 
 export type ConnectorMarketMutationResponse = {
@@ -16308,7 +16267,7 @@ export type RefreshConnectorMarketResponse =
   RefreshConnectorMarketResponses[keyof RefreshConnectorMarketResponses];
 
 export type InstallConnectorMarketConnectorData = {
-  body: ConnectorMarketInstallRequest;
+  body: ConnectorMarketMutationRequest;
   path: {
     connectorKey: string;
   };
@@ -16490,115 +16449,6 @@ export type DisconnectConnectorMarketAuthorizationResponses = {
 
 export type DisconnectConnectorMarketAuthorizationResponse =
   DisconnectConnectorMarketAuthorizationResponses[keyof DisconnectConnectorMarketAuthorizationResponses];
-
-export type ListConnectorMarketAgentsData = {
-  body?: never;
-  path?: never;
-  query?: never;
-  url: "/v1/connector-market/agents";
-};
-
-export type ListConnectorMarketAgentsErrors = {
-  /**
-   * Daemon authorization is required
-   */
-  401: ConnectorMarketError;
-  /**
-   * Connector-market capability is temporarily unavailable
-   */
-  503: ConnectorMarketError;
-};
-
-export type ListConnectorMarketAgentsError =
-  ListConnectorMarketAgentsErrors[keyof ListConnectorMarketAgentsErrors];
-
-export type ListConnectorMarketAgentsResponses = {
-  /**
-   * Redaction-safe Agent directory
-   */
-  200: ConnectorMarketAgentsResponse;
-};
-
-export type ListConnectorMarketAgentsResponse =
-  ListConnectorMarketAgentsResponses[keyof ListConnectorMarketAgentsResponses];
-
-export type GetConnectorMarketAgentGrantsData = {
-  body?: never;
-  path: {
-    connectorKey: string;
-  };
-  query?: never;
-  url: "/v1/connector-market/connectors/{connectorKey}/agent-grants";
-};
-
-export type GetConnectorMarketAgentGrantsErrors = {
-  /**
-   * Connector or operation was not found
-   */
-  404: ConnectorMarketError;
-  /**
-   * Connector-market capability is temporarily unavailable
-   */
-  503: ConnectorMarketError;
-};
-
-export type GetConnectorMarketAgentGrantsError =
-  GetConnectorMarketAgentGrantsErrors[keyof GetConnectorMarketAgentGrantsErrors];
-
-export type GetConnectorMarketAgentGrantsResponses = {
-  /**
-   * Connector Agent grants
-   */
-  200: ConnectorMarketAgentGrantSet;
-};
-
-export type GetConnectorMarketAgentGrantsResponse =
-  GetConnectorMarketAgentGrantsResponses[keyof GetConnectorMarketAgentGrantsResponses];
-
-export type PutConnectorMarketAgentGrantsData = {
-  body: PutConnectorMarketAgentGrantsRequest;
-  path: {
-    connectorKey: string;
-  };
-  query?: never;
-  url: "/v1/connector-market/connectors/{connectorKey}/agent-grants";
-};
-
-export type PutConnectorMarketAgentGrantsErrors = {
-  /**
-   * Invalid connector-market request
-   */
-  400: ConnectorMarketError;
-  /**
-   * Daemon authorization is required
-   */
-  401: ConnectorMarketError;
-  /**
-   * Connector or operation was not found
-   */
-  404: ConnectorMarketError;
-  /**
-   * Revision conflict or operation already in progress
-   */
-  409: ConnectorMarketError;
-  /**
-   * Connector-market capability is temporarily unavailable
-   */
-  503: ConnectorMarketError;
-};
-
-export type PutConnectorMarketAgentGrantsError =
-  PutConnectorMarketAgentGrantsErrors[keyof PutConnectorMarketAgentGrantsErrors];
-
-export type PutConnectorMarketAgentGrantsResponses = {
-  /**
-   * Updated connector Agent grants
-   */
-  200: ConnectorMarketAgentGrantSet;
-};
-
-export type PutConnectorMarketAgentGrantsResponse =
-  PutConnectorMarketAgentGrantsResponses[keyof PutConnectorMarketAgentGrantsResponses];
 
 export type GetConnectorMarketOperationData = {
   body?: never;

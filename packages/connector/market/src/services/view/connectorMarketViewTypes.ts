@@ -45,12 +45,6 @@ export interface ConnectorPermissionView {
   name: string;
 }
 
-export interface ConnectorAgentOptionView {
-  principalId: string;
-  name: string;
-  description: string;
-}
-
 export interface ConnectorDetailFieldView {
   id:
     | "authorization"
@@ -76,16 +70,13 @@ export interface ConnectorAuthorizationDialogView extends ConnectorDialogBaseVie
 }
 
 export interface ConnectorInstallationDialogView extends ConnectorDialogBaseView {
-  agents: ConnectorAgentOptionView[];
   kind: "installation";
 }
 
 export interface ConnectorManagementDialogView extends ConnectorDialogBaseView {
   canAuthorize: boolean;
   details: ConnectorDetailFieldView[];
-  agents: ConnectorAgentOptionView[];
   kind: "management";
-  selectedPrincipalIds: string[];
 }
 
 export interface ConnectorBlockedDialogView extends ConnectorDialogBaseView {

@@ -206,12 +206,11 @@ func includeIntegrationCapabilitiesFromEnv() bool {
 
 func cliInvokeContextFromEnv() daemon.InvokeContext {
 	return daemon.InvokeContext{
-		AppID:                      strings.TrimSpace(os.Getenv("TUTTI_APP_ID")),
-		Source:                     "cli",
-		WorkspaceID:                strings.TrimSpace(os.Getenv("TUTTI_WORKSPACE_ID")),
-		ParentCommandID:            strings.TrimSpace(os.Getenv("TUTTI_APP_CLI_PARENT_COMMAND_ID")),
-		AgentSessionID:             strings.TrimSpace(os.Getenv("TUTTI_AGENT_SESSION_ID")),
-		ConnectorSessionCapability: strings.TrimSpace(os.Getenv("TUTTI_CONNECTOR_SESSION_CAPABILITY")),
+		AppID:           strings.TrimSpace(os.Getenv("TUTTI_APP_ID")),
+		Source:          "cli",
+		WorkspaceID:     strings.TrimSpace(os.Getenv("TUTTI_WORKSPACE_ID")),
+		ParentCommandID: strings.TrimSpace(os.Getenv("TUTTI_APP_CLI_PARENT_COMMAND_ID")),
+		AgentSessionID:  strings.TrimSpace(os.Getenv("TUTTI_AGENT_SESSION_ID")),
 	}
 }
 

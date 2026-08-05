@@ -122,7 +122,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ConnectorMarketInstallRequest"
+              $ref: "#/components/schemas/ConnectorMarketMutationRequest"
       responses:
         "202":
           description: Installation operation accepted
@@ -222,67 +222,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConnectorMarketMutationResponse"
-        "400":
-          $ref: "#/components/responses/ConnectorMarketInvalidRequestError"
-        "401":
-          $ref: "#/components/responses/ConnectorMarketUnauthorizedError"
-        "404":
-          $ref: "#/components/responses/ConnectorMarketNotFoundError"
-        "409":
-          $ref: "#/components/responses/ConnectorMarketConflictError"
-        "503":
-          $ref: "#/components/responses/ConnectorMarketUnavailableError"
-  /v1/connector-market/agents:
-    get:
-      operationId: listConnectorMarketAgents
-      tags: [connector-market]
-      summary: List globally addressable Agent principals
-      responses:
-        "200":
-          description: Redaction-safe Agent directory
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ConnectorMarketAgentsResponse"
-        "401":
-          $ref: "#/components/responses/ConnectorMarketUnauthorizedError"
-        "503":
-          $ref: "#/components/responses/ConnectorMarketUnavailableError"
-  /v1/connector-market/connectors/{connectorKey}/agent-grants:
-    parameters:
-      - $ref: "#/components/parameters/ConnectorMarketConnectorKey"
-    get:
-      operationId: getConnectorMarketAgentGrants
-      tags: [connector-market]
-      summary: Get the Agents authorized to use one connector
-      responses:
-        "200":
-          description: Connector Agent grants
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ConnectorMarketAgentGrantSet"
-        "404":
-          $ref: "#/components/responses/ConnectorMarketNotFoundError"
-        "503":
-          $ref: "#/components/responses/ConnectorMarketUnavailableError"
-    put:
-      operationId: putConnectorMarketAgentGrants
-      tags: [connector-market]
-      summary: Atomically replace the Agents authorized to use one connector
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PutConnectorMarketAgentGrantsRequest"
-      responses:
-        "200":
-          description: Updated connector Agent grants
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ConnectorMarketAgentGrantSet"
         "400":
           $ref: "#/components/responses/ConnectorMarketInvalidRequestError"
         "401":
@@ -665,13 +604,6 @@ components:
           $ref: "#/components/schemas/ConnectorMarketOperationStage"
         target:
           $ref: "#/components/schemas/ConnectorMarketOperationTarget"
-        principalIds:
-          type: array
-          description: Agent grants frozen when an installation operation is accepted.
-          uniqueItems: true
-          items:
-            type: string
-            minLength: 1
         attempt:
           type: integer
           format: int32
@@ -710,88 +642,6 @@ components:
           type: string
           minLength: 1
         expectedRevision:
-          type: integer
-          format: int64
-          minimum: 0
-    ConnectorMarketInstallRequest:
-      type: object
-      additionalProperties: false
-      required: [clientRequestId, expectedRevision, principalIds]
-      properties:
-        clientRequestId:
-          type: string
-          minLength: 1
-        expectedRevision:
-          type: integer
-          format: int64
-          minimum: 0
-        principalIds:
-          type: array
-          description: Complete initial Agent grant set committed with successful installation.
-          uniqueItems: true
-          items:
-            type: string
-            minLength: 1
-    PutConnectorMarketAgentGrantsRequest:
-      type: object
-      additionalProperties: false
-      required: [clientRequestId, expectedRevision, principalIds]
-      properties:
-        clientRequestId:
-          type: string
-          minLength: 1
-        expectedRevision:
-          type: integer
-          format: int64
-          minimum: 0
-        principalIds:
-          type: array
-          uniqueItems: true
-          items:
-            type: string
-            minLength: 1
-    ConnectorMarketAgentPrincipal:
-      type: object
-      additionalProperties: false
-      required: [principalId, kind, name]
-      properties:
-        principalId:
-          type: string
-          minLength: 1
-        kind:
-          type: string
-          enum: [workspace_agent, system_target]
-        name:
-          type: string
-          minLength: 1
-        description:
-          type: string
-        harnessAgentTargetId:
-          type: string
-    ConnectorMarketAgentsResponse:
-      type: object
-      additionalProperties: false
-      required: [agents]
-      properties:
-        agents:
-          type: array
-          items:
-            $ref: "#/components/schemas/ConnectorMarketAgentPrincipal"
-    ConnectorMarketAgentGrantSet:
-      type: object
-      additionalProperties: false
-      required: [connectorKey, principalIds, revision]
-      properties:
-        connectorKey:
-          type: string
-          minLength: 1
-        principalIds:
-          type: array
-          uniqueItems: true
-          items:
-            type: string
-            minLength: 1
-        revision:
           type: integer
           format: int64
           minimum: 0

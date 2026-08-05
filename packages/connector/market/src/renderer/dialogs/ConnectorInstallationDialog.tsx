@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   Button,
   DialogContent,
@@ -9,29 +8,21 @@ import {
 } from "@tutti-os/ui-system/components";
 
 import type { ConnectorMarketI18nRuntime } from "../../i18n/connectorMarketI18n.ts";
-import type { ConnectorAgentOptionView } from "../../services/view/connectorMarketViewTypes.ts";
 import { ConnectorIcon } from "../catalog/ConnectorIcon.tsx";
-import { ConnectorAgentGrantEditor } from "./ConnectorAgentGrantEditor.tsx";
-import { ConnectorDialogSection } from "./ConnectorDialogSection.tsx";
 
 export function ConnectorInstallationDialog({
-  agents,
   connectorKey,
   displayName,
   i18n,
   onClose,
   onInstall
 }: {
-  agents: ReadonlyArray<Readonly<ConnectorAgentOptionView>>;
   connectorKey: string;
   displayName: string;
   i18n: ConnectorMarketI18nRuntime;
   onClose: () => void;
-  onInstall: (principalIds: string[]) => void;
+  onInstall: () => void;
 }) {
-  const [selectedPrincipalIds, setSelectedPrincipalIds] = useState<string[]>(
-    []
-  );
   return (
     <DialogContent className="max-h-[min(720px,calc(100vh-32px))] overflow-y-auto sm:max-w-[520px]">
       <DialogHeader>
@@ -51,14 +42,6 @@ export function ConnectorInstallationDialog({
           </div>
         </div>
       </DialogHeader>
-      <ConnectorDialogSection title={i18n.t("agentAccessTitle")}>
-        <ConnectorAgentGrantEditor
-          agents={agents}
-          emptyLabel={i18n.t("agentAccessEmpty")}
-          selectedPrincipalIds={selectedPrincipalIds}
-          onChange={setSelectedPrincipalIds}
-        />
-      </ConnectorDialogSection>
       <DialogFooter>
         <Button
           size="dialog"
@@ -68,11 +51,7 @@ export function ConnectorInstallationDialog({
         >
           {i18n.t("cancel")}
         </Button>
-        <Button
-          size="dialog"
-          type="button"
-          onClick={() => onInstall(selectedPrincipalIds)}
-        >
+        <Button size="dialog" type="button" onClick={onInstall}>
           {i18n.t("actionInstall")}
         </Button>
       </DialogFooter>

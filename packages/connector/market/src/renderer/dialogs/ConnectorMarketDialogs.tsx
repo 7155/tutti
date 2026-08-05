@@ -18,14 +18,13 @@ export function ConnectorMarketDialogs() {
     <Dialog open onOpenChange={(open) => !open && uiState.closeDialog()}>
       {dialog.kind === "installation" ? (
         <ConnectorInstallationDialog
-          agents={dialog.agents}
           connectorKey={dialog.connectorKey}
           displayName={dialog.displayName}
           i18n={i18n}
           onClose={() => uiState.closeDialog()}
-          onInstall={(principalIds) =>
+          onInstall={() =>
             void market
-              .install(dialog.connectorKey, principalIds)
+              .install(dialog.connectorKey)
               .then(() => uiState.closeDialog())
               .catch(() => undefined)
           }
@@ -46,14 +45,12 @@ export function ConnectorMarketDialogs() {
         />
       ) : dialog.kind === "management" ? (
         <ConnectorManagementDialog
-          agents={dialog.agents}
           canAuthorize={dialog.canAuthorize}
           connectorKey={dialog.connectorKey}
           details={dialog.details}
           displayName={dialog.displayName}
           i18n={i18n}
           permissions={dialog.permissions}
-          selectedPrincipalIds={dialog.selectedPrincipalIds}
           onAuthorize={() =>
             void market
               .beginAuthorization(dialog.connectorKey)
@@ -66,11 +63,6 @@ export function ConnectorMarketDialogs() {
               .then(() => uiState.closeDialog())
               .catch(() => undefined);
           }}
-          onAgentGrantsChange={(principalIds) =>
-            void market
-              .setAgentGrants(dialog.connectorKey, principalIds)
-              .catch(() => undefined)
-          }
         />
       ) : (
         <ConnectorBlockedDialog

@@ -15,12 +15,7 @@ func (application *Application) executeRefresh(ctx context.Context, operation Op
 	}
 	catalog, err := application.config.CatalogSource.Refresh(ctx)
 	if err != nil {
-		return NewDomainError(
-			ErrorCodeUpstreamUnavailable,
-			"connector catalog refresh failed",
-			true,
-			err,
-		)
+		return preserveCatalogSourceError("connector catalog refresh failed", err)
 	}
 	for _, release := range catalog.Releases {
 		if err := ValidateReleaseShape(release); err != nil {

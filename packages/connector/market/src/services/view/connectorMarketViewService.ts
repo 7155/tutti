@@ -17,9 +17,9 @@ export class ConnectorMarketViewService implements IConnectorMarketViewService {
   readonly dataStore = proxy<ConnectorMarketViewState>({
     availableCount: 0,
     cardsByKey: {},
+    catalogError: null,
     dialog: null,
     installedCount: 0,
-    lastErrorCode: null,
     refreshing: false,
     sections: [],
     status: "loading"
@@ -64,9 +64,9 @@ export class ConnectorMarketViewService implements IConnectorMarketViewService {
     );
     this.dataStore.availableCount = next.availableCount;
     this.dataStore.cardsByKey = next.cardsByKey;
+    this.dataStore.catalogError = next.catalogError;
     this.dataStore.dialog = next.dialog;
     this.dataStore.installedCount = next.installedCount;
-    this.dataStore.lastErrorCode = next.lastErrorCode;
     this.dataStore.refreshing = next.refreshing;
     this.dataStore.sections = next.sections;
     this.dataStore.status = next.status;

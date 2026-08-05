@@ -50,7 +50,7 @@ func TestCatalogSourceMapsPublishedConnectorItems(t *testing.T) {
       "display": {"name": "GitHub", "description": "GitHub connector", "iconUrl": "data:image/png;base64,iVBORw0KGgo="},
       "supportedMarkets": ["overseas"],
       "payload": {
-        "permissions": ["repository.read"],
+        "permissions": ["repository.read", "network:*"],
         "packageManifestSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "authorization": {"kind": "none"},
         "compatibility": {},
@@ -93,7 +93,7 @@ func TestCatalogSourceMapsPublishedConnectorItems(t *testing.T) {
 		t.Fatalf("snapshot = %#v", result)
 	}
 	got := result.Releases[0]
-	if got.ConnectorKey != "github" || got.ReleaseID != "github@1.0.0" || got.Manifest.SchemaVersion != "1" || got.ManifestDigest != "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" || got.Artifact.SizeBytes != 123 || got.Artifact.MediaType != "application/zip" || got.Manifest.Implementation.ManagedStdio == nil {
+	if got.ConnectorKey != "github" || got.ReleaseID != "github@1.0.0" || got.Manifest.SchemaVersion != "1" || got.ManifestDigest != "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" || got.Artifact.SizeBytes != 123 || got.Artifact.MediaType != "application/zip" || got.Manifest.Implementation.ManagedStdio == nil || len(got.Manifest.Permissions) != 2 || got.Manifest.Permissions[1] != "network:*" {
 		t.Fatalf("release = %#v", got)
 	}
 }

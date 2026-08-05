@@ -7,6 +7,11 @@ import type {
 
 export type ConnectorMarketViewStatus = "empty" | "error" | "loading" | "ready";
 
+export interface ConnectorCatalogErrorView {
+  kind: "invalid_data" | "unavailable" | "unknown";
+  retryable: boolean;
+}
+
 export type ConnectorCardAction =
   | "authorize"
   | "busy"
@@ -95,9 +100,9 @@ export type ConnectorDialogView =
 export interface ConnectorMarketViewState {
   availableCount: number;
   cardsByKey: Record<string, ConnectorCardView>;
+  catalogError: ConnectorCatalogErrorView | null;
   dialog: ConnectorDialogView | null;
   installedCount: number;
-  lastErrorCode: string | null;
   refreshing: boolean;
   sections: ConnectorSectionView[];
   status: ConnectorMarketViewStatus;

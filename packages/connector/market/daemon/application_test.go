@@ -489,6 +489,80 @@ func TestApplicationCatalogPageCachesNewConnectorForImmediateInstall(t *testing.
 	}
 }
 
+func TestApplicationCatalogPagePreservesManifestErrors(t *testing.T) {
+	repository := newMemoryRepository()
+	sourceError := invalidManifest("permission scope is invalid", nil)
+	application := newTestApplicationWithCatalogSource(
+		t,
+		repository,
+		&memoryScheduler{},
+		&memoryInstallRuntime{},
+		failingCatalogSource{pageError: sourceError},
+	)
+
+	_, err := application.ListCatalogPage(context.Background(), CatalogPageQuery{
+		SectionID: "development", PageSize: 20,
+	})
+	var domainError *DomainError
+	if !errors.As(err, &domainError) {
+		t.Fatalf("error = %v, want DomainError", err)
+	}
+	if domainError.Code != ErrorCodeInvalidManifest || domainError.Retryable {
+		t.Fatalf("domain error = %#v", domainError)
+	}
+}
+
+func TestApplicationCatalogPageClassifiesTransportErrorsAsRetryable(t *testing.T) {
+	repository := newMemoryRepository()
+	application := newTestApplicationWithCatalogSource(
+		t,
+		repository,
+		&memoryScheduler{},
+		&memoryInstallRuntime{},
+		failingCatalogSource{pageError: errors.New("request timeout")},
+	)
+
+	_, err := application.ListCatalogPage(context.Background(), CatalogPageQuery{
+		SectionID: "development", PageSize: 20,
+	})
+	var domainError *DomainError
+	if !errors.As(err, &domainError) {
+		t.Fatalf("error = %v, want DomainError", err)
+	}
+	if domainError.Code != ErrorCodeUpstreamUnavailable || !domainError.Retryable {
+		t.Fatalf("domain error = %#v", domainError)
+	}
+}
+
+func TestApplicationRefreshPreservesManifestFailureCode(t *testing.T) {
+	repository := newMemoryRepository()
+	application := newTestApplicationWithCatalogSource(
+		t,
+		repository,
+		&memoryScheduler{},
+		&memoryInstallRuntime{},
+		failingCatalogSource{refreshError: invalidManifest("permission scope is invalid", nil)},
+	)
+	accepted, err := application.RefreshCatalog(context.Background(), Mutation{
+		ClientRequestID: "refresh-invalid-manifest", ExpectedRevision: 0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = application.ExecuteOperation(context.Background(), accepted.Operation.OperationID)
+	var domainError *DomainError
+	if !errors.As(err, &domainError) || domainError.Code != ErrorCodeInvalidManifest {
+		t.Fatalf("error = %#v, want invalid manifest", err)
+	}
+	operation, err := application.GetOperation(context.Background(), accepted.Operation.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if operation.State != OperationStateFailed || operation.FailureCode != string(ErrorCodeInvalidManifest) {
+		t.Fatalf("operation = %#v", operation)
+	}
+}
+
 func newTestApplication(
 	t *testing.T,
 	repository *memoryRepository,
@@ -600,6 +674,24 @@ type catalogSourceStub struct {
 	categories []CatalogCategory
 	page       CatalogSourcePage
 	snapshot   CatalogSnapshot
+}
+
+type failingCatalogSource struct {
+	categoriesError error
+	pageError       error
+	refreshError    error
+}
+
+func (source failingCatalogSource) ListCategories(context.Context) ([]CatalogCategory, error) {
+	return nil, source.categoriesError
+}
+
+func (source failingCatalogSource) ListPage(context.Context, CatalogSourcePageQuery) (CatalogSourcePage, error) {
+	return CatalogSourcePage{}, source.pageError
+}
+
+func (source failingCatalogSource) Refresh(context.Context) (CatalogSnapshot, error) {
+	return CatalogSnapshot{}, source.refreshError
 }
 
 func (source catalogSourceStub) ListCategories(context.Context) ([]CatalogCategory, error) {

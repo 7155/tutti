@@ -52,3 +52,19 @@ func NewDomainError(code ErrorCode, message string, retryable bool, cause error)
 		Cause:     cause,
 	}
 }
+
+func preserveCatalogSourceError(message string, err error) error {
+	var domainError *DomainError
+	if errors.As(err, &domainError) {
+		return err
+	}
+	return NewDomainError(ErrorCodeUpstreamUnavailable, message, true, err)
+}
+
+func errorCodeOr(err error, fallback ErrorCode) ErrorCode {
+	var domainError *DomainError
+	if errors.As(err, &domainError) {
+		return domainError.Code
+	}
+	return fallback
+}

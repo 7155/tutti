@@ -38,6 +38,29 @@ func TestImplementationRegistryValidatesSupportedManifest(t *testing.T) {
 	}
 }
 
+func TestValidateUniquePermissionsAcceptsScopedPermissions(t *testing.T) {
+	permissions := []string{"repository.read", "network:*", "network:larksuite.com", "filesystem:workspace"}
+	if err := validateUniquePermissions(permissions); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateUniquePermissionsRejectsMalformedScopes(t *testing.T) {
+	for _, permission := range []string{"Network:*", "network:", "network:*.example.com", "network:example.com:443", "network:example/com"} {
+		t.Run(permission, func(t *testing.T) {
+			if err := validateUniquePermissions([]string{permission}); err == nil {
+				t.Fatalf("permission %q unexpectedly passed validation", permission)
+			}
+		})
+	}
+}
+
+func TestValidateUniquePermissionsRejectsDuplicates(t *testing.T) {
+	if err := validateUniquePermissions([]string{"network:*", "network:*"}); err == nil {
+		t.Fatal("duplicate permission unexpectedly passed validation")
+	}
+}
+
 func TestImplementationRegistryRejectsUnknownImplementation(t *testing.T) {
 	registry := NewImplementationRegistry(nil)
 	err := registry.Validate(Manifest{

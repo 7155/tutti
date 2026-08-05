@@ -40,6 +40,7 @@ export interface AgentToolBrowserPanelProps {
   loadingFallback?: ReactNode;
   navigationActions?: ReactNode;
   nodeIdPrefix?: string;
+  onCloseRequest?: () => void;
   onControllerReady?: (controller: AgentToolBrowserController | null) => void;
   profileId?: string | null;
   sessionMode?: BrowserNodeSessionMode;
@@ -64,6 +65,7 @@ export function AgentToolBrowserPanel({
   loadingFallback = null,
   navigationActions,
   nodeIdPrefix = "browser:agent-tool",
+  onCloseRequest,
   onControllerReady,
   profileId = null,
   sessionMode = "shared",
@@ -133,6 +135,7 @@ export function AgentToolBrowserPanel({
           hidden={hidden}
           navigationActions={navigationActions}
           nodeId={nodeId}
+          onCloseRequest={onCloseRequest}
           profileId={profileId}
           sessionMode={sessionMode}
           sessionPartition={sessionPartition}

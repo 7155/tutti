@@ -365,6 +365,7 @@ func (m *Manager) runtimeBinding(installation Installation, command []string, ve
 		LaunchPermission:             launchPermission,
 		SetModelReasoningEffortMeta:  composerProfile.SetModelReasoningEffortMeta(), Capabilities: capabilities,
 		ExecutableIdentity: executableIdentity,
+		Env:                resolveRuntimeLaunchEnv(installation.Manifest.Runtime.Launch.Env),
 	}, nil
 }
 

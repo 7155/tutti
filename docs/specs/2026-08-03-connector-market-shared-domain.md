@@ -14,8 +14,9 @@ independent durable state and runtime-specific adapters.
 ## Non-Goals
 
 - Renderers do not call the remote Connector Market API.
-- The shared package does not own product endpoints, credentials, state-root
-  selection, SQLite schema, OS integration, or runtime process policy.
+- Shared modules do not own product endpoints, credentials, state-root
+  selection, OS integration, or runtime process policy. The canonical SQLite
+  schema belongs to `packages/connector/store-sqlite`; hosts select its path.
 - Tutti does not infer missing release metadata from untyped raw JSON.
 - This phase does not add placeholder daemon handlers or UI backed by fixture
   success responses.
@@ -29,8 +30,8 @@ publishes a generated Go client. It exposes published market items with
 immutable artifact keys, digests, and sizes.
 
 This is the first production connector release contract. The existing
-unreleased connector publish and read shape is changed in place and remains
-`schemaVersion: "1"`; there is no connector release v2 or dual-read period.
+unreleased connector publish and read shape is replaced directly by the
+market-neutral connector `schemaVersion: "2"`; there is no dual-read period.
 
 A release descriptor must bind at least:
 
@@ -78,7 +79,7 @@ connector key.
 
 ## Package And Host Ownership
 
-The shared package owns:
+The shared Connector modules own:
 
 - domain contracts, validation, state transitions, errors, and compatibility
   semantics
@@ -88,16 +89,18 @@ The shared package owns:
 - bounded artifact download, digest and size verification, safe extraction,
   packaged-manifest verification, staging layout, atomic promotion mechanics,
   cleanup, rollback, and reconcile rules
-- ports for repository, implementation hosting, credentials, scheduling, outbox,
-  transport, and diagnostics
+- the canonical SQLite repository, leases, migrations, transactions, and
+  durable outbox implementation behind Host ports
+- ports for implementation hosting, credentials, scheduling, transport, and
+  diagnostics
 - the local daemon OpenAPI fragment and Valtio renderer service
 
 Each Host owns:
 
-- SQLite repository, migrations, transactions, operation leases, and attempts
+- the database path and lifecycle of the shared SQLite repository
 - remote base URL, authentication, HTTP client, proxy, TLS, logging, and tracing
 - state-root configuration
-- implementation hosting and observation, including sandbox, permission, process,
+- implementation hosting and observation, including permission, process,
   OS, and credential integration
 - secure credentials and authorization callbacks
 - durable outbox storage and integration with the existing event fanout
@@ -212,12 +215,12 @@ The coordinated transition is:
 - regenerate the market service and consumer clients in the same delivery
   sequence
 - update the shared package mapper and manifest contract to the same
-  `schemaVersion: "1"`
+  remote `schemaVersion: "2"`
 - update or republish development connector fixtures; disposable local records
   may be reset
 - reject any remaining untyped connector record instead of dual-reading it
 
-No connector v1-to-v2 migration, legacy catalog adapter, synthesized field, or
+No connector v1 read path, legacy catalog adapter, synthesized field, or
 production fallback is introduced. A failed or invalid remote refresh still
 preserves the last-known-good accepted daemon catalog; network failure never
 becomes an empty catalog.
@@ -251,7 +254,7 @@ through events or the operation endpoint until terminal state.
 1. Harden the shared operation, artifact, authorization, and event contracts;
    add conformance scenarios for crash windows and idempotent replay.
 2. Replace the current unreleased connector publish/read shape with the
-   authoritative initial `schemaVersion: "1"` release schema and regenerate its
+   authoritative `schemaVersion: "2"` release schema and regenerate its
    clients.
 3. Add the package default catalog adapter, artifact preparation engine, and
    reconcile rules.
@@ -318,7 +321,7 @@ Tutti now advertises the production `managed_stdio` implementation when its
 platform/runtime constraints match. It reads the TSH market item API, downloads
 the artifact directly from configured storage, verifies and prepares an
 immutable artifact snapshot, and hosts MCP as a daemon-owned long-lived child
-or CLI as a sandboxed one-shot Node/Python child. Routes and every child process
+or CLI as a bounded one-shot Node/Python child. Routes and every child process
 are global, identified by connector plus connection ID, and fenced by boot
 epoch. Every Agent and the local Tutti CLI can discover and invoke installed
 routes through the daemon CLI channel. Startup waits for a catalog refresh,

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	market "github.com/tutti-os/tutti/packages/connector/market/daemon"
+	market "github.com/tutti-os/tutti/packages/connector/host"
 	tuttigenerated "github.com/tutti-os/tutti/services/tuttid/api/generated"
 )
 

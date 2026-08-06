@@ -76,11 +76,18 @@ export interface ConnectorManagedCliInterface {
   commands: ConnectorManagedCliCommand[];
 }
 
+export interface ConnectorManagedCredentialBroker {
+  protocol: "tutti.connector.credentials.v1";
+  entrypoint: string;
+  timeoutMs: number;
+  allowedHosts: string[];
+}
+
 export interface ConnectorManagedStdioImplementation {
   runtime: ConnectorRuntimeRequirement;
   mcp?: ConnectorManagedMcpInterface;
   cli?: ConnectorManagedCliInterface;
-  credentialBrokerProtocol?: string;
+  credentialBroker?: ConnectorManagedCredentialBroker;
 }
 
 export interface ConnectorRemoteStreamableHttpImplementation {

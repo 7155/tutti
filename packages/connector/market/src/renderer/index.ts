@@ -1,9 +1,2 @@
-export {
-  ConnectorMarketPanel,
-  type ConnectorMarketPanelProps
-} from "./ConnectorMarketPanel.tsx";
-export {
-  ConnectorMarketServicesProvider,
-  useConnectorMarketServices,
-  type ConnectorMarketServices
-} from "./ConnectorMarketServicesContext.tsx";
+// Compatibility entrypoint for consumers that have not migrated to /ui yet.
+export * from "../ui/index.ts";

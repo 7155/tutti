@@ -7,10 +7,12 @@
   "exports": {
     ".": "./src/index.ts",
     "./contracts": "./src/contracts/index.ts",
+    "./core": "./src/services/core/index.ts",
     "./i18n": "./src/i18n/index.ts",
     "./openapi/connector-market.v1.yaml": "./openapi/connector-market.v1.yaml",
     "./renderer": "./src/renderer/index.ts",
-    "./services": "./src/services/index.ts"
+    "./services": "./src/services/index.ts",
+    "./ui": "./src/ui/index.ts"
   },
   "files": [
     "dist",
@@ -59,6 +61,10 @@
         "types": "./dist/contracts/index.d.ts",
         "import": "./dist/contracts/index.js"
       },
+      "./core": {
+        "types": "./dist/core/index.d.ts",
+        "import": "./dist/core/index.js"
+      },
       "./i18n": {
         "types": "./dist/i18n/index.d.ts",
         "import": "./dist/i18n/index.js"
@@ -71,6 +77,10 @@
       "./services": {
         "types": "./dist/services/index.d.ts",
         "import": "./dist/services/index.js"
+      },
+      "./ui": {
+        "types": "./dist/ui/index.d.ts",
+        "import": "./dist/ui/index.js"
       }
     },
     "types": "./dist/index.d.ts"

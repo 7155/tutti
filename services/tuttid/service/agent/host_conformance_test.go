@@ -16,6 +16,7 @@ import (
 	hostconformance "github.com/tutti-os/tutti/packages/agent/host/conformance"
 	agentactivitybiz "github.com/tutti-os/tutti/packages/agent/store-sqlite"
 	"github.com/tutti-os/tutti/packages/agent/store-sqlite/canonical"
+	market "github.com/tutti-os/tutti/packages/connector/host"
 	agenttargetbiz "github.com/tutti-os/tutti/services/tuttid/biz/agenttarget"
 	workspacebiz "github.com/tutti-os/tutti/services/tuttid/biz/workspace"
 	workspacedata "github.com/tutti-os/tutti/services/tuttid/data/workspace"
@@ -289,6 +290,16 @@ func (d *legacyHostConformanceDriver) Reset(_ context.Context, fixture hostconfo
 	d.operationPort = &conformanceRuntimeOperationStore{runtimeOperationMemoryStore: d.operations, steps: &steps}
 	d.service = newUnconfiguredIsolatedAgentService(d.runtime)
 	d.service.AgentTargetStore = fakeAgentTargetStore{targets: defaultTestAgentTargets()}
+	d.service.ConnectorMarketSnapshots = connectorMarketSnapshotStub{snapshot: market.Snapshot{
+		Connectors: []market.Connector{
+			localConnectorFixture(
+				"lark-cli",
+				market.InstallationStateInstalled,
+				market.AuthorizationStateConnected,
+				market.CompatibilityStateSupported,
+			),
+		},
+	}}
 	d.runtime.provenanceHook = func(input RuntimeSubmitProvenanceInput) error {
 		d.recordSubmittedTurn(input.WorkspaceID, input.AgentSessionID, input.TurnID)
 		return nil
@@ -716,13 +727,11 @@ func (d *legacyHostConformanceDriver) ResetHistoricalState(ctx context.Context) 
 
 func (d *legacyHostConformanceDriver) RestoreHistoricalSessionGraph(
 	ctx context.Context,
-	workspaceID string,
-	graph agenthost.HistoricalSessionGraph,
+	input agenthost.HistoricalSessionGraphRestoreInput,
 ) error {
 	return d.service.ApplicationHost().RestoreHistoricalSessionGraph(
 		ctx,
-		workspaceID,
-		graph,
+		input,
 	)
 }
 
@@ -731,6 +740,17 @@ func (d *legacyHostConformanceDriver) CaptureHistoricalSessionGraph(
 	ref agenthost.SessionRef,
 ) (agenthost.HistoricalSessionGraph, error) {
 	return d.service.ApplicationHost().CaptureHistoricalSessionGraph(ctx, ref)
+}
+
+func (d *legacyHostConformanceDriver) HistoricalSessionUserID(
+	ctx context.Context,
+	ref agenthost.SessionRef,
+) (string, error) {
+	result, err := d.service.ApplicationHost().GetSession(ctx, ref)
+	if err != nil {
+		return "", err
+	}
+	return result.Canonical.UserID, nil
 }
 
 func (d *legacyHostConformanceDriver) EnsureHistoricalSession(
@@ -767,22 +787,26 @@ func (d *legacyHostConformanceDriver) HistoricalStateMetrics() hostconformance.H
 type conformanceHistoricalStateStore struct {
 	driver      *legacyHostConformanceDriver
 	workspaceID string
+	userID      string
 	graph       *agenthost.HistoricalSessionGraph
 }
 
 func (s *conformanceHistoricalStateStore) RestoreHistoricalSessionGraph(
 	_ context.Context,
-	workspaceID string,
-	graph agenthost.HistoricalSessionGraph,
+	input agenthost.HistoricalSessionGraphRestoreInput,
 ) error {
+	workspaceID := input.WorkspaceID
+	graph := input.Graph
 	if s.graph != nil {
-		if s.workspaceID == workspaceID && reflect.DeepEqual(*s.graph, graph) {
+		if s.workspaceID == workspaceID && s.userID == input.UserID &&
+			reflect.DeepEqual(*s.graph, graph) {
 			return nil
 		}
 		return agenthost.ErrHistoricalStateConflict
 	}
 	copied := graph
 	s.workspaceID = workspaceID
+	s.userID = input.UserID
 	s.graph = &copied
 	for _, historical := range graph.Sessions {
 		settingsRaw, err := json.Marshal(historical.Settings)
@@ -796,7 +820,7 @@ func (s *conformanceHistoricalStateStore) RestoreHistoricalSessionGraph(
 		key := workspaceID + ":" + historical.ID
 		s.driver.sessions.sessions[key] = PersistedSession{
 			ID: historical.ID, WorkspaceID: workspaceID, Kind: historical.Kind,
-			Origin: historical.Origin, Provider: historical.Provider,
+			Origin: historical.Origin, UserID: input.UserID, Provider: historical.Provider,
 			AgentTargetID:     historical.AgentTargetID,
 			ProviderSessionID: historical.ProviderSessionID,
 			RailSectionKind:   "conversations", RailSectionKey: "conversations",

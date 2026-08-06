@@ -12,7 +12,7 @@ import { useService } from "@tutti-os/infra/di";
 import type { WorkspaceSummary } from "@tutti-os/client-tuttid-ts";
 import { INotificationService } from "@tutti-os/ui-notifications";
 import { createConnectorMarketI18nRuntime } from "@tutti-os/connector-market/i18n";
-import { ConnectorMarketPanel } from "@tutti-os/connector-market/renderer";
+import { ConnectorMarketPanel } from "@tutti-os/connector-market/ui";
 import { IConnectorMarketModule } from "@tutti-os/connector-market/services";
 import type {
   DesktopComputerUsePermissionPane,
@@ -184,6 +184,10 @@ export function WorkspaceSettingsPanel({
   );
   const { t: translateConnectorMarket } = connectorMarketI18n;
   const notifications = useService(INotificationService);
+  const handleConnectorMarketError = useCallback(
+    (message: string) => notifications.error({ title: message }),
+    [notifications]
+  );
   const { service: desktopPreferencesService, state: desktopPreferencesState } =
     useDesktopPreferencesService();
   const { service: settingsService, state: settingsState } =
@@ -509,6 +513,8 @@ export function WorkspaceSettingsPanel({
                   accountState.user ? (
                   <ConnectorMarketPanel
                     i18n={connectorMarketI18n}
+                    onError={handleConnectorMarketError}
+                    onTryConnector={() => settingsService.closePanel()}
                     root={connectorMarketModule.root}
                   />
                 ) : settingsState.agentTab === "customAgents" ? (

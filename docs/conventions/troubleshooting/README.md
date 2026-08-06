@@ -15,8 +15,9 @@ recur and the repository now has implementation or debugging evidence for it.
 Use the focused runtime index or open one area directly:
 
 - [Agent Providers And Setup](./agent-provider-setup.md): Provider discovery, installation, authentication, models, configuration, and runtime reachability.
-  Includes Codex Model Plan Responses-to-Chat routing and extension
-  command/Skill palette hydration failures.
+  Includes Codex Model Plan Responses-to-Chat routing, oversized request
+  metadata compatibility, and extension command/Skill palette hydration
+  failures.
   Also covers uv-managed Extension installs that accidentally select an
   incompatible system Python.
   Also covers Kimi Code ACP sessions that advertise no model or hide provider
@@ -158,6 +159,7 @@ Android app login, native bridge, secure identity, and mobile transport diagnost
 
 - [Android QR scan closes without advancing pairing](./mobile.md#android-qr-scan-closes-without-advancing-pairing)
 - [Android release bundling cannot resolve the JSX transform](./mobile.md#android-release-bundling-cannot-resolve-the-jsx-transform)
+- [Android update stays on MainActivity without opening the installer](./mobile.md#android-update-stays-on-mainactivity-without-opening-the-installer)
 - [Mobile quick prompts are missing from the plus menu](./mobile.md#mobile-quick-prompts-are-missing-from-the-plus-menu)
 - [Mobile composer model and permission controls are missing](./mobile.md#mobile-composer-model-and-permission-controls-are-missing)
 - [Mobile composer option chips do not open](./mobile.md#mobile-composer-option-chips-do-not-open)

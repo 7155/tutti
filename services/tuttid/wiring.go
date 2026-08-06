@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/ed25519"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,12 +15,15 @@ import (
 	"time"
 
 	agentdaemon "github.com/tutti-os/tutti/packages/agent/daemon"
+	agenthttpx "github.com/tutti-os/tutti/packages/agent/daemon/httpx"
 	agentruntime "github.com/tutti-os/tutti/packages/agent/daemon/runtime"
 	runtimeprep "github.com/tutti-os/tutti/packages/agent/runtimeprep"
-	marketartifact "github.com/tutti-os/tutti/packages/connector/market/artifact"
+	connectormarketdaemon "github.com/tutti-os/tutti/packages/connector/daemon"
+	connectorruntime "github.com/tutti-os/tutti/packages/connector/runtime"
+	marketartifact "github.com/tutti-os/tutti/packages/connector/runtime/artifact"
+	connectormarketdata "github.com/tutti-os/tutti/packages/connector/store-sqlite"
 	tuttiapi "github.com/tutti-os/tutti/services/tuttid/api"
 	preferencesbiz "github.com/tutti-os/tutti/services/tuttid/biz/preferences"
-	connectormarketdata "github.com/tutti-os/tutti/services/tuttid/data/connectormarket"
 	workspacedata "github.com/tutti-os/tutti/services/tuttid/data/workspace"
 	tuttiserver "github.com/tutti-os/tutti/services/tuttid/server"
 	accountservice "github.com/tutti-os/tutti/services/tuttid/service/account"
@@ -45,9 +46,6 @@ import (
 	tuttitypes "github.com/tutti-os/tutti/services/tuttid/types"
 )
 
-const connectorRuntimeProductionKeyID = "tutti-runtime-prod-2026-01"
-const connectorRuntimeProductionPublicKeyHex = "2b9f4f23d9c3d4c38881bf4a87d92f02c0769a998736fe04718b58379df2c44a"
-const connectorRuntimeCatalogURL = "https://d1x7gb6wqsqmnm.cloudfront.net/tutti-app-runtimes/connector-v3/catalog.json"
 const connectorMarketDefaultBaseURL = "https://api.tutti.sh/api/desktop"
 const connectorArtifactBaseURL = "https://d27a59zdy4534h.cloudfront.net/tutti/connector-market/"
 
@@ -56,7 +54,7 @@ type tuttiWiring struct {
 	appCenterService             *workspaceservice.AppCenterService
 	workspaceStore               *workspacedata.SQLiteStore
 	connectorMarketStore         *connectormarketdata.Store
-	connectorMarketHost          *connectormarketservice.Host
+	connectorMarketHost          *connectormarketdaemon.Host
 	analyticsReporter            reporterservice.Reporter
 	browserService               *browsersvc.Service
 	computerService              *computersvc.Service
@@ -219,9 +217,6 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 		providerAuthWatcher.Close()
 		return fmt.Errorf("open connector market store: %w", err)
 	}
-	if service, ok := api.AgentSessionService.(*agentservice.Service); ok {
-		service.InstalledConnectorSnapshots = connectorMarketStore
-	}
 	connectorMarketBaseURL := strings.TrimSpace(os.Getenv("TUTTI_CONNECTOR_MARKET_BASE_URL"))
 	if connectorMarketBaseURL == "" {
 		connectorMarketBaseURL = connectorMarketDefaultBaseURL
@@ -238,9 +233,10 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("configure connector market account authorization: %w", err)
 	}
-	connectorCatalog, err := connectormarketservice.NewCatalogSource(connectormarketservice.CatalogSourceConfig{
+	connectorCatalog, err := connectormarketdaemon.NewCatalogSource(connectormarketdaemon.CatalogSourceConfig{
 		BaseURL:            connectorMarketBaseURL,
 		ExpectedMarketType: connectorMarketType,
+		HTTPClient:         agenthttpx.NewClient(30 * time.Second),
 		AuthorizeRequest:   marketAuthorizer.Authorize,
 	})
 	if err != nil {
@@ -260,7 +256,9 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	if artifactBaseURL == "" {
 		artifactBaseURL = connectorArtifactBaseURL
 	}
-	artifactFetcher, err := connectormarketservice.NewDirectArtifactFetcher(connectormarketservice.DirectArtifactFetcherConfig{BaseURL: artifactBaseURL})
+	artifactFetcher, err := marketartifact.NewDirectFetcher(marketartifact.DirectFetcherConfig{
+		BaseURL: artifactBaseURL, HTTPClient: agenthttpx.NewClient(5 * time.Minute),
+	})
 	if err != nil {
 		return fmt.Errorf("configure connector artifact download: %w", err)
 	}
@@ -269,23 +267,17 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("configure connector artifact preparer: %w", err)
 	}
-	runtimePublicKey, err := hex.DecodeString(connectorRuntimeProductionPublicKeyHex)
-	if err != nil || len(runtimePublicKey) != ed25519.PublicKeySize {
-		return errors.New("embedded connector runtime production trust root is invalid")
-	}
 	runtimeResolver, err := managedruntimeservice.NewConnectorRuntimeResolver(managedruntimeservice.ConnectorRuntimeResolverConfig{
-		RuntimeRoot: filepath.Join(connectorStateRoot, "runtimes"), CatalogURL: connectorRuntimeCatalogURL,
-		CatalogPublicKey: ed25519.PublicKey(runtimePublicKey), CatalogKeyID: connectorRuntimeProductionKeyID,
-		ApplicationVersion: tuttitypes.ResolveAppVersion(),
+		Resolver: managedruntimeservice.DefaultResolver{},
 	})
 	if err != nil {
 		return fmt.Errorf("configure connector managed runtime: %w", err)
 	}
 	processTransport, err := agentruntime.NewConnectorProcessTransport()
 	if err != nil {
-		return fmt.Errorf("configure connector process sandbox: %w", err)
+		return fmt.Errorf("configure connector process transport: %w", err)
 	}
-	nodePackageInstaller, err := connectormarketservice.NewNodePackageInstaller(connectormarketservice.NodePackageInstallerConfig{
+	nodePackageInstaller, err := connectorruntime.NewNodePackageInstaller(connectorruntime.NodePackageInstallerConfig{
 		RootDir: filepath.Join(connectorStateRoot, "node-packages"), Runtimes: runtimeResolver, Processes: processTransport,
 	})
 	if err != nil {
@@ -296,10 +288,15 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("configure connector broker: %w", err)
 	}
+	userHome, err := os.UserHomeDir()
+	if err != nil || !filepath.IsAbs(userHome) {
+		return errors.New("configure connector implementation host: user home is unavailable")
+	}
 	implementationHost, err := connectormarketservice.NewImplementationHost(connectormarketservice.ImplementationHostConfig{
 		Artifacts: artifactPreparer, CLIInstallations: nodePackageInstaller,
 		Runtimes: runtimeResolver, Processes: processTransport, Commands: connectorCommands,
-		StateRoot: filepath.Join(connectorStateRoot, "workspace-state"),
+		StateRoot: filepath.Join(connectorStateRoot, "user-state"),
+		UserHome:  userHome,
 	})
 	if err != nil {
 		return fmt.Errorf("configure connector implementation host: %w", err)
@@ -311,7 +308,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	api.CLIRegistry.AppCommands = cliservice.CompositeDynamicCommandRegistry{Registries: []cliservice.DynamicCommandRegistry{
 		api.CLIRegistry.AppCommands, connectorBroker,
 	}}
-	connectorMarketHost, err := connectormarketservice.NewHost(ctx, connectormarketservice.HostConfig{
+	connectorMarketHost, err := connectormarketdaemon.NewHost(ctx, connectormarketdaemon.HostConfig{
 		Repository: connectorMarketStore, CatalogSource: connectorCatalog,
 		ArtifactPreparer: artifactPreparer, CLIInstallations: nodePackageInstaller, ImplementationHost: connectorRuntime,
 		Authorization: connectorAuthorization, Compatibility: compatibility,
@@ -323,6 +320,9 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 		agentRuntime.Close()
 		providerAuthWatcher.Close()
 		return fmt.Errorf("start connector market host: %w", err)
+	}
+	if service, ok := api.AgentSessionService.(*agentservice.Service); ok {
+		service.ConnectorMarketSnapshots = connectorMarketHost.Application
 	}
 	api.ConnectorMarketService = connectorMarketHost.Application
 	existingAccountLoginCompleted := accountService.OnLoginCompleted
@@ -570,7 +570,7 @@ func openWorkspaceStore(ctx context.Context) (*workspacedata.SQLiteStore, error)
 	return workspaceStore, nil
 }
 
-func bootstrapConnectorMarket(host *connectormarketservice.Host) {
+func bootstrapConnectorMarket(host *connectormarketdaemon.Host) {
 	if host == nil {
 		return
 	}

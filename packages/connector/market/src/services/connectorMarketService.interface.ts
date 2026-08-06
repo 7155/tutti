@@ -25,7 +25,9 @@ export interface ConnectorMarketStoreState {
   catalogSections: ConnectorMarketSectionState[];
   connectorsByKey: Record<string, Connector>;
   connectorKeys: string[];
+  pendingInstallationsByConnectorKey: Record<string, true>;
   operationsByConnectorKey: Record<string, ConnectorOperation>;
+  authorizingConnectorKeys: Record<string, boolean>;
   lastError: ConnectorMarketErrorShape | null;
   revision: number;
 }
@@ -38,6 +40,11 @@ export interface ConnectorMarketServiceDependencies {
   createRequestId?: () => string;
   openAuthorizationUrl?: (url: string) => Promise<void>;
   reportDiagnostic?: (error: unknown) => void;
+  /** Test/host hook for operation polling; the default is abortable setTimeout. */
+  waitForOperationPoll?: (
+    delayMs: number,
+    signal: AbortSignal
+  ) => Promise<void>;
 }
 
 /**

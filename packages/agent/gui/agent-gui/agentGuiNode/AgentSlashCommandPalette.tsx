@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Spinner } from "@tutti-os/ui-system";
 import {
   Globe,
@@ -175,7 +175,11 @@ export function AgentSlashCommandPalette({
       {entries.map((entry, index) => {
         const isHighlighted = index === highlightedIndex;
         const isDisabled =
-          entry.type === "capability" && entry.disabled === true;
+          (entry.type === "capability" && entry.disabled === true) ||
+          (entry.type === "skill" &&
+            (entry.skill.sourceKind === "connector" ||
+              entry.skill.kind === "connector") &&
+            entry.skill.status === "unsupported");
         const groupType = entryGroupType(entry);
         const entryIcon = slashPaletteEntryIcon(entry);
         const connectorStatus = connectorStatusPresentation(entry, {
@@ -272,7 +276,27 @@ export function AgentSlashCommandPalette({
                   </span>
                 ) : null}
               </span>
-              {connectorStatus ? (
+              {connectorStatus &&
+              !connectorStatus.available &&
+              entry.type === "skill" &&
+              entry.skill.status !== "unsupported" ? (
+                <button
+                  aria-label={connectorStatus.label}
+                  className={paletteStyles.settingsButton}
+                  title={connectorStatus.label}
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSelectSkill(entry.skill);
+                  }}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                >
+                  {connectorStatus.label}
+                </button>
+              ) : connectorStatus ? (
                 <span
                   className={cn(
                     "ml-1 shrink-0 text-[11px] font-medium",
@@ -409,7 +433,7 @@ function slashPaletteEntryIcon(entry: AgentSlashPaletteEntry): ReactNode {
     entry.type === "skill" &&
     (entry.skill.sourceKind === "connector" || entry.skill.kind === "connector")
   ) {
-    return <Plug className={SLASH_PALETTE_ICON_CLASS} />;
+    return <ConnectorPaletteIcon iconUrl={entry.skill.iconUrl} />;
   }
   if (entry.type !== "command") {
     return null;
@@ -430,6 +454,33 @@ function slashPaletteEntryIcon(entry: AgentSlashPaletteEntry): ReactNode {
     default:
       return null;
   }
+}
+
+function ConnectorPaletteIcon({
+  iconUrl
+}: {
+  iconUrl?: string;
+}): React.JSX.Element {
+  const normalizedIconUrl = iconUrl?.trim() ?? "";
+  const [failedIconUrl, setFailedIconUrl] = useState<string | null>(null);
+  const showBrandIcon =
+    normalizedIconUrl.length > 0 && failedIconUrl !== normalizedIconUrl;
+
+  return (
+    <span className="flex size-4 items-center justify-center">
+      {showBrandIcon ? (
+        <img
+          alt=""
+          aria-hidden="true"
+          className="size-4 rounded-[3px] object-contain"
+          src={normalizedIconUrl}
+          onError={() => setFailedIconUrl(normalizedIconUrl)}
+        />
+      ) : (
+        <Plug className={SLASH_PALETTE_ICON_CLASS} />
+      )}
+    </span>
+  );
 }
 
 function connectorStatusPresentation(

@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
-	market "github.com/tutti-os/tutti/packages/connector/market/daemon"
+	market "github.com/tutti-os/tutti/packages/connector/host"
 	agenttargetbiz "github.com/tutti-os/tutti/services/tuttid/biz/agenttarget"
 )
 
@@ -360,7 +360,7 @@ func TestServiceGetComposerOptionsUsesLocalInstalledConnectorCatalog(t *testing.
 	lister := &recordingComposerCapabilityLister{}
 	service := newIsolatedAgentService(runtime)
 	service.CapabilityLister = lister
-	service.InstalledConnectorSnapshots = installedConnectorSnapshotStub{
+	service.ConnectorMarketSnapshots = connectorMarketSnapshotStub{
 		snapshot: market.Snapshot{Connectors: []market.Connector{
 			localConnectorFixture(
 				"notion",

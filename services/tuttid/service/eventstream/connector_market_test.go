@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	market "github.com/tutti-os/tutti/packages/connector/market/daemon"
+	market "github.com/tutti-os/tutti/packages/connector/host"
 )
 
 func TestConnectorMarketPublisherUsesCatalogTopic(t *testing.T) {

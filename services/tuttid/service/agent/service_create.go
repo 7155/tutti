@@ -174,6 +174,16 @@ func (s *Service) CreateWithResult(ctx context.Context, workspaceID string, inpu
 	if isolation != nil {
 		prepared.Cwd = isolation.WorktreePath
 	}
+	// Keep the durable launch snapshot aligned with the same capability clamp
+	// used by runtime preparation. Otherwise a missing browser/computer backend
+	// could be omitted from skills/env while the persisted session still claims
+	// that it is enabled.
+	if prepared.BrowserUse != nil || input.BrowserUse != nil {
+		input.BrowserUse = prepared.BrowserUse
+	}
+	if prepared.ComputerUse != nil || input.ComputerUse != nil {
+		input.ComputerUse = prepared.ComputerUse
+	}
 	s.reportAgentServiceNodeSuccess(ctx, input.AgentSessionID, "session_create", "runtime_prepared", provider, nodeStartedAt)
 	logAgentSubmitTrace("service.create.runtime_prepared", workspaceID, input.AgentSessionID, input.ClientSubmitID, input.Metadata, map[string]any{"cwd": prepared.Cwd, "env_count": len(prepared.Env)})
 	ctx = withServicePreparedRuntime(ctx, s, prepared)
@@ -475,8 +485,10 @@ func agentSessionIDOrNew(agentSessionID string) string {
 }
 
 type preparedRuntime struct {
-	Cwd string
-	Env []string
+	Cwd         string
+	Env         []string
+	BrowserUse  *bool
+	ComputerUse *bool
 }
 
 func (s *Service) prepareRuntime(ctx context.Context, workspaceID string, cwd string, input CreateSessionInput, endpoints ...*runtimeprep.ModelEndpointConfig) (preparedRuntime, error) {
@@ -539,6 +551,8 @@ func (s *Service) prepareRuntimeWithModelEndpoint(
 		effectiveEndpoint = &endpointCopy
 		gatewayRegistered = true
 	}
+	effectiveBrowserUse := s.clampComposerBrowserUseForLaunch(ctx, provider, input.ProviderTargetRef, input.BrowserUse)
+	effectiveComputerUse := s.clampComposerComputerUseForLaunch(ctx, provider, input.ProviderTargetRef, input.ComputerUse)
 	prepared, err := s.RuntimePreparer.Prepare(ctx, runtimeprep.PrepareInput{
 		WorkspaceID:               workspaceID,
 		AgentSessionID:            strings.TrimSpace(input.AgentSessionID),
@@ -549,8 +563,8 @@ func (s *Service) prepareRuntimeWithModelEndpoint(
 		Title:                     value(input.Title),
 		PermissionModeID:          value(input.PermissionModeID),
 		PlanMode:                  clampComposerPlanModeForLaunch(provider, input.ProviderTargetRef, valueBool(input.PlanMode)),
-		BrowserUse:                s.clampComposerBrowserUseForLaunch(ctx, provider, input.ProviderTargetRef, input.BrowserUse),
-		ComputerUse:               s.clampComposerComputerUseForLaunch(ctx, provider, input.ProviderTargetRef, input.ComputerUse),
+		BrowserUse:                effectiveBrowserUse,
+		ComputerUse:               effectiveComputerUse,
 		CodexSaverMode:            valueBool(input.CodexSaverMode),
 		ProviderTargetRef:         clonePayload(input.ProviderTargetRef),
 		ExtensionSkillRoots:       s.resolveExtensionSkillRoots(ctx, input.ProviderTargetRef),
@@ -581,8 +595,10 @@ func (s *Service) prepareRuntimeWithModelEndpoint(
 		prepared.Cwd = cwd
 	}
 	return preparedRuntime{
-		Cwd: prepared.Cwd,
-		Env: append([]string(nil), prepared.Env...),
+		Cwd:         prepared.Cwd,
+		Env:         append([]string(nil), prepared.Env...),
+		BrowserUse:  effectiveCapabilitySetting(input.BrowserUse, effectiveBrowserUse),
+		ComputerUse: effectiveCapabilitySetting(input.ComputerUse, effectiveComputerUse),
 	}, nil
 }
 

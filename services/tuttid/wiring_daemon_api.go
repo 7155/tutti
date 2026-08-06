@@ -256,7 +256,10 @@ func buildDaemonAPI(
 	agentRuntimePreparer := runtimeprep.NewDefaultPreparer(tuttitypes.DefaultStateDir())
 	agentRuntimePreparer.RegisterProvider(tuttiagentservice.NewPreparer(tuttitypes.DefaultStateDir()))
 	agentRuntimePreparer.ComputerUseAvailable = func() bool {
-		return runtimeprep.ComputerUseDefaultEnabled() && computersvc.CheckReady() == nil
+		return runtimeprep.ComputerUseDefaultEnabled() && computerService != nil && computerService.CheckReady(context.Background()) == nil
+	}
+	agentRuntimePreparer.BrowserUseAvailable = func() bool {
+		return runtimeprep.BrowserUseDefaultEnabled() && browserService != nil && browserService.CheckReady() == nil
 	}
 	userProjectService := userprojectservice.Service{
 		Store:     userProjectStore,
@@ -310,10 +313,12 @@ func buildDaemonAPI(
 		SourceRootDir: filepath.Join(tuttitypes.DefaultStateDir(), "agent-prompt-assets"),
 	}
 	var agentRuntimePreparation runtimeprep.Preparer
+	var browserUseAvailable func() bool
 	var computerUseAvailable func() bool
 	var availabilityChecker agentservice.ProviderAvailabilityChecker
 	if !replayComposition {
 		agentRuntimePreparation = agentRuntimePreparer
+		browserUseAvailable = agentRuntimePreparer.BrowserUseAvailable
 		computerUseAvailable = agentRuntimePreparer.ComputerUseAvailable
 		availabilityChecker = agentservice.AgentStatusProviderAvailabilityChecker{
 			Service: &agentStatusService,
@@ -350,6 +355,7 @@ func buildDaemonAPI(
 		Runtime: agentservice.ServiceRuntimeConfig{
 			Preparer:                 agentRuntimePreparation,
 			ModelGateway:             modelGateway,
+			BrowserUseAvailable:      browserUseAvailable,
 			ComputerUseAvailable:     computerUseAvailable,
 			RuntimeOperationStore:    agentActivityRepo,
 			RuntimeOperationOwner:    uuid.NewString(),

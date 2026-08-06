@@ -68,6 +68,7 @@ type Service struct {
 	PromptAttachmentStore          PromptAttachmentStore
 	RuntimePreparer                runtimeprep.Preparer
 	ModelGateway                   ModelGatewayRegistry
+	BrowserUseAvailable            func() bool
 	ComputerUseAvailable           func() bool
 	CapabilityLister               ComposerCapabilityLister
 	ConnectorMarketSnapshots       market.SnapshotReader

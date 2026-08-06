@@ -87,7 +87,7 @@ func TestTuttiAgentPreparerUsesExplicitAuthSourceAndInstallsSkills(t *testing.T)
 	}
 }
 
-func TestTuttiAgentPreparerProjectsAccessTokenForHeadlessCLI(t *testing.T) {
+func TestTuttiAgentPreparerLeavesTokenRefreshToTuttiAgent(t *testing.T) {
 	authSource := filepath.Join(t.TempDir(), "auth.json")
 	if err := os.WriteFile(authSource, []byte(`{"tutti_llm":{"access_token":"access-token-for-test"}}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -105,11 +105,10 @@ func TestTuttiAgentPreparerProjectsAccessTokenForHeadlessCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Prepare() error = %v", err)
 	}
-	if got := envValue(result.Env, "TUTTI_AGENT_API_KEY"); got != "access-token-for-test" {
-		t.Fatalf("TUTTI_AGENT_API_KEY = %q, want access token from auth source", got)
-	}
-	if got := envValue(result.Env, "TUTTI_API_KEY"); got != "access-token-for-test" {
-		t.Fatalf("TUTTI_API_KEY = %q, want access token from auth source", got)
+	for _, key := range []string{"TUTTI_AGENT_API_KEY", "TUTTI_API_KEY"} {
+		if got := envValue(result.Env, key); got != "" {
+			t.Fatalf("%s = %q, want unset so Tutti Agent can refresh tutti_llm credentials", key, got)
+		}
 	}
 }
 

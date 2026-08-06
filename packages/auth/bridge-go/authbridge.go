@@ -260,15 +260,6 @@ func (c *Client) GetUserInfo(ctx context.Context) (*UserInfo, error) {
 		return nil, err
 	}
 	user, err := c.fetchUserInfo(ctx, session.Cookie)
-	if errors.Is(err, errUnauthorized) {
-		// The desktop auth file is a local cache, not proof that the web
-		// session is still valid. Remove only the exact session that was
-		// rejected; a newer login already persisted is preserved.
-		if clearErr := c.clearSessionIfMatches(*session); clearErr != nil {
-			return nil, clearErr
-		}
-		return nil, nil
-	}
 	if err != nil || user == nil {
 		return user, err
 	}
@@ -647,7 +638,7 @@ func (c *Client) fetchUserInfo(ctx context.Context, cookie string) (*UserInfo, e
 	var raw map[string]any
 	if err := c.postAccount(ctx, "/user/v1/user_info", cookie, map[string]any{}, &raw); err != nil {
 		if errors.Is(err, errUnauthorized) {
-			return nil, errUnauthorized
+			return nil, nil
 		}
 		return nil, err
 	}
@@ -657,24 +648,6 @@ func (c *Client) fetchUserInfo(ctx context.Context, cookie string) (*UserInfo, e
 	}
 	return &user, nil
 }
-
-func (c *Client) clearSessionIfMatches(session Session) error {
-	current, err := c.ReadSession()
-	if errors.Is(err, os.ErrNotExist) || current == nil {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if current.SessionID != session.SessionID || current.Cookie != session.Cookie {
-		return nil
-	}
-	if err := os.Remove(c.config.AuthJSONPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return nil
-}
-
 func (c *Client) logoutSession(ctx context.Context, cookie string) error {
 	return c.postAccount(ctx, "/auth/v1/logout-web-session", cookie, map[string]string{"app_id": c.config.AppID}, nil)
 }

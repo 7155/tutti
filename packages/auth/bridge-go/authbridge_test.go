@@ -443,33 +443,6 @@ func TestGetUserInfoAndLogout(t *testing.T) {
 	}
 }
 
-func TestGetUserInfoClearsRejectedDesktopSession(t *testing.T) {
-	account := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/user/v1/user_info" {
-			t.Fatalf("unexpected account path %s", r.URL.Path)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"code":401,"errmsg":"Unauthorized"}`))
-	}))
-	defer account.Close()
-
-	client := newTestClient(t, account.URL)
-	if err := client.writeAuthJSON(sessionFromUser("stale-session", UserInfo{UserID: "stale-user"})); err != nil {
-		t.Fatal(err)
-	}
-	user, err := client.GetUserInfo(context.Background())
-	if err != nil {
-		t.Fatalf("GetUserInfo() error = %v", err)
-	}
-	if user != nil {
-		t.Fatalf("user = %#v, want nil for rejected session", user)
-	}
-	if _, err := os.Stat(client.config.AuthJSONPath); !os.IsNotExist(err) {
-		t.Fatalf("auth json stat error = %v, want rejected session to be cleared", err)
-	}
-}
-
 func newTestClient(t *testing.T, accountBaseURL string) *Client {
 	t.Helper()
 	client, err := NewClient(Config{

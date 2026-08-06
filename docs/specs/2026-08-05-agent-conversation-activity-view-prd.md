@@ -314,7 +314,7 @@ Priority 区段始终存在。其成员为空时，在该区段内显示与 Code
 ### 8.4 实时变化
 
 - 开启时按当时 `waiting → unread → active → retained idle` 生成 Priority 初始顺序；
-- 开启期间，既有 Priority 成员即使 attention state 改变也不做全量移组或重排；行上的 spinner、unread、状态与可执行操作读取 live canonical facts；
+- 开启期间，既有 Priority 成员即使 attention state 改变也不做全量移组或重排；行上的 spinner、unread、状态与可执行操作读取 live canonical facts；普通 Rail refresh 暂时不返回某个已入队 ID 时，也不得把它当成删除，继续使用该行最近一次已知 summary，直到下一次 toggle 重建 activation；
 - Desktop daemon 新推送或更新的根 Session 先写入 Engine；满足 waiting/unread/active/retained-idle 的新候选再按当前 selector 顺序增量入队并按 exact ID 去重；
 - activation 打开后由 daemon 新发现的普通 idle 根 Session 按 Codex 本地任务的一次性 retained-idle 规则进入 Priority；打开时已存在的普通 idle Session 仍按时间进入日期段；
 - 用户选择一个尚未出现在 canonical snapshot 中的历史 Session 时，详情层可以临时注入该 Session 的 summary；若它当前 idle，则按普通近期会话处理，不因选择动作进入 Priority，只有真实 waiting/unread/active facts 才可进入 Priority；
@@ -368,7 +368,7 @@ interface ActivityViewActivation {
 - activation object identity 区分每次开启；关闭后到达的旧渲染结果不能恢复已清理的 snapshot；
 - activation 绑定创建它的 Engine 实例；Engine 被替换、surface 卸载或视图关闭时立即取消订阅并清理；
 - sidebar 的 workspace、用户或 Agent context 变化时重建 activation；这是组件内部的 stale-state fence，不是新增筛选器或 host API；
-- Activity View state 只保存 activation、成员引用、Priority 顺序、日期段 recency snapshot 和 retained-idle marker，不保存 Session 副本或分页 cursor；
+- Activity View state 只保存 activation、成员引用、Priority 顺序、日期段 recency snapshot 和 retained-idle marker，不把 Session 副本放进 activation 或分页 cursor；controller 可以在当前 activation 内短暂缓存已入队行的最近一次 summary，用于抵抗普通 Rail refresh 的临时缺席；该缓存随 toggle、context/Engine 重建或 canonical tombstone 清理；
 - cutoff 固定取本次 activation 的本地日期；持续打开跨午夜不自行刷新日期标题，关闭再开启时才使用新的 cutoff。
 
 ### 9.3 投影与事件算法

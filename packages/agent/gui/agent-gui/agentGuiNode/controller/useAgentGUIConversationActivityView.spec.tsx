@@ -94,6 +94,81 @@ describe("useAgentGUIConversationActivityView", () => {
     ]);
   });
 
+  it("keeps an existing Priority row while a rail refresh omits its summary", () => {
+    const runtime = {
+      conversationActivityViewEnabled: true,
+      origin: "local"
+    } as unknown as AgentGUIRuntime;
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <AgentGUIRuntimeProvider runtime={runtime}>
+        {children}
+      </AgentGUIRuntimeProvider>
+    );
+    const rendered = renderHook(
+      ({ conversations }) =>
+        useAgentGUIConversationActivityView({
+          conversations,
+          hasConversationQuery: false,
+          rootFacts: new Map(),
+          scopeKey: "workspace-1"
+        }),
+      {
+        initialProps: { conversations: [CONVERSATION] },
+        wrapper
+      }
+    );
+
+    act(() => rendered.result.current.toggle());
+    rendered.rerender({ conversations: [] });
+
+    expect(rendered.result.current.projection?.priorityIds).toEqual([
+      "session-1"
+    ]);
+    expect(rendered.result.current.conversationsById.get("session-1")).toBe(
+      CONVERSATION
+    );
+  });
+
+  it("does not render a cached Priority row after an Engine tombstone", () => {
+    const runtime = {
+      conversationActivityViewEnabled: true,
+      origin: "local"
+    } as unknown as AgentGUIRuntime;
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <AgentGUIRuntimeProvider runtime={runtime}>
+        {children}
+      </AgentGUIRuntimeProvider>
+    );
+    const rendered = renderHook(
+      ({ conversations, deletedSessionIds }) =>
+        useAgentGUIConversationActivityView({
+          conversations,
+          deletedSessionIds,
+          hasConversationQuery: false,
+          rootFacts: new Map(),
+          scopeKey: "workspace-1"
+        }),
+      {
+        initialProps: {
+          conversations: [CONVERSATION],
+          deletedSessionIds: {}
+        },
+        wrapper
+      }
+    );
+
+    act(() => rendered.result.current.toggle());
+    rendered.rerender({
+      conversations: [],
+      deletedSessionIds: { "session-1": true }
+    });
+
+    expect(rendered.result.current.projection?.priorityIds).toEqual([]);
+    expect(rendered.result.current.conversationsById.has("session-1")).toBe(
+      false
+    );
+  });
+
   it("preserves unchanged conversation objects when one root activity fact changes", () => {
     const runtime = {
       conversationActivityViewEnabled: true,

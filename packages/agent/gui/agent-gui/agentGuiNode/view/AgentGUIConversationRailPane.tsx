@@ -197,6 +197,7 @@ export const AgentGUIConversationRailPane = memo(
     const groupedConversationsRef = useRef<ConversationSection[] | null>(null);
     const {
       batchDeletionAvailable,
+      deletedSessionIds,
       loadMoreSectionConversations,
       isInteractionLocked,
       runtimeSectionsEnabled,
@@ -213,7 +214,6 @@ export const AgentGUIConversationRailPane = memo(
         isUserProjectMutationPending
       );
     const projectActionLocked = isProjectActionLocked();
-
     const railConversationEntitiesById = new Map(
       runtimeRailConversations.map((conversation) => [
         conversation.id,
@@ -231,6 +231,7 @@ export const AgentGUIConversationRailPane = memo(
     });
     const activityView = useAgentGUIConversationActivityView({
       conversations,
+      deletedSessionIds,
       hasConversationQuery,
       identityKey: `${workspaceId}\u0000${activityContextKey}`,
       rootFacts: railQuery.activityRootFacts,

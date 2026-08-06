@@ -72,7 +72,93 @@ test("activity reconciliation retains members and frozen recency after live fact
   });
 });
 
-test("activity reconciliation incrementally enqueues pushes, promotes attention, and removes deletes", () => {
+test("activity reconciliation keeps existing Priority members through a list refresh", () => {
+  const initial = createAgentGUIConversationActivityActivation(
+    [
+      conversation("waiting", {
+        needsUserAction: true,
+        time: NOW - HOUR_MS
+      }),
+      conversation("unread", {
+        hasUnreadCompletion: true,
+        time: NOW - 2 * HOUR_MS
+      })
+    ],
+    NOW
+  );
+  const refreshed = reconcileAgentGUIConversationActivityActivation(initial, [
+    conversation("new-active", {
+      status: "working",
+      time: NOW + HOUR_MS
+    })
+  ]);
+
+  expect(projectAgentGUIConversationActivity(refreshed).priorityIds).toEqual([
+    "waiting",
+    "unread",
+    "new-active"
+  ]);
+  expect(refreshed.priority.slice(0, 2)).toEqual(initial.priority);
+});
+
+test("activity reconciliation does not move existing members when they become read", () => {
+  const initial = createAgentGUIConversationActivityActivation(
+    [
+      conversation("waiting", {
+        needsUserAction: true,
+        time: NOW - HOUR_MS
+      }),
+      conversation("unread", {
+        hasUnreadCompletion: true,
+        time: NOW - 2 * HOUR_MS
+      })
+    ],
+    NOW
+  );
+  const read = reconcileAgentGUIConversationActivityActivation(initial, [
+    conversation("unread", { time: NOW + 2 * DAY_MS }),
+    conversation("waiting", { time: NOW + DAY_MS })
+  ]);
+
+  expect(projectAgentGUIConversationActivity(read).priorityIds).toEqual([
+    "waiting",
+    "unread"
+  ]);
+  expect(read.priority.map((member) => member.priorityReason)).toEqual([
+    "waiting",
+    "unread"
+  ]);
+});
+
+test("activity reconciliation accumulates observed IDs across missing snapshots", () => {
+  const initial = createAgentGUIConversationActivityActivation(
+    [conversation("existing", { time: NOW - 2 * HOUR_MS })],
+    NOW
+  );
+  const withTransient = reconcileAgentGUIConversationActivityActivation(
+    initial,
+    [
+      conversation("existing", { time: NOW - 2 * HOUR_MS }),
+      conversation("selected-history", {
+        isTransient: true,
+        time: NOW - HOUR_MS
+      })
+    ]
+  );
+  const missing = reconcileAgentGUIConversationActivityActivation(
+    withTransient,
+    [conversation("existing", { time: NOW - 2 * HOUR_MS })]
+  );
+  const restored = reconcileAgentGUIConversationActivityActivation(missing, [
+    conversation("existing", { time: NOW - 2 * HOUR_MS }),
+    conversation("selected-history", { time: NOW - HOUR_MS })
+  ]);
+
+  expect(restored.priority).toEqual([]);
+  expect(restored.observedIds).toContain("selected-history");
+});
+
+test("activity reconciliation incrementally enqueues pushes and retains existing Priority members", () => {
   const initial = createAgentGUIConversationActivityActivation(
     [
       conversation("keep", { status: "working", time: NOW - HOUR_MS }),
@@ -93,10 +179,11 @@ test("activity reconciliation incrementally enqueues pushes, promotes attention,
   ]);
 
   expect(projectAgentGUIConversationActivity(reconciled)).toEqual({
-    priorityIds: ["promote", "pushed-active", "pushed-idle"],
+    priorityIds: ["promote", "pushed-active", "keep", "pushed-idle"],
     priorityReasonsById: new Map([
       ["promote", "unread"],
       ["pushed-active", "active"],
+      ["keep", "active"],
       ["pushed-idle", "retained-idle"]
     ]),
     recentSections: [],
@@ -104,6 +191,22 @@ test("activity reconciliation incrementally enqueues pushes, promotes attention,
   });
   expect(new Set(reconciled.priority.map((member) => member.id)).size).toBe(
     reconciled.priority.length
+  );
+});
+
+test("activity reconciliation removes a deleted Priority member immediately", () => {
+  const initial = createAgentGUIConversationActivityActivation(
+    [conversation("deleted", { status: "working", time: NOW })],
+    NOW
+  );
+  const reconciled = reconcileAgentGUIConversationActivityActivation(
+    initial,
+    [],
+    { deleted: true }
+  );
+
+  expect(projectAgentGUIConversationActivity(reconciled).priorityIds).toEqual(
+    []
   );
 });
 

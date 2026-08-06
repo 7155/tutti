@@ -142,6 +142,10 @@ export function useAgentGUIConversationRailQuery({
     selectActivityRootFacts,
     activityRootFactsEqual
   );
+  const deletedSessionIds = useEngineSelector(
+    engine,
+    (state) => state.sessionLifecycle.deletedSessionIds
+  );
   const requestedRailScopeKey = useMemo(
     () =>
       resolveConversationRailQueryScope(workspaceId, {
@@ -155,6 +159,7 @@ export function useAgentGUIConversationRailQuery({
       ...querySnapshot,
       batchDeletionAvailable: batchDeletionCapability.available,
       activityRootFacts,
+      deletedSessionIds,
       isInteractionLocked: controller.isInteractionLocked,
       loadMoreSectionConversations: controller.loadMoreSectionConversations,
       railSearch: {
@@ -171,6 +176,7 @@ export function useAgentGUIConversationRailQuery({
       batchDeletionCapability.available,
       activityRootFacts,
       controller,
+      deletedSessionIds,
       querySnapshot,
       requestedRailScopeKey,
       runtimeRailConversations

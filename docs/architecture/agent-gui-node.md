@@ -1274,6 +1274,9 @@ the ordinary Rail's transient `runtimeRailConversations` overlay; stale page
 projections therefore cannot leak into Activity View.
 Membership and recency are snapshotted when the view opens; subsequent Engine
 pushes reconcile incrementally, while deletion removes a member immediately.
+Selecting a historical Session that is temporarily injected into the visible
+summary list does not make an idle Session a newly discovered Activity task;
+only its live waiting, unread, or active facts can admit it to Priority.
 Search temporarily takes over the content area and clearing search restores the
 same activation. Closing the view discards the activation and its retained-idle
 markers. A retained-idle marker stores the exact unread recency and expires as

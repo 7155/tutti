@@ -107,6 +107,53 @@ test("activity reconciliation incrementally enqueues pushes, promotes attention,
   );
 });
 
+test("activity reconciliation keeps a selected idle transient conversation recent", () => {
+  const initial = createAgentGUIConversationActivityActivation(
+    [conversation("existing", { time: NOW - 2 * HOUR_MS })],
+    NOW
+  );
+  const reconciled = reconcileAgentGUIConversationActivityActivation(initial, [
+    conversation("existing", { time: NOW - 2 * HOUR_MS }),
+    conversation("selected-history", {
+      isTransient: true,
+      time: NOW - HOUR_MS
+    })
+  ]);
+
+  expect(projectAgentGUIConversationActivity(reconciled)).toEqual({
+    priorityIds: [],
+    priorityReasonsById: new Map(),
+    recentSections: [
+      {
+        dayStartUnixMs: localDayStartUnixMs(NOW),
+        ids: ["selected-history", "existing"]
+      }
+    ],
+    referenceDayStartUnixMs: localDayStartUnixMs(NOW)
+  });
+  expect(reconciled.priorityRetentionRecencyById.has("selected-history")).toBe(
+    false
+  );
+});
+
+test("activity reconciliation still prioritizes a transient conversation with live work", () => {
+  const initial = createAgentGUIConversationActivityActivation([], NOW);
+  const reconciled = reconcileAgentGUIConversationActivityActivation(initial, [
+    conversation("active-selected", {
+      isTransient: true,
+      status: "working",
+      time: NOW
+    })
+  ]);
+
+  expect(projectAgentGUIConversationActivity(reconciled)).toEqual({
+    priorityIds: ["active-selected"],
+    priorityReasonsById: new Map([["active-selected", "active"]]),
+    recentSections: [],
+    referenceDayStartUnixMs: localDayStartUnixMs(NOW)
+  });
+});
+
 test("activity reconciliation preserves activation identity when nothing changes", () => {
   const conversations = [conversation("recent", { time: NOW - HOUR_MS })];
   const initial = createAgentGUIConversationActivityActivation(
@@ -216,6 +263,7 @@ function conversation(
   id: string,
   overrides: {
     hasUnreadCompletion?: boolean;
+    isTransient?: boolean;
     needsUserAction?: boolean;
     status?: AgentGUIConversationSummary["status"];
     time: number;
@@ -225,6 +273,7 @@ function conversation(
     cwd: "/workspace",
     hasUnreadCompletion: overrides.hasUnreadCompletion,
     id,
+    isTransient: overrides.isTransient,
     needsUserAction: overrides.needsUserAction,
     provider: "codex",
     status: overrides.status ?? "ready",

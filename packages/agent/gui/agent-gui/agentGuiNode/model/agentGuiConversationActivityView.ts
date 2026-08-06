@@ -13,6 +13,7 @@ export type AgentGUIConversationActivityCandidate = Pick<
   AgentGUIConversationSummary,
   | "hasUnreadCompletion"
   | "id"
+  | "isTransient"
   | "needsUserAction"
   | "sortTimeUnixMs"
   | "status"
@@ -166,7 +167,7 @@ export function reconcileAgentGUIConversationActivityActivation(
       recentIds.delete(conversation.id);
     }
 
-    if (liveReason || !wasObserved) {
+    if (liveReason || (!conversation.isTransient && !wasObserved)) {
       if (!liveReason) {
         priorityRetentionRecencyById.set(conversation.id, currentRecency);
       }
@@ -178,6 +179,24 @@ export function reconcileAgentGUIConversationActivityActivation(
         recentDayStartUnixMs: null
       });
       priorityIds.add(conversation.id);
+      continue;
+    }
+
+    // A selected historical session can be injected into the visible rail
+    // before the canonical session snapshot catches up. It is a normal idle
+    // recent conversation, not a newly discovered task to retain in Priority.
+    if (conversation.isTransient && !wasObserved) {
+      const recentDayStartUnixMs = localDayStartUnixMs(currentRecency);
+      if (recentDayStartUnixMs >= activation.cutoffDayStartUnixMs) {
+        retainedRecent.push({
+          admissionOrder: ++admissionOrder,
+          admittedAtUnixMs: currentRecency,
+          id: conversation.id,
+          priorityReason: null,
+          recentDayStartUnixMs
+        });
+        recentIds.add(conversation.id);
+      }
     }
   }
 

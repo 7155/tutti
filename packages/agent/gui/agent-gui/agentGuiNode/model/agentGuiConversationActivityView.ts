@@ -2,6 +2,7 @@ import { resolveAgentGUIConversationSortTimeUnixMs } from "./agentGuiConversatio
 import type { AgentGUIConversationSummary } from "./agentGuiConversationTypes";
 
 const ACTIVITY_RECENT_DAY_COUNT = 7;
+const EMPTY_DELETED_SESSION_IDS: Readonly<Record<string, true>> = {};
 
 export type AgentGUIConversationActivityPriorityReason =
   | "waiting"
@@ -111,16 +112,17 @@ export function createAgentGUIConversationActivityActivation(
 
 export function reconcileAgentGUIConversationActivityActivation(
   activation: AgentGUIConversationActivityActivation,
-  conversations: readonly AgentGUIConversationActivityCandidate[]
+  conversations: readonly AgentGUIConversationActivityCandidate[],
+  deletedSessionIds: Readonly<Record<string, true>> = EMPTY_DELETED_SESSION_IDS
 ): AgentGUIConversationActivityActivation {
-  const conversationsById = new Map(
-    conversations.map((conversation) => [conversation.id, conversation])
+  // Activity membership is an activation snapshot. Keep the member refs even
+  // when a rail refresh temporarily omits their canonical summary; the view
+  // layer can render the last known row until the next toggle rebuilds it.
+  const retainedPriority = activation.priority.filter(
+    (member) => !deletedSessionIds[member.id]
   );
-  const retainedPriority = activation.priority.filter((member) =>
-    conversationsById.has(member.id)
-  );
-  const retainedRecent = activation.recent.filter((member) =>
-    conversationsById.has(member.id)
+  const retainedRecent = activation.recent.filter(
+    (member) => !deletedSessionIds[member.id]
   );
   const priorityIds = new Set(retainedPriority.map((member) => member.id));
   const retainedPriorityById = new Map(
@@ -128,8 +130,15 @@ export function reconcileAgentGUIConversationActivityActivation(
   );
   const recentIds = new Set(retainedRecent.map((member) => member.id));
   const previouslyObservedIds = new Set(activation.observedIds);
-  const observedIds = new Set<string>();
-  const priorityRetentionRecencyById = new Map<string, number>();
+  const observedIds = new Set(
+    activation.observedIds.filter((id) => !deletedSessionIds[id])
+  );
+  const currentIds = new Set<string>();
+  const priorityRetentionRecencyById = new Map(
+    [...activation.priorityRetentionRecencyById].filter(
+      ([id]) => !deletedSessionIds[id]
+    )
+  );
   let admissionOrder = Math.max(
     -1,
     ...activation.priority.map((member) => member.admissionOrder),
@@ -137,7 +146,9 @@ export function reconcileAgentGUIConversationActivityActivation(
   );
 
   for (const conversation of conversations) {
-    if (observedIds.has(conversation.id)) continue;
+    if (currentIds.has(conversation.id)) continue;
+    if (deletedSessionIds[conversation.id]) continue;
+    currentIds.add(conversation.id);
     observedIds.add(conversation.id);
     const currentRecency =
       resolveAgentGUIConversationSortTimeUnixMs(conversation);
@@ -147,8 +158,9 @@ export function reconcileAgentGUIConversationActivityActivation(
       activation.priorityRetentionRecencyById.get(conversation.id);
     if (previousRetentionRecency === currentRecency) {
       priorityRetentionRecencyById.set(conversation.id, currentRecency);
+    } else if (previousRetentionRecency !== undefined) {
+      priorityRetentionRecencyById.delete(conversation.id);
     } else if (
-      previousRetentionRecency === undefined &&
       !liveReason &&
       retainedPriorityMember?.priorityReason === "unread"
     ) {

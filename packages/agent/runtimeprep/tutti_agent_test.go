@@ -87,31 +87,6 @@ func TestTuttiAgentPreparerUsesExplicitAuthSourceAndInstallsSkills(t *testing.T)
 	}
 }
 
-func TestTuttiAgentPreparerLeavesTokenRefreshToTuttiAgent(t *testing.T) {
-	authSource := filepath.Join(t.TempDir(), "auth.json")
-	if err := os.WriteFile(authSource, []byte(`{"tutti_llm":{"access_token":"access-token-for-test"}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	preparer := TuttiAgentPreparer{
-		ResolveAuthSource: func(context.Context, PrepareInput) (string, error) {
-			return authSource, nil
-		},
-	}
-	result, err := preparer.Prepare(context.Background(), ProviderPrepareInput{
-		PrepareInput: testResolvedInput(t, PrepareInput{Provider: "tutti-agent"}),
-		RuntimeRoot:  t.TempDir(),
-		Store:        LocalStore{StateDir: t.TempDir()},
-	})
-	if err != nil {
-		t.Fatalf("Prepare() error = %v", err)
-	}
-	for _, key := range []string{"TUTTI_AGENT_API_KEY", "TUTTI_API_KEY"} {
-		if got := envValue(result.Env, key); got != "" {
-			t.Fatalf("%s = %q, want unset so Tutti Agent can refresh tutti_llm credentials", key, got)
-		}
-	}
-}
-
 func TestTuttiAgentPreparerRejectsRelativeAuthSource(t *testing.T) {
 	preparer := TuttiAgentPreparer{
 		ResolveAuthSource: func(context.Context, PrepareInput) (string, error) {

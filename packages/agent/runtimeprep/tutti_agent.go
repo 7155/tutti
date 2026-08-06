@@ -69,10 +69,6 @@ func (p TuttiAgentPreparer) Prepare(ctx context.Context, input ProviderPrepareIn
 	}
 	logRuntimePrepareTrace("runtime_prepare.tutti_agent.resolved", input.PrepareInput, nil)
 	env := []string{"TUTTI_AGENT_HOME=" + home}
-	// Do not let a parent process force the API-key path.  Tutti Agent must
-	// resolve the managed tutti_llm record so its native refresh manager owns
-	// access-token renewal; an API-key environment override bypasses that path.
-	env = append(env, "TUTTI_AGENT_API_KEY=", "TUTTI_API_KEY=")
 	if len(extraSkillRoots) > 0 {
 		encodedRoots, err := json.Marshal(extraSkillRoots)
 		if err != nil {

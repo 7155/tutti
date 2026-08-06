@@ -183,6 +183,12 @@ The stable Microsoft Store path is a separate, opt-in release surface:
 - RC and beta tags remain Direct-only. A separate Store beta product or package
   flight is not part of this implementation.
 
+The first Store submission is a one-time Partner Center operation: upload the
+validated AppX artifact and complete the listing, properties, age rating,
+pricing, and availability there. The Store Developer CLI does not implement a
+first submission from a loose MSIX file. Once that first submission has been
+accepted, later stable package updates use the automated Store workflow.
+
 Microsoft Store submission does not make the Direct NSIS installer signed. The
 Store package may be treated as a supported public download only after its
 Partner Center certification, installation, sidecar, protocol, update, and

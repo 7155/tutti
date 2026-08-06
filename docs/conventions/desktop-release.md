@@ -173,6 +173,15 @@ the Direct GitHub Release, S3 mirror, CloudFront updater metadata, or
 - a manual test run can build and validate the package with `submit=false`;
 - a stable release can submit the package to Partner Center with `submit=true`.
 
+The Microsoft Store Developer CLI cannot complete an application's first
+submission from a loose MSIX file. Complete the first submission once in
+Partner Center by uploading the validated AppX artifact and filling the Store
+listing, properties, age rating, pricing, and availability. After that first
+submission exists, the workflow can publish later package updates
+automatically. The workflow presents electron-builder's AppX payload to the
+CLI with an `.msix` extension because the CLI recognizes loose MSIX inputs but
+does not recognize the equivalent `.appx` extension.
+
 The automatic stable call is enabled only when the repository variable below
 is true:
 

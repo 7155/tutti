@@ -133,6 +133,7 @@ test("desktop release submits only stable builds to an isolated Store workflow",
   );
   assert.match(storeWorkflow, /msstore reconfigure/);
   assert.match(storeWorkflow, /msstore publish/);
+  assert.match(storeWorkflow, /ChangeExtension\(\$appxPath, '\.msix'\)/);
   assert.doesNotMatch(storeWorkflow, /msstore submission poll/);
   assert.match(storeWorkflow, /TUTTI_STORE_IDENTITY_NAME/);
   assert.match(storeWorkflow, /TUTTI_STORE_PUBLISHER/);

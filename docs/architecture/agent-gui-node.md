@@ -2322,7 +2322,7 @@ Copy as reference copies the session-mention markdown link the @ panel
 produces, so pasting into any composer reconstructs the session chip; it is
 synchronous and only requires a writable host clipboard. Copy as Markdown
 loads every canonical message page and serializes a lean transcript: user
-inputs blockquoted in full, per-turn final agent replies plain, interim
+inputs and per-turn final agent replies plain, interim
 narration collapsed in a `<details>` block; tool payloads (except image
 outputs), thinking, `agent_system_notice` messages, and JSON fallbacks are
 dropped. The clipboard write is dual-format: `text/plain` keeps short image

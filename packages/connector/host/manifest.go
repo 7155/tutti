@@ -251,11 +251,41 @@ func validateManagedStdio(managed ManagedStdioImplementation, authorizationKind 
 			return err
 		}
 	}
-	if authorizationKind != "none" && managed.CredentialBrokerProtocol != CredentialBrokerProtocolV1 {
-		return invalidManifest("authorized managed_stdio connectors require the v1 credential broker", nil)
+	if authorizationKind != "none" {
+		if err := validateManagedCredentialBroker(managed.CredentialBroker, managed.CLI != nil); err != nil {
+			return err
+		}
 	}
-	if authorizationKind == "none" && managed.CredentialBrokerProtocol != "" {
-		return invalidManifest("credential broker must not be requested when authorization is none", nil)
+	if authorizationKind == "none" && managed.CredentialBroker != nil {
+		return invalidManifest("credential broker must not be declared when authorization is none", nil)
+	}
+	return nil
+}
+
+func validateManagedCredentialBroker(broker *ManagedCredentialBroker, hasCLI bool) error {
+	if broker == nil || !hasCLI {
+		return invalidManifest("authorized managed_stdio connectors require a CLI credential broker", nil)
+	}
+	if broker.Protocol != CredentialBrokerProtocolV1 || !safeRelativeEntrypoint(broker.Entrypoint) {
+		return invalidManifest("credential broker requires the v1 protocol and a safe connector-relative entrypoint", nil)
+	}
+	if broker.TimeoutMS < 1_000 || broker.TimeoutMS > 10*60*1_000 {
+		return invalidManifest("credential broker timeoutMs must be between 1000 and 600000", nil)
+	}
+	if len(broker.AllowedHosts) == 0 {
+		return invalidManifest("credential broker requires at least one allowed authorization host", nil)
+	}
+	seen := make(map[string]struct{}, len(broker.AllowedHosts))
+	for _, rawHost := range broker.AllowedHosts {
+		host := strings.ToLower(strings.TrimSpace(rawHost))
+		parsed, err := url.Parse("https://" + host)
+		if err != nil || host == "" || parsed.Host != host || parsed.Hostname() != host || net.ParseIP(host) != nil {
+			return invalidManifest("credential broker allowedHosts must contain exact DNS hostnames", nil)
+		}
+		if _, exists := seen[host]; exists {
+			return invalidManifest("credential broker allowedHosts must be unique", nil)
+		}
+		seen[host] = struct{}{}
 	}
 	return nil
 }
@@ -310,16 +340,6 @@ func validateCLIInstallation(install CLIInstallation, runtime RuntimeRequirement
 			if strings.ContainsRune(argument, '\x00') {
 				return invalidManifest("node package lifecycle arguments must not contain NUL", nil)
 			}
-		}
-		seenExecutables := make(map[string]struct{}, len(lifecycle.AllowedExecutables))
-		for _, executable := range lifecycle.AllowedExecutables {
-			if executable != "curl" && executable != "tar" {
-				return invalidManifest("node package lifecycle executable is not in the host allowlist", nil)
-			}
-			if _, exists := seenExecutables[executable]; exists {
-				return invalidManifest("node package lifecycle executables must be unique", nil)
-			}
-			seenExecutables[executable] = struct{}{}
 		}
 	}
 	return nil

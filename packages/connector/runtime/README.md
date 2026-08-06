@@ -12,19 +12,17 @@ transport, HTTP client/proxy policy, state roots, and product-facing command
 transport. Runtime code must not import `services/tuttid` or expose host
 filesystem paths as a cross-machine protocol.
 
-Authorized `managed_stdio` Connectors use the public `CredentialBroker` port.
-The host passes only an opaque grant to that port and gives the Connector the
-resulting `tutti.connector.credentials.v1` payload through the reserved
-`TUTTI_CONNECTOR_FD_CREDENTIALS` inherited descriptor. Grants and credential
-payloads must remain memory-only and must not be logged.
-`AuthorizationObserver` reports successful runtime credential binding and
-expired grants back to the embedding product. An expired grant immediately
-retires the published route; the embedding product remains responsible for
-projecting that observation to its account authorization authority.
+Authorized `managed_stdio` Connectors declare a signed, connector-owned
+credential broker entrypoint. The broker translates its provider-specific
+flow into the `tutti.connector.credentials.v1` event protocol. Tutti validates
+every authorization URL against the manifest's exact HTTPS host allowlist and
+keeps one broker session alive while the provider emits multiple steps. CLI
+credentials remain user-global in the real user home, while the CLI itself is
+installed only in Tutti's private managed directory and is never added to the
+system `PATH`.
 
-Products whose VM boundary is the Connector authority boundary may explicitly
-select `agentruntime.NewPermissiveConnectorProcessTransport()`. It retains
-verified-executable, immutable-tree, bounded-output, process-group, and
-sensitive-FD behavior while intentionally omitting the OS sandbox. The default
-`NewConnectorProcessTransport()` remains fail-closed when no platform sandbox
-backend exists.
+Connector installation, MCP, CLI, and credential-broker processes intentionally
+do not use an OS process sandbox. `NewConnectorProcessTransport()` preserves
+the security boundary through pinned packages, signed artifact receipts,
+immutable execution snapshots, executable SHA-256/size verification, an
+explicit environment, process groups, timeouts, and bounded output.

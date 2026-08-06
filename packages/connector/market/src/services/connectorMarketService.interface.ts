@@ -26,6 +26,7 @@ export interface ConnectorMarketStoreState {
   connectorsByKey: Record<string, Connector>;
   connectorKeys: string[];
   operationsByConnectorKey: Record<string, ConnectorOperation>;
+  authorizingConnectorKeys: Record<string, boolean>;
   lastError: ConnectorMarketErrorShape | null;
   revision: number;
 }

@@ -125,9 +125,8 @@ func TestNodePackageInstallerUsesOneManagedNodeAndSharedContentStore(t *testing.
 			}
 		} else {
 			lifecycleRuns++
-			if !strings.HasSuffix(filepath.ToSlash(spec.Command[1]), "/scripts/install.js") ||
-				len(spec.ConnectorSandbox.AllowedExecutables) != 2 {
-				t.Fatalf("lifecycle did not use the typed Node entrypoint and executable allowlist: %#v", spec)
+			if !strings.HasSuffix(filepath.ToSlash(spec.Command[1]), "/scripts/install.js") {
+				t.Fatalf("lifecycle did not use the typed Node entrypoint: %#v", spec)
 			}
 		}
 		if !containsEnvironmentPrefix(spec.Env, "NPM_CONFIG_CACHE="+filepath.Join(root, "shared", "npm-cache")) {
@@ -175,8 +174,7 @@ func testNodePackageRelease(connectorKey, digest string) market.Release {
 							Package: "@larksuite/cli", Version: "1.0.83", Integrity: larkTestIntegrity,
 							Launch: market.NodePackageLaunch{Kind: "native", Entrypoint: "bin/lark-cli",
 								SHA256: "c4319606cba410b6e1128bebe27915a7c212a4f8b58faaa38a2f99d31856e046"},
-							Lifecycle: []market.NodeLifecycleCommand{{Event: "postinstall", Entrypoint: "scripts/install.js",
-								AllowedExecutables: []string{"curl", "tar"}}},
+							Lifecycle: []market.NodeLifecycleCommand{{Event: "postinstall", Entrypoint: "scripts/install.js"}},
 						}},
 					},
 				},

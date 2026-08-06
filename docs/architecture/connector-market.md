@@ -62,7 +62,7 @@ Each host daemon owns:
 - remote market base URL, authentication, HTTP transport, proxy, TLS, logging,
   and tracing configuration
 - the state root supplied to the shared runtime
-- process transport, sandbox enforcement, OS integration, product command
+- process transport, artifact and executable enforcement, OS integration, product command
   publication, invocation admission, and credential binding injected into the
   shared runtime boundary
 - secure credential storage and authorization callbacks
@@ -135,7 +135,7 @@ typed package name, exact version, integrity, and optional allowlisted Node
 lifecycle entrypoints; they do not provide arbitrary shell commands. Package
 manager lifecycle scripts are disabled. An allowed lifecycle entrypoint is
 launched directly by the same verified Node inside the connector installer
-sandbox. A `node_script` launch continues through that Node; a `native` launch
+verified process transport. A `node_script` launch continues through that Node; a `native` launch
 must declare the expected platform-binary SHA-256, and activation executes only
 the file matching that digest. All connections and workspaces reuse one installed connector release.
 Removing one connector release must not remove the shared store or caches.
@@ -150,11 +150,11 @@ scope (`permission`, `permission:scope`, or `permission:*`). The daemon keeps
 fail-closed validation for the permission name, scope grammar, duplicates, and
 all other manifest fields; a scoped permission is not treated as a plain
 identifier. The host may currently collapse a scoped permission to a broader
-sandbox capability, so accepting the syntax does not imply scope-level runtime
+runtime capability, so accepting the syntax does not imply scope-level runtime
 enforcement.
 
 CLI manifests do not require action mappings. When `commands` is absent, the
-host publishes one generic, sandboxed `connector.<key>.cli.run` capability and
+host publishes one generic, verified `connector.<key>.cli.run` capability and
 the installed Skill supplies the CLI arguments and workflow. The host rejects
 NUL-bearing arguments and non-interactive `--yes`/`--force` overrides.
 
@@ -188,7 +188,7 @@ installation primitives, while each daemon supplies the concrete
 implementation host, process, and product-command adapters. In Tutti, `managed_stdio`
 connectors resolve an exact Node/Python runtime profile. MCP servers are
 long-lived daemon children, while CLI commands are one-shot children. Both use
-the same generation fence, process registry, artifact snapshot, sandbox, and
+the same generation fence, process registry, artifact snapshot, executable identity, and
 connection-scoped state path. An installed runtime is daemon-global and is
 available to every Agent and the local Tutti CLI. TSH runs the same runtime
 module inside its managed VM and supplies a guest process adapter.
@@ -339,9 +339,9 @@ content only on explicit read. Connector invocations use a bounded, serialized
 admission gate by default.
 
 The first production compatibility boundary is deliberately narrow:
-`managed_stdio`, authorization kind `none`, and platforms with the production
-connector sandbox are installable. Connectors requiring credentials remain
-visible but unsupported until a credential broker is implemented. Durable
+`managed_stdio` connectors are installable when their runtime contract is
+supported. Authorized connectors must declare a signed connector-owned
+credential broker and exact HTTPS authorization hosts. Durable
 event replay is still follow-up hardening; renderer reconnect, resume, command
 completion, and revision-fenced invalidations therefore trigger authoritative
 snapshot reloads.

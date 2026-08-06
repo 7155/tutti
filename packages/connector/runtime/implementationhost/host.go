@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -24,37 +23,12 @@ import (
 	"github.com/tutti-os/tutti/packages/connector/runtime/mcp"
 )
 
-const credentialDescriptorEnv = "TUTTI_CONNECTOR_FD_CREDENTIALS"
-
-var ErrCredentialGrantExpired = errors.New("connector credential grant expired")
-
 type PreparedArtifactResolver interface {
 	ResolvePrepared(context.Context, market.Release) (market.PreparedArtifactReceipt, error)
 }
 
-// CredentialBroker exchanges an opaque, memory-only authorization grant for
-// a readable descriptor containing the tutti.connector.credentials.v1 payload.
-// The host closes File immediately after the child inherits the descriptor.
-type CredentialBroker interface {
-	Open(context.Context, CredentialRequest) (CredentialFile, error)
-}
-
-type CredentialRequest struct {
-	ConnectorKey      string
-	ConnectionID      string
-	AuthorizationKind string
-	Grant             []byte
-}
-
-type CredentialFile struct {
-	File      *os.File
-	ExpiresAt time.Time
-}
-
 type ReconcileRequest struct {
 	Runtime market.RuntimeReconcileRequest
-	// CredentialGrant is consumed by Reconcile and erased before it returns.
-	CredentialGrant []byte
 }
 
 type Config struct {
@@ -62,24 +36,22 @@ type Config struct {
 	CLIInstallations  market.CLIInstallationManager
 	Runtimes          connectorruntime.ConnectorRuntimeResolver
 	Processes         agentruntime.ProcessTransport
-	Credentials       CredentialBroker
-	Authorization     AuthorizationObserver
 	Routes            RouteObserver
 	Commands          *CommandRegistry
 	StateRoot         string
+	UserHome          string
 	MCPStartupTimeout time.Duration
 }
 
 type Host struct {
-	artifacts         PreparedArtifactResolver
-	planner           *connectorruntime.ManagedRoutePlanner
-	processes         agentruntime.ProcessTransport
-	credentials       CredentialBroker
-	authorization     AuthorizationObserver
-	routeObserver     RouteObserver
-	mcpStartupTimeout time.Duration
-	routes            *connectorruntime.RouteTable
-	snapshots         *connectorruntime.ExecutionSnapshotter
+	artifacts             PreparedArtifactResolver
+	planner               *connectorruntime.ManagedRoutePlanner
+	processes             agentruntime.ProcessTransport
+	routeObserver         RouteObserver
+	mcpStartupTimeout     time.Duration
+	routes                *connectorruntime.RouteTable
+	snapshots             *connectorruntime.ExecutionSnapshotter
+	authorizationProvider *managedCredentialAuthorizationProvider
 }
 
 type connectorCommand struct {
@@ -88,23 +60,23 @@ type connectorCommand struct {
 }
 
 type connectorRoute struct {
-	id              string
-	connectionID    string
-	connectorKey    string
-	releaseDigest   string
-	generation      market.HostGeneration
-	capabilities    map[string]connectorCommand
-	closeMu         sync.Mutex
-	mcpClient       *mcp.StdioClient
-	executionRoot   string
-	installedRoot   string
-	displayName     string
-	description     string
-	processes       *connectorruntime.ProcessGroup
-	snapshots       *connectorruntime.ExecutionSnapshotter
-	credentials     CredentialBroker
-	authKind        string
-	credentialGrant []byte
+	id                     string
+	connectionID           string
+	connectorKey           string
+	releaseDigest          string
+	generation             market.HostGeneration
+	capabilities           map[string]connectorCommand
+	closeMu                sync.Mutex
+	mcpClient              *mcp.StdioClient
+	executionRoot          string
+	installedRoot          string
+	displayName            string
+	description            string
+	processes              *connectorruntime.ProcessGroup
+	snapshots              *connectorruntime.ExecutionSnapshotter
+	userHome               string
+	cliLaunch              *managedCLILaunch
+	credentialBrokerLaunch *managedCredentialBrokerLaunch
 }
 
 func New(config Config) (*Host, error) {
@@ -113,6 +85,9 @@ func New(config Config) (*Host, error) {
 	}
 	if !filepath.IsAbs(strings.TrimSpace(config.StateRoot)) {
 		return nil, errors.New("connector implementation state root must be absolute")
+	}
+	if !filepath.IsAbs(strings.TrimSpace(config.UserHome)) {
+		return nil, errors.New("connector implementation user home must be absolute")
 	}
 	if config.MCPStartupTimeout <= 0 {
 		config.MCPStartupTimeout = 15 * time.Second
@@ -123,20 +98,19 @@ func New(config Config) (*Host, error) {
 	}
 	routes := connectorruntime.NewRouteTable()
 	planner, err := connectorruntime.NewManagedRoutePlanner(connectorruntime.ManagedRoutePlannerConfig{
-		StateRoot: config.StateRoot, Runtimes: config.Runtimes, CLIInstallations: config.CLIInstallations,
+		StateRoot: config.StateRoot, UserHome: config.UserHome, Runtimes: config.Runtimes, CLIInstallations: config.CLIInstallations,
 	})
 	if err != nil {
 		return nil, err
 	}
 	config.Commands.attach(routes)
-	return &Host{artifacts: config.Artifacts, planner: planner, processes: config.Processes, credentials: config.Credentials,
-		authorization:     config.Authorization,
-		routeObserver:     config.Routes,
-		mcpStartupTimeout: config.MCPStartupTimeout, routes: routes, snapshots: snapshots}, nil
+	host := &Host{artifacts: config.Artifacts, planner: planner, processes: config.Processes,
+		routeObserver: config.Routes, mcpStartupTimeout: config.MCPStartupTimeout, routes: routes, snapshots: snapshots}
+	host.authorizationProvider = newManagedCredentialAuthorizationProvider(host)
+	return host, nil
 }
 
 func (host *Host) Reconcile(ctx context.Context, request ReconcileRequest) (market.RuntimeReceipt, error) {
-	defer clearSensitiveBytes(request.CredentialGrant)
 	runtimeRequest := request.Runtime
 	if host == nil || !hostIdentityPattern.MatchString(runtimeRequest.ConnectionID) ||
 		!hostIdentityPattern.MatchString(runtimeRequest.Connector.Key) || runtimeRequest.Generation.BootEpoch == "" || runtimeRequest.Generation.Generation == 0 {
@@ -147,9 +121,6 @@ func (host *Host) Reconcile(ctx context.Context, request ReconcileRequest) (mark
 	}
 	key := connectorRouteKey(runtimeRequest.ConnectionID, runtimeRequest.Connector.Key)
 	if !runtimeRequest.Enabled {
-		if len(request.CredentialGrant) != 0 {
-			return market.RuntimeReceipt{}, errors.New("disabled connector reconcile must not include a credential grant")
-		}
 		if err := host.routes.Remove(key, runtimeRequest.Generation, "", time.Time{}); err != nil {
 			return market.RuntimeReceipt{}, err
 		}
@@ -161,7 +132,7 @@ func (host *Host) Reconcile(ctx context.Context, request ReconcileRequest) (mark
 		runtimeRequest.Connector.Installation.InstalledReleaseDigest != runtimeRequest.Connector.Release.ReleaseDigest {
 		return market.RuntimeReceipt{}, errors.New("connector installed release is not active")
 	}
-	if err := host.validateAuthorization(runtimeRequest, request.CredentialGrant); err != nil {
+	if err := host.validateAuthorization(runtimeRequest); err != nil {
 		return market.RuntimeReceipt{}, err
 	}
 	prepared, err := host.artifacts.ResolvePrepared(ctx, runtimeRequest.Connector.Release)
@@ -174,7 +145,7 @@ func (host *Host) Reconcile(ctx context.Context, request ReconcileRequest) (mark
 		return market.RuntimeReceipt{}, fmt.Errorf("create connector execution snapshot: %w", err)
 	}
 	prepared.PreparedPath = executionRoot
-	route, err := host.buildManagedRoute(ctx, runtimeRequest, prepared, request.CredentialGrant)
+	route, err := host.buildManagedRoute(ctx, runtimeRequest, prepared)
 	if err != nil {
 		_ = host.snapshots.Remove(executionRoot)
 		return market.RuntimeReceipt{}, err
@@ -200,18 +171,23 @@ func (host *Host) Reconcile(ctx context.Context, request ReconcileRequest) (mark
 		Generation: runtimeRequest.Generation, RouteIDs: routeIDs}, nil
 }
 
-func (host *Host) validateAuthorization(request market.RuntimeReconcileRequest, grant []byte) error {
+func (*Host) validateAuthorization(request market.RuntimeReconcileRequest) error {
 	authKind := request.Connector.Release.Manifest.AuthorizationKind
 	managed := request.Connector.Release.Manifest.Implementation.ManagedStdio
 	if authKind == "none" {
-		if request.Connector.Authorization.State != market.AuthorizationStateNotRequired || len(grant) != 0 {
+		if request.Connector.Authorization.State != market.AuthorizationStateNotRequired {
 			return errors.New("authorization-free connector has an invalid credential binding")
 		}
 		return nil
 	}
-	if request.Connector.Authorization.State != market.AuthorizationStateConnected || managed == nil ||
-		managed.CredentialBrokerProtocol != market.CredentialBrokerProtocolV1 || host.credentials == nil || len(grant) == 0 {
+	if managed == nil || managed.CredentialBroker == nil {
 		return errors.New("authorized connector credential broker binding is unavailable")
+	}
+	switch request.Connector.Authorization.State {
+	case market.AuthorizationStateDisconnected, market.AuthorizationStatePending, market.AuthorizationStateConnected,
+		market.AuthorizationStateExpired, market.AuthorizationStateFailed:
+	default:
+		return errors.New("authorized connector has an invalid authorization state")
 	}
 	return nil
 }
@@ -258,7 +234,7 @@ func (host *Host) DeactivateRuntime(ctx context.Context, request market.RuntimeD
 }
 
 func (host *Host) buildManagedRoute(ctx context.Context, request market.RuntimeReconcileRequest,
-	prepared market.PreparedArtifactReceipt, credentialGrant []byte) (*connectorRoute, error) {
+	prepared market.PreparedArtifactReceipt) (*connectorRoute, error) {
 	plan, err := host.planner.Build(ctx, request, prepared)
 	if err != nil {
 		return nil, err
@@ -266,16 +242,21 @@ func (host *Host) buildManagedRoute(ctx context.Context, request market.RuntimeR
 	route := &connectorRoute{id: connectorRouteKey(request.ConnectionID, request.Connector.Key), connectionID: request.ConnectionID,
 		connectorKey: request.Connector.Key, releaseDigest: request.Connector.Release.ReleaseDigest,
 		generation: request.Generation, capabilities: make(map[string]connectorCommand), processes: connectorruntime.NewProcessGroup(),
-		credentials: host.credentials, authKind: request.Connector.Release.Manifest.AuthorizationKind,
-		credentialGrant: append([]byte(nil), credentialGrant...)}
+		userHome: plan.UserHome}
 	if plan.Managed.MCP != nil {
-		if err := host.attachMCP(ctx, route, plan.Managed, prepared, plan.Executable, plan.SandboxPolicy); err != nil {
+		if err := host.attachMCP(ctx, route, plan.Managed, prepared, plan.Executable, plan.StateDir, plan.UserHome, plan.ArtifactTrees); err != nil {
 			_ = route.close(time.Now().Add(3 * time.Second))
 			return nil, err
 		}
 	}
 	if plan.Managed.CLI != nil {
-		if err := host.attachCLI(route, plan.Managed, prepared, plan.InstalledCLI, plan.Executable, plan.SandboxPolicy); err != nil {
+		if err := host.attachCLI(route, plan.Managed, prepared, plan.InstalledCLI, plan.Executable, plan.StateDir, plan.UserHome, plan.ArtifactTrees); err != nil {
+			_ = route.close(time.Now().Add(3 * time.Second))
+			return nil, err
+		}
+	}
+	if plan.Managed.CredentialBroker != nil {
+		if err := host.attachCredentialBroker(route, plan.Managed.CredentialBroker, prepared, plan.Executable, plan.StateDir, plan.ArtifactTrees); err != nil {
 			_ = route.close(time.Now().Add(3 * time.Second))
 			return nil, err
 		}
@@ -290,9 +271,33 @@ func (host *Host) buildManagedRoute(ctx context.Context, request market.RuntimeR
 var capabilityPartPattern = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,127}$`)
 var hostIdentityPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,190}$`)
 
+func (*Host) attachCredentialBroker(route *connectorRoute, broker *market.ManagedCredentialBroker,
+	prepared market.PreparedArtifactReceipt, executable connectorruntime.ConnectorExecutable,
+	stateDir string, artifactTrees []agentruntime.ArtifactTreeIdentity) error {
+	if route.cliLaunch == nil {
+		return errors.New("connector credential broker requires a managed CLI")
+	}
+	entrypoint, err := connectorruntime.PreparedEntrypoint(prepared.PreparedPath, broker.Entrypoint)
+	if err != nil {
+		return fmt.Errorf("resolve connector credential broker entrypoint: %w", err)
+	}
+	allowedHosts := make(map[string]struct{}, len(broker.AllowedHosts))
+	for _, allowedHost := range broker.AllowedHosts {
+		allowedHosts[strings.ToLower(strings.TrimSpace(allowedHost))] = struct{}{}
+	}
+	route.credentialBrokerLaunch = &managedCredentialBrokerLaunch{
+		entrypoint: entrypoint, timeout: time.Duration(broker.TimeoutMS) * time.Millisecond, allowedHosts: allowedHosts,
+		cliLaunch: credentialBrokerCLILaunch{Executable: route.cliLaunch.executable.Path,
+			Arguments: append([]string(nil), route.cliLaunch.arguments...), CWD: route.cliLaunch.cwd},
+		executable: executable, language: route.cliLaunch.language, cwd: prepared.PreparedPath, stateDir: stateDir,
+		artifactTrees: append([]agentruntime.ArtifactTreeIdentity(nil), artifactTrees...),
+	}
+	return nil
+}
+
 func (host *Host) attachMCP(ctx context.Context, route *connectorRoute, managed *market.ManagedStdioImplementation,
 	prepared market.PreparedArtifactReceipt, executable connectorruntime.ConnectorExecutable,
-	sandbox *agentruntime.ConnectorSandboxPolicy) error {
+	stateDir, userHome string, artifactTrees []agentruntime.ArtifactTreeIdentity) error {
 	entrypoint, err := connectorruntime.PreparedEntrypoint(prepared.PreparedPath, managed.MCP.Entrypoint)
 	if err != nil {
 		return err
@@ -300,7 +305,7 @@ func (host *Host) attachMCP(ctx context.Context, route *connectorRoute, managed 
 	startupContext, cancelStartup := context.WithTimeout(ctx, host.mcpStartupTimeout)
 	defer cancelStartup()
 	spec := connectorruntime.ConnectorProcessSpec(route.connectionID, route.connectorKey, managed.Runtime.Language,
-		executable, prepared.PreparedPath, append([]string{entrypoint}, managed.MCP.Arguments...), sandbox)
+		executable, prepared.PreparedPath, append([]string{entrypoint}, managed.MCP.Arguments...), stateDir, userHome, artifactTrees)
 	connection, processID, err := host.startProcess(startupContext, route, spec, false)
 	if err != nil {
 		return fmt.Errorf("start connector MCP process: %w", err)
@@ -415,7 +420,7 @@ func (host *Host) monitorMCPRoute(route *connectorRoute, client *mcp.StdioClient
 
 func (host *Host) attachCLI(route *connectorRoute, managed *market.ManagedStdioImplementation,
 	prepared market.PreparedArtifactReceipt, installed *market.CLIInstallationReceipt,
-	executable connectorruntime.ConnectorExecutable, sandbox *agentruntime.ConnectorSandboxPolicy) error {
+	executable connectorruntime.ConnectorExecutable, stateDir, userHome string, artifactTrees []agentruntime.ArtifactTreeIdentity) error {
 	entrypointRoot, entrypointRelative := prepared.PreparedPath, managed.CLI.Entrypoint
 	if installed != nil {
 		entrypointRoot, entrypointRelative = installed.InstallRoot, installed.Entrypoint
@@ -431,8 +436,11 @@ func (host *Host) attachCLI(route *connectorRoute, managed *market.ManagedStdioI
 		launchExecutable = connectorruntime.ConnectorExecutable{Path: entrypoint, SHA256: installed.EntrypointSHA256,
 			SizeBytes: installed.EntrypointSize}
 	}
+	route.cliLaunch = &managedCLILaunch{arguments: append(append([]string{}, launchArguments...), managed.CLI.Arguments...),
+		artifactTrees: append([]agentruntime.ArtifactTreeIdentity(nil), artifactTrees...), cwd: prepared.PreparedPath,
+		executable: launchExecutable, language: managed.Runtime.Language, stateDir: stateDir}
 	if len(managed.CLI.Commands) == 0 {
-		return host.attachGenericCLI(route, managed, prepared, launchArguments, launchExecutable, sandbox)
+		return host.attachGenericCLI(route, managed, prepared, launchArguments, launchExecutable, stateDir, userHome, artifactTrees)
 	}
 	for _, manifestCommand := range managed.CLI.Commands {
 		manifestCommand := manifestCommand
@@ -458,7 +466,7 @@ func (host *Host) attachCLI(route *connectorRoute, managed *market.ManagedStdioI
 				arguments = append(arguments, managed.CLI.Arguments...)
 				arguments = append(arguments, manifestCommand.Arguments...)
 				spec := connectorruntime.ConnectorProcessSpec(route.connectionID, route.connectorKey, managed.Runtime.Language,
-					launchExecutable, prepared.PreparedPath, arguments, sandbox)
+					launchExecutable, prepared.PreparedPath, arguments, stateDir, userHome, artifactTrees)
 				connection, processID, err := host.startProcess(timeoutCtx, route, spec, true)
 				if err != nil {
 					return command.Output{}, command.ServiceUnavailable("start connector CLI command", err)
@@ -479,7 +487,7 @@ func (host *Host) attachCLI(route *connectorRoute, managed *market.ManagedStdioI
 
 func (host *Host) attachGenericCLI(route *connectorRoute, managed *market.ManagedStdioImplementation,
 	prepared market.PreparedArtifactReceipt, launchArguments []string, executable connectorruntime.ConnectorExecutable,
-	sandbox *agentruntime.ConnectorSandboxPolicy) error {
+	stateDir, userHome string, artifactTrees []agentruntime.ArtifactTreeIdentity) error {
 	commandID, err := capabilityID(route.connectorKey, "cli", "run")
 	if err != nil {
 		return err
@@ -504,7 +512,7 @@ func (host *Host) attachGenericCLI(route *connectorRoute, managed *market.Manage
 			processArguments = append(processArguments, managed.CLI.Arguments...)
 			processArguments = append(processArguments, arguments...)
 			spec := connectorruntime.ConnectorProcessSpec(route.connectionID, route.connectorKey, managed.Runtime.Language,
-				executable, prepared.PreparedPath, processArguments, sandbox)
+				executable, prepared.PreparedPath, processArguments, stateDir, userHome, artifactTrees)
 			connection, processID, err := host.startProcess(timeoutCtx, route, spec, true)
 			if err != nil {
 				return command.Output{}, command.ServiceUnavailable("start connector CLI command", err)
@@ -550,18 +558,6 @@ func (host *Host) startProcess(ctx context.Context, route *connectorRoute, spec 
 	if requireCurrent && !host.routes.IsCurrent(route) {
 		return nil, 0, command.ErrServiceUnavailable
 	}
-	closeCredential, err := route.bindCredential(ctx, &spec)
-	if err != nil {
-		if errors.Is(err, ErrCredentialGrantExpired) {
-			host.observeAuthorization(ctx, route, market.AuthorizationStateExpired)
-			_ = host.routes.RetireExact(route, time.Now().Add(3*time.Second))
-		}
-		return nil, 0, err
-	}
-	defer closeCredential()
-	if route.authKind != "none" {
-		host.observeAuthorization(ctx, route, market.AuthorizationStateConnected)
-	}
 	startContext, processID, accepted := route.processes.Begin(context.Background())
 	if !accepted {
 		return nil, 0, command.ErrServiceUnavailable
@@ -596,44 +592,6 @@ func (host *Host) startProcess(ctx context.Context, route *connectorRoute, spec 
 		}()
 		return nil, 0, ctx.Err()
 	}
-}
-
-func (route *connectorRoute) bindCredential(ctx context.Context, spec *agentruntime.ProcessSpec) (func(), error) {
-	if route.authKind == "none" {
-		return func() {}, nil
-	}
-	if route.credentials == nil || len(route.credentialGrant) == 0 {
-		return nil, errors.New("connector credential grant is unavailable")
-	}
-	grant := append([]byte(nil), route.credentialGrant...)
-	defer clearSensitiveBytes(grant)
-	credential, err := route.credentials.Open(ctx, CredentialRequest{ConnectorKey: route.connectorKey,
-		ConnectionID: route.connectionID, AuthorizationKind: route.authKind, Grant: grant})
-	if err != nil {
-		if errors.Is(err, ErrCredentialGrantExpired) {
-			return nil, ErrCredentialGrantExpired
-		}
-		return nil, fmt.Errorf("open connector credential binding: %w", err)
-	}
-	if credential.File == nil || (!credential.ExpiresAt.IsZero() && !credential.ExpiresAt.After(time.Now())) {
-		if credential.File != nil {
-			_ = credential.File.Close()
-		}
-		return nil, ErrCredentialGrantExpired
-	}
-	spec.SensitiveInheritedFiles = append(spec.SensitiveInheritedFiles, agentruntime.SensitiveInheritedFile{
-		File: credential.File, DescriptorEnvKey: credentialDescriptorEnv, Purpose: market.CredentialBrokerProtocolV1,
-	})
-	return func() { _ = credential.File.Close() }, nil
-}
-
-func (host *Host) observeAuthorization(ctx context.Context, route *connectorRoute, state market.AuthorizationState) {
-	if host == nil || host.authorization == nil || route == nil {
-		return
-	}
-	host.authorization.ObserveAuthorization(ctx, AuthorizationObservation{
-		ConnectorKey: route.connectorKey, ConnectionID: route.connectionID, State: state, ObservedAt: time.Now().UTC(),
-	})
 }
 
 func collectCLIOutput(ctx context.Context, connection agentruntime.ProcessConnection) (command.Output, error) {
@@ -707,12 +665,6 @@ func connectorRouteKey(connectionID, connectorKey string) string {
 	return connectionID + "\x00" + connectorKey
 }
 
-func clearSensitiveBytes(value []byte) {
-	for index := range value {
-		value[index] = 0
-	}
-}
-
 func (host *Host) routeCurrent(route *connectorRoute) bool {
 	return host.routes.IsCurrent(route) && !route.processes.IsFenced()
 }
@@ -723,7 +675,9 @@ func (route *connectorRoute) RouteReleaseDigest() string             { return ro
 func (route *connectorRoute) Fence()                                 { route.processes.Fence() }
 func (route *connectorRoute) close(deadline time.Time) error         { return route.Close(deadline) }
 func (route *connectorRoute) releaseProcess(id uint64, connection agentruntime.ProcessConnection) {
-	route.processes.Release(id, connection)
+	if route != nil && route.processes != nil {
+		route.processes.Release(id, connection)
+	}
 }
 
 func (route *connectorRoute) Close(deadline time.Time) error {
@@ -732,8 +686,6 @@ func (route *connectorRoute) Close(deadline time.Time) error {
 	}
 	route.closeMu.Lock()
 	defer route.closeMu.Unlock()
-	clearSensitiveBytes(route.credentialGrant)
-	route.credentialGrant = nil
 	closeErr := route.processes.Close(deadline)
 	if closeErr == nil && route.executionRoot != "" {
 		if err := route.snapshots.Remove(route.executionRoot); err != nil {

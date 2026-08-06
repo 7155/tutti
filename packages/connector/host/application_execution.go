@@ -46,6 +46,7 @@ func (application *Application) executeRefresh(ctx context.Context, operation Op
 			if !ok {
 				connector = newCatalogConnector(release)
 			}
+			connector.Authorization = authorizationForManifest(connector.Authorization, release.Manifest.AuthorizationKind)
 			connector.Release = release
 			compatibility, err := application.compatibilityFor(release.Manifest)
 			if err != nil {
@@ -387,13 +388,13 @@ func (application *Application) beginAuthorizationSession(
 		)
 	}
 	if session.OperationID != operation.OperationID || session.ConnectorKey != operation.ConnectorKey ||
-		strings.TrimSpace(session.SessionID) == "" || strings.TrimSpace(session.AuthorizationURL) == "" {
+		strings.TrimSpace(session.SessionID) == "" ||
+		(session.State != AuthorizationStatePending && session.State != AuthorizationStateConnected) ||
+		(session.State == AuthorizationStatePending && strings.TrimSpace(session.AuthorizationURL) == "") {
 		return AuthorizationSession{}, invalidOperationReceipt("authorization provider returned an invalid session")
 	}
-	if operation.State != OperationStateCompleted {
-		if err := application.completeAuthorizationStart(ctx, operation.OperationID, session); err != nil {
-			return AuthorizationSession{}, err
-		}
+	if err := application.completeAuthorizationStart(ctx, operation.OperationID, session); err != nil {
+		return AuthorizationSession{}, err
 	}
 	return session, nil
 }
@@ -537,17 +538,24 @@ func (application *Application) completeAuthorizationStart(
 		if err != nil {
 			return err
 		}
-		if operation.State == OperationStateCompleted {
-			return nil
-		}
 		connector, err := tx.Connector(operation.ConnectorKey)
 		if err != nil {
 			return err
 		}
+		stateChanged := connector.Authorization.State != session.State
+		if operation.State == OperationStateCompleted && !stateChanged {
+			return nil
+		}
+		if stateChanged && !CanTransitionAuthorization(connector.Authorization.State, session.State) {
+			return invalidTransition("authorization", string(connector.Authorization.State), string(session.State))
+		}
 		revision := tx.AdvanceRevision()
+		connector.Authorization = Authorization{State: session.State}
 		connector.Revision = revision
-		operation.State = OperationStateCompleted
-		operation.Stage = OperationStageCompleted
+		if operation.State != OperationStateCompleted {
+			operation.State = OperationStateCompleted
+			operation.Stage = OperationStageCompleted
+		}
 		operation.Execution.AuthorizationSession = &session
 		operation.UpdatedAt = application.config.Now().UTC()
 		if err := tx.SaveConnector(connector); err != nil {
@@ -661,6 +669,19 @@ func initialAuthorization(kind string) Authorization {
 		return Authorization{State: AuthorizationStateNotRequired}
 	}
 	return Authorization{State: AuthorizationStateDisconnected}
+}
+
+// authorizationForManifest migrates the stored state when catalog metadata
+// corrects whether a connector requires credentials. This is a catalog schema
+// reconciliation, not a user-driven authorization transition.
+func authorizationForManifest(current Authorization, kind string) Authorization {
+	if kind == "none" {
+		return Authorization{State: AuthorizationStateNotRequired}
+	}
+	if current.State == AuthorizationStateNotRequired {
+		return Authorization{State: AuthorizationStateDisconnected}
+	}
+	return current
 }
 
 func frozenRelease(operation Operation) (Release, error) {

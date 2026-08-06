@@ -13,6 +13,8 @@ import (
 	"github.com/tutti-os/tutti/packages/connector/runtime/mcp"
 )
 
+const routeObserverTestDigest = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+
 type routeObservationRecorder struct {
 	mu           sync.Mutex
 	observations []RouteObservation
@@ -46,7 +48,7 @@ func TestMonitorMCPRouteObservesOnlyUnexpectedCurrentRouteExit(t *testing.T) {
 	host := &Host{routes: routes, routeObserver: recorder}
 	generation := market.HostGeneration{BootEpoch: "boot-1", Generation: 4}
 	route := &connectorRoute{id: connectorRouteKey("connection-1", "calendar"), connectionID: "connection-1",
-		connectorKey: "calendar", releaseDigest: authorizationTestDigest, generation: generation,
+		connectorKey: "calendar", releaseDigest: routeObserverTestDigest, generation: generation,
 		processes: connectorruntime.NewProcessGroup()}
 	if err := routes.Commit(route); err != nil {
 		t.Fatal(err)
@@ -63,7 +65,7 @@ func TestMonitorMCPRouteObservesOnlyUnexpectedCurrentRouteExit(t *testing.T) {
 	}
 	observation := recorder.observations[0]
 	if observation.ConnectorKey != "calendar" || observation.ConnectionID != "connection-1" ||
-		observation.ReleaseDigest != authorizationTestDigest || observation.Generation != generation ||
+		observation.ReleaseDigest != routeObserverTestDigest || observation.Generation != generation ||
 		observation.ObservedAt.IsZero() {
 		t.Fatalf("route observation = %+v", observation)
 	}
@@ -78,12 +80,12 @@ func TestMonitorMCPRouteDoesNotObserveIntentionalRemoval(t *testing.T) {
 	host := &Host{routes: routes, routeObserver: recorder}
 	generation := market.HostGeneration{BootEpoch: "boot-1", Generation: 1}
 	route := &connectorRoute{id: connectorRouteKey("connection-1", "calendar"), connectionID: "connection-1",
-		connectorKey: "calendar", releaseDigest: authorizationTestDigest, generation: generation,
+		connectorKey: "calendar", releaseDigest: routeObserverTestDigest, generation: generation,
 		processes: connectorruntime.NewProcessGroup()}
 	if err := routes.Commit(route); err != nil {
 		t.Fatal(err)
 	}
-	if err := routes.Remove(route.id, generation, authorizationTestDigest, time.Now().Add(time.Second)); err != nil {
+	if err := routes.Remove(route.id, generation, routeObserverTestDigest, time.Now().Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	client, err := mcp.NewStdioClient(mcp.StdioClientConfig{Connection: &exitedMCPConnection{}, ProcessName: "calendar"})

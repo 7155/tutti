@@ -8,7 +8,7 @@ import { ConnectorManagementDialog } from "./ConnectorManagementDialog.tsx";
 import { ConnectorInstallationDialog } from "./ConnectorInstallationDialog.tsx";
 
 export function ConnectorMarketDialogs() {
-  const { i18n, market, onTryConnector, uiState, view } =
+  const { i18n, market, onError, onTryConnector, uiState, view } =
     useConnectorMarketServices();
   const dialog = useSnapshot(view.dataStore).dialog;
   if (!dialog) {
@@ -24,22 +24,31 @@ export function ConnectorMarketDialogs() {
           iconUrl={dialog.iconUrl}
           i18n={i18n}
           installing={dialog.installing}
+          updating={dialog.updating}
           onClose={() => uiState.closeDialog()}
           onInstall={() =>
-            void market.install(dialog.connectorKey).catch(() => undefined)
+            void market.install(dialog.connectorKey).catch(() => {
+              onError?.(
+                i18n.t(
+                  dialog.updating
+                    ? "connectorUpdateFailed"
+                    : "connectorInstallFailed"
+                )
+              );
+            })
           }
         />
       ) : dialog.kind === "authorization" ? (
         <ConnectorAuthorizationDialog
+          authorizing={dialog.authorizing}
           displayName={dialog.displayName}
           iconUrl={dialog.iconUrl}
           i18n={i18n}
           pending={dialog.pending}
-          permissions={dialog.permissions}
           onAuthorize={() =>
-            void market
-              .beginAuthorization(dialog.connectorKey)
-              .catch(() => undefined)
+            market.beginAuthorization(dialog.connectorKey).catch(() => {
+              onError?.(i18n.t("connectorAuthorizationFailed"));
+            })
           }
           onClose={() => uiState.closeDialog()}
         />

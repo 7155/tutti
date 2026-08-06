@@ -349,9 +349,8 @@ func TestImplementationHostExecutesFromVerifiedSnapshotAfterPreparedTreeReplacem
 	if string(contents) != "// connector" {
 		t.Fatalf("executed snapshot contents = %q", contents)
 	}
-	if processes.spec.ConnectorSandbox == nil || len(processes.spec.ConnectorSandbox.ReadOnlyTreeIdentities) != 1 ||
-		processes.spec.ConnectorSandbox.ReadOnlyTreeIdentities[0].Root != processes.spec.CWD {
-		t.Fatalf("snapshot sandbox identity = %#v", processes.spec.ConnectorSandbox)
+	if len(processes.spec.ArtifactTrees) != 1 || processes.spec.ArtifactTrees[0].Root != processes.spec.CWD {
+		t.Fatalf("snapshot artifact identity = %#v", processes.spec.ArtifactTrees)
 	}
 }
 

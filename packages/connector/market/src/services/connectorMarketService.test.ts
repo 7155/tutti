@@ -591,6 +591,75 @@ test("does not let a stale authorization response overwrite a newer daemon snaps
   service.dispose();
 });
 
+test("continues one authorization session, opens each URL once, and clears loading", async () => {
+  const requests: Array<{ clientRequestId: string; expectedRevision: number }> =
+    [];
+  const openedUrls: string[] = [];
+  let step = 0;
+  const initial = connector("lark-cli", 1);
+  initial.authorization = { state: "disconnected" };
+  const service = new ConnectorMarketService({
+    backend: backendWith({
+      getSnapshot: async () => snapshot(1, [initial]),
+      beginAuthorization: async (request) => {
+        requests.push(request);
+        step += 1;
+        const next = connector("lark-cli", step + 1);
+        next.authorization = { state: step === 3 ? "connected" : "pending" };
+        return {
+          connector: next,
+          operation: {
+            ...operation("start_authorization", step + 1),
+            connectorKey: "lark-cli",
+            state: "completed" as const
+          },
+          authorizationUrl:
+            step === 2
+              ? "https://accounts.feishu.cn/device?user_code=authorization"
+              : "https://open.feishu.cn/page/cli?user_code=configuration",
+          revision: step + 1
+        };
+      }
+    }),
+    createRequestId: () => "one-authorization-request",
+    openAuthorizationUrl: async (url) => {
+      openedUrls.push(url);
+    }
+  });
+  await service.ensureLoaded();
+
+  await service.beginAuthorization("lark-cli");
+
+  assert.equal(step, 3);
+  assert.deepEqual(requests, [
+    {
+      connectorKey: "lark-cli",
+      clientRequestId: "one-authorization-request",
+      expectedRevision: 1
+    },
+    {
+      connectorKey: "lark-cli",
+      clientRequestId: "one-authorization-request",
+      expectedRevision: 1
+    },
+    {
+      connectorKey: "lark-cli",
+      clientRequestId: "one-authorization-request",
+      expectedRevision: 1
+    }
+  ]);
+  assert.deepEqual(openedUrls, [
+    "https://open.feishu.cn/page/cli?user_code=configuration",
+    "https://accounts.feishu.cn/device?user_code=authorization"
+  ]);
+  assert.equal(
+    service.dataStore.connectorsByKey["lark-cli"]?.authorization.state,
+    "connected"
+  );
+  assert.deepEqual(service.dataStore.authorizingConnectorKeys, {});
+  service.dispose();
+});
+
 test("late event subscription reconciles the authoritative snapshot and disposes once", async () => {
   const events = new TestEventSource();
   let revision = 1;

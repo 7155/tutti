@@ -167,8 +167,11 @@ func connectorMarketTestConnector() market.Connector {
 				Implementation: market.Implementation{
 					Kind: market.ImplementationKindManagedStdio,
 					ManagedStdio: &market.ManagedStdioImplementation{
-						Runtime: market.RuntimeRequirement{Language: "node", Profile: "connector-node-static", ABI: "node20-darwin-arm64"},
-						MCP:     &market.ManagedMCPInterface{Entrypoint: "bin/notion.js"}, CredentialBrokerProtocol: market.CredentialBrokerProtocolV1,
+						Runtime: market.RuntimeRequirement{Language: "node", Profile: "connector-node-static", ABI: "node20-darwin-arm64", VersionRange: ">=20.0.0 <21.0.0"},
+						CLI: &market.ManagedCLIInterface{Entrypoint: "notion", TimeoutMS: 120_000,
+							Commands: []market.CLICommand{{Name: "run", InputSchema: map[string]any{"type": "object"}, TimeoutMS: 30_000}}},
+						CredentialBroker: &market.ManagedCredentialBroker{Protocol: market.CredentialBrokerProtocolV1,
+							Entrypoint: "authorization/broker.mjs", TimeoutMS: 300_000, AllowedHosts: []string{"notion.so"}},
 					},
 				},
 				AuthorizationKind: "oauth2",

@@ -7,6 +7,11 @@ import type {
 
 export type ConnectorMarketViewStatus = "empty" | "error" | "loading" | "ready";
 
+export interface ConnectorCatalogErrorView {
+  kind: "invalid_data" | "unavailable" | "unknown";
+  retryable: boolean;
+}
+
 export type ConnectorCardAction =
   | "authorize"
   | "busy"
@@ -21,6 +26,7 @@ export interface ConnectorCardView {
   connectorKey: string;
   description: string;
   displayName: string;
+  iconUrl: string;
   implementationTags: string[];
   installationState: ConnectorInstallationState;
   operationStage: ConnectorOperationStage | null;
@@ -61,6 +67,7 @@ interface ConnectorDialogBaseView {
   connectorKey: string;
   description: string;
   displayName: string;
+  iconUrl: string;
   permissions: ConnectorPermissionView[];
 }
 
@@ -70,6 +77,7 @@ export interface ConnectorAuthorizationDialogView extends ConnectorDialogBaseVie
 }
 
 export interface ConnectorInstallationDialogView extends ConnectorDialogBaseView {
+  installing: boolean;
   kind: "installation";
 }
 
@@ -93,9 +101,9 @@ export type ConnectorDialogView =
 export interface ConnectorMarketViewState {
   availableCount: number;
   cardsByKey: Record<string, ConnectorCardView>;
+  catalogError: ConnectorCatalogErrorView | null;
   dialog: ConnectorDialogView | null;
   installedCount: number;
-  lastErrorCode: string | null;
   refreshing: boolean;
   sections: ConnectorSectionView[];
   status: ConnectorMarketViewStatus;

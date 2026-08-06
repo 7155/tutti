@@ -106,7 +106,7 @@ test("module activation skips market requests until the host admits them", async
   module.dispose();
 });
 
-test("module activation rejects and releases started services when synchronization fails", async () => {
+test("module activation remains ready when optional catalog synchronization fails", async () => {
   let unsubscriptions = 0;
   const failure = new Error("catalog unavailable");
   const module = new ConnectorMarketModule({
@@ -123,12 +123,14 @@ test("module activation rejects and releases started services when synchronizati
     scope: {}
   });
 
-  await assert.rejects(module.activate(new InstantiationService()), failure);
+  await module.activate(new InstantiationService());
 
-  assert.equal(module.lifecycle.phase, "failed");
-  assert.equal(unsubscriptions, 1);
+  assert.equal(module.lifecycle.phase, "ready");
+  assert.equal(module.root.market.dataStore.loadState, "error");
+  assert.equal(unsubscriptions, 0);
   module.dispose();
   assert.equal(module.lifecycle.phase, "disposed");
+  assert.equal(unsubscriptions, 1);
 });
 
 test("one dialog host projects authorization and management as mutually exclusive states", async () => {
@@ -212,7 +214,9 @@ function connector(key: string, overrides: Partial<Connector> = {}): Connector {
     key,
     release: {
       artifact: {
+        storageRealm: "tutti.connector.artifacts.v1",
         key: `connectors/${key}.tgz`,
+        objectVersion: "version-1",
         mediaType: "application/vnd.tutti.connector+tar+gzip",
         sha256:
           "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -222,6 +226,7 @@ function connector(key: string, overrides: Partial<Connector> = {}): Connector {
       manifest: {
         authorizationKind: "none",
         displayName: "GitHub",
+        iconUrl: "data:image/png;base64,iVBORw0KGgo=",
         implementation: {
           builtin: { cli: true, mcp: true, providerId: key },
           kind: "builtin"

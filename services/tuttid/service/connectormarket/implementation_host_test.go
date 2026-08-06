@@ -15,10 +15,31 @@ import (
 	"time"
 
 	agentruntime "github.com/tutti-os/tutti/packages/agent/daemon/runtime"
-	market "github.com/tutti-os/tutti/packages/connector/market/daemon"
+	market "github.com/tutti-os/tutti/packages/connector/host"
+	connectorruntime "github.com/tutti-os/tutti/packages/connector/runtime"
 	cliservice "github.com/tutti-os/tutti/services/tuttid/service/cli"
-	managedruntime "github.com/tutti-os/tutti/services/tuttid/service/managedruntime"
 )
+
+const implementationHostTestReleaseDigest = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+
+func completeImplementationHostTestRelease(release market.Release) market.Release {
+	release.SchemaVersion = "1"
+	release.ReleaseID = "github@1.0.0"
+	release.ConnectorKey = "github"
+	release.Version = "1.0.0"
+	release.ReleaseDigest = implementationHostTestReleaseDigest
+	release.ManifestDigest = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	release.Manifest.SchemaVersion = "1"
+	release.Manifest.DisplayName = "GitHub"
+	if managed := release.Manifest.Implementation.ManagedStdio; managed != nil && managed.CLI != nil {
+		managed.Runtime.VersionRange = ">=20.0.0 <21.0.0"
+	}
+	release.Artifact = market.Artifact{StorageRealm: "tutti.connector.artifacts.v1", Key: "connectors/github/1.0.0.zip", ObjectVersion: "version-1",
+		SHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", SizeBytes: 1024, MediaType: "application/vnd.tutti.connector+zip"}
+	release.PublishedAt = time.Unix(1, 0).UTC()
+	release.Status = market.ReleaseStatusAvailable
+	return release
+}
 
 type mcpProcessStub struct{ connection *mcpConnectionStub }
 
@@ -133,13 +154,13 @@ func testCLIHost(t *testing.T, processes agentruntime.ProcessTransport) (*Implem
 	if err := os.WriteFile(runtimePath, []byte("runtime"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	inventory, err := executionInventoryDigest(root)
+	inventory, err := connectorruntime.ExecutionInventoryDigest(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	commands := NewConnectorCommandRegistry()
 	host, err := NewImplementationHost(ImplementationHostConfig{Artifacts: preparedResolverStub{receipt: market.PreparedArtifactReceipt{PreparedPath: root, InventoryDigest: inventory}},
-		Runtimes: connectorRuntimeStub{executable: managedruntime.ConnectorExecutable{Path: runtimePath,
+		Runtimes: connectorRuntimeStub{executable: connectorruntime.ConnectorExecutable{Path: runtimePath,
 			SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", SizeBytes: 7}},
 		Processes: processes, Commands: commands, StateRoot: t.TempDir()})
 	if err != nil {
@@ -147,13 +168,13 @@ func testCLIHost(t *testing.T, processes agentruntime.ProcessTransport) (*Implem
 	}
 	t.Cleanup(func() { _ = host.Close() })
 	connector := market.Connector{Key: "github", Installation: market.Installation{State: market.InstallationStateInstalled,
-		InstalledReleaseDigest: "release-digest"}, Authorization: market.Authorization{State: market.AuthorizationStateNotRequired}}
-	connector.Release = market.Release{ConnectorKey: "github", ReleaseDigest: "release-digest", Manifest: market.Manifest{AuthorizationKind: "none",
+		InstalledReleaseDigest: implementationHostTestReleaseDigest}, Authorization: market.Authorization{State: market.AuthorizationStateNotRequired}}
+	connector.Release = completeImplementationHostTestRelease(market.Release{Manifest: market.Manifest{AuthorizationKind: "none", IconURL: "data:image/png;base64,iVBORw0KGgo=",
 		Implementation: market.Implementation{Kind: market.ImplementationKindManagedStdio, ManagedStdio: &market.ManagedStdioImplementation{
-			Runtime: market.RuntimeRequirement{Language: "node", Profile: managedruntime.ConnectorNodeProfile, ABI: "node20-" + runtime.GOOS + "-" + runtime.GOARCH},
+			Runtime: market.RuntimeRequirement{Language: "node", Profile: connectorruntime.ConnectorNodeProfile, ABI: "node20-" + runtime.GOOS + "-" + runtime.GOARCH},
 			CLI: &market.ManagedCLIInterface{Entrypoint: "connector.js", Commands: []market.CLICommand{{Name: "status",
 				InputSchema: map[string]any{"type": "object"}, TimeoutMS: 120_000}}},
-		}}}}
+		}}}})
 	return host, commands, connector, market.HostGeneration{BootEpoch: "boot-1", Generation: 2}
 }
 
@@ -162,14 +183,14 @@ func (stub preparedResolverStub) ResolvePrepared(context.Context, market.Release
 }
 
 type connectorRuntimeStub struct {
-	executable managedruntime.ConnectorExecutable
+	executable connectorruntime.ConnectorExecutable
 }
 
-func (stub connectorRuntimeStub) ResolveProfile(context.Context, string) (managedruntime.ResolvedConnectorRuntime, error) {
-	return managedruntime.ResolvedConnectorRuntime{Root: filepath.Dir(stub.executable.Path), Profile: managedruntime.ConnectorNodeProfile,
-		ABI: "node20-" + runtime.GOOS + "-" + runtime.GOARCH, Node: &stub.executable}, nil
+func (stub connectorRuntimeStub) ResolveProfile(context.Context, string) (connectorruntime.ResolvedConnectorRuntime, error) {
+	return connectorruntime.ResolvedConnectorRuntime{Root: filepath.Dir(stub.executable.Path), Profile: connectorruntime.ConnectorNodeProfile,
+		ABI: "node20-" + runtime.GOOS + "-" + runtime.GOARCH, Node: &stub.executable, Components: map[string]string{"node": "20.0.0"}}, nil
 }
-func (stub connectorRuntimeStub) VerifyLaunch(string, string) (managedruntime.ConnectorExecutable, error) {
+func (stub connectorRuntimeStub) VerifyLaunch(string, string) (connectorruntime.ConnectorExecutable, error) {
 	return stub.executable, nil
 }
 
@@ -207,6 +228,27 @@ func (stub *connectorConnectionStub) Recv() (agentruntime.ProcessFrame, error) {
 	return frame, nil
 }
 
+func TestGenericCLIArgumentsRejectsNonInteractiveOverrides(t *testing.T) {
+	arguments, err := genericCLIArguments([]any{"doc", "list", "--page-size", "20"})
+	if err != nil || len(arguments) != 4 {
+		t.Fatalf("genericCLIArguments() = %#v, %v", arguments, err)
+	}
+	for _, forbidden := range []string{"--yes", "--force", "--force=true"} {
+		if _, err := genericCLIArguments([]any{"doc", "delete", forbidden}); err == nil {
+			t.Fatalf("genericCLIArguments() accepted %q", forbidden)
+		}
+	}
+}
+
+func TestContainsPermissionScopeAcceptsScopedPermission(t *testing.T) {
+	if !connectorruntime.ContainsPermissionScope([]string{"network:larksuite.com"}, "network") {
+		t.Fatal("scoped network permission did not enable connector network access")
+	}
+	if connectorruntime.ContainsPermissionScope([]string{"filesystem:workspace"}, "network") {
+		t.Fatal("unrelated scoped permission enabled connector network access")
+	}
+}
+
 func TestImplementationHostRegistersWorkspaceFencedCLIAndDeactivatesIt(t *testing.T) {
 	root := t.TempDir()
 	entrypoint := filepath.Join(root, "connector.js")
@@ -217,7 +259,7 @@ func TestImplementationHostRegistersWorkspaceFencedCLIAndDeactivatesIt(t *testin
 	if err := os.WriteFile(runtimePath, []byte("runtime"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	inventory, err := executionInventoryDigest(root)
+	inventory, err := connectorruntime.ExecutionInventoryDigest(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +267,7 @@ func TestImplementationHostRegistersWorkspaceFencedCLIAndDeactivatesIt(t *testin
 	processes := &connectorProcessStub{}
 	host, err := NewImplementationHost(ImplementationHostConfig{
 		Artifacts: preparedResolverStub{receipt: market.PreparedArtifactReceipt{PreparedPath: root, InventoryDigest: inventory}},
-		Runtimes: connectorRuntimeStub{executable: managedruntime.ConnectorExecutable{Path: runtimePath,
+		Runtimes: connectorRuntimeStub{executable: connectorruntime.ConnectorExecutable{Path: runtimePath,
 			SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", SizeBytes: 7}},
 		Processes: processes, Commands: commands, StateRoot: t.TempDir(),
 	})
@@ -233,13 +275,13 @@ func TestImplementationHostRegistersWorkspaceFencedCLIAndDeactivatesIt(t *testin
 		t.Fatal(err)
 	}
 	connector := market.Connector{Key: "github", Installation: market.Installation{State: market.InstallationStateInstalled,
-		InstalledReleaseDigest: "release-digest"}, Authorization: market.Authorization{State: market.AuthorizationStateNotRequired}}
-	connector.Release = market.Release{ConnectorKey: "github", ReleaseDigest: "release-digest", Manifest: market.Manifest{AuthorizationKind: "none",
+		InstalledReleaseDigest: implementationHostTestReleaseDigest}, Authorization: market.Authorization{State: market.AuthorizationStateNotRequired}}
+	connector.Release = completeImplementationHostTestRelease(market.Release{Manifest: market.Manifest{AuthorizationKind: "none", IconURL: "data:image/png;base64,iVBORw0KGgo=",
 		Implementation: market.Implementation{Kind: market.ImplementationKindManagedStdio, ManagedStdio: &market.ManagedStdioImplementation{
-			Runtime: market.RuntimeRequirement{Language: "node", Profile: managedruntime.ConnectorNodeProfile, ABI: "node20-" + runtime.GOOS + "-" + runtime.GOARCH},
+			Runtime: market.RuntimeRequirement{Language: "node", Profile: connectorruntime.ConnectorNodeProfile, ABI: "node20-" + runtime.GOOS + "-" + runtime.GOARCH},
 			CLI: &market.ManagedCLIInterface{Entrypoint: "connector.js", Commands: []market.CLICommand{{Name: "status",
 				InputSchema: map[string]any{"type": "object"}, TimeoutMS: 1_000}}},
-		}}}}
+		}}}})
 	generation := market.HostGeneration{BootEpoch: "boot-1", Generation: 2}
 	receipt, err := host.Reconcile(context.Background(), market.RuntimeReconcileRequest{OperationID: "op-1", ConnectionID: "workspace-1",
 		Connector: connector, Enabled: true, Generation: generation})
@@ -262,7 +304,7 @@ func TestImplementationHostRegistersWorkspaceFencedCLIAndDeactivatesIt(t *testin
 		t.Fatalf("invoke = %#v, %v starts=%d", output, err, processes.starts)
 	}
 	if err := host.DeactivateRuntime(context.Background(), market.RuntimeDeactivationRequest{ConnectionID: "workspace-1", ConnectorKey: "github",
-		ReleaseDigest: "release-digest", Generation: market.HostGeneration{BootEpoch: "boot-1", Generation: 3}}); err != nil {
+		ReleaseDigest: implementationHostTestReleaseDigest, Generation: market.HostGeneration{BootEpoch: "boot-1", Generation: 3}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := commands.Invoke(context.Background(), cliservice.InvokeRequest{CommandID: receipt.RouteIDs[0], Context: cliservice.InvokeContext{WorkspaceID: "workspace-1"}}); err == nil {
@@ -350,7 +392,7 @@ func TestImplementationHostDeactivationCancelsBlockingStartWithoutWaitingForCLIC
 	}
 	deadline := time.Now().Add(100 * time.Millisecond)
 	if err := host.DeactivateRuntime(context.Background(), market.RuntimeDeactivationRequest{ConnectionID: "workspace-1", ConnectorKey: "github",
-		ReleaseDigest: "release-digest", Generation: market.HostGeneration{BootEpoch: "boot-1", Generation: 3}, Deadline: deadline}); err != nil {
+		ReleaseDigest: implementationHostTestReleaseDigest, Generation: market.HostGeneration{BootEpoch: "boot-1", Generation: 3}, Deadline: deadline}); err != nil {
 		t.Fatal(err)
 	}
 	if time.Now().After(deadline) {
@@ -381,21 +423,17 @@ func TestImplementationHostRetainsFencedRouteUntilCloseCanBeRetried(t *testing.T
 	for time.Now().Before(deadline) {
 		// Start has committed once the route owns the connection; Close below is
 		// the first observable operation, so a short yield is sufficient here.
-		host.mu.Lock()
-		route := host.routes[connectorRouteKey("workspace-1", "github")]
-		host.mu.Unlock()
+		route, _ := host.routes.Route(connectorRouteKey("workspace-1", "github")).(*connectorRoute)
 		hasProcess := false
 		if route != nil {
-			route.processMu.Lock()
-			hasProcess = len(route.processes) == 1
-			route.processMu.Unlock()
+			hasProcess = route.processes.ActiveCount() == 1
 		}
 		if hasProcess {
 			break
 		}
 		time.Sleep(time.Millisecond)
 	}
-	deactivation := market.RuntimeDeactivationRequest{ConnectionID: "workspace-1", ConnectorKey: "github", ReleaseDigest: "release-digest",
+	deactivation := market.RuntimeDeactivationRequest{ConnectionID: "workspace-1", ConnectorKey: "github", ReleaseDigest: implementationHostTestReleaseDigest,
 		Generation: market.HostGeneration{BootEpoch: "boot-1", Generation: 3}, Deadline: time.Now().Add(time.Second)}
 	if err := host.DeactivateRuntime(context.Background(), deactivation); err == nil {
 		t.Fatal("first deactivation unexpectedly hid close failure")

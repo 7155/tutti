@@ -3,6 +3,7 @@ import type { ConnectorMarketStoreState } from "../connectorMarketService.interf
 import type { ConnectorMarketUiState } from "../ui-state/connectorMarketUiStateService.interface.ts";
 import type {
   ConnectorCardView,
+  ConnectorCatalogErrorView,
   ConnectorDetailFieldView,
   ConnectorDialogView,
   ConnectorMarketViewState
@@ -75,13 +76,13 @@ export function buildConnectorMarketView(
   return {
     availableCount: allConnectors.length - installedCount,
     cardsByKey,
+    catalogError: buildCatalogErrorView(market.lastError),
     dialog: buildConnectorDialogView(
       uiState.dialog
         ? market.connectorsByKey[uiState.dialog.connectorKey]
         : undefined
     ),
     installedCount,
-    lastErrorCode: market.lastError?.code ?? null,
     refreshing: market.catalogState === "refreshing",
     sections: sections.filter(
       (section) =>
@@ -99,6 +100,24 @@ export function buildConnectorMarketView(
             ? "empty"
             : "ready"
   };
+}
+
+function buildCatalogErrorView(
+  error: ConnectorMarketStoreState["lastError"]
+): ConnectorCatalogErrorView | null {
+  if (!error) {
+    return null;
+  }
+  switch (error.code) {
+    case "connector_manifest_invalid":
+    case "connector_implementation_unsupported":
+      return { kind: "invalid_data", retryable: error.retryable };
+    case "connector_market_upstream_unavailable":
+    case "connector_market_unavailable":
+      return { kind: "unavailable", retryable: error.retryable };
+    default:
+      return { kind: "unknown", retryable: error.retryable };
+  }
 }
 
 function buildConnectorCardView(
@@ -129,6 +148,7 @@ function buildConnectorCardView(
     connectorKey: connector.key,
     description: connector.release.manifest.description ?? "",
     displayName: connector.release.manifest.displayName,
+    iconUrl: connector.release.manifest.iconUrl,
     implementationTags: implementationTags(connector),
     installationState: connector.installation.state,
     operationStage,
@@ -154,6 +174,7 @@ function buildConnectorDialogView(
     connectorKey: connector.key,
     description: connector.release.manifest.description ?? "",
     displayName: connector.release.manifest.displayName,
+    iconUrl: connector.release.manifest.iconUrl,
     permissions: connector.release.manifest.permissions.map((permission) => ({
       id: permission,
       name: permission
@@ -169,6 +190,7 @@ function buildConnectorDialogView(
   if (!connectorHasInstalledArtifact(connector)) {
     return {
       ...base,
+      installing: connector.installation.state === "installing",
       kind: "installation"
     };
   }

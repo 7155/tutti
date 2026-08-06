@@ -1,7 +1,10 @@
 import type { AgentSessionCommand } from "../../../shared/agentSessionTypes";
 import type { ReactNode } from "react";
 import type { UiLanguage } from "../../../contexts/settings/domain/agentSettings";
-import type { AgentConversationPromptVM } from "../../../shared/agentConversation/contracts/agentConversationVM";
+import type {
+  AgentConversationPromptVM,
+  AgentInteractionResponseInput
+} from "../../../shared/agentConversation/contracts/agentConversationVM";
 import type { AgentMessageMarkdownWorkspaceAppIcon } from "../../../shared/AgentMessageMarkdown";
 import type { AgentPromptContentBlock } from "../../../shared/contracts/dto/agentSession";
 import type { WorkspaceUserProjectI18nRuntime } from "@tutti-os/workspace-user-project/i18n";
@@ -200,7 +203,6 @@ export interface AgentComposerProps {
     tuttiBudgetTitle: string;
     tuttiBudgetEffectLabel: string;
     tuttiBudgetSpeedLabel: string;
-    tuttiBudgetPreviewTitle: string;
     tuttiBudgetPreviewHint: string;
     tuttiBudgetPreviewCost: string;
     tuttiBudgetPreviewBalance: string;
@@ -209,7 +211,6 @@ export interface AgentComposerProps {
     tuttiBudgetModelPreferenceCost: string;
     tuttiBudgetModelPreferenceBalance: string;
     tuttiBudgetModelPreferencePowerful: string;
-    tuttiBudgetModelPreferenceFastestSuitable: string;
     tuttiBudgetParallelismLabel: string;
     tuttiBudgetParallelismValue: (count: number) => string;
     planModeDescription?: string;
@@ -247,6 +248,9 @@ export interface AgentComposerProps {
     slashPaletteSkillsGroup: string;
     slashPalettePluginsGroup: string;
     slashPaletteConnectorsGroup: string;
+    slashPaletteConnectorConnected: string;
+    slashPaletteConnectorNotConnected: string;
+    slashPaletteConnectorUnsupported: string;
     slashPaletteMcpGroup: string;
     slashCommandCompactLabel: string;
     slashCommandContextLabel: string;
@@ -414,12 +418,7 @@ export interface AgentComposerProps {
   onEditQueuedPrompt: (queuedPromptId: string) => void;
   onInterruptCurrentTurn: () => void;
   onPromptImagesUnsupported?: () => void;
-  onSubmitInteractivePrompt: (input: {
-    requestId: string;
-    action?: string;
-    optionId?: string;
-    payload?: Record<string, unknown>;
-  }) => void;
+  onSubmitInteractivePrompt: (input: AgentInteractionResponseInput) => boolean;
   onLinkAction?: (action: WorkspaceLinkAction) => void;
   onRequestWorkspaceReferences?:
     | ((
@@ -434,10 +433,12 @@ export interface AgentComposerProps {
   referenceProvenanceFilters?: AgentComposerReferenceProvenanceFilters | null;
 }
 
-export type AgentComposerCapabilitySettingsTarget = Exclude<
-  AgentSlashCommandCapability["capability"],
-  "tutti"
->;
+export type AgentComposerCapabilitySettingsTarget =
+  | Exclude<AgentSlashCommandCapability["capability"], "tutti">
+  | {
+      kind: "connector";
+      connectorKey: string;
+    };
 
 export interface AgentComposerCapabilityMenuState {
   browserUse?: {

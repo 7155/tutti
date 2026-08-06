@@ -96,7 +96,9 @@ export interface ConnectorManifestImplementation {
 }
 
 export interface ConnectorReleaseArtifact {
+  storageRealm: string;
   key: string;
+  objectVersion: string;
   sha256: string;
   sizeBytes: number;
   mediaType: string;
@@ -111,6 +113,7 @@ export interface ConnectorCompatibilityRequirements {
 export interface ConnectorManifest {
   schemaVersion: "1";
   displayName: string;
+  iconUrl: string;
   description?: string;
   permissions: string[];
   implementation: ConnectorManifestImplementation;

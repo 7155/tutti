@@ -11,6 +11,7 @@ import (
 	runtimeprep "github.com/tutti-os/tutti/packages/agent/runtimeprep"
 	agentactivitybiz "github.com/tutti-os/tutti/packages/agent/store-sqlite"
 	"github.com/tutti-os/tutti/packages/agent/store-sqlite/canonical"
+	market "github.com/tutti-os/tutti/packages/connector/host"
 	agenttargetbiz "github.com/tutti-os/tutti/services/tuttid/biz/agenttarget"
 	automationrulebiz "github.com/tutti-os/tutti/services/tuttid/biz/automationrule"
 	modelplanbiz "github.com/tutti-os/tutti/services/tuttid/biz/modelplan"
@@ -69,6 +70,7 @@ type Service struct {
 	ModelGateway                   ModelGatewayRegistry
 	ComputerUseAvailable           func() bool
 	CapabilityLister               ComposerCapabilityLister
+	ConnectorMarketSnapshots       market.SnapshotReader
 	ExtensionComposerProfiles      ExtensionComposerProfileResolver
 	AgentComposerDefaultsReader    AgentComposerDefaultsReader
 	ProviderAvailabilityCacheTTL   time.Duration

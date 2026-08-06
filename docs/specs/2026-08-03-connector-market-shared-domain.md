@@ -14,8 +14,9 @@ independent durable state and runtime-specific adapters.
 ## Non-Goals
 
 - Renderers do not call the remote Connector Market API.
-- The shared package does not own product endpoints, credentials, state-root
-  selection, SQLite schema, OS integration, or runtime process policy.
+- Shared modules do not own product endpoints, credentials, state-root
+  selection, OS integration, or runtime process policy. The canonical SQLite
+  schema belongs to `packages/connector/store-sqlite`; hosts select its path.
 - Tutti does not infer missing release metadata from untyped raw JSON.
 - This phase does not add placeholder daemon handlers or UI backed by fixture
   success responses.
@@ -78,7 +79,7 @@ connector key.
 
 ## Package And Host Ownership
 
-The shared package owns:
+The shared Connector modules own:
 
 - domain contracts, validation, state transitions, errors, and compatibility
   semantics
@@ -88,13 +89,15 @@ The shared package owns:
 - bounded artifact download, digest and size verification, safe extraction,
   packaged-manifest verification, staging layout, atomic promotion mechanics,
   cleanup, rollback, and reconcile rules
-- ports for repository, implementation hosting, credentials, scheduling, outbox,
-  transport, and diagnostics
+- the canonical SQLite repository, leases, migrations, transactions, and
+  durable outbox implementation behind Host ports
+- ports for implementation hosting, credentials, scheduling, transport, and
+  diagnostics
 - the local daemon OpenAPI fragment and Valtio renderer service
 
 Each Host owns:
 
-- SQLite repository, migrations, transactions, operation leases, and attempts
+- the database path and lifecycle of the shared SQLite repository
 - remote base URL, authentication, HTTP client, proxy, TLS, logging, and tracing
 - state-root configuration
 - implementation hosting and observation, including sandbox, permission, process,

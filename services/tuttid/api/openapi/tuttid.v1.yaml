@@ -8555,7 +8555,35 @@ components:
         terminalCommand:
           type: string
           nullable: true
-          description: Ready-to-run interactive sign-in command for terminal-type methods.
+          description: Ready-to-run interactive sign-in launch command for terminal-type methods.
+        terminalStartupAction:
+          allOf:
+            - $ref: "#/components/schemas/AgentTargetTerminalStartupAction"
+          nullable: true
+          description: Optional typed terminal action submitted after the interactive runtime reaches its declared ready marker.
+    AgentTargetTerminalStartupAction:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - commandName
+        - readyText
+      properties:
+        type:
+          type: string
+          enum:
+            - slash_command
+          x-enum-varnames:
+            - AgentTargetTerminalStartupActionTypeSlashCommand
+        commandName:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[a-z0-9][a-z0-9._:-]{0,63}$"
+        readyText:
+          type: string
+          minLength: 1
+          maxLength: 256
     InstallAgentTargetRuntimeRequest:
       type: object
       additionalProperties: false
@@ -10064,6 +10092,14 @@ components:
         failureReason:
           type: string
           nullable: true
+        failurePhase:
+          type: string
+          nullable: true
+          enum:
+            - downloading
+            - installing
+            - starting
+            - runtime
         lastError:
           type: string
           nullable: true
@@ -11282,6 +11318,8 @@ components:
           minLength: 1
         description:
           type: string
+        iconUrl:
+          type: string
         status:
           type: string
           enum:
@@ -11898,6 +11936,9 @@ components:
       enum:
         - slash_command
         - badge_remove
+      x-enum-varnames:
+        - TuttiModeActivationSourceSlashCommand
+        - TuttiModeActivationSourceBadgeRemove
     TuttiModeActivationRevision:
       type: object
       additionalProperties: false
@@ -12773,6 +12814,8 @@ components:
           type: string
           enum:
             - slash_command
+          x-enum-varnames:
+            - WorkspaceAgentCapabilityReferenceSourceSlashCommand
     WorkspaceAgentCompletedCommand:
       type: object
       description: >-
@@ -14616,6 +14659,7 @@ components:
             - image
             - skill
             - mention
+            - connector
         text:
           type: string
         mimeType:
@@ -14638,6 +14682,11 @@ components:
           type: string
         path:
           type: string
+        connectorKey:
+          type: string
+          minLength: 1
+          pattern: "^[a-z][a-z0-9._-]{0,127}$"
+          description: Stable key of an installed local connector selected for this prompt.
     WorkspaceAgentSessionAttachmentResponse:
       type: object
       additionalProperties: false

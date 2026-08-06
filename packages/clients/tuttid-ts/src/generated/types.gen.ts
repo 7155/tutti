@@ -717,9 +717,19 @@ export type AgentTargetAuthMethod = {
    */
   type?: string | null;
   /**
-   * Ready-to-run interactive sign-in command for terminal-type methods.
+   * Ready-to-run interactive sign-in launch command for terminal-type methods.
    */
   terminalCommand?: string | null;
+  /**
+   * Optional typed terminal action submitted after the interactive runtime reaches its declared ready marker.
+   */
+  terminalStartupAction?: AgentTargetTerminalStartupAction | null;
+};
+
+export type AgentTargetTerminalStartupAction = {
+  type: "slash_command";
+  commandName: string;
+  readyText: string;
 };
 
 export type InstallAgentTargetRuntimeRequest = {
@@ -1392,6 +1402,7 @@ export type WorkspaceApp = {
   launchUrl: string | null;
   port: number | null;
   failureReason: string | null;
+  failurePhase?: "downloading" | "installing" | "starting" | "runtime";
   lastError: string | null;
   startedAtUnixMs: number | null;
   updatedAtUnixMs: number | null;
@@ -1913,6 +1924,7 @@ export type AgentProviderCapabilityOption = {
   name: string;
   label: string;
   description?: string;
+  iconUrl?: string;
   status:
     | "available"
     | "disabled"
@@ -3342,7 +3354,7 @@ export type AgentSubmitDiagnostics = {
 };
 
 export type AgentPromptContentBlock = {
-  type: "text" | "image" | "skill" | "mention";
+  type: "text" | "image" | "skill" | "mention" | "connector";
   text?: string;
   mimeType?: "image/png" | "image/jpeg" | "image/webp";
   /**
@@ -3356,6 +3368,10 @@ export type AgentPromptContentBlock = {
   attachmentId?: string;
   name?: string;
   path?: string;
+  /**
+   * Stable key of an installed local connector selected for this prompt.
+   */
+  connectorKey?: string;
 };
 
 export type WorkspaceAgentSessionAttachmentResponse = {
@@ -4598,6 +4614,7 @@ export type ConnectorMarketRelease = {
 export type ConnectorMarketManifest = {
   schemaVersion: "1";
   displayName: string;
+  iconUrl: string;
   description?: string;
   permissions: Array<string>;
   implementation: ConnectorMarketImplementation;
@@ -4606,7 +4623,9 @@ export type ConnectorMarketManifest = {
 };
 
 export type ConnectorMarketArtifact = {
+  storageRealm: "tutti.connector.artifacts.v1";
   key: string;
+  objectVersion: string;
   sha256: string;
   sizeBytes: number;
   mediaType: string;

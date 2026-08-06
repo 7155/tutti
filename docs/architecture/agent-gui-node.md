@@ -244,6 +244,12 @@ canonical Turn. The Host owns reconnect and catch-up fencing and must remove
 the gap only after the same Turn is authoritative again. When the capability
 is absent, AgentGUI preserves its existing lifecycle presentation.
 
+An exact pending Interaction is a separate admission scope. When its Host
+supplies interaction readiness, that exact result owns transport presentation
+and early write admission for the pending card. An observation gap may still
+govern the active Turn before or after that Interaction, but it cannot override
+the exact ready or blocked readiness result while the card is presented.
+
 ### 2.6 On-demand status
 
 AgentGUI owns one provider-neutral `AgentStatusController` for `/status`, Agent
@@ -487,6 +493,16 @@ reloading the page.
 ### 3.1 Session
 
 A Session holds identity, target, provider metadata, cwd, title, settings, resume information, a Goal reference, and the current active Turn reference.
+
+Session title has an explicit ownership rule in the runtime. A user title
+(explicit rename) is immutable from the turn-execution path: a running turn may
+fold provider/event titles as candidates, but the controller's current Session
+is the only accepted state, and the turn-completion commit merges only the
+turn-owned lifecycle/status fields back. A title the user set is never
+overwritten by a late provider title or by a stale turn-completion snapshot,
+and neither the stream projection nor the durable report may carry a stale
+provider title over an established user title. On resume the runtime fails
+closed and treats a persisted title as user-established.
 
 A Session does not copy Turn phase/outcome, own pending Interactions, or persist lifecycle inferred from transcript.
 
@@ -794,18 +810,25 @@ revoked a Session's shared Agent relationship, the host projects
 that relationship. Device reconnect and automatic retry presentation begins
 only while the sharing relationship is active.
 
-AgentGUI projects a blocked target connection through the chrome above the
-composer and gives it precedence over other recovery, approval, or prompt
-notices because those actions cannot complete while the target is blocked.
-An explicitly terminal `unavailable` state appears immediately. Initial
-`connecting` appears only after a 300-millisecond controller delay so short
-background connections do not flash. A recoverable host retry, including a
-dormant low-frequency retry, remains a neutral `connecting` presentation and
-updates the visible retry attempt without restarting the delay. During the
-initial delay, the raw target state already blocks commands, but AgentGUI keeps
-the existing recovery, approval, or prompt chrome visible until the connection
-notice replaces it. Recovery removes the notice without a success banner. The
-notice does not offer a manual retry because transport recovery is host-owned.
+Outside an exact pending Interaction, AgentGUI projects a blocked target
+connection through the chrome above the composer and gives it precedence over
+other non-interaction recovery notices because ordinary Composer writes cannot
+complete while the target is blocked. An explicitly terminal `unavailable`
+state appears immediately. Initial `connecting` appears only after a
+300-millisecond controller delay so short background connections do not flash.
+A recoverable host retry, including a dormant low-frequency retry, remains a
+neutral `connecting` presentation and updates the visible retry attempt without
+restarting the delay. During the initial delay, the raw target state already
+blocks commands, but AgentGUI keeps the existing non-interaction recovery
+chrome visible until the connection notice replaces it. Recovery removes the
+notice without a success banner. The notice does not offer a manual retry
+because transport recovery is host-owned.
+
+When the Host supplies readiness for the exact approval or interactive prompt
+being presented, that readiness result is the sole transport-chrome and early
+write-admission authority for the card. Target connection and exact-Turn
+observation gaps continue to gate ordinary Composer commands, but neither may
+hide the card or override an exact ready or blocked interaction result.
 
 Session presentation derives one canonical Composer gate from target
 connection, Session runtime availability, provider readiness, ownership,
@@ -1236,6 +1259,32 @@ unchanged. The conflict parser recognizes only the daemon's typed
 `tutti_execution_active` payload; archive/view commands remain an optional
 host capability until the generated execution adapter is present.
 
+### Conversation Rail Activity View
+
+`AgentGUIRuntime.conversationActivityViewEnabled` is the fail-closed host
+boundary for the Conversation Rail Activity View. Desktop opts in explicitly;
+external hosts that omit or disable it retain the ordinary Rail unchanged.
+
+The view is a presentation-only activation over the current workspace Engine:
+it reads visible root Session summaries, root-aggregated descendant
+working/waiting state, attention/read state, and already-cached Session
+messages. Opening it must not call list pagination or transcript hydration.
+Its membership input is the canonical mounted Engine summary collection, never
+the ordinary Rail's transient `runtimeRailConversations` overlay; stale page
+projections therefore cannot leak into Activity View.
+Membership and recency are snapshotted when the view opens; subsequent Engine
+pushes reconcile incrementally, while deletion removes a member immediately.
+Search temporarily takes over the content area and clearing search restores the
+same activation. Closing the view discards the activation and its retained-idle
+markers. A retained-idle marker stores the exact unread recency and expires as
+soon as that recency changes. Existing workspace, authenticated-user, Agent
+target, and Engine identities fence the activation internally; no Activity
+filter or additional host scope contract is introduced. Disabled hosts use an
+empty Activity selector and do not scan root Sessions. Activity rows omit the
+minute-clock subscription together with their hidden timestamp. The full
+product contract is recorded in
+`docs/specs/2026-08-05-agent-conversation-activity-view-prd.md`.
+
 The full first-page query is the only Rail read that resolves a navigation
 scope and clears its pending state. Targeted section refresh and pagination may
 update only an already-resolved matching scope. A subordinate result must not
@@ -1484,6 +1533,18 @@ requests only `skills/list` and retains the ordinary Skill projection through
 the shared app-server transport, capability contract, cache, and structured
 prompt-item submission path.
 
+Tutti Desktop's slash connector section is a local catalog projection,
+not a Provider connector catalog. `services/tuttid/service/agent` reads the
+daemon-owned connector-market application through its read-only snapshot port;
+the Agent service never opens or receives the underlying repository directly.
+It projects manifest presentation (including the catalog icon) plus installation,
+authorization, and compatibility into a provider-neutral capability option, and
+replaces any Provider-reported connector capabilities before returning composer
+options. This keeps installable connectors visible in the slash menu while
+ensuring that only installed and authorized connectors can be invoked. AgentGUI
+does not scan external MCP, plugin, or package-manager configuration and does not
+infer installation from a remote market response.
+
 ### 5.3 Agent Directory and setup
 
 The host provides a complete, ordered Agent Directory with this load lifecycle:
@@ -1729,9 +1790,13 @@ projection cannot overwrite newer local input; a value not emitted locally
 remains an authoritative external replacement.
 
 An existing-Session composer derives input history from that Session's
-canonical user-message projection; it does not persist a second history store.
-The host must opt in explicitly; Desktop maps the default-off
-`lab.agentInputHistory` Lab preference to that capability.
+canonical user-message projection and its turnless Goal-control audit entries;
+it does not persist a second history store. These sources are merged by their
+timeline timestamps so Goal commands participate in the same Up/Down sequence
+as ordinary prompts.
+The host capability remains explicit so unsupported hosts can fail closed, but
+Tutti Desktop always supplies `sessionInputHistoryEnabled: true`; historical
+`lab.agentInputHistory` preference values do not hide or disable the feature.
 Bare Up/Down recalls older/newer structured drafts only from an empty composer
 or an unchanged recalled entry, and only when the collapsed caret is at a
 whole-document boundary. Palette handling and IME composition take precedence,
@@ -1819,6 +1884,31 @@ applies the append once, and then calls
 requests must clear only the acknowledged sequence; it must not let an older
 open-Session append mask a newer request.
 
+Collaborative Hosts may supply
+`hostCapabilities.interactionReadinessSource` for exact pending Interaction
+write admission. The source is keyed by
+`(workspaceId, agentSessionId, turnId, requestId)` and exposes only
+`ready` or `blocked(synchronizing | owner_offline | binding_revoked)`.
+AgentGUI does not compose presence, transport, or lifecycle facts. When the
+capability exists, a missing exact record fails closed as synchronizing;
+omitting the capability preserves ordinary local-Host behavior. AgentGUI reads
+the same source for presentation and again at the event-time submission
+boundary. This readiness is ephemeral Host policy and must not enter canonical
+Session, Turn, Interaction, or Engine state.
+
+While an exact approval or server-projected interactive prompt is presented,
+this capability owns its transport chrome. Target connection and observation
+gap sources still govern target discovery, ordinary composer writes, and
+sessions without an exact Interaction, but they must not override an exact
+ready or blocked result. Synchronizing and owner-offline results keep the
+pending card visible while disabling its actions; binding revocation is the
+terminal exception.
+
+If an approval and a server-projected prompt coexist, AgentGUI reads readiness
+for both exact identities. Each surface consumes only its own admission result;
+selecting one as the active prompt must not reuse its readiness for the sibling
+Interaction.
+
 Do not restore flat compatibility props or hide workflow inside a render slot.
 The optional `renderSlots.projectDirectoryPickerHeaderActions` slot is limited
 to host presentation beside the directory picker's title. AgentGUI owns picker
@@ -1905,6 +1995,18 @@ actions that AgentGUI still reads directly remain on this surface until their
 Engine migration preserves all host observability and product integration.
 
 `AgentHostApi` supplies host capabilities only: files, clipboard, project/account lookup, Agent Target setup/probes, diagnostics, and OS/Workbench helpers. It must not become a Session, Turn, timeline, or write source again.
+
+Terminal authentication is one such Host capability. AgentGUI receives an
+optional atomic `terminalStartupAction` containing a safe slash-command name
+and literal readiness marker, then returns it unchanged through
+`terminalLogin.run`; neither layer accepts or synthesizes raw terminal input.
+Hosts must explicitly list supported startup action types; an older Host that
+omits that capability may still expose the manual command fallback but cannot
+silently launch a typed action it does not implement.
+The Desktop Workbench presenter owns node launch, exact-session readiness
+matching, slash submission, diagnostics, and close cleanup. Its startup result
+must settle before the setup-readiness monitor starts, so timeout, cancellation,
+or transport failure cannot leave a second polling lifecycle behind.
 
 The optional quick-prompt library follows that host-capability boundary. Tutti
 Desktop projects the device-global `tuttid` quick-prompt CRUD service through
@@ -2206,6 +2308,12 @@ Every surface shares the exact interaction identity
 `(workspaceId, agentSessionId, turnId, requestId)` and submitting state.
 Provider request ids remain unchanged and may repeat across Turns; no adapter
 may recover a missing Turn by scanning for a session-wide request-id match.
+An optional Host interaction-readiness capability may block an owner-dependent
+response while preserving the canonical pending Interaction. Synchronizing
+uses the existing device-connecting presentation and disables mutation; it is
+not a terminal Interaction or Session outcome. Host submission adapters must
+recheck their authoritative projection immediately before transport dispatch;
+AgentGUI's early check does not replace Host or provider admission.
 An interactive provider callback must not block the transport's message reader
 while waiting for user input. If the provider can emit follow-up frames during
 that wait, the adapter keeps reading and joins them before publishing the

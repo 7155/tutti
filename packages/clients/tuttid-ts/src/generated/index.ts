@@ -372,6 +372,7 @@ export type {
   AgentTargetSetupSnapshot,
   AgentTargetSetupStatus,
   AgentTargetSource,
+  AgentTargetTerminalStartupAction,
   AgentTurnId,
   ApiErrorDetails,
   ApiErrorResponse,

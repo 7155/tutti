@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	connectorruntime "github.com/tutti-os/tutti/packages/connector/runtime"
 	cliservice "github.com/tutti-os/tutti/services/tuttid/service/cli"
 )
 
@@ -24,14 +25,20 @@ func TestConnectorBrokerDiscoversSkillsAndInvokesInternalCapability(t *testing.T
 	}
 
 	commands := NewConnectorCommandRegistry()
-	commands.routes["workspace-1\x00demo"] = &connectorRoute{id: "workspace-1\x00demo", connectionID: "workspace-1", connectorKey: "demo",
+	routes := connectorruntime.NewRouteTable()
+	commands.attach(routes)
+	route := &connectorRoute{id: "workspace-1\x00demo", connectionID: "workspace-1", connectorKey: "demo",
 		displayName: "Demo", description: "Demo connector", installedRoot: root,
+		processes: connectorruntime.NewProcessGroup(),
 		capabilities: map[string]connectorCommand{"connector.demo.cli.diagnostic.describe": {
 			capability: cliservice.Capability{ID: "connector.demo.cli.diagnostic.describe"},
 			invoke: func(context.Context, cliservice.InvokeRequest) (cliservice.CommandOutput, error) {
 				return jsonValue(map[string]any{"ok": true}), nil
 			},
 		}}}
+	if err := routes.Commit(route); err != nil {
+		t.Fatal(err)
+	}
 	broker, err := NewConnectorBroker(commands)
 	if err != nil {
 		t.Fatal(err)

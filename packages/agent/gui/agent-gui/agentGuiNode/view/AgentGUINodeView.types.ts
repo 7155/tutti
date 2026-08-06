@@ -22,6 +22,7 @@ import type {
 import type { AgentMessageMarkdownWorkspaceAppIcon } from "../../../shared/AgentMessageMarkdown";
 import type { PlanIssueBudgetPreset } from "../../../shared/agentConversation/planImplementationPresentation";
 import type { AgentPromptContentBlock } from "../../../shared/contracts/dto";
+import type { AgentInteractionResponseInput } from "../../../shared/agentConversation/contracts/agentConversationVM";
 import type {
   AgentComposerGitBranchLoader,
   AgentComposerProps,
@@ -131,7 +132,6 @@ export interface AgentGUIViewLabels extends AgentGUIProviderReadinessLabels {
   tuttiBudgetTitle: string;
   tuttiBudgetEffectLabel: string;
   tuttiBudgetSpeedLabel: string;
-  tuttiBudgetPreviewTitle: string;
   tuttiBudgetPreviewHint: string;
   tuttiBudgetPreviewCost: string;
   tuttiBudgetPreviewBalance: string;
@@ -140,7 +140,6 @@ export interface AgentGUIViewLabels extends AgentGUIProviderReadinessLabels {
   tuttiBudgetModelPreferenceCost: string;
   tuttiBudgetModelPreferenceBalance: string;
   tuttiBudgetModelPreferencePowerful: string;
-  tuttiBudgetModelPreferenceFastestSuitable: string;
   tuttiBudgetParallelismLabel: string;
   tuttiBudgetParallelismValue: (count: number) => string;
   tuttiModeUpdateFailed: string;
@@ -220,6 +219,19 @@ export interface AgentGUIViewLabels extends AgentGUIProviderReadinessLabels {
   searchNoConversations: string;
   searchFailed: string;
   retrySearch: string;
+  activityPriority: string;
+  activityNothingNeedsAttention: string;
+  activityToday: string;
+  activityYesterday: string;
+  activityConversationSource: string;
+  activityStatusFailed: string;
+  activityStatusRecentlyActive: string;
+  activityStatusUnread: string;
+  activityStatusWaiting: string;
+  activityStatusWorking: string;
+  viewActivity: string;
+  viewActivityNeedsAttention: string;
+  turnOffActivityView: string;
   conversationUnavailable: string;
   fallbackAgentTitle: string;
   untitledConversationTitle: string;
@@ -330,6 +342,9 @@ export interface AgentGUIViewLabels extends AgentGUIProviderReadinessLabels {
   slashPaletteSkillsGroup: string;
   slashPalettePluginsGroup: string;
   slashPaletteConnectorsGroup: string;
+  slashPaletteConnectorConnected: string;
+  slashPaletteConnectorNotConnected: string;
+  slashPaletteConnectorUnsupported: string;
   slashPaletteMcpGroup: string;
   slashCommandCompactLabel: string;
   slashCommandContextLabel: string;
@@ -462,6 +477,16 @@ export type InteractivePromptLabels = {
 export type AgentGUIConversationRailLabels = Pick<
   AgentGUIViewLabels,
   | "batchDeleteConversations"
+  | "activityPriority"
+  | "activityNothingNeedsAttention"
+  | "activityToday"
+  | "activityYesterday"
+  | "activityConversationSource"
+  | "activityStatusFailed"
+  | "activityStatusRecentlyActive"
+  | "activityStatusUnread"
+  | "activityStatusWaiting"
+  | "activityStatusWorking"
   | "batchDeleteConversationsBody"
   | "batchDeleteConversationsConfirm"
   | "batchDeleteConversationsTitle"
@@ -519,9 +544,12 @@ export type AgentGUIConversationRailLabels = Pick<
   | "showLessConversations"
   | "showMoreConversations"
   | "startConversation"
+  | "turnOffActivityView"
   | "unpinProject"
   | "unpinSession"
   | "untitledConversationTitle"
+  | "viewActivity"
+  | "viewActivityNeedsAttention"
 >;
 export interface AgentGUINodeViewProps {
   viewModel: AgentGUINodeViewModel;
@@ -610,13 +638,8 @@ export interface AgentGUINodeViewProps {
     ) => void;
     loadOlderConversationMessages: () => void;
     showPromptImagesUnsupported: () => void;
-    submitApprovalOption: (requestId: string, optionId: string) => void;
-    submitInteractivePrompt: (input: {
-      requestId: string;
-      action?: string;
-      optionId?: string;
-      payload?: Record<string, unknown>;
-    }) => void;
+    submitApprovalOption: (input: AgentInteractionResponseInput) => boolean;
+    submitInteractivePrompt: (input: AgentInteractionResponseInput) => boolean;
     interruptCurrentTurn: (noRunningResponseMessage: string) => void;
     updateDraftContent: (
       draftContent: AgentComposerDraft,

@@ -479,6 +479,7 @@ components:
         [
           schemaVersion,
           displayName,
+          iconUrl,
           permissions,
           implementation,
           authorizationKind
@@ -489,6 +490,9 @@ components:
           enum: ["1"]
         displayName:
           type: string
+        iconUrl:
+          type: string
+          pattern: "^data:image/(?:png|webp|svg\\+xml);base64,"
         description:
           type: string
         permissions:
@@ -504,9 +508,15 @@ components:
     ConnectorMarketArtifact:
       type: object
       additionalProperties: false
-      required: [key, sha256, sizeBytes, mediaType]
+      required: [storageRealm, key, objectVersion, sha256, sizeBytes, mediaType]
       properties:
+        storageRealm:
+          type: string
+          enum: [tutti.connector.artifacts.v1]
         key:
+          type: string
+          minLength: 1
+        objectVersion:
           type: string
           minLength: 1
         sha256:

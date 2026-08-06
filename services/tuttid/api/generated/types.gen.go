@@ -111,15 +111,18 @@ func (e AgentPromptContentBlockMimeType) Valid() bool {
 
 // Defines values for AgentPromptContentBlockType.
 const (
-	AgentPromptContentBlockTypeImage   AgentPromptContentBlockType = "image"
-	AgentPromptContentBlockTypeMention AgentPromptContentBlockType = "mention"
-	AgentPromptContentBlockTypeSkill   AgentPromptContentBlockType = "skill"
-	AgentPromptContentBlockTypeText    AgentPromptContentBlockType = "text"
+	AgentPromptContentBlockTypeConnector AgentPromptContentBlockType = "connector"
+	AgentPromptContentBlockTypeImage     AgentPromptContentBlockType = "image"
+	AgentPromptContentBlockTypeMention   AgentPromptContentBlockType = "mention"
+	AgentPromptContentBlockTypeSkill     AgentPromptContentBlockType = "skill"
+	AgentPromptContentBlockTypeText      AgentPromptContentBlockType = "text"
 )
 
 // Valid indicates whether the value is a known member of the AgentPromptContentBlockType enum.
 func (e AgentPromptContentBlockType) Valid() bool {
 	switch e {
+	case AgentPromptContentBlockTypeConnector:
+		return true
 	case AgentPromptContentBlockTypeImage:
 		return true
 	case AgentPromptContentBlockTypeMention:
@@ -946,6 +949,21 @@ func (e AgentTargetSource) Valid() bool {
 	}
 }
 
+// Defines values for AgentTargetTerminalStartupActionType.
+const (
+	AgentTargetTerminalStartupActionTypeSlashCommand AgentTargetTerminalStartupActionType = "slash_command"
+)
+
+// Valid indicates whether the value is a known member of the AgentTargetTerminalStartupActionType enum.
+func (e AgentTargetTerminalStartupActionType) Valid() bool {
+	switch e {
+	case AgentTargetTerminalStartupActionTypeSlashCommand:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ApiErrorDetailsCode.
 const (
 	AgentQuickPromptConflict              ApiErrorDetailsCode = "agent_quick_prompt_conflict"
@@ -1321,6 +1339,21 @@ func (e CollaborationRunTriggerSource) Valid() bool {
 	case CollaborationRunTriggerSourcePolicy:
 		return true
 	case CollaborationRunTriggerSourceUser:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ConnectorMarketArtifactStorageRealm.
+const (
+	TuttiConnectorArtifactsV1 ConnectorMarketArtifactStorageRealm = "tutti.connector.artifacts.v1"
+)
+
+// Valid indicates whether the value is a known member of the ConnectorMarketArtifactStorageRealm enum.
+func (e ConnectorMarketArtifactStorageRealm) Valid() bool {
+	switch e {
+	case TuttiConnectorArtifactsV1:
 		return true
 	default:
 		return false
@@ -3703,6 +3736,30 @@ func (e WorkspaceAgentTurnPhase) Valid() bool {
 	}
 }
 
+// Defines values for WorkspaceAppFailurePhase.
+const (
+	Downloading WorkspaceAppFailurePhase = "downloading"
+	Installing  WorkspaceAppFailurePhase = "installing"
+	Runtime     WorkspaceAppFailurePhase = "runtime"
+	Starting    WorkspaceAppFailurePhase = "starting"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceAppFailurePhase enum.
+func (e WorkspaceAppFailurePhase) Valid() bool {
+	switch e {
+	case Downloading:
+		return true
+	case Installing:
+		return true
+	case Runtime:
+		return true
+	case Starting:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WorkspaceAppCatalogLoadStatus.
 const (
 	WorkspaceAppCatalogLoadStatusDisabled WorkspaceAppCatalogLoadStatus = "disabled"
@@ -4683,6 +4740,9 @@ type AgentModelBinding struct {
 type AgentPromptContentBlock struct {
 	AttachmentId *string `json:"attachmentId,omitempty"`
 
+	// ConnectorKey Stable key of an installed local connector selected for this prompt.
+	ConnectorKey *string `json:"connectorKey,omitempty"`
+
 	// Data Base64-encoded image bytes. Mutually exclusive with url.
 	Data     *string                          `json:"data,omitempty"`
 	MimeType *AgentPromptContentBlockMimeType `json:"mimeType,omitempty"`
@@ -4799,6 +4859,7 @@ type AgentProviderAvailabilityStatus string
 // AgentProviderCapabilityOption defines model for AgentProviderCapabilityOption.
 type AgentProviderCapabilityOption struct {
 	Description *string                                 `json:"description,omitempty"`
+	IconUrl     *string                                 `json:"iconUrl,omitempty"`
 	Id          string                                  `json:"id"`
 	Invocation  AgentProviderCapabilityOptionInvocation `json:"invocation"`
 	Kind        AgentProviderCapabilityOptionKind       `json:"kind"`
@@ -5296,8 +5357,11 @@ type AgentTargetAuthMethod struct {
 	Id          string  `json:"id"`
 	Name        string  `json:"name"`
 
-	// TerminalCommand Ready-to-run interactive sign-in command for terminal-type methods.
+	// TerminalCommand Ready-to-run interactive sign-in launch command for terminal-type methods.
 	TerminalCommand *string `json:"terminalCommand,omitempty"`
+
+	// TerminalStartupAction Optional typed terminal action submitted after the interactive runtime reaches its declared ready marker.
+	TerminalStartupAction *AgentTargetTerminalStartupAction `json:"terminalStartupAction,omitempty"`
 
 	// Type Provider-declared method kind (for example "terminal").
 	Type *string `json:"type,omitempty"`
@@ -5402,6 +5466,16 @@ type AgentTargetSetupStatus string
 
 // AgentTargetSource defines model for AgentTargetSource.
 type AgentTargetSource string
+
+// AgentTargetTerminalStartupAction defines model for AgentTargetTerminalStartupAction.
+type AgentTargetTerminalStartupAction struct {
+	CommandName string                               `json:"commandName"`
+	ReadyText   string                               `json:"readyText"`
+	Type        AgentTargetTerminalStartupActionType `json:"type"`
+}
+
+// AgentTargetTerminalStartupActionType defines model for AgentTargetTerminalStartupAction.Type.
+type AgentTargetTerminalStartupActionType string
 
 // ApiErrorDetails defines model for ApiErrorDetails.
 type ApiErrorDetails struct {
@@ -5847,11 +5921,16 @@ type CompleteWorkspaceAppUploadResponse struct {
 
 // ConnectorMarketArtifact defines model for ConnectorMarketArtifact.
 type ConnectorMarketArtifact struct {
-	Key       string `json:"key"`
-	MediaType string `json:"mediaType"`
-	Sha256    string `json:"sha256"`
-	SizeBytes int64  `json:"sizeBytes"`
+	Key           string                              `json:"key"`
+	MediaType     string                              `json:"mediaType"`
+	ObjectVersion string                              `json:"objectVersion"`
+	Sha256        string                              `json:"sha256"`
+	SizeBytes     int64                               `json:"sizeBytes"`
+	StorageRealm  ConnectorMarketArtifactStorageRealm `json:"storageRealm"`
 }
+
+// ConnectorMarketArtifactStorageRealm defines model for ConnectorMarketArtifact.StorageRealm.
+type ConnectorMarketArtifactStorageRealm string
 
 // ConnectorMarketAuthorization defines model for ConnectorMarketAuthorization.
 type ConnectorMarketAuthorization struct {
@@ -5974,6 +6053,7 @@ type ConnectorMarketManifest struct {
 	Compatibility     *ConnectorMarketCompatibilityRequirements `json:"compatibility,omitempty"`
 	Description       *string                                   `json:"description,omitempty"`
 	DisplayName       string                                    `json:"displayName"`
+	IconUrl           string                                    `json:"iconUrl"`
 
 	// Implementation Public implementation discriminator; sensitive host configuration is never returned.
 	Implementation ConnectorMarketImplementation        `json:"implementation"`
@@ -8866,6 +8946,7 @@ type WorkspaceApp struct {
 	DisplayName      string                       `json:"displayName"`
 	Enabled          bool                         `json:"enabled"`
 	Exportable       bool                         `json:"exportable"`
+	FailurePhase     *WorkspaceAppFailurePhase    `json:"failurePhase,omitempty"`
 	FailureReason    *string                      `json:"failureReason"`
 	IconUrl          *string                      `json:"iconUrl"`
 	InstallProgress  *WorkspaceAppInstallProgress `json:"installProgress,omitempty"`
@@ -8891,6 +8972,9 @@ type WorkspaceApp struct {
 	WindowMinHeight  *int                         `json:"windowMinHeight"`
 	WindowMinWidth   *int                         `json:"windowMinWidth"`
 }
+
+// WorkspaceAppFailurePhase defines model for WorkspaceApp.FailurePhase.
+type WorkspaceAppFailurePhase string
 
 // WorkspaceAppAgentPreferencesResponse defines model for WorkspaceAppAgentPreferencesResponse.
 type WorkspaceAppAgentPreferencesResponse struct {

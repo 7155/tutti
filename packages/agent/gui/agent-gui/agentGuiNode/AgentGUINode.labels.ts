@@ -17,6 +17,7 @@ import {
 import { agentGUIProviderManagerLabels } from "./view/agentGUIProviderManagerLabels";
 import { agentGUIUsageStatusLabels } from "./view/agentGUIUsageStatusLabels";
 import { agentQuickPromptLabels } from "./composer/quickPrompts/agentQuickPromptLabels";
+import { agentSlashPaletteLabels } from "./composer/agentSlashPaletteLabels";
 import { agentGUITuttiModeLabels } from "./view/agentGUITuttiModeLabels";
 
 export { buildAgentHomeSuggestions };
@@ -646,25 +647,7 @@ export function useAgentGUIViewLabels(input: {
         }
       ],
       cancel: t("common.cancel"),
-      slashCommandPalette: t("agentHost.agentGui.slashCommandPalette"),
-      skillPickerPalette: t("agentHost.agentGui.skillPickerPalette"),
-      slashPaletteCommandsGroup: t(
-        "agentHost.agentGui.slashPaletteCommandsGroup"
-      ),
-      slashPaletteCapabilitiesGroup: t(
-        "agentHost.agentGui.slashPaletteCapabilitiesGroup"
-      ),
-      slashPaletteCapabilitiesLoading: t(
-        "agentHost.agentGui.slashPaletteCapabilitiesLoading"
-      ),
-      slashPaletteSkillsGroup: t("agentHost.agentGui.slashPaletteSkillsGroup"),
-      slashPalettePluginsGroup: t(
-        "agentHost.agentGui.slashPalettePluginsGroup"
-      ),
-      slashPaletteConnectorsGroup: t(
-        "agentHost.agentGui.slashPaletteConnectorsGroup"
-      ),
-      slashPaletteMcpGroup: t("agentHost.agentGui.slashPaletteMcpGroup"),
+      ...agentSlashPaletteLabels(t),
       slashCommandCompactLabel: t(
         "agentHost.agentGui.slashCommandCompactLabel"
       ),

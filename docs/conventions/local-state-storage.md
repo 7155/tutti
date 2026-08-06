@@ -396,6 +396,24 @@ Agent Extension setup uses these daemon-owned state paths:
 <state-dir>/agent/discovery/agent-extensions/
 ```
 
+Connector CLI packages use daemon-owned state rather than the user's global
+npm prefix. All CLI Connector installations bind to the one signed
+`connector-node-static` runtime under `<state-dir>/connectors/runtimes` and use:
+
+```text
+<state-dir>/connectors/node-packages/shared/pnpm-store/
+<state-dir>/connectors/node-packages/shared/corepack/
+<state-dir>/connectors/node-packages/shared/npm-cache/
+<state-dir>/connectors/node-packages/shared/pnpm-home/
+<state-dir>/connectors/node-packages/packages/<connector-key>/<release-digest>/
+```
+
+The shared directories deduplicate registry downloads and physical dependency
+content. The release directory remains isolated and contains only its lock,
+links/hardlinks, package metadata, generated bin entry, and installation
+receipt. Uninstall removes the release directory but preserves shared content
+for other installed connectors.
+
 The action filename hashes exact Target plus fixed extension installation
 identity; workspace identity remains inside the record, not in a directory
 segment. The data adapter owns path derivation, strict JSON decoding, scope

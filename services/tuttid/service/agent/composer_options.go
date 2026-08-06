@@ -101,6 +101,7 @@ type ComposerCapabilityOption struct {
 	Kind        string
 	Name        string
 	Label       string
+	IconURL     string
 	Description string
 	Status      string
 	Source      string
@@ -274,6 +275,13 @@ func (s *Service) GetComposerOptions(ctx context.Context, input ComposerOptionsI
 	capabilityErrors := []string(nil)
 	if composerOptionsIncludeCapabilityCatalog(input) {
 		capabilityCatalog, capabilityErrors = s.listComposerCapabilityOptions(ctx, provider, input.Cwd, skills)
+		if s.ConnectorMarketSnapshots != nil {
+			localConnectors, err := localConnectorCapabilityOptions(ctx, s.ConnectorMarketSnapshots)
+			if err != nil {
+				capabilityErrors = append(capabilityErrors, "load local connectors: "+err.Error())
+			}
+			capabilityCatalog = replaceComposerConnectorCapabilities(capabilityCatalog, localConnectors)
+		}
 		capabilityCatalog = filterWorkspaceAgentComposerCapabilities(
 			capabilityCatalog,
 			launchInput.AgentTools,

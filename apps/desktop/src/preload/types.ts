@@ -131,6 +131,8 @@ export interface DesktopDockPreviewCacheApi {
 
 export interface DesktopPlatformApi {
   distribution: DesktopDistribution;
+  /** The native Electron application name, including the development suffix. */
+  appName: string;
   homeDirectory: string;
   os: NodeJS.Platform;
   resolveDroppedEntries(files: File[]): DesktopDroppedEntry[];

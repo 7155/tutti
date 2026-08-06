@@ -45,6 +45,7 @@ import type {
   BrowserNodeUpdateAutomationTargetInput
 } from "@tutti-os/browser-node";
 import type {
+  TuttiExternalAtQueryDirectoryInput,
   TuttiExternalAtQueryInput,
   TuttiExternalAtQueryResult,
   TuttiExternalFileOpenInput,
@@ -57,6 +58,7 @@ import type {
   TuttiExternalPdfPrintHtmlInput,
   TuttiExternalPdfPrintHtmlResult,
   TuttiExternalReferenceOpenInput,
+  TuttiExternalReferenceSelectResult,
   TuttiExternalRendererRequest,
   TuttiExternalAtResolveResult,
   TuttiExternalAtResolveInput,
@@ -119,6 +121,7 @@ export const desktopIpcChannels = {
     agentActivityListTargets: "workspace-app-agent-activity:list-targets",
     agentActivitySendInput: "workspace-app-agent-activity:send-input",
     atQuery: "workspace-app-at:query",
+    atQueryDirectory: "workspace-app-at:query-directory",
     atResolve: "workspace-app-at:resolve",
     filesOpen: "workspace-app-files:open",
     filesSelect: "workspace-app-files:select",
@@ -129,6 +132,7 @@ export const desktopIpcChannels = {
     permissionsRequest: "workspace-app-permissions:request",
     pdfPrintHtml: "workspace-app-pdf:print-html",
     referencesOpen: "workspace-app-references:open",
+    referencesSelect: "workspace-app-references:select",
     guestEvent: "workspace-app-external:guest-event",
     rendererEvent: "workspace-app-external:renderer-event",
     rendererRequest: "workspace-app-external:renderer-request",
@@ -797,6 +801,7 @@ export type DesktopWorkspaceAppExternalRendererResult =
   | TuttiExternalAtQueryResult[]
   | TuttiExternalAtResolveResult
   | TuttiExternalFileSelectResult
+  | TuttiExternalReferenceSelectResult
   | WorkspaceUserProject
   | WorkspaceUserProjectDefaultSelection
   | WorkspaceUserProjectPathCheck
@@ -1065,6 +1070,8 @@ export interface DesktopInvokePayloadByChannel {
   [desktopIpcChannels.appExternal
     .agentActivitySendInput]: TuttiExternalAgentActivitySendInput;
   [desktopIpcChannels.appExternal.atQuery]: TuttiExternalAtQueryInput;
+  [desktopIpcChannels.appExternal
+    .atQueryDirectory]: TuttiExternalAtQueryDirectoryInput;
   [desktopIpcChannels.appExternal.atResolve]: TuttiExternalAtResolveInput;
   [desktopIpcChannels.appExternal.filesOpen]: TuttiExternalFileOpenInput;
   [desktopIpcChannels.appExternal.filesSelect]: TuttiExternalFileSelectInput;
@@ -1079,6 +1086,7 @@ export interface DesktopInvokePayloadByChannel {
   [desktopIpcChannels.appExternal.pdfPrintHtml]: TuttiExternalPdfPrintHtmlInput;
   [desktopIpcChannels.appExternal
     .referencesOpen]: TuttiExternalReferenceOpenInput;
+  [desktopIpcChannels.appExternal.referencesSelect]: undefined;
   [desktopIpcChannels.appExternal.settingsOpen]: TuttiExternalSettingsOpenInput;
   [desktopIpcChannels.appExternal
     .userProjectsCheckPath]: TuttiExternalUserProjectPathInput;
@@ -1261,6 +1269,8 @@ export interface DesktopInvokeResultByChannel {
     .agentActivitySendInput]: TuttiExternalAgentActivitySendResult;
   [desktopIpcChannels.appExternal.atQuery]: TuttiExternalAtQueryResult[];
   [desktopIpcChannels.appExternal
+    .atQueryDirectory]: TuttiExternalAtQueryResult[];
+  [desktopIpcChannels.appExternal
     .atResolve]: TuttiExternalAtResolveResult | null;
   [desktopIpcChannels.appExternal.filesOpen]: void;
   [desktopIpcChannels.appExternal.filesSelect]: TuttiExternalFileSelectResult;
@@ -1274,6 +1284,8 @@ export interface DesktopInvokeResultByChannel {
   [desktopIpcChannels.appExternal
     .pdfPrintHtml]: TuttiExternalPdfPrintHtmlResult;
   [desktopIpcChannels.appExternal.referencesOpen]: void;
+  [desktopIpcChannels.appExternal
+    .referencesSelect]: TuttiExternalReferenceSelectResult;
   [desktopIpcChannels.appExternal.settingsOpen]: void;
   [desktopIpcChannels.appExternal
     .userProjectsCheckPath]: WorkspaceUserProjectPathCheck;

@@ -132,9 +132,9 @@ describe("serializeAgentConversationForClipboard", () => {
       [
         "# Design review",
         "",
-        "Please review this",
-        "",
-        "**shot.png**",
+        "> Please review this",
+        ">",
+        "> **shot.png**",
         "",
         "<details><summary>2 previous messages</summary>",
         "",
@@ -152,9 +152,9 @@ describe("serializeAgentConversationForClipboard", () => {
       [
         "# Design review",
         "",
-        "Please review this",
-        "",
-        "![shot.png](<data:image/png;base64,QUFB>)",
+        "> Please review this",
+        ">",
+        "> ![shot.png](<data:image/png;base64,QUFB>)",
         "",
         "<details><summary>2 previous messages</summary>",
         "",
@@ -197,7 +197,7 @@ describe("serializeAgentConversationForClipboard", () => {
     });
 
     expect(transcript.markdown).toBe(
-      "# Session\n\nWhat changed?\n\nHere is the complete answer."
+      "# Session\n\n> What changed?\n\nHere is the complete answer."
     );
     expect(transcript.hydratedMarkdown).toBe(transcript.markdown);
     expect(transcript.markdown).not.toContain("<details>");
@@ -264,7 +264,7 @@ describe("serializeAgentConversationForClipboard", () => {
       [
         "# 咖喱鱼蛋",
         "",
-        "帮我生成一个咖喱鱼蛋的图",
+        "> 帮我生成一个咖喱鱼蛋的图",
         "",
         "我会用图像生成技能，直接创作一张热气腾腾、诱人的港式咖喱鱼蛋美食图。",
         "",
@@ -330,7 +330,7 @@ describe("serializeAgentConversationForClipboard", () => {
       [
         "# Session",
         "",
-        "Generate an image",
+        "> Generate an image",
         "",
         "<details><summary>1 previous messages</summary>",
         "",
@@ -568,7 +568,7 @@ describe("serializeAgentConversationForClipboard", () => {
     expect(transcript.omittedImages).toBe(1);
   });
 
-  it("hydrates user-message images through readAttachment without quoting the input", async () => {
+  it("hydrates user-message images through readAttachment into the blockquote", async () => {
     const readAttachment = vi.fn().mockResolvedValue({
       data: "aW1hZ2U=",
       mimeType: "image/png",
@@ -602,10 +602,10 @@ describe("serializeAgentConversationForClipboard", () => {
 
     expect(readAttachment).toHaveBeenCalledWith("attachment-1");
     expect(transcript.hydratedMarkdown).toContain(
-      "![wireframe.png](<data:image/png;base64,aW1hZ2U=>)"
+      "> ![wireframe.png](<data:image/png;base64,aW1hZ2U=>)"
     );
     expect(transcript.markdown).toContain(
-      "![wireframe.png](<attachment:attachment-1>)"
+      "> ![wireframe.png](<attachment:attachment-1>)"
     );
   });
 });

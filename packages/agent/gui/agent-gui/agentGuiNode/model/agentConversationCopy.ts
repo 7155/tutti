@@ -141,7 +141,7 @@ export async function serializeAgentConversationForClipboard(input: {
   }
 
   // Both variants assemble in lockstep from the same kept entries so the
-  // grouping (details collapse and ordering) stays identical and
+  // grouping (blockquotes, details collapse, ordering) stays identical and
   // only image targets differ.
   const markdownBlocks: string[] = [`# ${singleLine(input.title)}`];
   const hydratedBlocks: string[] = [`# ${singleLine(input.title)}`];
@@ -153,7 +153,10 @@ export async function serializeAgentConversationForClipboard(input: {
   while (index < kept.length) {
     const entry = kept[index]!;
     if (entry.role === "user") {
-      pushBlock(entry.body.plain, entry.body.hydrated);
+      pushBlock(
+        blockquoteMarkdown(entry.body.plain),
+        blockquoteMarkdown(entry.body.hydrated)
+      );
       index += 1;
       continue;
     }

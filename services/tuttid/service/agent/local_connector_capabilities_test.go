@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	market "github.com/tutti-os/tutti/packages/connector/market/daemon"
+	market "github.com/tutti-os/tutti/packages/connector/host"
 )
 
 func TestValidatePromptConnectorsRequiresInstalledAuthorizedConnector(t *testing.T) {

@@ -19,15 +19,15 @@ test("connector market services do not depend on React", () => {
   );
 });
 
-test("connector market renderer does not construct services or import host transports", () => {
-  const rendererDirectory = join(sourceDirectory, "renderer");
+test("connector market UI does not construct services or import host transports", () => {
+  const uiDirectory = join(sourceDirectory, "ui");
   const forbidden = [
     /new\s+ConnectorMarket\w*Service\s*\(/,
     /@tutti-os\/client-tuttid-ts/,
     /window\.(?:tutti|tsh)/,
     /services\/internal\//
   ];
-  const offenders = sourceFiles(rendererDirectory).filter((file) => {
+  const offenders = sourceFiles(uiDirectory).filter((file) => {
     const source = readFileSync(file, "utf8");
     return forbidden.some((pattern) => pattern.test(source));
   });

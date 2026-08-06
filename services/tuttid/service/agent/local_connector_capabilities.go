@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	market "github.com/tutti-os/tutti/packages/connector/market/daemon"
+	market "github.com/tutti-os/tutti/packages/connector/host"
 )
 
 func (s *Service) validatePromptConnectors(ctx context.Context, content []PromptContentBlock) error {

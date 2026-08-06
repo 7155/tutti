@@ -1,8 +1,9 @@
 # Connector Market
 
-The connector market is a shared desktop-daemon domain owned by
-`packages/connector/market`. Tutti is the source repository and first host;
-other hosts consume exact released Go and npm package versions.
+The connector market is a shared desktop-daemon domain owned by the matched
+modules under `packages/connector`. Tutti is the source repository and first
+host; other hosts consume exact released Go and npm package versions from the
+same package cohort.
 
 ## Authority Boundaries
 
@@ -24,18 +25,24 @@ for every state rendered by the desktop application.
 
 ## Ownership
 
-The public package owns:
+The shared Connector modules own:
 
 - connector, catalog, installation, authorization, compatibility, durable
   operation, revision, and error contracts
-- Go state transitions, manifest validation, host ports, application
-  orchestration, and recovery rules
+- `connector/host`: Go state transitions, manifest validation, host ports,
+  application orchestration, and recovery rules
+- `connector/daemon`: bootstrap fencing, scheduling, workers, and outbox
+  delivery
+- `connector/store-sqlite`: the canonical repository, transactions, leases,
+  migrations, and durable outbox implementation
+- `connector/runtime`: secure artifact preparation, managed runtime identity,
+  ABI verification, and typed Node package installation
 - a default remote-catalog domain adapter built over the authoritative market
   client
-- reusable artifact acquisition and preparation: bounded download, size and
+- reusable artifact preparation: bounded download, size and
   digest verification, safe extraction, release-to-package verification,
   staging layout, atomic promotion mechanics, cleanup, and reconcile rules
-- the reusable local daemon OpenAPI fragment under
+- `connector/market`: the reusable local daemon OpenAPI fragment under
   `openapi/connector-market.v1.yaml`
 - the renderer `ConnectorMarketBackend` contract, module Root/Runtime,
   lifecycle and StartupJobs, Valtio-backed domain services, reusable renderer,
@@ -43,19 +50,20 @@ The public package owns:
 
 Each host daemon owns:
 
-- local persistence, transactions, operation leases, and migrations
+- database path selection and opening/closing the shared SQLite store
 - remote market base URL, authentication, HTTP transport, proxy, TLS, logging,
   and tracing configuration
-- the state root supplied to the package artifact preparer
-- global runtime reconciliation, including process registration, sandbox policy,
-  permissions, OS integration, invocation admission, and credential binding
+- the state root supplied to the shared runtime
+- process transport, sandbox enforcement, OS integration, product command
+  publication, invocation admission, and credential binding injected into the
+  shared runtime boundary
 - secure credential storage and authorization callbacks
 - a durable outbox and integration with the host event stream
 - local transport DTO mapping, product compatibility inputs, and diagnostics
 
-The package keeps ports for host-specific implementations even when it offers a
-default adapter. A host can replace a default without forking the shared
-application semantics.
+The modules keep ports for host-specific implementations even when they offer
+a default adapter. A host can replace a default without forking shared
+application or renderer semantics.
 
 ## Artifact And Runtime Boundary
 
@@ -63,12 +71,12 @@ Artifact preparation and runtime activation are different responsibilities:
 
 ```text
 durable operation
-    -> package artifact resolver/downloader
+    -> connector/runtime artifact resolver/downloader
     -> bounded staging download
     -> size and digest verification
     -> safe extraction and packaged-manifest verification
     -> prepared artifact
-    -> daemon implementation host
+    -> connector/runtime implementation adapter
     -> generation-fenced MCP/CLI routes and observed process state
     -> repository result commit
 ```
@@ -167,14 +175,16 @@ before installation. Staging and local integration may override the CDN prefix
 with `TUTTI_CONNECTOR_ARTIFACT_BASE_URL`; production should leave the public
 CloudFront default in place.
 
-The package owns the implementation-host port and durable reconcile semantics;
-the daemon owns the concrete process runtime. In Tutti, `managed_stdio`
+`connector/host` owns the implementation-host port and durable reconcile
+semantics; `connector/runtime` owns portable artifact and managed-runtime
+installation primitives, while each daemon supplies the concrete
+implementation host, process, and product-command adapters. In Tutti, `managed_stdio`
 connectors resolve an exact Node/Python runtime profile. MCP servers are
 long-lived daemon children, while CLI commands are one-shot children. Both use
 the same generation fence, process registry, artifact snapshot, sandbox, and
 connection-scoped state path. An installed runtime is daemon-global and is
-available to every Agent and the local Tutti CLI. TSH may reuse the public
-contracts while providing a different concrete daemon adapter.
+available to every Agent and the local Tutti CLI. TSH runs the same runtime
+module inside its managed VM and supplies a guest process adapter.
 
 ## Durable Operations And Recovery
 

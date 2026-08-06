@@ -17,7 +17,10 @@ const goModuleRoots = [
   "packages/agent/session-replay",
   "packages/agent/store-sqlite",
   "packages/agent/store-sqlite/canonical",
-  "packages/connector/market",
+  "packages/connector/daemon",
+  "packages/connector/host",
+  "packages/connector/runtime",
+  "packages/connector/store-sqlite",
   "packages/device-link",
   "packages/events/stream-go",
   "packages/workspace/issues",
@@ -32,7 +35,7 @@ describe("discoverGoModuleRoots", () => {
         status: 0,
         stdout: JSON.stringify({
           Use: [
-            { DiskPath: "./packages/connector/market" },
+            { DiskPath: "./packages/connector/host" },
             { DiskPath: "./packages/agent/session-replay" },
             { DiskPath: "./services/tuttid" }
           ]
@@ -42,7 +45,7 @@ describe("discoverGoModuleRoots", () => {
 
     assert.deepEqual(roots, [
       "packages/agent/session-replay",
-      "packages/connector/market",
+      "packages/connector/host",
       "services/tuttid"
     ]);
   });
@@ -70,10 +73,10 @@ describe("resolveGoModuleRoot", () => {
     );
     assert.equal(
       resolveGoModuleRoot(
-        "packages/connector/market/daemon/application.go",
+        "packages/connector/host/application.go",
         goModuleRoots
       ),
-      "packages/connector/market"
+      "packages/connector/host"
     );
     assert.equal(
       resolveGoModuleRoot(

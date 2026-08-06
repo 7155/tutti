@@ -33,7 +33,7 @@ export class ConnectorMarketBusyError extends Error {
 }
 
 /**
- * Owns connector-market renderer state and behavior. HTTP clients and desktop
+ * Owns connector-market UI state and behavior. HTTP clients and desktop
  * capabilities are host adapters supplied through the constructor.
  */
 export class ConnectorMarketService implements IConnectorMarketService {

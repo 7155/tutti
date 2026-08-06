@@ -15,12 +15,15 @@ import (
 	"time"
 
 	agentdaemon "github.com/tutti-os/tutti/packages/agent/daemon"
+	agenthttpx "github.com/tutti-os/tutti/packages/agent/daemon/httpx"
 	agentruntime "github.com/tutti-os/tutti/packages/agent/daemon/runtime"
 	runtimeprep "github.com/tutti-os/tutti/packages/agent/runtimeprep"
-	marketartifact "github.com/tutti-os/tutti/packages/connector/market/artifact"
+	connectormarketdaemon "github.com/tutti-os/tutti/packages/connector/daemon"
+	connectorruntime "github.com/tutti-os/tutti/packages/connector/runtime"
+	marketartifact "github.com/tutti-os/tutti/packages/connector/runtime/artifact"
+	connectormarketdata "github.com/tutti-os/tutti/packages/connector/store-sqlite"
 	tuttiapi "github.com/tutti-os/tutti/services/tuttid/api"
 	preferencesbiz "github.com/tutti-os/tutti/services/tuttid/biz/preferences"
-	connectormarketdata "github.com/tutti-os/tutti/services/tuttid/data/connectormarket"
 	workspacedata "github.com/tutti-os/tutti/services/tuttid/data/workspace"
 	tuttiserver "github.com/tutti-os/tutti/services/tuttid/server"
 	accountservice "github.com/tutti-os/tutti/services/tuttid/service/account"
@@ -51,7 +54,7 @@ type tuttiWiring struct {
 	appCenterService             *workspaceservice.AppCenterService
 	workspaceStore               *workspacedata.SQLiteStore
 	connectorMarketStore         *connectormarketdata.Store
-	connectorMarketHost          *connectormarketservice.Host
+	connectorMarketHost          *connectormarketdaemon.Host
 	analyticsReporter            reporterservice.Reporter
 	browserService               *browsersvc.Service
 	computerService              *computersvc.Service
@@ -230,9 +233,10 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("configure connector market account authorization: %w", err)
 	}
-	connectorCatalog, err := connectormarketservice.NewCatalogSource(connectormarketservice.CatalogSourceConfig{
+	connectorCatalog, err := connectormarketdaemon.NewCatalogSource(connectormarketdaemon.CatalogSourceConfig{
 		BaseURL:            connectorMarketBaseURL,
 		ExpectedMarketType: connectorMarketType,
+		HTTPClient:         agenthttpx.NewClient(30 * time.Second),
 		AuthorizeRequest:   marketAuthorizer.Authorize,
 	})
 	if err != nil {
@@ -252,7 +256,9 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	if artifactBaseURL == "" {
 		artifactBaseURL = connectorArtifactBaseURL
 	}
-	artifactFetcher, err := connectormarketservice.NewDirectArtifactFetcher(connectormarketservice.DirectArtifactFetcherConfig{BaseURL: artifactBaseURL})
+	artifactFetcher, err := marketartifact.NewDirectFetcher(marketartifact.DirectFetcherConfig{
+		BaseURL: artifactBaseURL, HTTPClient: agenthttpx.NewClient(5 * time.Minute),
+	})
 	if err != nil {
 		return fmt.Errorf("configure connector artifact download: %w", err)
 	}
@@ -271,7 +277,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("configure connector process sandbox: %w", err)
 	}
-	nodePackageInstaller, err := connectormarketservice.NewNodePackageInstaller(connectormarketservice.NodePackageInstallerConfig{
+	nodePackageInstaller, err := connectorruntime.NewNodePackageInstaller(connectorruntime.NodePackageInstallerConfig{
 		RootDir: filepath.Join(connectorStateRoot, "node-packages"), Runtimes: runtimeResolver, Processes: processTransport,
 	})
 	if err != nil {
@@ -297,7 +303,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	api.CLIRegistry.AppCommands = cliservice.CompositeDynamicCommandRegistry{Registries: []cliservice.DynamicCommandRegistry{
 		api.CLIRegistry.AppCommands, connectorBroker,
 	}}
-	connectorMarketHost, err := connectormarketservice.NewHost(ctx, connectormarketservice.HostConfig{
+	connectorMarketHost, err := connectormarketdaemon.NewHost(ctx, connectormarketdaemon.HostConfig{
 		Repository: connectorMarketStore, CatalogSource: connectorCatalog,
 		ArtifactPreparer: artifactPreparer, CLIInstallations: nodePackageInstaller, ImplementationHost: connectorRuntime,
 		Authorization: connectorAuthorization, Compatibility: compatibility,
@@ -559,7 +565,7 @@ func openWorkspaceStore(ctx context.Context) (*workspacedata.SQLiteStore, error)
 	return workspaceStore, nil
 }
 
-func bootstrapConnectorMarket(host *connectormarketservice.Host) {
+func bootstrapConnectorMarket(host *connectormarketdaemon.Host) {
 	if host == nil {
 		return
 	}

@@ -8,11 +8,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	connectorruntime "github.com/tutti-os/tutti/packages/connector/runtime"
 )
 
 const (
-	ConnectorNodeProfile   = appRuntimeNodeStaticProfile
-	ConnectorPythonProfile = "connector-python-static"
+	ConnectorNodeProfile   = connectorruntime.ConnectorNodeProfile
+	ConnectorPythonProfile = connectorruntime.ConnectorPythonProfile
 )
 
 // ConnectorRuntimeResolverConfig injects the shared v2 managed-runtime
@@ -29,20 +31,10 @@ type ConnectorRuntimeResolver struct {
 	executables map[string]ConnectorExecutable
 }
 
-type ResolvedConnectorRuntime struct {
-	Root       string
-	Profile    string
-	ABI        string
-	Node       *ConnectorExecutable
-	Python     *ConnectorExecutable
-	Components map[string]string
-}
-
-type ConnectorExecutable struct {
-	Path      string
-	SHA256    string
-	SizeBytes int64
-}
+// These aliases preserve the existing Tutti adapter API while the canonical
+// runtime contract lives in packages/connector/runtime.
+type ResolvedConnectorRuntime = connectorruntime.ResolvedConnectorRuntime
+type ConnectorExecutable = connectorruntime.ConnectorExecutable
 
 func NewConnectorRuntimeResolver(config ConnectorRuntimeResolverConfig) (*ConnectorRuntimeResolver, error) {
 	return &ConnectorRuntimeResolver{

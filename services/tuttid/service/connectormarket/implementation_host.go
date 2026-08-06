@@ -20,9 +20,9 @@ import (
 	"time"
 
 	agentruntime "github.com/tutti-os/tutti/packages/agent/daemon/runtime"
-	market "github.com/tutti-os/tutti/packages/connector/market/daemon"
+	market "github.com/tutti-os/tutti/packages/connector/host"
+	connectorruntime "github.com/tutti-os/tutti/packages/connector/runtime"
 	cliservice "github.com/tutti-os/tutti/services/tuttid/service/cli"
-	managedruntime "github.com/tutti-os/tutti/services/tuttid/service/managedruntime"
 	mcpservice "github.com/tutti-os/tutti/services/tuttid/service/mcp"
 )
 
@@ -31,8 +31,8 @@ type PreparedArtifactResolver interface {
 }
 
 type ConnectorRuntimeResolver interface {
-	ResolveProfile(context.Context, string) (managedruntime.ResolvedConnectorRuntime, error)
-	VerifyLaunch(profile, runtimeName string) (managedruntime.ConnectorExecutable, error)
+	ResolveProfile(context.Context, string) (connectorruntime.ResolvedConnectorRuntime, error)
+	VerifyLaunch(profile, runtimeName string) (connectorruntime.ConnectorExecutable, error)
 }
 
 type ImplementationHostConfig struct {
@@ -253,7 +253,7 @@ func (host *ImplementationHost) buildManagedRoute(ctx context.Context, request m
 	if err != nil {
 		return nil, fmt.Errorf("verify connector managed runtime launch: %w", err)
 	}
-	if err := verifyRuntimeABI(managed.Runtime, resolved); err != nil {
+	if err := connectorruntime.VerifyRuntimeABI(managed.Runtime, resolved); err != nil {
 		return nil, err
 	}
 	stateDir, err := secureConnectorStateDir(host.stateRoot, request.ConnectionID, request.Connector.Key)
@@ -300,7 +300,7 @@ func (host *ImplementationHost) buildManagedRoute(ctx context.Context, request m
 	return route, nil
 }
 
-func (host *ImplementationHost) attachMCP(ctx context.Context, route *connectorRoute, managed *market.ManagedStdioImplementation, prepared market.PreparedArtifactReceipt, executable managedruntime.ConnectorExecutable, sandbox *agentruntime.ConnectorSandboxPolicy) error {
+func (host *ImplementationHost) attachMCP(ctx context.Context, route *connectorRoute, managed *market.ManagedStdioImplementation, prepared market.PreparedArtifactReceipt, executable connectorruntime.ConnectorExecutable, sandbox *agentruntime.ConnectorSandboxPolicy) error {
 	entrypoint, err := preparedEntrypoint(prepared.PreparedPath, managed.MCP.Entrypoint)
 	if err != nil {
 		return err
@@ -420,7 +420,7 @@ func (host *ImplementationHost) monitorMCPRoute(route *connectorRoute, client *m
 
 func (host *ImplementationHost) attachCLI(route *connectorRoute, managed *market.ManagedStdioImplementation,
 	prepared market.PreparedArtifactReceipt, installed *market.CLIInstallationReceipt,
-	executable managedruntime.ConnectorExecutable, sandbox *agentruntime.ConnectorSandboxPolicy) error {
+	executable connectorruntime.ConnectorExecutable, sandbox *agentruntime.ConnectorSandboxPolicy) error {
 	entrypointRoot, entrypointRelative := prepared.PreparedPath, managed.CLI.Entrypoint
 	if installed != nil {
 		entrypointRoot, entrypointRelative = installed.InstallRoot, installed.Entrypoint
@@ -433,7 +433,7 @@ func (host *ImplementationHost) attachCLI(route *connectorRoute, managed *market
 	launchExecutable := executable
 	if installed != nil && installed.LaunchKind == "native" {
 		launchArguments = nil
-		launchExecutable = managedruntime.ConnectorExecutable{Path: entrypoint, SHA256: installed.EntrypointSHA256,
+		launchExecutable = connectorruntime.ConnectorExecutable{Path: entrypoint, SHA256: installed.EntrypointSHA256,
 			SizeBytes: installed.EntrypointSize}
 	}
 	if len(managed.CLI.Commands) == 0 {
@@ -480,7 +480,7 @@ func (host *ImplementationHost) attachCLI(route *connectorRoute, managed *market
 }
 
 func (host *ImplementationHost) attachGenericCLI(route *connectorRoute, managed *market.ManagedStdioImplementation,
-	prepared market.PreparedArtifactReceipt, launchArguments []string, executable managedruntime.ConnectorExecutable,
+	prepared market.PreparedArtifactReceipt, launchArguments []string, executable connectorruntime.ConnectorExecutable,
 	sandbox *agentruntime.ConnectorSandboxPolicy) error {
 	commandID, err := connectorCapabilityID(route.connectorKey, "cli", "run")
 	if err != nil {
@@ -544,7 +544,7 @@ func genericCLIArguments(raw any) ([]string, error) {
 	return arguments, nil
 }
 
-func connectorProcessSpec(route *connectorRoute, language string, executable managedruntime.ConnectorExecutable, cwd string, args []string, sandbox *agentruntime.ConnectorSandboxPolicy) agentruntime.ProcessSpec {
+func connectorProcessSpec(route *connectorRoute, language string, executable connectorruntime.ConnectorExecutable, cwd string, args []string, sandbox *agentruntime.ConnectorSandboxPolicy) agentruntime.ProcessSpec {
 	command := append([]string{executable.Path}, args...)
 	stateDir := ""
 	if sandbox != nil && len(sandbox.WritablePaths) != 0 {
@@ -667,17 +667,6 @@ func preparedEntrypoint(root, relative string) (string, error) {
 		return "", errors.New("connector entrypoint is not a regular prepared file")
 	}
 	return target, nil
-}
-
-func verifyRuntimeABI(requirement market.RuntimeRequirement, resolved managedruntime.ResolvedConnectorRuntime) error {
-	if requirement.Profile != resolved.Profile || requirement.ABI != resolved.ABI {
-		return errors.New("connector runtime ABI does not match the signed local runtime")
-	}
-	if requirement.Language == "node" && strings.TrimSpace(requirement.VersionRange) != "" &&
-		!nodeVersionSatisfies(resolved.Components["node"], requirement.VersionRange) {
-		return errors.New("connector Node version requirement does not match the signed local runtime")
-	}
-	return nil
 }
 
 func connectorCapability(routeID, connectorKey, name, description string, inputSchema map[string]any) cliservice.Capability {
@@ -1303,6 +1292,19 @@ func ProductionPorts(host *ImplementationHost) (market.ImplementationHost, marke
 	return host, unavailableAuthorization{}, productionCompatibility{}, market.NewImplementationRegistry(map[string]market.ImplementationValidator{
 		market.ImplementationKindManagedStdio: nil,
 	})
+}
+
+// unavailableAuthorization is a Tutti product adapter: the current production
+// runtime intentionally admits only connectors whose authorization kind is
+// "none". Shared Host lifecycle code must not infer that product capability.
+type unavailableAuthorization struct{}
+
+func (unavailableAuthorization) Begin(context.Context, market.AuthorizationStartRequest) (market.AuthorizationSession, error) {
+	return market.AuthorizationSession{}, errors.New("connector authorization is not registered")
+}
+
+func (unavailableAuthorization) Disconnect(context.Context, market.AuthorizationDisconnectRequest) error {
+	return errors.New("connector authorization is not registered")
 }
 
 type productionCompatibility struct{}

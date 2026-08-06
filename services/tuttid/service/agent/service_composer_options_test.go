@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
-	market "github.com/tutti-os/tutti/packages/connector/market/daemon"
+	market "github.com/tutti-os/tutti/packages/connector/host"
 	agenttargetbiz "github.com/tutti-os/tutti/services/tuttid/biz/agenttarget"
 )
 

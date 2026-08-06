@@ -12,7 +12,7 @@ import { useService } from "@tutti-os/infra/di";
 import type { WorkspaceSummary } from "@tutti-os/client-tuttid-ts";
 import { INotificationService } from "@tutti-os/ui-notifications";
 import { createConnectorMarketI18nRuntime } from "@tutti-os/connector-market/i18n";
-import { ConnectorMarketPanel } from "@tutti-os/connector-market/renderer";
+import { ConnectorMarketPanel } from "@tutti-os/connector-market/ui";
 import { IConnectorMarketModule } from "@tutti-os/connector-market/services";
 import type {
   DesktopComputerUsePermissionPane,

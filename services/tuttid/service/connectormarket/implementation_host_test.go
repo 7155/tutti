@@ -15,9 +15,9 @@ import (
 	"time"
 
 	agentruntime "github.com/tutti-os/tutti/packages/agent/daemon/runtime"
-	market "github.com/tutti-os/tutti/packages/connector/market/daemon"
+	market "github.com/tutti-os/tutti/packages/connector/host"
+	connectorruntime "github.com/tutti-os/tutti/packages/connector/runtime"
 	cliservice "github.com/tutti-os/tutti/services/tuttid/service/cli"
-	managedruntime "github.com/tutti-os/tutti/services/tuttid/service/managedruntime"
 )
 
 type mcpProcessStub struct{ connection *mcpConnectionStub }
@@ -139,7 +139,7 @@ func testCLIHost(t *testing.T, processes agentruntime.ProcessTransport) (*Implem
 	}
 	commands := NewConnectorCommandRegistry()
 	host, err := NewImplementationHost(ImplementationHostConfig{Artifacts: preparedResolverStub{receipt: market.PreparedArtifactReceipt{PreparedPath: root, InventoryDigest: inventory}},
-		Runtimes: connectorRuntimeStub{executable: managedruntime.ConnectorExecutable{Path: runtimePath,
+		Runtimes: connectorRuntimeStub{executable: connectorruntime.ConnectorExecutable{Path: runtimePath,
 			SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", SizeBytes: 7}},
 		Processes: processes, Commands: commands, StateRoot: t.TempDir()})
 	if err != nil {
@@ -150,7 +150,7 @@ func testCLIHost(t *testing.T, processes agentruntime.ProcessTransport) (*Implem
 		InstalledReleaseDigest: "release-digest"}, Authorization: market.Authorization{State: market.AuthorizationStateNotRequired}}
 	connector.Release = market.Release{ConnectorKey: "github", ReleaseDigest: "release-digest", Manifest: market.Manifest{AuthorizationKind: "none", IconURL: "data:image/png;base64,iVBORw0KGgo=",
 		Implementation: market.Implementation{Kind: market.ImplementationKindManagedStdio, ManagedStdio: &market.ManagedStdioImplementation{
-			Runtime: market.RuntimeRequirement{Language: "node", Profile: managedruntime.ConnectorNodeProfile, ABI: "node20-" + runtime.GOOS + "-" + runtime.GOARCH},
+			Runtime: market.RuntimeRequirement{Language: "node", Profile: connectorruntime.ConnectorNodeProfile, ABI: "node20-" + runtime.GOOS + "-" + runtime.GOARCH},
 			CLI: &market.ManagedCLIInterface{Entrypoint: "connector.js", Commands: []market.CLICommand{{Name: "status",
 				InputSchema: map[string]any{"type": "object"}, TimeoutMS: 120_000}}},
 		}}}}
@@ -162,14 +162,14 @@ func (stub preparedResolverStub) ResolvePrepared(context.Context, market.Release
 }
 
 type connectorRuntimeStub struct {
-	executable managedruntime.ConnectorExecutable
+	executable connectorruntime.ConnectorExecutable
 }
 
-func (stub connectorRuntimeStub) ResolveProfile(context.Context, string) (managedruntime.ResolvedConnectorRuntime, error) {
-	return managedruntime.ResolvedConnectorRuntime{Root: filepath.Dir(stub.executable.Path), Profile: managedruntime.ConnectorNodeProfile,
+func (stub connectorRuntimeStub) ResolveProfile(context.Context, string) (connectorruntime.ResolvedConnectorRuntime, error) {
+	return connectorruntime.ResolvedConnectorRuntime{Root: filepath.Dir(stub.executable.Path), Profile: connectorruntime.ConnectorNodeProfile,
 		ABI: "node20-" + runtime.GOOS + "-" + runtime.GOARCH, Node: &stub.executable}, nil
 }
-func (stub connectorRuntimeStub) VerifyLaunch(string, string) (managedruntime.ConnectorExecutable, error) {
+func (stub connectorRuntimeStub) VerifyLaunch(string, string) (connectorruntime.ConnectorExecutable, error) {
 	return stub.executable, nil
 }
 
@@ -246,7 +246,7 @@ func TestImplementationHostRegistersWorkspaceFencedCLIAndDeactivatesIt(t *testin
 	processes := &connectorProcessStub{}
 	host, err := NewImplementationHost(ImplementationHostConfig{
 		Artifacts: preparedResolverStub{receipt: market.PreparedArtifactReceipt{PreparedPath: root, InventoryDigest: inventory}},
-		Runtimes: connectorRuntimeStub{executable: managedruntime.ConnectorExecutable{Path: runtimePath,
+		Runtimes: connectorRuntimeStub{executable: connectorruntime.ConnectorExecutable{Path: runtimePath,
 			SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", SizeBytes: 7}},
 		Processes: processes, Commands: commands, StateRoot: t.TempDir(),
 	})
@@ -257,7 +257,7 @@ func TestImplementationHostRegistersWorkspaceFencedCLIAndDeactivatesIt(t *testin
 		InstalledReleaseDigest: "release-digest"}, Authorization: market.Authorization{State: market.AuthorizationStateNotRequired}}
 	connector.Release = market.Release{ConnectorKey: "github", ReleaseDigest: "release-digest", Manifest: market.Manifest{AuthorizationKind: "none", IconURL: "data:image/png;base64,iVBORw0KGgo=",
 		Implementation: market.Implementation{Kind: market.ImplementationKindManagedStdio, ManagedStdio: &market.ManagedStdioImplementation{
-			Runtime: market.RuntimeRequirement{Language: "node", Profile: managedruntime.ConnectorNodeProfile, ABI: "node20-" + runtime.GOOS + "-" + runtime.GOARCH},
+			Runtime: market.RuntimeRequirement{Language: "node", Profile: connectorruntime.ConnectorNodeProfile, ABI: "node20-" + runtime.GOOS + "-" + runtime.GOARCH},
 			CLI: &market.ManagedCLIInterface{Entrypoint: "connector.js", Commands: []market.CLICommand{{Name: "status",
 				InputSchema: map[string]any{"type": "object"}, TimeoutMS: 1_000}}},
 		}}}}

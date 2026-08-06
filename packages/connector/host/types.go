@@ -146,10 +146,20 @@ type RuntimeRequirement struct {
 }
 
 type ManagedStdioImplementation struct {
-	Runtime                  RuntimeRequirement   `json:"runtime"`
-	MCP                      *ManagedMCPInterface `json:"mcp,omitempty"`
-	CLI                      *ManagedCLIInterface `json:"cli,omitempty"`
-	CredentialBrokerProtocol string               `json:"credentialBrokerProtocol,omitempty"`
+	Runtime          RuntimeRequirement       `json:"runtime"`
+	MCP              *ManagedMCPInterface     `json:"mcp,omitempty"`
+	CLI              *ManagedCLIInterface     `json:"cli,omitempty"`
+	CredentialBroker *ManagedCredentialBroker `json:"credentialBroker,omitempty"`
+}
+
+// ManagedCredentialBroker is a connector-owned adapter that translates a
+// provider-specific authorization flow into the host-neutral credential
+// broker event protocol. The host still owns process isolation and URL policy.
+type ManagedCredentialBroker struct {
+	Protocol     string   `json:"protocol"`
+	Entrypoint   string   `json:"entrypoint"`
+	TimeoutMS    int      `json:"timeoutMs"`
+	AllowedHosts []string `json:"allowedHosts"`
 }
 
 type ManagedMCPInterface struct {
@@ -190,10 +200,9 @@ type NodePackageLaunch struct {
 // NodeLifecycleCommand allows a signed connector release to opt into a
 // specific Node script without granting a general-purpose lifecycle shell.
 type NodeLifecycleCommand struct {
-	Event              string   `json:"event"`
-	Entrypoint         string   `json:"entrypoint"`
-	Arguments          []string `json:"arguments,omitempty"`
-	AllowedExecutables []string `json:"allowedExecutables,omitempty"`
+	Event      string   `json:"event"`
+	Entrypoint string   `json:"entrypoint"`
+	Arguments  []string `json:"arguments,omitempty"`
 }
 
 type CLICommand struct {
@@ -329,10 +338,11 @@ type RuntimeReceipt struct {
 }
 
 type AuthorizationSession struct {
-	OperationID      string `json:"operationId"`
-	ConnectorKey     string `json:"connectorKey"`
-	SessionID        string `json:"sessionId"`
-	AuthorizationURL string `json:"-"`
+	OperationID      string             `json:"operationId"`
+	ConnectorKey     string             `json:"connectorKey"`
+	SessionID        string             `json:"sessionId"`
+	AuthorizationURL string             `json:"-"`
+	State            AuthorizationState `json:"-"`
 }
 
 type Snapshot struct {

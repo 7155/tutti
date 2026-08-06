@@ -286,7 +286,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	}
 	processTransport, err := agentruntime.NewConnectorProcessTransport()
 	if err != nil {
-		return fmt.Errorf("configure connector process sandbox: %w", err)
+		return fmt.Errorf("configure connector process transport: %w", err)
 	}
 	nodePackageInstaller, err := connectorruntime.NewNodePackageInstaller(connectorruntime.NodePackageInstallerConfig{
 		RootDir: filepath.Join(connectorStateRoot, "node-packages"), Runtimes: runtimeResolver, Processes: processTransport,
@@ -299,10 +299,15 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("configure connector broker: %w", err)
 	}
+	userHome, err := os.UserHomeDir()
+	if err != nil || !filepath.IsAbs(userHome) {
+		return errors.New("configure connector implementation host: user home is unavailable")
+	}
 	implementationHost, err := connectormarketservice.NewImplementationHost(connectormarketservice.ImplementationHostConfig{
 		Artifacts: artifactPreparer, CLIInstallations: nodePackageInstaller,
 		Runtimes: runtimeResolver, Processes: processTransport, Commands: connectorCommands,
-		StateRoot: filepath.Join(connectorStateRoot, "workspace-state"),
+		StateRoot: filepath.Join(connectorStateRoot, "user-state"),
+		UserHome:  userHome,
 	})
 	if err != nil {
 		return fmt.Errorf("configure connector implementation host: %w", err)

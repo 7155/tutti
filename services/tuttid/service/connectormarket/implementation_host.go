@@ -3,6 +3,7 @@ package connectormarket
 import (
 	"context"
 	"errors"
+	"os"
 	"runtime"
 	"time"
 
@@ -28,6 +29,7 @@ type ImplementationHostConfig struct {
 	Processes         agentruntime.ProcessTransport
 	Commands          *ConnectorCommandRegistry
 	StateRoot         string
+	UserHome          string
 	MCPStartupTimeout time.Duration
 }
 
@@ -51,9 +53,17 @@ func NewImplementationHost(config ImplementationHostConfig) (*ImplementationHost
 	if config.Commands == nil {
 		return nil, errors.New("connector command registry is required")
 	}
+	if config.UserHome == "" {
+		userHome, err := os.UserHomeDir()
+		if err != nil {
+			return nil, errors.New("connector implementation user home is unavailable")
+		}
+		config.UserHome = userHome
+	}
 	host, err := implementationhost.New(implementationhost.Config{
 		Artifacts: config.Artifacts, CLIInstallations: config.CLIInstallations, Runtimes: config.Runtimes,
 		Processes: config.Processes, Commands: config.Commands.runtime, StateRoot: config.StateRoot,
+		UserHome:          config.UserHome,
 		MCPStartupTimeout: config.MCPStartupTimeout,
 	})
 	if err != nil {
@@ -98,6 +108,20 @@ func (host *ImplementationHost) Reconcile(ctx context.Context, request market.Ru
 	return host.runtime.Reconcile(ctx, implementationhost.ReconcileRequest{Runtime: request})
 }
 
+func (host *ImplementationHost) Begin(ctx context.Context, request market.AuthorizationStartRequest) (market.AuthorizationSession, error) {
+	if host == nil || host.runtime == nil {
+		return market.AuthorizationSession{}, errors.New("connector authorization provider is unavailable")
+	}
+	return host.runtime.BeginAuthorization(ctx, request)
+}
+
+func (host *ImplementationHost) Disconnect(ctx context.Context, request market.AuthorizationDisconnectRequest) error {
+	if host == nil || host.runtime == nil {
+		return errors.New("connector authorization provider is unavailable")
+	}
+	return host.runtime.DisconnectAuthorization(ctx, request)
+}
+
 func (host *ImplementationHost) DeactivateRuntime(ctx context.Context, request market.RuntimeDeactivationRequest) error {
 	if host == nil || host.runtime == nil {
 		return errors.New("connector implementation host is unavailable")
@@ -133,26 +157,19 @@ func (host *ImplementationHost) Close() error {
 }
 
 func ProductionPorts(host *ImplementationHost) (market.ImplementationHost, market.AuthorizationProvider, market.CompatibilityEvaluator, market.ImplementationRegistry) {
-	return host, unavailableAuthorization{}, productionCompatibility{}, market.NewImplementationRegistry(map[string]market.ImplementationValidator{
+	return host, host, productionCompatibility{}, market.NewImplementationRegistry(map[string]market.ImplementationValidator{
 		market.ImplementationKindManagedStdio: nil,
 	})
-}
-
-type unavailableAuthorization struct{}
-
-func (unavailableAuthorization) Begin(context.Context, market.AuthorizationStartRequest) (market.AuthorizationSession, error) {
-	return market.AuthorizationSession{}, errors.New("connector authorization is not registered")
-}
-
-func (unavailableAuthorization) Disconnect(context.Context, market.AuthorizationDisconnectRequest) error {
-	return errors.New("connector authorization is not registered")
 }
 
 type productionCompatibility struct{}
 
 func (productionCompatibility) Evaluate(manifest market.Manifest) market.Compatibility {
-	if manifest.Implementation.Kind != market.ImplementationKindManagedStdio || manifest.AuthorizationKind != "none" {
+	if manifest.Implementation.Kind != market.ImplementationKindManagedStdio {
 		return market.Compatibility{State: market.CompatibilityStateUnsupportedImplementation, Reason: "implementation or authorization broker is unavailable"}
+	}
+	if manifest.AuthorizationKind != "none" && (manifest.Implementation.ManagedStdio == nil || manifest.Implementation.ManagedStdio.CredentialBroker == nil) {
+		return market.Compatibility{State: market.CompatibilityStateUnsupportedImplementation, Reason: "authorization broker is unavailable"}
 	}
 	for _, platform := range manifest.Compatibility.Platforms {
 		if platform == runtime.GOOS+"-"+runtime.GOARCH {

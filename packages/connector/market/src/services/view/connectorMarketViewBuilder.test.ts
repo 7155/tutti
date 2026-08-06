@@ -82,6 +82,106 @@ test("keeps connector details open through installation and advances to authoriz
   market.connectorsByKey[connector.key] = connector;
   const installed = buildConnectorMarketView(market, dialogState).dialog;
   assert.equal(installed?.kind, "authorization");
+  assert.equal(
+    installed?.kind === "authorization" && installed.authorizing,
+    false
+  );
+
+  market.authorizingConnectorKeys[connector.key] = true;
+  connector.authorization = { state: "pending" };
+  market.connectorsByKey[connector.key] = connector;
+  const authorizing = buildConnectorMarketView(market, dialogState).dialog;
+  assert.equal(
+    authorizing?.kind === "authorization" && authorizing.authorizing,
+    true
+  );
+  assert.equal(
+    authorizing?.kind === "authorization" && authorizing.pending,
+    true
+  );
+});
+
+test("requires an installed connector to update before authorization when the active release changes", () => {
+  const market = createConnectorMarketStoreState();
+  const connector = connectorFixture();
+  connector.installation = {
+    installedReleaseDigest:
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    installedReleaseId: "github@0.9.0",
+    installedVersion: "0.9.0",
+    state: "installed"
+  };
+  connector.authorization = { state: "failed" };
+  market.connectorKeys = [connector.key];
+  market.connectorsByKey[connector.key] = connector;
+  const dialogState: ConnectorMarketUiState = {
+    ...uiState,
+    dialog: { connectorKey: connector.key },
+    segment: "installed"
+  };
+
+  const view = buildConnectorMarketView(market, dialogState);
+
+  assert.equal(view.cardsByKey[connector.key]?.action, "update");
+  assert.equal(view.cardsByKey[connector.key]?.status, "update_available");
+  assert.deepEqual(view.sections[0]?.connectorKeys, [connector.key]);
+  assert.equal(view.dialog?.kind, "installation");
+  assert.equal(
+    view.dialog?.kind === "installation" && view.dialog.updating,
+    true
+  );
+});
+
+test("exposes disconnect directly for an authorized connector", () => {
+  const market = createConnectorMarketStoreState();
+  const connector = connectorFixture();
+  connector.installation = {
+    installedReleaseDigest: connector.release.releaseDigest,
+    state: "installed"
+  };
+  connector.authorization = { state: "connected" };
+  market.connectorKeys = [connector.key];
+  market.connectorsByKey[connector.key] = connector;
+  market.operationsByConnectorKey[connector.key] = {
+    attempt: 1,
+    clientRequestId: "authorize",
+    connectorKey: connector.key,
+    createdAt: "2026-08-06T00:00:00Z",
+    kind: "start_authorization",
+    operationId: "authorize-operation",
+    stage: "completed",
+    state: "completed",
+    updatedAt: "2026-08-06T00:00:01Z"
+  };
+
+  const view = buildConnectorMarketView(market, {
+    ...uiState,
+    segment: "installed"
+  });
+
+  assert.equal(view.cardsByKey[connector.key]?.action, "disconnect");
+  assert.equal(view.cardsByKey[connector.key]?.status, "connected");
+  assert.equal(view.cardsByKey[connector.key]?.operationStage, "completed");
+});
+
+test("keeps authorization-free connectors on the management action", () => {
+  const market = createConnectorMarketStoreState();
+  const connector = connectorFixture();
+  connector.installation = {
+    installedReleaseDigest: connector.release.releaseDigest,
+    state: "installed"
+  };
+  connector.authorization = { state: "not_required" };
+  connector.release.manifest.authorizationKind = "none";
+  market.connectorKeys = [connector.key];
+  market.connectorsByKey[connector.key] = connector;
+
+  const view = buildConnectorMarketView(market, {
+    ...uiState,
+    segment: "installed"
+  });
+
+  assert.equal(view.cardsByKey[connector.key]?.action, "manage");
 });
 
 function connectorFixture(): Connector {

@@ -130,6 +130,7 @@ func (s *Service) validateExtensionComposerSettingsForCreate(
 	input *CreateSessionInput,
 	modelExplicit bool,
 	permissionModeExplicit bool,
+	reasoningEffortExplicit bool,
 ) error {
 	if input == nil || providerTargetRefKind(input.ProviderTargetRef) != "agent_extension" {
 		return nil
@@ -177,6 +178,15 @@ func (s *Service) validateExtensionComposerSettingsForCreate(
 			input.PermissionModeID = nil
 		} else {
 			input.PermissionModeID = stringPointer(resolved)
+		}
+	}
+	if !reasoningEffortExplicit {
+		resolved := strings.TrimSpace(options.EffectiveSettings.ReasoningEffort)
+		settings.ReasoningEffort = resolved
+		if resolved == "" {
+			input.ReasoningEffort = nil
+		} else {
+			input.ReasoningEffort = stringPointer(resolved)
 		}
 	}
 	if err := validateExtensionComposerOption(

@@ -45,6 +45,7 @@ func (s *Service) CreateWithResult(ctx context.Context, workspaceID string, inpu
 	}
 	modelExplicit := strings.TrimSpace(value(input.Model)) != ""
 	permissionModeExplicit := strings.TrimSpace(value(input.PermissionModeID)) != ""
+	reasoningEffortExplicit := strings.TrimSpace(value(input.ReasoningEffort)) != ""
 	if err := s.applyCreateSessionComposerDefaults(ctx, &input); err != nil {
 		return CreateSessionResult{}, err
 	}
@@ -168,6 +169,7 @@ func (s *Service) CreateWithResult(ctx context.Context, workspaceID string, inpu
 			&input,
 			modelExplicit,
 			permissionModeExplicit,
+			reasoningEffortExplicit,
 		); err != nil {
 			s.reportAgentServiceNodeFailure(ctx, input.AgentSessionID, "session_create", "settings_validated", provider, nodeStartedAt, err)
 			return CreateSessionResult{}, err

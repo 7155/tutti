@@ -80,6 +80,8 @@ jobs:
 
           $required = @(
             'TUTTI_MICROSOFT_STORE_PRODUCT_ID',
+            'TUTTI_STORE_APPLICATION_ID',
+            'TUTTI_STORE_DISPLAY_NAME',
             'TUTTI_STORE_IDENTITY_NAME',
             'TUTTI_STORE_PUBLISHER',
             'TUTTI_STORE_PUBLISHER_DISPLAY_NAME'
@@ -169,6 +171,13 @@ jobs:
           $version = $identity.GetAttribute('Version')
           $architecture = $identity.GetAttribute('ProcessorArchitecture')
           $expectedVersion = "$env:TUTTI_DESKTOP_BUILD_VERSION.0"
+          $packageDisplayName = $manifest.SelectSingleNode("/*[local-name()='Package']/*[local-name()='Properties']/*[local-name()='DisplayName']").InnerText
+          $application = $manifest.SelectSingleNode("/*[local-name()='Package']/*[local-name()='Applications']/*[local-name()='Application']")
+          $applicationId = $application.GetAttribute('Id')
+          $executable = $application.GetAttribute('Executable')
+          $entryPoint = $application.GetAttribute('EntryPoint')
+          $visualElements = $application.SelectSingleNode("*[local-name()='VisualElements']")
+          $applicationDisplayName = $visualElements.GetAttribute('DisplayName')
 
           if ($identityName -ne $env:TUTTI_STORE_IDENTITY_NAME) {
             throw "Store identity mismatch: $identityName"
@@ -182,6 +191,21 @@ jobs:
           if ($architecture -ne 'x64') {
             throw "Store architecture mismatch: $architecture"
           }
+          if ($packageDisplayName -ne $env:TUTTI_STORE_DISPLAY_NAME) {
+            throw "Store package display name mismatch: $packageDisplayName"
+          }
+          if ($applicationId -ne $env:TUTTI_STORE_APPLICATION_ID) {
+            throw "Store application id mismatch: $applicationId"
+          }
+          if ($executable -ne 'app\Tutti.exe') {
+            throw "Store executable mismatch: $executable"
+          }
+          if ($entryPoint -ne 'Windows.FullTrustApplication') {
+            throw "Store entry point mismatch: $entryPoint"
+          }
+          if ($applicationDisplayName -ne 'Tutti') {
+            throw "Installed application display name mismatch: $applicationDisplayName"
+          }
           $loginProtocol = $manifest.SelectSingleNode("//*[local-name()='Protocol' and @Name='tutti']")
           if ($null -eq $loginProtocol) {
             throw "Store manifest does not register the tutti login protocol"
@@ -194,9 +218,13 @@ jobs:
           $sha256 = (Get-FileHash $package.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           @{
             architecture = $architecture
+            applicationDisplayName = $applicationDisplayName
+            applicationId = $applicationId
             commit = (git rev-parse HEAD).Trim()
+            executable = $executable
             identityName = $identityName
             package = $package.Name
+            packageDisplayName = $packageDisplayName
             productId = $env:TUTTI_MICROSOFT_STORE_PRODUCT_ID
             publisher = $publisher
             sha256 = $sha256

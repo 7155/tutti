@@ -464,13 +464,14 @@ account and product profile. Store submission requires these secrets:
 It also requires these non-secret Environment variables:
 
 - `TUTTI_MICROSOFT_STORE_PRODUCT_ID`
+- `TUTTI_STORE_APPLICATION_ID`
+- `TUTTI_STORE_DISPLAY_NAME`
 - `TUTTI_STORE_IDENTITY_NAME`
 - `TUTTI_STORE_PUBLISHER`
 - `TUTTI_STORE_PUBLISHER_DISPLAY_NAME`
 
-`TUTTI_STORE_APPLICATION_ID` and `TUTTI_STORE_DISPLAY_NAME` are optional. Never
-mix account credentials from one Environment with a product identity from
-another. Switching from a test account/application to production means
+Never mix account credentials from one Environment with a product identity
+from another. Switching from a test account/application to production means
 replacing the complete Environment profile and rebuilding the package; a test
 package cannot be promoted unchanged to a different Store identity.
 

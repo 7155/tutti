@@ -1345,6 +1345,21 @@ func (e CollaborationRunTriggerSource) Valid() bool {
 	}
 }
 
+// Defines values for ConnectorMarketArtifactStorageRealm.
+const (
+	TuttiConnectorArtifactsV1 ConnectorMarketArtifactStorageRealm = "tutti.connector.artifacts.v1"
+)
+
+// Valid indicates whether the value is a known member of the ConnectorMarketArtifactStorageRealm enum.
+func (e ConnectorMarketArtifactStorageRealm) Valid() bool {
+	switch e {
+	case TuttiConnectorArtifactsV1:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ConnectorMarketAuthorizationState.
 const (
 	ConnectorMarketAuthorizationStateConnected    ConnectorMarketAuthorizationState = "connected"
@@ -5906,11 +5921,16 @@ type CompleteWorkspaceAppUploadResponse struct {
 
 // ConnectorMarketArtifact defines model for ConnectorMarketArtifact.
 type ConnectorMarketArtifact struct {
-	Key       string `json:"key"`
-	MediaType string `json:"mediaType"`
-	Sha256    string `json:"sha256"`
-	SizeBytes int64  `json:"sizeBytes"`
+	Key           string                              `json:"key"`
+	MediaType     string                              `json:"mediaType"`
+	ObjectVersion string                              `json:"objectVersion"`
+	Sha256        string                              `json:"sha256"`
+	SizeBytes     int64                               `json:"sizeBytes"`
+	StorageRealm  ConnectorMarketArtifactStorageRealm `json:"storageRealm"`
 }
+
+// ConnectorMarketArtifactStorageRealm defines model for ConnectorMarketArtifact.StorageRealm.
+type ConnectorMarketArtifactStorageRealm string
 
 // ConnectorMarketAuthorization defines model for ConnectorMarketAuthorization.
 type ConnectorMarketAuthorization struct {

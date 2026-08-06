@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	market "github.com/tutti-os/tutti/packages/connector/market/daemon"
+	market "github.com/tutti-os/tutti/packages/connector/host"
 	tuttigenerated "github.com/tutti-os/tutti/services/tuttid/api/generated"
 )
 
@@ -174,7 +174,8 @@ func connectorMarketTestConnector() market.Connector {
 				AuthorizationKind: "oauth2",
 			},
 			Artifact: market.Artifact{
-				Key:       "connectors/notion/1.0.0.tar.gz",
+				StorageRealm: "tutti.connector.artifacts.v1",
+				Key:          "connectors/notion/1.0.0.tar.gz", ObjectVersion: "version-1",
 				SHA256:    digest,
 				SizeBytes: 128,
 				MediaType: "application/gzip",

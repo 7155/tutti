@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,12 +17,15 @@ import (
 	"time"
 
 	agentdaemon "github.com/tutti-os/tutti/packages/agent/daemon"
+	agenthttpx "github.com/tutti-os/tutti/packages/agent/daemon/httpx"
 	agentruntime "github.com/tutti-os/tutti/packages/agent/daemon/runtime"
 	runtimeprep "github.com/tutti-os/tutti/packages/agent/runtimeprep"
-	marketartifact "github.com/tutti-os/tutti/packages/connector/market/artifact"
+	connectormarketdaemon "github.com/tutti-os/tutti/packages/connector/daemon"
+	connectorruntime "github.com/tutti-os/tutti/packages/connector/runtime"
+	marketartifact "github.com/tutti-os/tutti/packages/connector/runtime/artifact"
+	connectormarketdata "github.com/tutti-os/tutti/packages/connector/store-sqlite"
 	tuttiapi "github.com/tutti-os/tutti/services/tuttid/api"
 	preferencesbiz "github.com/tutti-os/tutti/services/tuttid/biz/preferences"
-	connectormarketdata "github.com/tutti-os/tutti/services/tuttid/data/connectormarket"
 	workspacedata "github.com/tutti-os/tutti/services/tuttid/data/workspace"
 	tuttiserver "github.com/tutti-os/tutti/services/tuttid/server"
 	accountservice "github.com/tutti-os/tutti/services/tuttid/service/account"
@@ -44,14 +49,13 @@ import (
 )
 
 const connectorMarketDefaultBaseURL = "https://api.tutti.sh/api/desktop"
-const connectorArtifactBaseURL = "https://d27a59zdy4534h.cloudfront.net/tutti/connector-market/"
 
 type tuttiWiring struct {
 	api                          tuttiapi.DaemonAPI
 	appCenterService             *workspaceservice.AppCenterService
 	workspaceStore               *workspacedata.SQLiteStore
 	connectorMarketStore         *connectormarketdata.Store
-	connectorMarketHost          *connectormarketservice.Host
+	connectorMarketHost          *connectormarketdaemon.Host
 	analyticsReporter            reporterservice.Reporter
 	browserService               *browsersvc.Service
 	computerService              *computersvc.Service
@@ -230,10 +234,18 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("configure connector market account authorization: %w", err)
 	}
-	connectorCatalog, err := connectormarketservice.NewCatalogSource(connectormarketservice.CatalogSourceConfig{
-		BaseURL:            connectorMarketBaseURL,
-		ExpectedMarketType: connectorMarketType,
-		AuthorizeRequest:   marketAuthorizer.Authorize,
+	connectorMarketKeyringVersion, connectorMarketTrustRoots, err := connectorMarketSigningKeysFromEnvironment()
+	if err != nil {
+		return fmt.Errorf("configure connector market signing trust: %w", err)
+	}
+	connectorCatalog, err := connectormarketdaemon.NewCatalogSource(connectormarketdaemon.CatalogSourceConfig{
+		BaseURL:                      connectorMarketBaseURL,
+		ExpectedMarketType:           connectorMarketType,
+		HTTPClient:                   agenthttpx.NewClient(30 * time.Second),
+		AuthorizeRequest:             marketAuthorizer.Authorize,
+		TrustedSigningKeys:           connectorMarketTrustRoots,
+		TrustedSigningKeyringVersion: connectorMarketKeyringVersion,
+		TrustStateStore:              connectorMarketStore,
 	})
 	if err != nil {
 		_ = connectorMarketStore.Close()
@@ -248,11 +260,16 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 		providerAuthWatcher.Close()
 		return errors.New("connector market event stream wiring is invalid")
 	}
-	artifactBaseURL := strings.TrimSpace(os.Getenv("TUTTI_CONNECTOR_ARTIFACT_BASE_URL"))
-	if artifactBaseURL == "" {
-		artifactBaseURL = connectorArtifactBaseURL
-	}
-	artifactFetcher, err := connectormarketservice.NewDirectArtifactFetcher(connectormarketservice.DirectArtifactFetcherConfig{BaseURL: artifactBaseURL})
+	artifactFetcher, err := marketartifact.NewGrantFetcher(marketartifact.GrantFetcherConfig{
+		BaseURL: connectorMarketBaseURL, HTTPClient: agenthttpx.NewClient(5 * time.Minute), AuthorizeRequest: marketAuthorizer.Authorize,
+		WorkspaceIDProvider: func(context.Context) (string, error) {
+			workspaceID := strings.TrimSpace(os.Getenv("TUTTI_CONNECTOR_MARKET_WORKSPACE_ID"))
+			if workspaceID == "" {
+				return "", errors.New("connector market workspace authority is not configured")
+			}
+			return workspaceID, nil
+		},
+	})
 	if err != nil {
 		return fmt.Errorf("configure connector artifact download: %w", err)
 	}
@@ -271,7 +288,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("configure connector process sandbox: %w", err)
 	}
-	nodePackageInstaller, err := connectormarketservice.NewNodePackageInstaller(connectormarketservice.NodePackageInstallerConfig{
+	nodePackageInstaller, err := connectorruntime.NewNodePackageInstaller(connectorruntime.NodePackageInstallerConfig{
 		RootDir: filepath.Join(connectorStateRoot, "node-packages"), Runtimes: runtimeResolver, Processes: processTransport,
 	})
 	if err != nil {
@@ -297,7 +314,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	api.CLIRegistry.AppCommands = cliservice.CompositeDynamicCommandRegistry{Registries: []cliservice.DynamicCommandRegistry{
 		api.CLIRegistry.AppCommands, connectorBroker,
 	}}
-	connectorMarketHost, err := connectormarketservice.NewHost(ctx, connectormarketservice.HostConfig{
+	connectorMarketHost, err := connectormarketdaemon.NewHost(ctx, connectormarketdaemon.HostConfig{
 		Repository: connectorMarketStore, CatalogSource: connectorCatalog,
 		ArtifactPreparer: artifactPreparer, CLIInstallations: nodePackageInstaller, ImplementationHost: connectorRuntime,
 		Authorization: connectorAuthorization, Compatibility: compatibility,
@@ -383,6 +400,31 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	w.appCenterService = appCenterService
 	w.tuttiModeWakeRecoveryStarter = api.OnListenerReady
 	return nil
+}
+
+func connectorMarketSigningKeysFromEnvironment() (uint64, map[string]ed25519.PublicKey, error) {
+	raw := strings.TrimSpace(os.Getenv("TUTTI_CONNECTOR_MARKET_SIGNING_KEYRING_JSON"))
+	if raw == "" {
+		// Keep daemon startup and installed runtime recovery independent of
+		// remote trust configuration. Catalog acceptance itself remains closed.
+		return 0, nil, nil
+	}
+	var keyring struct {
+		Version uint64            `json:"version"`
+		Keys    map[string]string `json:"keys"`
+	}
+	if err := json.Unmarshal([]byte(raw), &keyring); err != nil || keyring.Version == 0 || len(keyring.Keys) == 0 {
+		return 0, nil, errors.New("connector market signing keyring JSON is invalid")
+	}
+	keys := make(map[string]ed25519.PublicKey, len(keyring.Keys))
+	for keyID, value := range keyring.Keys {
+		decoded, err := hex.DecodeString(strings.TrimSpace(value))
+		if err != nil || strings.TrimSpace(keyID) == "" || len(decoded) != ed25519.PublicKeySize {
+			return 0, nil, errors.New("connector market signing public key is invalid")
+		}
+		keys[keyID] = ed25519.PublicKey(decoded)
+	}
+	return keyring.Version, keys, nil
 }
 
 func (w *tuttiWiring) observeDesktopPreferenceChanges(preferences *preferencesservice.Service) {
@@ -559,7 +601,7 @@ func openWorkspaceStore(ctx context.Context) (*workspacedata.SQLiteStore, error)
 	return workspaceStore, nil
 }
 
-func bootstrapConnectorMarket(host *connectormarketservice.Host) {
+func bootstrapConnectorMarket(host *connectormarketdaemon.Host) {
 	if host == nil {
 		return
 	}

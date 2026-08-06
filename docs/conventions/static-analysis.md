@@ -454,6 +454,10 @@ The current root entrypoint runs the linter from:
 - `packages/agent/store-sqlite/canonical`
 - `packages/appcli/core`
 - `packages/clients/device-authority-go`
+- `packages/connector/daemon`
+- `packages/connector/host`
+- `packages/connector/runtime`
+- `packages/connector/store-sqlite`
 - `packages/device-link`
 - `packages/agent/runtimeprep`
 - `packages/workspace/files`
@@ -474,7 +478,7 @@ Changed-aware Go validation includes the nested
 `packages/agent/host`,
 `packages/agent/runtimeprep`, `packages/agent/store-sqlite`, and
 `packages/agent/store-sqlite/canonical`, `packages/clients/device-authority-go`,
-and `packages/device-link` modules.
+the four `packages/connector/*` Go modules, and `packages/device-link` modules.
 Codex app-server protocol changes should also run
 `pnpm check:codexproto-generated` when schema, generator, or generated protocol
 files are touched.

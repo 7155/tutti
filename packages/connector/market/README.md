@@ -3,16 +3,17 @@
 `@tutti-os/connector-market` is the host-neutral connector-market boundary
 shared by Tutti and other approved desktop daemon hosts such as TSH.
 
-The package deliberately owns three matching contracts:
+The package owns the TypeScript and renderer side of the shared boundary:
 
-- `daemon`: Go domain types, state transitions, manifest validation, ports, and
-  the application service boundary
 - `openapi/connector-market.v1.yaml`: the HTTP fragment composed by each host
   daemon's aggregate OpenAPI document
+- `contracts`: host-neutral backend, event, domain, and error contracts
+- `core`: the renderer module lifecycle and stable Root boundary
 - `services`: a module-scoped Root, Runtime, lifecycle, StartupJobs, Valtio
   domain services, and host adapter contracts
-- `renderer`: the reusable catalog, authorization dialog, and connected-state
+- `ui`: the reusable catalog, authorization dialog, and connected-state
   management dialog built only from `@tutti-os/ui-system`
+- `renderer`: a compatibility alias for `ui`
 - `i18n`: the connector-market resource bundle and scoped runtime factory
 
 The package does not construct an HTTP client, read Electron globals, choose a
@@ -108,34 +109,16 @@ x-tutti-openapi-fragments:
 
 Do not copy the fragment into another repository or reference a Tutti worktree.
 
-## Go host boundary
+## Go boundaries
 
-The Go module path is:
+Go is published through responsibility-specific sibling modules rather than
+from this npm package directory:
 
-```text
-github.com/tutti-os/tutti/packages/connector/market
-```
+- `github.com/tutti-os/tutti/packages/connector/host`
+- `github.com/tutti-os/tutti/packages/connector/daemon`
+- `github.com/tutti-os/tutti/packages/connector/store-sqlite`
+- `github.com/tutti-os/tutti/packages/connector/runtime`
 
-Host daemons implement repository, catalog transport, runtime activation,
-authorization, scheduling, and event ports. The public package owns shared
-state semantics and secure artifact preparation; host adapters own storage and
-product integration.
-
-`Repository.Transaction` must be atomic and advance the daemon-wide market
-revision monotonically. `ArtifactPreparer`, `ImplementationHost`,
-`AuthorizationProvider`, and `OperationScheduler` receive immutable operation
-and release identity and must tolerate replay because daemon recovery can
-re-execute accepted or running work after a crash.
-
-`Application.ExecuteOperation` also provides process-local single-flight
-semantics: concurrent dispatches for the same operation ID share one execution
-and its final result, while different operation IDs remain independently
-schedulable. This in-memory ownership is intentionally limited to one
-`Application` instance; after a process restart, durable accepted/running
-operations are replayed through `Recover`, so adapters must still tolerate
-uncertain external side effects from a crash.
-
-`artifact.Preparer` provides bounded download, digest verification, safe
-extraction, packaged-manifest verification, and atomic content-addressed
-promotion. Hosts retain remote endpoint/authentication configuration, runtime
-activation, persistence, credentials, and state-root selection.
+All connector npm and Go modules ship in the same exact package cohort. See
+the sibling module READMEs and `docs/architecture/connector-market.md` for the
+ownership and host-adapter boundaries.

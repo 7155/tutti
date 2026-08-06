@@ -178,6 +178,16 @@ func bootstrapTuttiAgentUserAuth(ctx context.Context, input runtimeprep.PrepareI
 		}
 		slog.Warn("tutti-agent auth reconcile failed", "error", err)
 		if tuttiAgentLLMTokenIssueRejectedWithCode(err, http.StatusUnauthorized) {
+			if clearErr := clearTuttiAgentHostAuthIfMatches(cookie); clearErr != nil {
+				slog.Warn("tutti-agent host auth cleanup after token issue rejection failed", "error", clearErr)
+			} else {
+				slog.Info("tutti-agent host auth cleared after token issue rejection",
+					"event", "tutti_agent.auth_bootstrap",
+					"action", "clear",
+					"reason", "host_session_rejected",
+					"agent_session_id", input.AgentSessionID,
+				)
+			}
 			slog.Info("tutti-agent auth retained after token issue rejection",
 				"event", "tutti_agent.auth_bootstrap",
 				"action", "retain",
@@ -295,7 +305,7 @@ func userTuttiAgentAuthPath() (string, bool) {
 }
 
 func tuttiAgentAccountSessionCookie() (string, tuttiAgentAccountSessionState) {
-	raw, err := os.ReadFile(filepath.Join(tuttitypes.DefaultStateDir(), "account", "auth.json"))
+	raw, err := os.ReadFile(tuttiAgentHostAuthPath())
 	if errors.Is(err, os.ErrNotExist) {
 		return "", tuttiAgentAccountSessionAbsent
 	}
@@ -316,6 +326,46 @@ func tuttiAgentAccountSessionCookie() (string, tuttiAgentAccountSessionState) {
 		return "session_id=" + sessionID, tuttiAgentAccountSessionPresent
 	}
 	return "", tuttiAgentAccountSessionAbsent
+}
+
+func tuttiAgentHostAuthPath() string {
+	return filepath.Join(tuttitypes.DefaultStateDir(), "account", "auth.json")
+}
+
+// clearTuttiAgentHostAuthIfMatches clears only the host account session that
+// produced a confirmed 401 from the token endpoint. A fresh login already
+// persisted when this check runs is preserved by comparing the current cookie.
+func clearTuttiAgentHostAuthIfMatches(cookie string) error {
+	cookie = strings.TrimSpace(cookie)
+	if cookie == "" {
+		return nil
+	}
+	path := tuttiAgentHostAuthPath()
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var payload struct {
+		SessionID string `json:"session_id"`
+		Cookie    string `json:"cookie"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return err
+	}
+	currentCookie := strings.TrimSpace(payload.Cookie)
+	if currentCookie == "" && strings.TrimSpace(payload.SessionID) != "" {
+		currentCookie = "session_id=" + strings.TrimSpace(payload.SessionID)
+	}
+	if currentCookie != cookie {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 type tuttiAgentLLMTokenBundle = tuttiagentauth.TokenBundle
@@ -406,6 +456,9 @@ func issueTuttiAgentLLMToken(ctx context.Context, cookie string) (tuttiAgentLLMT
 	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if err != nil {
 		return tuttiAgentLLMTokenBundle{}, err
+	}
+	if response.StatusCode == http.StatusUnauthorized {
+		return tuttiAgentLLMTokenBundle{}, tuttiAgentLLMTokenIssueRejectedError{Code: http.StatusUnauthorized}
 	}
 	var payload struct {
 		Code   int    `json:"code"`

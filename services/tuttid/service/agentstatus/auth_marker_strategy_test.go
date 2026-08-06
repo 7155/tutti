@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
 )
@@ -78,5 +80,40 @@ func TestTuttiAuthUsesValidatedMarkerWithoutSurfacingApplicationID(t *testing.T)
 
 	if auth.Status != AuthAuthenticated || auth.AccountLabel != "" {
 		t.Fatalf("Auth = %#v, want authenticated without an account label", auth)
+	}
+}
+
+func TestTuttiAuthExpiredAccessTokenRequiresLogin(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.json")
+	if err := os.WriteFile(path, []byte(`{
+		"tutti_llm":{
+			"access_token":"access",
+			"access_token_expires_at":"2000-01-01T00:00:00Z",
+			"refresh_token":"refresh"
+		}
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	auth, ok := parseTuttiAgentAuthMarkerFile(path)
+	if !ok || auth.Status != AuthRequired {
+		t.Fatalf("parseTuttiAgentAuthMarkerFile() = %#v, %v, want auth required", auth, ok)
+	}
+}
+
+func TestTuttiAuthFutureNumericAccessTokenExpiryRemainsAuthenticated(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.json")
+	expiresAt := strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10)
+	if err := os.WriteFile(path, []byte(`{
+		"tutti_llm":{
+			"access_token":"access",
+			"access_token_expires_at":`+expiresAt+`,
+			"refresh_token":"refresh"
+		}
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	auth, ok := parseTuttiAgentAuthMarkerFile(path)
+	if !ok || auth.Status != AuthAuthenticated {
+		t.Fatalf("parseTuttiAgentAuthMarkerFile() = %#v, %v, want authenticated", auth, ok)
 	}
 }

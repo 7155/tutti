@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -159,9 +160,10 @@ func parseTuttiAgentAuthMarkerFile(path string) (AuthInfo, bool) {
 	}
 	var payload struct {
 		TuttiLLM *struct {
-			AppID        string `json:"app_id"`
-			AccessToken  string `json:"access_token"`
-			RefreshToken string `json:"refresh_token"`
+			AppID                string          `json:"app_id"`
+			AccessToken          string          `json:"access_token"`
+			AccessTokenExpiresAt json.RawMessage `json:"access_token_expires_at"`
+			RefreshToken         string          `json:"refresh_token"`
 		} `json:"tutti_llm"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
@@ -172,6 +174,16 @@ func parseTuttiAgentAuthMarkerFile(path string) (AuthInfo, bool) {
 		strings.TrimSpace(payload.TuttiLLM.RefreshToken) == "" {
 		return AuthInfo{Status: AuthRequired}, true
 	}
+	// A stale auth marker is not a login.  The CLI's `login status` command
+	// only checks that the marker exists, while the app-server will immediately
+	// try to refresh an expired access token.  Treat an explicitly expired
+	// access token as auth-required so the desktop can route the user back
+	// through the Tutti account login flow instead of reporting a false-ready
+	// provider.
+	if expiresAt, ok := parseTuttiAgentTokenExpiry(payload.TuttiLLM.AccessTokenExpiresAt); ok &&
+		!time.Now().UTC().Before(expiresAt) {
+		return AuthInfo{Status: AuthRequired}, true
+	}
 	// app_id identifies the Tutti LLM application, not the signed-in user.
 	// The marker does not contain user-facing account identity, so leave the
 	// account label empty rather than showing the shared application ID.
@@ -179,4 +191,30 @@ func parseTuttiAgentAuthMarkerFile(path string) (AuthInfo, bool) {
 		AuthMethod: "tutti_llm",
 		Status:     AuthAuthenticated,
 	}, true
+}
+
+func parseTuttiAgentTokenExpiry(raw json.RawMessage) (time.Time, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return time.Time{}, false
+	}
+	var numeric int64
+	if err := json.Unmarshal(raw, &numeric); err == nil && numeric > 0 {
+		return time.Unix(numeric, 0).UTC(), true
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return time.Time{}, false
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return time.Time{}, false
+	}
+	if parsed, err := time.Parse(time.RFC3339, text); err == nil {
+		return parsed.UTC(), true
+	}
+	numeric, err := strconv.ParseInt(text, 10, 64)
+	if err != nil || numeric <= 0 {
+		return time.Time{}, false
+	}
+	return time.Unix(numeric, 0).UTC(), true
 }

@@ -79,6 +79,19 @@ func TestIssueTuttiAgentLLMTokenAppIDEnvOverride(t *testing.T) {
 	}
 }
 
+func TestIssueTuttiAgentLLMTokenTreatsHTTPUnauthorizedAsRejected(t *testing.T) {
+	account := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer account.Close()
+	t.Setenv("TUTTI_ACCOUNT_BASE_URL", account.URL)
+
+	_, err := issueTuttiAgentLLMToken(t.Context(), "session_id=stale")
+	if err == nil || !tuttiAgentLLMTokenIssueRejectedWithCode(err, http.StatusUnauthorized) {
+		t.Fatalf("issueTuttiAgentLLMToken() error = %v, want HTTP 401 rejection", err)
+	}
+}
+
 func TestTuttiAgentUserAuthReadyRejectsExpiredAccessToken(t *testing.T) {
 	expiresAt := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
 	writeTuttiAgentUserAuth(t, t.TempDir(), `{"tutti_llm":{"access_token":"lat_test","access_token_expires_at":`+strconv.Quote(expiresAt)+`,"refresh_token":"lrt_test"}}`)
@@ -301,6 +314,9 @@ func TestBootstrapTuttiAgentUserAuthRetainsAuthAfterUnauthorizedTokenIssue(t *te
 
 	authPath := filepath.Join(home, ".tutti-agent", "auth.json")
 	assertTuttiAgentAuthUnchanged(t, authPath, []byte(authJSON))
+	if _, err := os.Stat(filepath.Join(stateDir, "account", "auth.json")); !os.IsNotExist(err) {
+		t.Fatalf("host auth stat error = %v, want rejected session to be cleared", err)
+	}
 	if got := revokeCalls.Load(); got != 0 {
 		t.Fatalf("revoke calls = %d, want 0", got)
 	}

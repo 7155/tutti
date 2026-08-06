@@ -372,7 +372,6 @@ export function useAgentGUINodeController({
       const session = activeEngineSession;
       if (
         !session ||
-        session.visible === false ||
         conversations.some(
           (conversation) => conversation.id === session.agentSessionId
         )
@@ -557,7 +556,7 @@ export function useAgentGUINodeController({
     const nextConversationCount = mergeVisibleConversations(
       conversations,
       transientConversation
-    ).length;
+    ).filter((conversation) => !conversation.hiddenFromRail).length;
     onDataChangeRef.current((current) =>
       current.conversationCount === nextConversationCount
         ? current

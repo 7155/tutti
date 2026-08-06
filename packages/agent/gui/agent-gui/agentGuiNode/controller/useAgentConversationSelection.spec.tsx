@@ -226,7 +226,8 @@ describe("useAgentConversationSelection", () => {
     expect(active.current).toBe("session-a");
     expect(setIntent).toHaveBeenCalledWith({
       tag: "active",
-      id: "session-a"
+      id: "session-a",
+      source: "user-selection"
     });
     expect(setLoading).toHaveBeenCalledWith(false);
     expect(ensureHydrated).not.toHaveBeenCalled();

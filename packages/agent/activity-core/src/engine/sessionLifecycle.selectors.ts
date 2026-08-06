@@ -43,6 +43,30 @@ export interface EngineSubmitAvailability {
   state: "available" | "blocked";
 }
 
+/**
+ * A failed new-session activation is only a missing session when the
+ * canonical session entity is absent. The runtime may be unavailable while
+ * the session remains a durable, selectable conversation.
+ */
+export type FailedNewActivationResolution =
+  | "not-applicable"
+  | "preserve"
+  | "rollback";
+
+export function selectFailedNewActivationResolution(
+  state: AgentSessionEngineStateBase,
+  agentSessionId: string | null | undefined
+): FailedNewActivationResolution {
+  const activation = selectLatestActivationForSession(state, agentSessionId);
+  if (activation?.mode !== "new" || isPendingActivationViable(activation)) {
+    return "not-applicable";
+  }
+  return state.sessionLifecycle?.sessionsById &&
+    selectEngineSession(state, agentSessionId)
+    ? "preserve"
+    : "rollback";
+}
+
 export function selectEngineSessionRuntimeAvailability(
   state: AgentSessionEngineStateBase,
   agentSessionId: string | null | undefined

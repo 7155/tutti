@@ -130,35 +130,7 @@ test("activity reconciliation does not move existing members when they become re
   ]);
 });
 
-test("activity reconciliation accumulates observed IDs across missing snapshots", () => {
-  const initial = createAgentGUIConversationActivityActivation(
-    [conversation("existing", { time: NOW - 2 * HOUR_MS })],
-    NOW
-  );
-  const withTransient = reconcileAgentGUIConversationActivityActivation(
-    initial,
-    [
-      conversation("existing", { time: NOW - 2 * HOUR_MS }),
-      conversation("selected-history", {
-        isTransient: true,
-        time: NOW - HOUR_MS
-      })
-    ]
-  );
-  const missing = reconcileAgentGUIConversationActivityActivation(
-    withTransient,
-    [conversation("existing", { time: NOW - 2 * HOUR_MS })]
-  );
-  const restored = reconcileAgentGUIConversationActivityActivation(missing, [
-    conversation("existing", { time: NOW - 2 * HOUR_MS }),
-    conversation("selected-history", { time: NOW - HOUR_MS })
-  ]);
-
-  expect(restored.priority).toEqual([]);
-  expect(restored.observedIds).toContain("selected-history");
-});
-
-test("activity reconciliation incrementally enqueues pushes and retains existing Priority members", () => {
+test("activity reconciliation admits only live late sessions and retains Priority members", () => {
   const initial = createAgentGUIConversationActivityActivation(
     [
       conversation("keep", { status: "working", time: NOW - HOUR_MS }),
@@ -179,12 +151,11 @@ test("activity reconciliation incrementally enqueues pushes and retains existing
   ]);
 
   expect(projectAgentGUIConversationActivity(reconciled)).toEqual({
-    priorityIds: ["promote", "pushed-active", "keep", "pushed-idle"],
+    priorityIds: ["promote", "pushed-active", "keep"],
     priorityReasonsById: new Map([
       ["promote", "unread"],
       ["pushed-active", "active"],
-      ["keep", "active"],
-      ["pushed-idle", "retained-idle"]
+      ["keep", "active"]
     ]),
     recentSections: [],
     referenceDayStartUnixMs: localDayStartUnixMs(NOW)
@@ -210,53 +181,6 @@ test("activity reconciliation removes a deleted Priority member immediately", ()
   );
 });
 
-test("activity reconciliation keeps a selected idle transient conversation recent", () => {
-  const initial = createAgentGUIConversationActivityActivation(
-    [conversation("existing", { time: NOW - 2 * HOUR_MS })],
-    NOW
-  );
-  const reconciled = reconcileAgentGUIConversationActivityActivation(initial, [
-    conversation("existing", { time: NOW - 2 * HOUR_MS }),
-    conversation("selected-history", {
-      isTransient: true,
-      time: NOW - HOUR_MS
-    })
-  ]);
-
-  expect(projectAgentGUIConversationActivity(reconciled)).toEqual({
-    priorityIds: [],
-    priorityReasonsById: new Map(),
-    recentSections: [
-      {
-        dayStartUnixMs: localDayStartUnixMs(NOW),
-        ids: ["selected-history", "existing"]
-      }
-    ],
-    referenceDayStartUnixMs: localDayStartUnixMs(NOW)
-  });
-  expect(reconciled.priorityRetentionRecencyById.has("selected-history")).toBe(
-    false
-  );
-});
-
-test("activity reconciliation still prioritizes a transient conversation with live work", () => {
-  const initial = createAgentGUIConversationActivityActivation([], NOW);
-  const reconciled = reconcileAgentGUIConversationActivityActivation(initial, [
-    conversation("active-selected", {
-      isTransient: true,
-      status: "working",
-      time: NOW
-    })
-  ]);
-
-  expect(projectAgentGUIConversationActivity(reconciled)).toEqual({
-    priorityIds: ["active-selected"],
-    priorityReasonsById: new Map([["active-selected", "active"]]),
-    recentSections: [],
-    referenceDayStartUnixMs: localDayStartUnixMs(NOW)
-  });
-});
-
 test("activity reconciliation preserves activation identity when nothing changes", () => {
   const conversations = [conversation("recent", { time: NOW - HOUR_MS })];
   const initial = createAgentGUIConversationActivityActivation(
@@ -266,43 +190,6 @@ test("activity reconciliation preserves activation identity when nothing changes
   expect(
     reconcileAgentGUIConversationActivityActivation(initial, conversations)
   ).toBe(initial);
-});
-
-test("activity retention records exact unread recency and expires after recency changes", () => {
-  const unread = conversation("unread", {
-    hasUnreadCompletion: true,
-    time: NOW - HOUR_MS
-  });
-  const initial = createAgentGUIConversationActivityActivation([unread], NOW);
-  const read = conversation("unread", { time: NOW - HOUR_MS });
-  const retained = reconcileAgentGUIConversationActivityActivation(initial, [
-    read
-  ]);
-
-  expect(retained.priorityRetentionRecencyById.get("unread")).toBe(
-    NOW - HOUR_MS
-  );
-  expect(
-    projectAgentGUIConversationActivity(
-      createAgentGUIConversationActivityActivation(
-        [read],
-        NOW,
-        retained.priorityRetentionRecencyById
-      )
-    ).priorityReasonsById.get("unread")
-  ).toBe("retained-idle");
-
-  const recencyChanged = conversation("unread", { time: NOW });
-  const expired = reconcileAgentGUIConversationActivityActivation(retained, [
-    recencyChanged
-  ]);
-  expect(expired.priorityRetentionRecencyById.has("unread")).toBe(false);
-  const rebuilt = createAgentGUIConversationActivityActivation(
-    [recencyChanged],
-    NOW,
-    expired.priorityRetentionRecencyById
-  );
-  expect(projectAgentGUIConversationActivity(rebuilt).priorityIds).toEqual([]);
 });
 
 test("activity activation preserves source order for equal rank and recency", () => {
@@ -366,7 +253,6 @@ function conversation(
   id: string,
   overrides: {
     hasUnreadCompletion?: boolean;
-    isTransient?: boolean;
     needsUserAction?: boolean;
     status?: AgentGUIConversationSummary["status"];
     time: number;
@@ -376,7 +262,6 @@ function conversation(
     cwd: "/workspace",
     hasUnreadCompletion: overrides.hasUnreadCompletion,
     id,
-    isTransient: overrides.isTransient,
     needsUserAction: overrides.needsUserAction,
     provider: "codex",
     status: overrides.status ?? "ready",

@@ -13,6 +13,22 @@ import (
 	workspacebiz "github.com/tutti-os/tutti/services/tuttid/biz/workspace"
 )
 
+type unavailableSessionReader struct {
+	delegate SessionReader
+}
+
+func (unavailableSessionReader) GetSession(string, string) (PersistedSession, bool) {
+	return PersistedSession{}, false
+}
+
+func (r unavailableSessionReader) ListSessions(workspaceID string) ([]PersistedSession, bool) {
+	return r.delegate.ListSessions(workspaceID)
+}
+
+func (r unavailableSessionReader) SessionDeleted(ctx context.Context, workspaceID, agentSessionID string) (bool, error) {
+	return r.delegate.SessionDeleted(ctx, workspaceID, agentSessionID)
+}
+
 func TestHostCreateWithInitialInputRollsBackTurnlessCanonicalShell(t *testing.T) {
 	execErr := errors.New("provider rejected initial input")
 	runtime := newFakeRuntime()
@@ -28,12 +44,20 @@ func TestHostCreateWithInitialInputRollsBackTurnlessCanonicalShell(t *testing.T)
 	service.SessionReader = projection
 	service.SessionInitializer = projection
 
-	_, err := service.Create(context.Background(), "ws-1", CreateSessionInput{
+	created, err := service.CreateWithResult(context.Background(), "ws-1", CreateSessionInput{
 		AgentSessionID: "session-no-turnless-shell", AgentTargetID: agenttargetbiz.IDLocalCodex,
 		InitialContent: TextPromptContent("start atomically"),
 	})
 	if !errors.Is(err, execErr) {
 		t.Fatalf("Create() error=%v, want %v", err, execErr)
+	}
+	if created.SessionStatus != agenthost.CreateSessionStatusNotCreated ||
+		created.InitialGoalStatus != agenthost.CreateSessionInitialGoalStatusNotRequested {
+		t.Fatalf(
+			"create outcome session=%q goal=%q, want not_created/not_requested",
+			created.SessionStatus,
+			created.InitialGoalStatus,
+		)
 	}
 	if _, ok, err := store.GetSession(context.Background(), "ws-1", "session-no-turnless-shell"); err != nil || ok {
 		t.Fatalf("canonical shell after failed initial input ok=%v error=%v", ok, err)
@@ -191,16 +215,27 @@ func TestHostCreateWithInvalidTypedGoalPreservesPublishedSession(t *testing.T) {
 	publisher := &activityUpdatePublisherStub{}
 	projection.SetPublisher(publisher)
 	service := newTestService(runtime)
-	service.SessionReader = projection
+	service.SessionReader = unavailableSessionReader{delegate: projection}
 	service.SessionInitializer = projection
 	service.GoalStateStore = store
 
-	_, err := service.Create(ctx, "ws-goal", CreateSessionInput{
+	created, err := service.CreateWithResult(ctx, "ws-goal", CreateSessionInput{
 		AgentSessionID: "session-invalid-goal", AgentTargetID: agenttargetbiz.IDLocalCodex,
 		InitialContent: TextPromptContent("/goal pause"),
 	})
 	if !errors.Is(err, storesqlite.ErrGoalStateAbsent) {
 		t.Fatalf("Create() error=%v, want %v", err, storesqlite.ErrGoalStateAbsent)
+	}
+	if created.Session.ID != "session-invalid-goal" {
+		t.Fatalf("created Session ID=%q, want preserved canonical Session", created.Session.ID)
+	}
+	if created.SessionStatus != agenthost.CreateSessionStatusCreated ||
+		created.InitialGoalStatus != agenthost.CreateSessionInitialGoalStatusFailed {
+		t.Fatalf(
+			"create outcome session=%q goal=%q, want created/failed",
+			created.SessionStatus,
+			created.InitialGoalStatus,
+		)
 	}
 	if _, found, getErr := store.GetSession(ctx, "ws-goal", "session-invalid-goal"); getErr != nil || !found {
 		t.Fatalf("published canonical session found=%v error=%v", found, getErr)

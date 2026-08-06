@@ -97,6 +97,7 @@
     "build:mac:unsigned": "bash ../../tools/scripts/build-desktop-package.sh mac-unsigned",
     "build:unpack": "bash ../../tools/scripts/build-desktop-package.sh unpack",
     "build:win": "bash ../../tools/scripts/build-desktop-package.sh win",
+    "predev": "node scripts/prepare-managed-posix-shell-dev.mjs",
     "dev": "electron-vite dev",
     "dev:web": "vite --config vite.web.config.mjs",
     "notify:release:feishu": "node scripts/send-release-feishu-card.mjs",

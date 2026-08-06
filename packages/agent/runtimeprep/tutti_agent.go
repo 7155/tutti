@@ -69,6 +69,17 @@ func (p TuttiAgentPreparer) Prepare(ctx context.Context, input ProviderPrepareIn
 	}
 	logRuntimePrepareTrace("runtime_prepare.tutti_agent.resolved", input.PrepareInput, nil)
 	env := []string{"TUTTI_AGENT_HOME=" + home}
+	// The CLI accepts the short-lived access token directly through
+	// TUTTI_AGENT_API_KEY.  The app-server's auth/model manager also checks the
+	// legacy TUTTI_API_KEY fallback before attempting a refresh.  Project both
+	// names from the already-authorized auth file so a headless session can use
+	// the live access token without a second refresh (the refresh endpoint can
+	// be unavailable even while the access token is still valid).  Never log or
+	// persist either value in the runtime manifest.
+	if token := tuttiAgentAccessToken(authSource, authSourceConfigured); token != "" {
+		env = append(env, "TUTTI_AGENT_API_KEY="+token)
+		env = append(env, "TUTTI_API_KEY="+token)
+	}
 	if len(extraSkillRoots) > 0 {
 		encodedRoots, err := json.Marshal(extraSkillRoots)
 		if err != nil {
@@ -90,6 +101,31 @@ func (p TuttiAgentPreparer) Prepare(ctx context.Context, input ProviderPrepareIn
 		Cwd: input.Cwd,
 		Env: env,
 	}, nil
+}
+
+func tuttiAgentAccessToken(explicitSource string, explicitSourceConfigured bool) string {
+	source := strings.TrimSpace(explicitSource)
+	if !explicitSourceConfigured && source == "" {
+		if userHome, err := os.UserHomeDir(); err == nil && strings.TrimSpace(userHome) != "" {
+			source = filepath.Join(userHome, ".tutti-agent", "auth.json")
+		}
+	}
+	if source == "" || !filepath.IsAbs(source) {
+		return ""
+	}
+	raw, err := os.ReadFile(filepath.Clean(source))
+	if err != nil {
+		return ""
+	}
+	var payload struct {
+		TuttiLLM struct {
+			AccessToken string `json:"access_token"`
+		} `json:"tutti_llm"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(payload.TuttiLLM.AccessToken)
 }
 
 // PrepareTuttiAgentHome materializes a TUTTI_AGENT_HOME with the user's auth

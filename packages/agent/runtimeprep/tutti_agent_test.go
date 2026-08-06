@@ -87,6 +87,32 @@ func TestTuttiAgentPreparerUsesExplicitAuthSourceAndInstallsSkills(t *testing.T)
 	}
 }
 
+func TestTuttiAgentPreparerProjectsAccessTokenForHeadlessCLI(t *testing.T) {
+	authSource := filepath.Join(t.TempDir(), "auth.json")
+	if err := os.WriteFile(authSource, []byte(`{"tutti_llm":{"access_token":"access-token-for-test"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	preparer := TuttiAgentPreparer{
+		ResolveAuthSource: func(context.Context, PrepareInput) (string, error) {
+			return authSource, nil
+		},
+	}
+	result, err := preparer.Prepare(context.Background(), ProviderPrepareInput{
+		PrepareInput: testResolvedInput(t, PrepareInput{Provider: "tutti-agent"}),
+		RuntimeRoot:  t.TempDir(),
+		Store:        LocalStore{StateDir: t.TempDir()},
+	})
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if got := envValue(result.Env, "TUTTI_AGENT_API_KEY"); got != "access-token-for-test" {
+		t.Fatalf("TUTTI_AGENT_API_KEY = %q, want access token from auth source", got)
+	}
+	if got := envValue(result.Env, "TUTTI_API_KEY"); got != "access-token-for-test" {
+		t.Fatalf("TUTTI_API_KEY = %q, want access token from auth source", got)
+	}
+}
+
 func TestTuttiAgentPreparerRejectsRelativeAuthSource(t *testing.T) {
 	preparer := TuttiAgentPreparer{
 		ResolveAuthSource: func(context.Context, PrepareInput) (string, error) {

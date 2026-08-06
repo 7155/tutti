@@ -319,11 +319,14 @@ func (application *Application) ReconcileAuthorizations(ctx context.Context) err
 	if err != nil {
 		return err
 	}
+	operations, err := application.config.Repository.CompletedAuthorizationOperations(ctx)
+	if err != nil {
+		return err
+	}
 	sessions := make(map[string]AuthorizationSession)
 	updated := make(map[string]time.Time)
-	for _, operation := range snapshot.Operations {
-		if operation.Kind != OperationKindStartAuthorization || operation.State != OperationStateCompleted ||
-			operation.Execution.AuthorizationSession == nil {
+	for _, operation := range operations {
+		if operation.Execution.AuthorizationSession == nil {
 			continue
 		}
 		if previous, exists := updated[operation.ConnectorKey]; !exists || operation.UpdatedAt.After(previous) {

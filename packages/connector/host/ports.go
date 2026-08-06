@@ -92,6 +92,10 @@ type Repository interface {
 	Snapshot(ctx context.Context) (Snapshot, error)
 	Connector(ctx context.Context, connectorKey string) (Connector, error)
 	Operation(ctx context.Context, operationID string) (Operation, error)
+	// CompletedAuthorizationOperations exposes durable authorization session
+	// receipts only to the internal reconciler. Snapshot remains safe for public
+	// presentation and must not contain Operation.Execution.
+	CompletedAuthorizationOperations(ctx context.Context) ([]Operation, error)
 	ClaimOperation(ctx context.Context, operationID, owner string, now, leaseExpiresAt time.Time) (Operation, bool, error)
 	RenewOperationLease(ctx context.Context, operationID, owner string, token uint64, now, leaseExpiresAt time.Time) error
 	ReleaseOperationLease(ctx context.Context, operationID, owner string, token uint64) error

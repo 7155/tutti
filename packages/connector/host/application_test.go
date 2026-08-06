@@ -940,6 +940,7 @@ func (repository *memoryRepository) Snapshot(_ context.Context) (Snapshot, error
 	sort.Slice(connectors, func(left, right int) bool { return connectors[left].Key < connectors[right].Key })
 	operations := make([]Operation, 0, len(repository.operations))
 	for _, operation := range repository.operations {
+		operation.Execution = OperationExecution{}
 		operations = append(operations, operation)
 	}
 	return Snapshot{
@@ -949,6 +950,16 @@ func (repository *memoryRepository) Snapshot(_ context.Context) (Snapshot, error
 		Revision:       repository.revision,
 		SourceRevision: repository.sourceRevision,
 	}, nil
+}
+
+func (repository *memoryRepository) CompletedAuthorizationOperations(context.Context) ([]Operation, error) {
+	var operations []Operation
+	for _, operation := range repository.operations {
+		if operation.Kind == OperationKindStartAuthorization && operation.State == OperationStateCompleted {
+			operations = append(operations, operation)
+		}
+	}
+	return operations, nil
 }
 
 func (repository *memoryRepository) Connector(_ context.Context, connectorKey string) (Connector, error) {

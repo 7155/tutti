@@ -235,7 +235,7 @@ Priority 内部不再增加多层可折叠标题，避免窄 Rail 产生过多 c
 | 2    | `active`        | 根 Session 或其子 Session 仍有 active lifecycle projection | 进行中                           |
 | 3    | retained `idle` | `priorityRetentionRecency === currentRecency`              | 已处理但保留                     |
 
-普通 idle 不进入 Priority，由近期日期范围决定是否出现在某个日期段。retained idle 是 Codex 本地任务分支中的窄规则：会话被标记已读前，记录当时 recency；只要当前 recency 未变化，该行继续留在 Priority 的最后。Activity View 运行期间新发现的 idle 本地任务也用同一 marker 保留，避免刚创建的会话立即消失。退出 Activity View 时 marker 清空。
+普通 idle 不进入 Priority，由近期日期范围决定是否出现在某个日期段。retained idle 是 Codex 本地任务分支中的窄规则：会话被标记已读前，记录当时 recency；只要当前 recency 未变化，该行继续留在 Priority 的最后。Activity View 运行期间新发现的 idle 本地任务也用同一 marker 保留，避免刚创建的会话立即消失。仅因用户选择历史会话而临时注入的 idle summary 不属于“新发现任务”，不得创建 retained-idle marker；它仍按当前 recency 进入日期段或被 cutoff 排除。退出 Activity View 时 marker 清空。
 
 同 rank 内按现有 canonical recency 倒序。相同 recency 保留输入顺序；去重 identity 使用 exact `agentSessionId`。这与 Codex 的稳定排序策略一致，不额外用 Session ID 改变用户可见顺序。
 
@@ -315,6 +315,7 @@ Priority 区段始终存在。其成员为空时，在该区段内显示与 Code
 - 开启期间，既有 Priority 成员即使 attention state 改变也不做全量移组或重排；行上的 spinner、unread、状态与可执行操作读取 live canonical facts；
 - Desktop daemon 新推送或更新的根 Session 先写入 Engine；满足 waiting/unread/active/retained-idle 的新候选再按当前 selector 顺序增量入队并按 exact ID 去重；
 - activation 打开后由 daemon 新发现的普通 idle 根 Session 按 Codex 本地任务的一次性 retained-idle 规则进入 Priority；打开时已存在的普通 idle Session 仍按时间进入日期段；
+- 用户选择一个尚未出现在 canonical snapshot 中的历史 Session 时，详情层可以临时注入该 Session 的 summary；若它当前 idle，则按普通近期会话处理，不因选择动作进入 Priority，只有真实 waiting/unread/active facts 才可进入 Priority；
 - 会话第一次进入本次 activation 的日期段时记录 recency，之后在本次视图中保持原日期段和相对顺序；
 - Session 被现有删除能力删除后，Activity View 按 canonical tombstone 立即移除对应行；pin/unpin 不触发 Activity View 专属区段变化；
 - Activity View 本身不提供批量删除或归档入口；现有单行删除行为不在本 PRD 中修改；
@@ -532,7 +533,7 @@ interface AgentConversationActivityViewModel {
 1. Engine 实例替换或 surface 卸载时清理旧 activation；旧 Engine 的后续更新不能污染新列表。
 2. Activity View 不要求 host 提供额外 context/scope identity API；内部仅复用页面已有 workspace、用户和 Agent context 作为 activation stale-state fence。页面不存在本功能新增的 target/workspace/provider 筛选入口或组合状态。
 3. 搜索开始、结果展示和清空恢复均与 Codex 当前行为一致，不增加独立 Priority 搜索状态。
-4. 打开 Priority 中的 Session 沿用现有 selection/detail hydration；其他行不因 Activity View 触发后台 hydration。
+4. 打开 Priority 中的 Session 沿用现有 selection/detail hydration；选择一个历史 Session 只允许产生详情层 transient summary，不得因此改变 Activity View 的 Priority 顺序；其他行不因 Activity View 触发后台 hydration。
 5. 当前本地 Agent Session 被标记已读后在本次 snapshot 中保留原位置；退出并重新开启时才按最新 facts 与 retained-idle marker 重建，detail 始终保持打开且不自动选中其他会话。
 6. 项目折叠和显示条数不被修改；滚动复用现有 Rail mode 状态，不创建 Activity View 专用 scroll key。
 

@@ -35,7 +35,8 @@ describe("AgentGUIConversationActivityView", () => {
     expect(screen.getByRole("heading", { name: "Priority" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Today" })).toBeTruthy();
     expect(screen.queryByText("Cached agent response")).toBeNull();
-    expect(screen.getAllByText("Project Alpha")).toHaveLength(2);
+    expect(screen.getByText("Conversation")).toBeTruthy();
+    expect(screen.getAllByText("Project Alpha")).toHaveLength(1);
   });
 
   it("keeps an explicit empty Priority section", () => {

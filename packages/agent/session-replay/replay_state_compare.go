@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 )
 
 // normalizeReplayStateForComparison preserves relationships while replacing
@@ -145,8 +146,31 @@ func replaceReplayIDs(value any, replacements map[string]string) {
 }
 
 func firstReplayStateMismatch(path string, expected, actual any) string {
-	expectedValue := replayComparableValue(expected)
-	actualValue := replayComparableValue(actual)
+	return firstReplayStateMismatchComparable(
+		path,
+		replayComparableValue(expected),
+		replayComparableValue(actual),
+	)
+}
+
+func firstReplayStateMismatchComparable(
+	path string,
+	expectedValue, actualValue any,
+) string {
+	if isComposerSettingsPath(path) {
+		expectedSettings, expectedOK := expectedValue.(map[string]any)
+		actualSettings, actualOK := actualValue.(map[string]any)
+		if !expectedOK {
+			expectedSettings = nil
+		}
+		if !actualOK {
+			actualSettings = nil
+		}
+		if composerSettingsEqual(actualSettings, expectedSettings) {
+			return ""
+		}
+		return firstComposerSettingsMismatch(path, expectedSettings, actualSettings)
+	}
 	if expectedValue == nil || actualValue == nil {
 		if expectedValue == nil && actualValue == nil {
 			return ""
@@ -177,7 +201,11 @@ func firstReplayStateMismatch(path string, expected, actual any) string {
 			if !expectedOK || !actualOK {
 				return path + "." + key
 			}
-			if mismatch := firstReplayStateMismatch(path+"."+key, expectedChild, actualChild); mismatch != "" {
+			if mismatch := firstReplayStateMismatchComparable(
+				path+"."+key,
+				expectedChild,
+				actualChild,
+			); mismatch != "" {
 				return mismatch
 			}
 		}
@@ -187,7 +215,11 @@ func firstReplayStateMismatch(path string, expected, actual any) string {
 			return path
 		}
 		for index := range expectedValue {
-			if mismatch := firstReplayStateMismatch(fmt.Sprintf("%s[%d]", path, index), expectedValue[index], actualValue[index]); mismatch != "" {
+			if mismatch := firstReplayStateMismatchComparable(
+				fmt.Sprintf("%s[%d]", path, index),
+				expectedValue[index],
+				actualValue[index],
+			); mismatch != "" {
 				return mismatch
 			}
 		}
@@ -197,6 +229,40 @@ func firstReplayStateMismatch(path string, expected, actual any) string {
 		}
 	}
 	return ""
+}
+
+// isComposerSettingsPath detects Session.settings objects so final-state
+// compare can share settings.equal semantics instead of strict key equality.
+func isComposerSettingsPath(path string) bool {
+	return strings.HasSuffix(path, ".settings") &&
+		strings.Contains(path, ".sessions[")
+}
+
+// firstComposerSettingsMismatch reports the first recorded composer setting
+// that fails the shared empty-default / live-extra contract.
+func firstComposerSettingsMismatch(
+	path string,
+	expected, actual map[string]any,
+) string {
+	keys := make([]string, 0, len(expected))
+	for key := range expected {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		expectedValue := expected[key]
+		actualValue, ok := actual[key]
+		if !ok {
+			if composerSettingsValueEmpty(expectedValue) {
+				continue
+			}
+			return path + "." + key
+		}
+		if !composerSettingsValueEqual(actualValue, expectedValue) {
+			return path + "." + key
+		}
+	}
+	return path
 }
 
 func replayComparableValue(value any) any {

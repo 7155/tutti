@@ -111,10 +111,12 @@ type Manifest struct {
 }
 
 type Artifact struct {
-	Key       string `json:"key"`
-	SHA256    string `json:"sha256"`
-	SizeBytes int64  `json:"sizeBytes"`
-	MediaType string `json:"mediaType"`
+	StorageRealm  string `json:"storageRealm"`
+	Key           string `json:"key"`
+	ObjectVersion string `json:"objectVersion"`
+	SHA256        string `json:"sha256"`
+	SizeBytes     int64  `json:"sizeBytes"`
+	MediaType     string `json:"mediaType"`
 }
 
 type CompatibilityRequirements struct {

@@ -188,7 +188,8 @@ func testRelease(archive, manifest []byte) market.Release {
 			AuthorizationKind: "none",
 		},
 		Artifact: market.Artifact{
-			Key:       "connectors/github/1.0.0.zip",
+			StorageRealm: "tutti.connector.artifacts.v1",
+			Key:          "connectors/github/1.0.0.zip", ObjectVersion: "version-1",
 			SHA256:    hex.EncodeToString(artifactDigest[:]),
 			SizeBytes: int64(len(archive)),
 			MediaType: "application/vnd.tutti.connector+zip",

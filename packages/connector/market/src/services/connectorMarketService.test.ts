@@ -38,7 +38,9 @@ function connector(key: string, revision: number): Connector {
         authorizationKind: "none"
       },
       artifact: {
+        storageRealm: "tutti.connector.artifacts.v1",
         key: `connectors/${key}/1.0.0.tgz`,
+        objectVersion: "version-1",
         sha256:
           "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         sizeBytes: 1024,
@@ -278,6 +280,267 @@ test("installs one connector with the current catalog revision", async () => {
     connectorKey: "github",
     clientRequestId: "request-1",
     expectedRevision: 1
+  });
+  service.dispose();
+});
+
+test("polls an accepted connector operation to terminal state when its event is missed", async () => {
+  const acceptedConnector = connector("github", 1);
+  acceptedConnector.installation = { state: "installing" };
+  const installedConnector = connector("github", 3);
+  installedConnector.installation = {
+    state: "installed",
+    installedReleaseDigest: installedConnector.release.releaseDigest
+  };
+  let operationReads = 0;
+  let connectorReads = 0;
+  const service = new ConnectorMarketService({
+    backend: backendWith({
+      installConnector: async () => ({
+        connector: acceptedConnector,
+        operation: {
+          operationId: "operation-install-terminal",
+          clientRequestId: "request-install-terminal",
+          connectorKey: "github",
+          kind: "install",
+          state: "accepted",
+          stage: "accepted",
+          attempt: 0,
+          createdAt: "2026-08-03T00:00:00Z",
+          updatedAt: "2026-08-03T00:00:00Z"
+        },
+        revision: 1
+      }),
+      getOperation: async () => {
+        operationReads += 1;
+        return {
+          operationId: "operation-install-terminal",
+          clientRequestId: "request-install-terminal",
+          connectorKey: "github",
+          kind: "install",
+          state: operationReads === 1 ? "running" : "completed",
+          stage: operationReads === 1 ? "activating" : "completed",
+          attempt: 1,
+          createdAt: "2026-08-03T00:00:00Z",
+          updatedAt: `2026-08-03T00:00:0${operationReads}Z`
+        };
+      },
+      getConnector: async () => {
+        connectorReads += 1;
+        if (connectorReads === 1) {
+          throw {
+            code: "connector_market_unavailable",
+            message: "local connector projection temporarily unavailable",
+            retryable: true
+          };
+        }
+        return installedConnector;
+      }
+    }),
+    waitForOperationPoll: async () => undefined
+  });
+
+  await service.install("github");
+  await waitFor(
+    () =>
+      service.dataStore.connectorsByKey.github?.installation.state ===
+      "installed"
+  );
+
+  assert.equal(operationReads, 3);
+  assert.equal(connectorReads, 2);
+  assert.equal(
+    service.dataStore.operationsByConnectorKey.github?.state,
+    "completed"
+  );
+  assert.equal(service.dataStore.revision, 3);
+  service.dispose();
+});
+
+test("stops operation polling after a permanent read error and reconciles once", async () => {
+  const acceptedConnector = connector("github", 1);
+  acceptedConnector.installation = { state: "installing" };
+  const reconciledConnector = connector("github", 2);
+  reconciledConnector.installation = {
+    state: "failed",
+    failureCode: "connector_install_failed"
+  };
+  let operationReads = 0;
+  let connectorReads = 0;
+  let pollWaits = 0;
+  const service = new ConnectorMarketService({
+    backend: backendWith({
+      installConnector: async () => ({
+        connector: acceptedConnector,
+        operation: {
+          operationId: "operation-install-forbidden",
+          clientRequestId: "request-install-forbidden",
+          connectorKey: "github",
+          kind: "install",
+          state: "accepted",
+          stage: "accepted",
+          attempt: 0,
+          createdAt: "2026-08-03T00:00:00Z",
+          updatedAt: "2026-08-03T00:00:00Z"
+        },
+        revision: 1
+      }),
+      getOperation: async () => {
+        operationReads += 1;
+        throw {
+          code: "connector_market_forbidden",
+          message: "operation read forbidden",
+          retryable: false
+        };
+      },
+      getConnector: async () => {
+        connectorReads += 1;
+        return reconciledConnector;
+      }
+    }),
+    waitForOperationPoll: async () => {
+      pollWaits += 1;
+    }
+  });
+
+  await service.install("github");
+  await waitFor(() => service.dataStore.lastError !== null);
+  await waitFor(
+    () =>
+      service.dataStore.connectorsByKey.github?.installation.state === "failed"
+  );
+
+  assert.equal(operationReads, 1);
+  assert.equal(connectorReads, 1);
+  assert.equal(pollWaits, 0);
+  assert.deepEqual(service.dataStore.lastError, {
+    code: "connector_market_forbidden",
+    message: "operation read forbidden",
+    retryable: false
+  });
+  service.dispose();
+});
+
+test("reconciles refresh completion from the local snapshot without reloading remote categories", async () => {
+  let categoryCalls = 0;
+  let snapshotCalls = 0;
+  const completedRefreshOperation: ConnectorOperation = {
+    operationId: "operation-refresh-terminal",
+    clientRequestId: "request-refresh-terminal",
+    kind: "refresh_catalog",
+    state: "completed",
+    stage: "completed",
+    attempt: 1,
+    createdAt: "2026-08-03T00:00:00Z",
+    updatedAt: "2026-08-03T00:00:01Z"
+  };
+  const service = new ConnectorMarketService({
+    backend: backendWith({
+      refreshCatalog: async () => ({
+        operation: {
+          operationId: "operation-refresh-terminal",
+          clientRequestId: "request-refresh-terminal",
+          kind: "refresh_catalog",
+          state: "accepted",
+          stage: "accepted",
+          attempt: 0,
+          createdAt: "2026-08-03T00:00:00Z",
+          updatedAt: "2026-08-03T00:00:00Z"
+        },
+        revision: 1
+      }),
+      getOperation: async () => completedRefreshOperation,
+      getSnapshot: async () => {
+        snapshotCalls += 1;
+        if (snapshotCalls === 1) {
+          throw {
+            code: "connector_market_unavailable",
+            message: "local snapshot temporarily unavailable",
+            retryable: true
+          };
+        }
+        return {
+          ...snapshot(2, [connector("github", 2)]),
+          operations: [completedRefreshOperation]
+        };
+      },
+      listCategories: async () => {
+        categoryCalls += 1;
+        throw new Error("remote categories unavailable");
+      }
+    }),
+    waitForOperationPoll: async () => undefined
+  });
+
+  await service.refreshCatalog();
+  await waitFor(() => service.dataStore.catalogState === "ready");
+
+  assert.equal(categoryCalls, 0);
+  assert.equal(snapshotCalls, 2);
+  assert.equal(service.dataStore.catalogOperation?.state, "completed");
+  assert.equal(service.dataStore.revision, 2);
+  service.dispose();
+});
+
+test("keeps the authoritative refresh operation after a permanent read error", async () => {
+  const completedRefreshOperation: ConnectorOperation = {
+    operationId: "operation-refresh-forbidden",
+    clientRequestId: "request-refresh-forbidden",
+    kind: "refresh_catalog",
+    state: "completed",
+    stage: "completed",
+    attempt: 1,
+    createdAt: "2026-08-03T00:00:00Z",
+    updatedAt: "2026-08-03T00:00:01Z"
+  };
+  let operationReads = 0;
+  let snapshotReads = 0;
+  let pollWaits = 0;
+  const service = new ConnectorMarketService({
+    backend: backendWith({
+      refreshCatalog: async () => ({
+        operation: {
+          ...completedRefreshOperation,
+          state: "accepted",
+          stage: "accepted",
+          attempt: 0,
+          updatedAt: "2026-08-03T00:00:00Z"
+        },
+        revision: 1
+      }),
+      getOperation: async () => {
+        operationReads += 1;
+        throw {
+          code: "connector_market_forbidden",
+          message: "refresh operation read forbidden",
+          retryable: false
+        };
+      },
+      getSnapshot: async () => {
+        snapshotReads += 1;
+        return {
+          ...snapshot(2, [connector("github", 2)]),
+          operations: [completedRefreshOperation]
+        };
+      }
+    }),
+    waitForOperationPoll: async () => {
+      pollWaits += 1;
+    }
+  });
+
+  await service.refreshCatalog();
+  await waitFor(
+    () => service.dataStore.catalogOperation?.state === "completed"
+  );
+
+  assert.equal(operationReads, 1);
+  assert.equal(snapshotReads, 1);
+  assert.equal(pollWaits, 0);
+  assert.deepEqual(service.dataStore.lastError, {
+    code: "connector_market_forbidden",
+    message: "refresh operation read forbidden",
+    retryable: false
   });
   service.dispose();
 });

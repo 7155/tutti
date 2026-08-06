@@ -4,13 +4,10 @@ package connectormarket
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -30,10 +27,7 @@ type PreparedArtifactResolver interface {
 	ResolvePrepared(context.Context, market.Release) (market.PreparedArtifactReceipt, error)
 }
 
-type ConnectorRuntimeResolver interface {
-	ResolveProfile(context.Context, string) (connectorruntime.ResolvedConnectorRuntime, error)
-	VerifyLaunch(profile, runtimeName string) (connectorruntime.ConnectorExecutable, error)
-}
+type ConnectorRuntimeResolver = connectorruntime.ConnectorRuntimeResolver
 
 type ImplementationHostConfig struct {
 	Artifacts         PreparedArtifactResolver
@@ -47,24 +41,11 @@ type ImplementationHostConfig struct {
 
 type ImplementationHost struct {
 	artifacts         PreparedArtifactResolver
-	cliInstallations  market.CLIInstallationManager
-	runtimes          ConnectorRuntimeResolver
+	planner           *connectorruntime.ManagedRoutePlanner
 	processes         agentruntime.ProcessTransport
-	commands          *ConnectorCommandRegistry
-	stateRoot         string
 	mcpStartupTimeout time.Duration
-
-	mu          sync.Mutex
-	routes      map[string]*connectorRoute
-	fences      map[string]market.HostGeneration
-	transitions map[string]*sync.Mutex
-	closed      bool
-}
-
-type trackedConnectorProcess struct {
-	connection agentruntime.ProcessConnection
-	cancel     context.CancelFunc
-	closing    bool
+	routes            *connectorruntime.RouteTable
+	snapshots         *connectorruntime.ExecutionSnapshotter
 }
 
 type connectorRoute struct {
@@ -75,16 +56,13 @@ type connectorRoute struct {
 	generation    market.HostGeneration
 	capabilities  map[string]connectorCommand
 	closeMu       sync.Mutex
-	processMu     sync.Mutex
-	processes     map[uint64]trackedConnectorProcess
-	pendingStarts map[uint64]context.CancelFunc
-	nextProcessID uint64
-	fenced        bool
 	mcpClient     *mcpservice.StdioClient
 	executionRoot string
 	installedRoot string
 	displayName   string
 	description   string
+	processes     *connectorruntime.ProcessGroup
+	snapshots     *connectorruntime.ExecutionSnapshotter
 }
 
 type connectorCommand struct {
@@ -102,14 +80,29 @@ func NewImplementationHost(config ImplementationHostConfig) (*ImplementationHost
 	if config.MCPStartupTimeout <= 0 {
 		config.MCPStartupTimeout = 15 * time.Second
 	}
-	return &ImplementationHost{artifacts: config.Artifacts, cliInstallations: config.CLIInstallations, runtimes: config.Runtimes, processes: config.Processes,
-		commands: config.Commands, stateRoot: filepath.Clean(config.StateRoot), mcpStartupTimeout: config.MCPStartupTimeout,
-		routes: make(map[string]*connectorRoute), fences: make(map[string]market.HostGeneration), transitions: make(map[string]*sync.Mutex)}, nil
+	snapshots, err := connectorruntime.NewExecutionSnapshotter(config.StateRoot)
+	if err != nil {
+		return nil, err
+	}
+	routes := connectorruntime.NewRouteTable()
+	planner, err := connectorruntime.NewManagedRoutePlanner(connectorruntime.ManagedRoutePlannerConfig{
+		StateRoot: config.StateRoot, Runtimes: config.Runtimes, CLIInstallations: config.CLIInstallations,
+	})
+	if err != nil {
+		return nil, err
+	}
+	config.Commands.attach(routes)
+	return &ImplementationHost{artifacts: config.Artifacts, planner: planner, processes: config.Processes,
+		mcpStartupTimeout: config.MCPStartupTimeout,
+		routes:            routes, snapshots: snapshots}, nil
 }
 
 func (host *ImplementationHost) Reconcile(ctx context.Context, request market.RuntimeReconcileRequest) (market.RuntimeReceipt, error) {
 	if host == nil || !hostIdentityPattern.MatchString(request.ConnectionID) || !hostIdentityPattern.MatchString(request.Connector.Key) || request.Generation.BootEpoch == "" || request.Generation.Generation == 0 {
 		return market.RuntimeReceipt{}, errors.New("connector runtime reconcile identity is invalid")
+	}
+	if err := market.ValidateRuntimeReleaseShape(request.Connector.Release); err != nil {
+		return market.RuntimeReceipt{}, err
 	}
 	key := connectorRouteKey(request.ConnectionID, request.Connector.Key)
 	if !request.Enabled {
@@ -131,22 +124,23 @@ func (host *ImplementationHost) Reconcile(ctx context.Context, request market.Ru
 		return market.RuntimeReceipt{}, fmt.Errorf("resolve prepared connector artifact: %w", err)
 	}
 	installedRoot := prepared.PreparedPath
-	executionRoot, err := host.createExecutionSnapshot(prepared)
+	executionRoot, err := host.snapshots.Create(prepared)
 	if err != nil {
 		return market.RuntimeReceipt{}, fmt.Errorf("create connector execution snapshot: %w", err)
 	}
 	prepared.PreparedPath = executionRoot
 	route, err := host.buildManagedRoute(ctx, request, prepared)
 	if err != nil {
-		_ = removeExecutionSnapshot(executionRoot)
+		_ = host.snapshots.Remove(executionRoot)
 		return market.RuntimeReceipt{}, err
 	}
 	route.executionRoot = executionRoot
 	route.installedRoot = installedRoot
 	route.displayName = request.Connector.Release.Manifest.DisplayName
 	route.description = request.Connector.Release.Manifest.Description
+	route.snapshots = host.snapshots
 	if err := host.commitRoute(key, route); err != nil {
-		_ = route.close(time.Now().Add(3 * time.Second))
+		_ = route.Close(time.Now().Add(3 * time.Second))
 		return market.RuntimeReceipt{}, err
 	}
 	if route.mcpClient != nil {
@@ -165,24 +159,7 @@ func (host *ImplementationHost) Close() error {
 	if host == nil {
 		return nil
 	}
-	host.mu.Lock()
-	host.closed = true
-	routes := make([]*connectorRoute, 0, len(host.routes))
-	for _, route := range host.routes {
-		host.commands.remove(route.id)
-		route.fence()
-		routes = append(routes, route)
-	}
-	host.mu.Unlock()
-	var closeErrors []error
-	for _, route := range routes {
-		if err := route.close(time.Now().Add(3 * time.Second)); err != nil {
-			closeErrors = append(closeErrors, err)
-			continue
-		}
-		host.deleteExactRoute(route)
-	}
-	return errors.Join(closeErrors...)
+	return host.routes.Close(time.Now().Add(3 * time.Second))
 }
 
 // SetCapabilityPublication gates discovery and invocation without preventing
@@ -190,7 +167,7 @@ func (host *ImplementationHost) Close() error {
 // single registry state transition after every durable binding reconciles.
 func (host *ImplementationHost) SetCapabilityPublication(enabled bool) {
 	if host != nil {
-		host.commands.setPublished(enabled)
+		host.routes.SetPublished(enabled)
 	}
 }
 
@@ -200,22 +177,7 @@ func (host *ImplementationHost) FenceAll(_ context.Context, deadline time.Time) 
 	if host == nil {
 		return nil
 	}
-	host.mu.Lock()
-	type target struct {
-		key        string
-		generation market.HostGeneration
-		digest     string
-	}
-	targets := make([]target, 0, len(host.routes))
-	for key, route := range host.routes {
-		targets = append(targets, target{key: key, generation: route.generation, digest: route.releaseDigest})
-	}
-	host.mu.Unlock()
-	var fenceErrors []error
-	for _, target := range targets {
-		fenceErrors = append(fenceErrors, host.removeRoute(target.key, target.generation, target.digest, deadline))
-	}
-	return errors.Join(fenceErrors...)
+	return host.routes.FenceAll(deadline)
 }
 
 func (host *ImplementationHost) FailClosed(ctx context.Context, deadline time.Time) error {
@@ -240,55 +202,22 @@ func (host *ImplementationHost) DeactivateRuntime(ctx context.Context, request m
 }
 
 func (host *ImplementationHost) buildManagedRoute(ctx context.Context, request market.RuntimeReconcileRequest, prepared market.PreparedArtifactReceipt) (*connectorRoute, error) {
-	implementation := request.Connector.Release.Manifest.Implementation
-	if implementation.Kind != market.ImplementationKindManagedStdio || implementation.ManagedStdio == nil {
-		return nil, errors.New("only managed_stdio connector implementations are supported")
-	}
-	managed := implementation.ManagedStdio
-	resolved, err := host.runtimes.ResolveProfile(ctx, managed.Runtime.Profile)
-	if err != nil {
-		return nil, fmt.Errorf("resolve connector managed runtime: %w", err)
-	}
-	executable, err := host.runtimes.VerifyLaunch(managed.Runtime.Profile, managed.Runtime.Language)
-	if err != nil {
-		return nil, fmt.Errorf("verify connector managed runtime launch: %w", err)
-	}
-	if err := connectorruntime.VerifyRuntimeABI(managed.Runtime, resolved); err != nil {
-		return nil, err
-	}
-	stateDir, err := secureConnectorStateDir(host.stateRoot, request.ConnectionID, request.Connector.Key)
+	plan, err := host.planner.Build(ctx, request, prepared)
 	if err != nil {
 		return nil, err
 	}
 	route := &connectorRoute{id: connectorRouteKey(request.ConnectionID, request.Connector.Key), connectionID: request.ConnectionID,
 		connectorKey: request.Connector.Key, releaseDigest: request.Connector.Release.ReleaseDigest,
 		generation: request.Generation, capabilities: make(map[string]connectorCommand),
-		processes: make(map[uint64]trackedConnectorProcess), pendingStarts: make(map[uint64]context.CancelFunc)}
-	sandbox := &agentruntime.ConnectorSandboxPolicy{ReadOnlyPaths: []string{prepared.PreparedPath, resolved.Root}, WritablePaths: []string{stateDir},
-		ReadOnlyTreeIdentities: []agentruntime.ReadOnlyTreeIdentity{{Root: prepared.PreparedPath, SHA256: prepared.InventoryDigest}},
-		Network:                containsPermissionScope(request.Connector.Release.Manifest.Permissions, "network")}
-	if managed.MCP != nil {
-		if err := host.attachMCP(ctx, route, managed, prepared, executable, sandbox); err != nil {
+		processes: connectorruntime.NewProcessGroup()}
+	if plan.Managed.MCP != nil {
+		if err := host.attachMCP(ctx, route, plan.Managed, prepared, plan.Executable, plan.SandboxPolicy); err != nil {
 			_ = route.close(time.Now().Add(3 * time.Second))
 			return nil, err
 		}
 	}
-	if managed.CLI != nil {
-		var installed *market.CLIInstallationReceipt
-		if managed.CLI.Install != nil {
-			if host.cliInstallations == nil {
-				_ = route.close(time.Now().Add(3 * time.Second))
-				return nil, errors.New("connector CLI installation resolver is unavailable")
-			}
-			receipt, err := host.cliInstallations.ResolveCLI(ctx, request.Connector.Release)
-			if err != nil {
-				_ = route.close(time.Now().Add(3 * time.Second))
-				return nil, fmt.Errorf("resolve connector CLI installation: %w", err)
-			}
-			installed = &receipt
-			sandbox.ReadOnlyPaths = append(sandbox.ReadOnlyPaths, receipt.InstallRoot)
-		}
-		if err := host.attachCLI(route, managed, prepared, installed, executable, sandbox); err != nil {
+	if plan.Managed.CLI != nil {
+		if err := host.attachCLI(route, plan.Managed, prepared, plan.InstalledCLI, plan.Executable, plan.SandboxPolicy); err != nil {
 			_ = route.close(time.Now().Add(3 * time.Second))
 			return nil, err
 		}
@@ -301,7 +230,7 @@ func (host *ImplementationHost) buildManagedRoute(ctx context.Context, request m
 }
 
 func (host *ImplementationHost) attachMCP(ctx context.Context, route *connectorRoute, managed *market.ManagedStdioImplementation, prepared market.PreparedArtifactReceipt, executable connectorruntime.ConnectorExecutable, sandbox *agentruntime.ConnectorSandboxPolicy) error {
-	entrypoint, err := preparedEntrypoint(prepared.PreparedPath, managed.MCP.Entrypoint)
+	entrypoint, err := connectorruntime.PreparedEntrypoint(prepared.PreparedPath, managed.MCP.Entrypoint)
 	if err != nil {
 		return err
 	}
@@ -312,7 +241,7 @@ func (host *ImplementationHost) attachMCP(ctx context.Context, route *connectorR
 		return errors.New("connector MCP route was fenced during startup")
 	}
 	connection, err := host.awaitProcessStart(startupContext, route, processID, startContext,
-		connectorProcessSpec(route, managed.Runtime.Language, executable, prepared.PreparedPath,
+		connectorruntime.ConnectorProcessSpec(route.connectionID, route.connectorKey, managed.Runtime.Language, executable, prepared.PreparedPath,
 			append([]string{entrypoint}, managed.MCP.Arguments...), sandbox))
 	if err != nil {
 		return fmt.Errorf("start connector MCP process: %w", err)
@@ -425,7 +354,7 @@ func (host *ImplementationHost) attachCLI(route *connectorRoute, managed *market
 	if installed != nil {
 		entrypointRoot, entrypointRelative = installed.InstallRoot, installed.Entrypoint
 	}
-	entrypoint, err := preparedEntrypoint(entrypointRoot, entrypointRelative)
+	entrypoint, err := connectorruntime.PreparedEntrypoint(entrypointRoot, entrypointRelative)
 	if err != nil {
 		return err
 	}
@@ -461,7 +390,7 @@ func (host *ImplementationHost) attachCLI(route *connectorRoute, managed *market
 				arguments := append([]string{}, launchArguments...)
 				arguments = append(arguments, managed.CLI.Arguments...)
 				arguments = append(arguments, manifestCommand.Arguments...)
-				connection, processID, err := host.startRouteProcess(timeoutCtx, route, connectorProcessSpec(route, managed.Runtime.Language, launchExecutable, prepared.PreparedPath, arguments, sandbox))
+				connection, processID, err := host.startRouteProcess(timeoutCtx, route, connectorruntime.ConnectorProcessSpec(route.connectionID, route.connectorKey, managed.Runtime.Language, launchExecutable, prepared.PreparedPath, arguments, sandbox))
 				if err != nil {
 					return cliservice.CommandOutput{}, cliservice.ServiceUnavailableError("start connector CLI command", err)
 				}
@@ -505,7 +434,7 @@ func (host *ImplementationHost) attachGenericCLI(route *connectorRoute, managed 
 			processArguments := append([]string{}, launchArguments...)
 			processArguments = append(processArguments, managed.CLI.Arguments...)
 			processArguments = append(processArguments, arguments...)
-			connection, processID, err := host.startRouteProcess(timeoutCtx, route, connectorProcessSpec(route,
+			connection, processID, err := host.startRouteProcess(timeoutCtx, route, connectorruntime.ConnectorProcessSpec(route.connectionID, route.connectorKey,
 				managed.Runtime.Language, executable, prepared.PreparedPath, processArguments, sandbox))
 			if err != nil {
 				return cliservice.CommandOutput{}, cliservice.ServiceUnavailableError("start connector CLI command", err)
@@ -544,27 +473,11 @@ func genericCLIArguments(raw any) ([]string, error) {
 	return arguments, nil
 }
 
-func connectorProcessSpec(route *connectorRoute, language string, executable connectorruntime.ConnectorExecutable, cwd string, args []string, sandbox *agentruntime.ConnectorSandboxPolicy) agentruntime.ProcessSpec {
-	command := append([]string{executable.Path}, args...)
-	stateDir := ""
-	if sandbox != nil && len(sandbox.WritablePaths) != 0 {
-		stateDir = sandbox.WritablePaths[0]
-	}
-	return agentruntime.ProcessSpec{Provider: "connector:" + route.connectorKey, RoomID: route.connectionID, CWD: cwd, Command: command,
-		Env: []string{"TUTTI_CONNECTOR_CONNECTION_ID=" + route.connectionID, "TUTTI_CONNECTOR_KEY=" + route.connectorKey,
-			"TUTTI_CONNECTOR_LANGUAGE=" + language, "TUTTI_CONNECTOR_STATE_DIR=" + stateDir,
-			"HOME=" + stateDir, "USERPROFILE=" + stateDir},
-		ExecutableIdentity: &agentruntime.ExecutableIdentity{SHA256: executable.SHA256, SizeBytes: executable.SizeBytes}, ConnectorSandbox: sandbox}
-}
-
 func (host *ImplementationHost) startRouteProcess(ctx context.Context, route *connectorRoute, spec agentruntime.ProcessSpec) (agentruntime.ProcessConnection, uint64, error) {
-	host.mu.Lock()
-	if host.closed || host.routes[route.id] != route {
-		host.mu.Unlock()
+	if !host.routes.IsCurrent(route) {
 		return nil, 0, cliservice.ErrServiceUnavailable
 	}
 	startContext, processID, accepted := route.beginProcess(ctx)
-	host.mu.Unlock()
 	if !accepted {
 		return nil, 0, cliservice.ErrServiceUnavailable
 	}
@@ -656,19 +569,6 @@ func jsonCommandOutput(raw []byte) (cliservice.CommandOutput, error) {
 	return cliservice.CommandOutput{Kind: cliservice.OutputModeJSON, Value: map[string]any{"result": value}}, nil
 }
 
-func preparedEntrypoint(root, relative string) (string, error) {
-	root = filepath.Clean(root)
-	target := filepath.Join(root, filepath.FromSlash(relative))
-	if target == root || !strings.HasPrefix(target, root+string(filepath.Separator)) {
-		return "", errors.New("connector entrypoint escapes prepared artifact")
-	}
-	info, err := os.Lstat(target)
-	if err != nil || !info.Mode().IsRegular() {
-		return "", errors.New("connector entrypoint is not a regular prepared file")
-	}
-	return target, nil
-}
-
 func connectorCapability(routeID, connectorKey, name, description string, inputSchema map[string]any) cliservice.Capability {
 	if strings.TrimSpace(description) == "" {
 		description = "Connector command " + name
@@ -686,34 +586,6 @@ func connectorCapability(routeID, connectorKey, name, description string, inputS
 var capabilityPartPattern = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,127}$`)
 var hostIdentityPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,190}$`)
 
-func secureConnectorStateDir(root, connectionID, connectorKey string) (string, error) {
-	if err := os.MkdirAll(root, 0o700); err != nil {
-		return "", err
-	}
-	rootReal, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		return "", err
-	}
-	target := filepath.Join(rootReal, connectionID, connectorKey)
-	if err := os.MkdirAll(target, 0o700); err != nil {
-		return "", err
-	}
-	targetReal, err := filepath.EvalSymlinks(target)
-	if err != nil || (targetReal != rootReal && !strings.HasPrefix(targetReal, rootReal+string(filepath.Separator))) {
-		return "", errors.New("connector state directory escapes state root")
-	}
-	return targetReal, nil
-}
-
-func containsPermissionScope(values []string, expected string) bool {
-	for _, value := range values {
-		if value == expected || strings.HasPrefix(value, expected+":") {
-			return true
-		}
-	}
-	return false
-}
-
 func connectorCapabilityID(connectorKey, kind, name string) (string, error) {
 	if !capabilityPartPattern.MatchString(connectorKey) || !capabilityPartPattern.MatchString(name) {
 		return "", errors.New("connector capability name is invalid")
@@ -725,458 +597,68 @@ func connectorRouteKey(connectionID, connectorKey string) string {
 	return connectionID + "\x00" + connectorKey
 }
 
-func (host *ImplementationHost) routeTransition(key string) *sync.Mutex {
-	host.mu.Lock()
-	defer host.mu.Unlock()
-	transition := host.transitions[key]
-	if transition == nil {
-		transition = &sync.Mutex{}
-		host.transitions[key] = transition
-	}
-	return transition
-}
-
-func (host *ImplementationHost) commitRoute(key string, next *connectorRoute) error {
-	transition := host.routeTransition(key)
-	transition.Lock()
-	defer transition.Unlock()
-
-	host.mu.Lock()
-	if host.closed {
-		host.mu.Unlock()
-		return errors.New("connector implementation host is closed")
-	}
-	if fence, exists := host.fences[key]; exists && fence.BootEpoch == next.generation.BootEpoch && next.generation.Generation <= fence.Generation {
-		host.mu.Unlock()
-		return errors.New("connector runtime reconcile generation is fenced")
-	}
-	current := host.routes[key]
-	if current != nil && !newerOrEqualGeneration(next.generation, current.generation) {
-		host.mu.Unlock()
-		return errors.New("connector runtime reconcile generation is stale")
-	}
-	if current != nil {
-		host.commands.remove(current.id)
-		current.fence()
-	}
-	host.mu.Unlock()
-
-	if current != nil {
-		if err := current.close(time.Now().Add(3 * time.Second)); err != nil {
-			return fmt.Errorf("retire previous connector route: %w", err)
-		}
-	}
-
-	host.mu.Lock()
-	defer host.mu.Unlock()
-	if host.closed || host.routes[key] != current {
-		return errors.New("connector runtime route changed while committing")
-	}
-	host.routes[key] = next
-	host.commands.replace(next)
-	return nil
+func (host *ImplementationHost) commitRoute(_ string, next *connectorRoute) error {
+	return host.routes.Commit(next)
 }
 
 func (host *ImplementationHost) removeRoute(key string, generation market.HostGeneration, releaseDigest string, deadline time.Time) error {
-	transition := host.routeTransition(key)
-	transition.Lock()
-	defer transition.Unlock()
-
-	host.mu.Lock()
-	current := host.routes[key]
-	if current == nil {
-		host.advanceFenceLocked(key, generation)
-		host.mu.Unlock()
-		return nil
-	}
-	if releaseDigest != "" && current.releaseDigest != releaseDigest {
-		host.mu.Unlock()
-		return errors.New("connector runtime deactivation release digest does not match active route")
-	}
-	if generation.BootEpoch != current.generation.BootEpoch {
-		host.mu.Unlock()
-		return errors.New("connector runtime deactivation boot epoch does not match active route")
-	}
-	if generation.Generation < current.generation.Generation {
-		host.mu.Unlock()
-		return nil
-	}
-	host.commands.remove(current.id)
-	host.advanceFenceLocked(key, generation)
-	current.fence()
-	host.mu.Unlock()
-	if err := current.close(deadline); err != nil {
-		return err
-	}
-	host.mu.Lock()
-	if host.routes[key] == current {
-		delete(host.routes, key)
-	}
-	host.mu.Unlock()
-	return nil
-}
-
-func (host *ImplementationHost) advanceFenceLocked(key string, generation market.HostGeneration) {
-	current, exists := host.fences[key]
-	if !exists || current.BootEpoch != generation.BootEpoch || generation.Generation > current.Generation {
-		host.fences[key] = generation
-	}
+	return host.routes.Remove(key, generation, releaseDigest, deadline)
 }
 
 func (host *ImplementationHost) retireExactRoute(route *connectorRoute, deadline time.Time) error {
-	transition := host.routeTransition(route.id)
-	transition.Lock()
-	defer transition.Unlock()
-	host.mu.Lock()
-	if host.routes[route.id] != route {
-		host.mu.Unlock()
-		return nil
-	}
-	host.commands.remove(route.id)
-	route.fence()
-	host.mu.Unlock()
-	if err := route.close(deadline); err != nil {
-		return err
-	}
-	host.deleteExactRoute(route)
-	return nil
-}
-
-func (host *ImplementationHost) deleteExactRoute(route *connectorRoute) {
-	host.mu.Lock()
-	if host.routes[route.id] == route {
-		delete(host.routes, route.id)
-	}
-	host.mu.Unlock()
+	return host.routes.RetireExact(route, deadline)
 }
 
 func (host *ImplementationHost) routeCurrent(route *connectorRoute) bool {
-	host.mu.Lock()
-	defer host.mu.Unlock()
-	if host.routes[route.id] != route {
-		return false
-	}
-	return !route.isFenced()
+	return host.routes.IsCurrent(route) && !route.processes.IsFenced()
 }
 
-func newerOrEqualGeneration(candidate, current market.HostGeneration) bool {
-	return candidate.BootEpoch == current.BootEpoch && candidate.Generation >= current.Generation
-}
+func (route *connectorRoute) RouteID() string { return route.id }
 
-func (route *connectorRoute) close(deadline time.Time) error {
+func (route *connectorRoute) RouteGeneration() market.HostGeneration { return route.generation }
+
+func (route *connectorRoute) RouteReleaseDigest() string { return route.releaseDigest }
+
+func (route *connectorRoute) Fence() { route.processes.Fence() }
+
+func (route *connectorRoute) Close(deadline time.Time) error {
 	if route == nil {
 		return nil
 	}
 	route.closeMu.Lock()
 	defer route.closeMu.Unlock()
-	route.fence()
-	route.processMu.Lock()
-	processes := make(map[uint64]trackedConnectorProcess, len(route.processes))
-	for processID, process := range route.processes {
-		process.closing = true
-		route.processes[processID] = process
-		processes[processID] = process
-	}
-	route.processMu.Unlock()
-
-	type closeResult struct {
-		processID uint64
-		err       error
-	}
-	results := make(chan closeResult, len(processes))
-	for processID, process := range processes {
-		process.cancel()
-		go func(processID uint64, connection agentruntime.ProcessConnection) {
-			results <- closeResult{processID: processID, err: connection.Close()}
-		}(processID, process.connection)
-	}
-	var closeErrors []error
-	for range processes {
-		var result closeResult
-		if deadline.IsZero() {
-			result = <-results
-		} else {
-			remaining := time.Until(deadline)
-			if remaining <= 0 {
-				return errors.Join(append(closeErrors, context.DeadlineExceeded)...)
-			}
-			timer := time.NewTimer(remaining)
-			select {
-			case result = <-results:
-				if !timer.Stop() {
-					<-timer.C
-				}
-			case <-timer.C:
-				return errors.Join(append(closeErrors, context.DeadlineExceeded)...)
-			}
-		}
-		if result.err != nil {
-			closeErrors = append(closeErrors, result.err)
-			continue
-		}
-		route.processMu.Lock()
-		if current, exists := route.processes[result.processID]; exists && current.connection == processes[result.processID].connection {
-			delete(route.processes, result.processID)
-		}
-		route.processMu.Unlock()
-	}
-	if len(closeErrors) == 0 && route.executionRoot != "" {
-		if err := removeExecutionSnapshot(route.executionRoot); err != nil {
-			closeErrors = append(closeErrors, err)
+	closeErr := route.processes.Close(deadline)
+	if closeErr == nil && route.executionRoot != "" {
+		if err := route.snapshots.Remove(route.executionRoot); err != nil {
+			closeErr = err
 		} else {
 			route.executionRoot = ""
 		}
 	}
-	return errors.Join(closeErrors...)
+	return closeErr
 }
 
-const preparedReceiptFilename = ".tutti-connector-receipt.json"
-
-func (host *ImplementationHost) createExecutionSnapshot(prepared market.PreparedArtifactReceipt) (string, error) {
-	if strings.TrimSpace(prepared.InventoryDigest) == "" {
-		return "", errors.New("prepared connector inventory digest is missing")
-	}
-	if err := os.MkdirAll(host.stateRoot, 0o700); err != nil {
-		return "", err
-	}
-	stateRoot, err := filepath.EvalSymlinks(host.stateRoot)
-	if err != nil {
-		return "", err
-	}
-	parent := filepath.Join(stateRoot, "execution-snapshots")
-	if err := os.MkdirAll(parent, 0o700); err != nil {
-		return "", err
-	}
-	if err := os.Chmod(parent, 0o700); err != nil {
-		return "", err
-	}
-	staging, err := os.MkdirTemp(parent, ".staging-")
-	if err != nil {
-		return "", err
-	}
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = removeExecutionSnapshot(staging)
-		}
-	}()
-	if err := copyExecutionTree(prepared.PreparedPath, staging); err != nil {
-		return "", err
-	}
-	digest, err := executionInventoryDigest(staging)
-	if err != nil {
-		return "", err
-	}
-	if digest != prepared.InventoryDigest {
-		return "", errors.New("connector execution snapshot does not match verified inventory")
-	}
-	if err := makeExecutionTreeReadOnly(staging); err != nil {
-		return "", err
-	}
-	target := staging + ".ready"
-	if err := os.Rename(staging, target); err != nil {
-		return "", err
-	}
-	cleanup = false
-	return target, nil
-}
-
-func copyExecutionTree(source, destination string) error {
-	return filepath.WalkDir(source, func(path string, _ os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		relative, err := filepath.Rel(source, path)
-		if err != nil {
-			return err
-		}
-		if relative == "." {
-			return nil
-		}
-		target := filepath.Join(destination, relative)
-		info, err := os.Lstat(path)
-		if err != nil {
-			return err
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return errors.New("prepared connector snapshot contains a symlink")
-		}
-		if info.IsDir() {
-			return os.Mkdir(target, 0o700)
-		}
-		if !info.Mode().IsRegular() {
-			return errors.New("prepared connector snapshot contains an unsupported file type")
-		}
-		sourceFile, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		openedInfo, statErr := sourceFile.Stat()
-		if statErr != nil || !openedInfo.Mode().IsRegular() {
-			sourceFile.Close()
-			return errors.New("prepared connector file changed during snapshot")
-		}
-		targetFile, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-		if err != nil {
-			sourceFile.Close()
-			return err
-		}
-		_, copyErr := io.Copy(targetFile, sourceFile)
-		syncErr := targetFile.Sync()
-		closeTargetErr := targetFile.Close()
-		closeSourceErr := sourceFile.Close()
-		return errors.Join(copyErr, syncErr, closeTargetErr, closeSourceErr)
-	})
-}
-
-func executionInventoryDigest(root string) (string, error) {
-	hash := sha256.New()
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		if relative == "." || relative == preparedReceiptFilename {
-			return nil
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if entry.Type()&os.ModeSymlink != 0 || (!entry.IsDir() && !info.Mode().IsRegular()) {
-			return errors.New("connector execution snapshot contains an unsupported file type")
-		}
-		_, _ = io.WriteString(hash, filepath.ToSlash(relative))
-		_, _ = hash.Write([]byte{0})
-		if entry.IsDir() {
-			_, _ = hash.Write([]byte("dir\x00"))
-			return nil
-		}
-		_, _ = io.WriteString(hash, fmt.Sprintf("file\x00%d\x00", info.Size()))
-		file, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		_, copyErr := io.Copy(hash, file)
-		return errors.Join(copyErr, file.Close())
-	})
-	if err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(hash.Sum(nil)), nil
-}
-
-func makeExecutionTreeReadOnly(root string) error {
-	var directories []string
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			directories = append(directories, path)
-			return nil
-		}
-		return os.Chmod(path, 0o400)
-	})
-	if err != nil {
-		return err
-	}
-	for index := len(directories) - 1; index >= 0; index-- {
-		if err := os.Chmod(directories[index], 0o500); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func removeExecutionSnapshot(root string) error {
-	if strings.TrimSpace(root) == "" {
-		return nil
-	}
-	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr == nil && entry.IsDir() {
-			_ = os.Chmod(path, 0o700)
-		}
-		return nil
-	})
-	return os.RemoveAll(root)
-}
-
-func (route *connectorRoute) fence() {
-	route.processMu.Lock()
-	route.fenced = true
-	for processID, cancel := range route.pendingStarts {
-		cancel()
-		delete(route.pendingStarts, processID)
-	}
-	route.processMu.Unlock()
-}
-
-func (route *connectorRoute) isFenced() bool {
-	route.processMu.Lock()
-	defer route.processMu.Unlock()
-	return route.fenced
-}
+func (route *connectorRoute) close(deadline time.Time) error { return route.Close(deadline) }
 
 func (route *connectorRoute) beginProcess(parent context.Context) (context.Context, uint64, bool) {
-	route.processMu.Lock()
-	defer route.processMu.Unlock()
-	if route.fenced {
-		return nil, 0, false
-	}
-	processContext, cancel := context.WithCancel(parent)
-	route.nextProcessID++
-	route.pendingStarts[route.nextProcessID] = cancel
-	return processContext, route.nextProcessID, true
+	return route.processes.Begin(parent)
 }
 
 func (route *connectorRoute) failProcessStart(processID uint64) {
-	route.processMu.Lock()
-	cancel := route.pendingStarts[processID]
-	delete(route.pendingStarts, processID)
-	route.processMu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
+	route.processes.FailStart(processID)
 }
 
 func (route *connectorRoute) commitProcessStart(processID uint64, connection agentruntime.ProcessConnection) bool {
-	route.processMu.Lock()
-	defer route.processMu.Unlock()
-	cancel := route.pendingStarts[processID]
-	delete(route.pendingStarts, processID)
-	if route.fenced || cancel == nil {
-		if cancel != nil {
-			cancel()
-		}
-		return false
-	}
-	route.processes[processID] = trackedConnectorProcess{connection: connection, cancel: cancel}
-	return true
+	return route.processes.CommitStart(processID, connection)
 }
 
 func (route *connectorRoute) releaseProcess(processID uint64, connection agentruntime.ProcessConnection) {
-	route.processMu.Lock()
-	current, owned := route.processes[processID]
-	if owned && current.connection == connection && !current.closing {
-		delete(route.processes, processID)
-	} else {
-		owned = false
-	}
-	route.processMu.Unlock()
-	if owned {
-		current.cancel()
-		_ = connection.Close()
-	}
+	route.processes.Release(processID, connection)
 }
 
 type ConnectorCommandRegistry struct {
-	mu        sync.RWMutex
-	routes    map[string]*connectorRoute
-	published bool
+	mu     sync.RWMutex
+	routes *connectorruntime.RouteTable
 }
 
 type connectorBrokerRoute struct {
@@ -1187,13 +669,9 @@ type connectorBrokerRoute struct {
 }
 
 func (registry *ConnectorCommandRegistry) routesFor() []connectorBrokerRoute {
-	registry.mu.RLock()
-	defer registry.mu.RUnlock()
-	if !registry.published {
-		return nil
-	}
-	result := make([]connectorBrokerRoute, 0, len(registry.routes))
-	for _, route := range registry.routes {
+	routes := registry.activeRoutes()
+	result := make([]connectorBrokerRoute, 0, len(routes))
+	for _, route := range routes {
 		result = append(result, connectorBrokerRoute{connectorKey: route.connectorKey, displayName: route.displayName,
 			description: route.description, installedRoot: route.installedRoot})
 	}
@@ -1202,13 +680,12 @@ func (registry *ConnectorCommandRegistry) routesFor() []connectorBrokerRoute {
 }
 
 func (registry *ConnectorCommandRegistry) invokeInternal(ctx context.Context, connectorKey, capabilityName string, request cliservice.InvokeRequest) (cliservice.CommandOutput, error) {
-	registry.mu.RLock()
-	if !registry.published {
-		registry.mu.RUnlock()
+	routes := registry.activeRoutes()
+	if len(routes) == 0 {
 		return cliservice.CommandOutput{}, cliservice.ErrServiceUnavailable
 	}
 	matches := make([]connectorCommand, 0, 1)
-	for _, route := range registry.routes {
+	for _, route := range routes {
 		if route.connectorKey != connectorKey {
 			continue
 		}
@@ -1219,7 +696,6 @@ func (registry *ConnectorCommandRegistry) invokeInternal(ctx context.Context, co
 			}
 		}
 	}
-	registry.mu.RUnlock()
 	if len(matches) == 0 {
 		return cliservice.CommandOutput{}, cliservice.InvalidInputReasonError("connector_capability_not_found", "Connector capability was not found", nil)
 	}
@@ -1230,35 +706,35 @@ func (registry *ConnectorCommandRegistry) invokeInternal(ctx context.Context, co
 }
 
 func NewConnectorCommandRegistry() *ConnectorCommandRegistry {
-	return &ConnectorCommandRegistry{routes: make(map[string]*connectorRoute), published: true}
+	return &ConnectorCommandRegistry{}
 }
 
-func (registry *ConnectorCommandRegistry) setPublished(enabled bool) {
+func (registry *ConnectorCommandRegistry) attach(routes *connectorruntime.RouteTable) {
 	registry.mu.Lock()
-	registry.published = enabled
+	registry.routes = routes
 	registry.mu.Unlock()
 }
 
-func (registry *ConnectorCommandRegistry) replace(route *connectorRoute) {
-	registry.mu.Lock()
-	registry.routes[route.id] = route
-	registry.mu.Unlock()
-}
-
-func (registry *ConnectorCommandRegistry) remove(routeID string) {
-	registry.mu.Lock()
-	delete(registry.routes, routeID)
-	registry.mu.Unlock()
+func (registry *ConnectorCommandRegistry) activeRoutes() []*connectorRoute {
+	registry.mu.RLock()
+	table := registry.routes
+	registry.mu.RUnlock()
+	if table == nil {
+		return nil
+	}
+	portable := table.PublishedRoutes()
+	routes := make([]*connectorRoute, 0, len(portable))
+	for _, candidate := range portable {
+		if route, ok := candidate.(*connectorRoute); ok {
+			routes = append(routes, route)
+		}
+	}
+	return routes
 }
 
 func (registry *ConnectorCommandRegistry) Capabilities(_ context.Context, _ cliservice.InvokeContext) []cliservice.Capability {
-	registry.mu.RLock()
-	defer registry.mu.RUnlock()
-	if !registry.published {
-		return nil
-	}
 	result := []cliservice.Capability{}
-	for _, route := range registry.routes {
+	for _, route := range registry.activeRoutes() {
 		for _, command := range route.capabilities {
 			result = append(result, command.capability)
 		}
@@ -1268,20 +744,18 @@ func (registry *ConnectorCommandRegistry) Capabilities(_ context.Context, _ clis
 }
 
 func (registry *ConnectorCommandRegistry) Invoke(ctx context.Context, request cliservice.InvokeRequest) (cliservice.CommandOutput, error) {
-	registry.mu.RLock()
-	if !registry.published {
-		registry.mu.RUnlock()
+	routes := registry.activeRoutes()
+	if len(routes) == 0 {
 		return cliservice.CommandOutput{}, cliservice.ErrServiceUnavailable
 	}
 	var command *connectorCommand
-	for _, route := range registry.routes {
+	for _, route := range routes {
 		if candidate, ok := route.capabilities[request.CommandID]; ok {
 			copy := candidate
 			command = &copy
 			break
 		}
 	}
-	registry.mu.RUnlock()
 	if command == nil {
 		return cliservice.CommandOutput{}, cliservice.ErrCommandNotFound
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -66,8 +67,9 @@ func TestActivationGateNeverStagesWorkspaceDeactivation(t *testing.T) {
 }
 
 type countingCatalogSource struct {
-	release   market.Release
-	refreshes int
+	release    market.Release
+	refreshes  int
+	refreshErr error
 }
 
 func (*countingCatalogSource) ListCategories(context.Context) ([]market.CatalogCategory, error) {
@@ -80,6 +82,9 @@ func (*countingCatalogSource) ListPage(context.Context, market.CatalogSourcePage
 
 func (source *countingCatalogSource) Refresh(context.Context) (market.CatalogSnapshot, error) {
 	source.refreshes++
+	if source.refreshErr != nil {
+		return market.CatalogSnapshot{}, source.refreshErr
+	}
 	return market.CatalogSnapshot{SourceRevision: "source-1", Releases: []market.Release{source.release}}, nil
 }
 
@@ -89,7 +94,7 @@ func (discardChangedEventPublisher) PublishConnectorMarketChanged(context.Contex
 	return nil
 }
 
-func TestBootstrapAndScheduledRetryReuseAcceptedCatalogAfterReconcileFailure(t *testing.T) {
+func TestBootstrapRestoresInstalledRuntimeWithoutRefreshingCatalog(t *testing.T) {
 	ctx := context.Background()
 	store, err := marketdata.Open(ctx, filepath.Join(t.TempDir(), "tuttid.db"))
 	if err != nil {
@@ -98,6 +103,9 @@ func TestBootstrapAndScheduledRetryReuseAcceptedCatalogAfterReconcileFailure(t *
 	t.Cleanup(func() { _ = store.Close() })
 
 	release := hostTestRelease()
+	// Presentation policy may evolve after installation. Runtime recovery must
+	// not depend on the currently accepted icon shape.
+	release.Manifest.IconURL = "https://legacy.example/icon.svg"
 	connector := market.Connector{
 		Key:     release.ConnectorKey,
 		Release: release,
@@ -139,7 +147,7 @@ func TestBootstrapAndScheduledRetryReuseAcceptedCatalogAfterReconcileFailure(t *
 		t.Fatal(err)
 	}
 
-	source := &countingCatalogSource{release: release}
+	source := &countingCatalogSource{release: release, refreshErr: errors.New("catalog returned 403")}
 	runtime := &activationGateDelegate{reconcileFailures: 1}
 	host, err := NewHost(ctx, HostConfig{
 		Repository:             store,
@@ -164,22 +172,15 @@ func TestBootstrapAndScheduledRetryReuseAcceptedCatalogAfterReconcileFailure(t *
 	if err := host.Bootstrap(ctx); err != nil {
 		t.Fatalf("second bootstrap failed: %v", err)
 	}
-	if source.refreshes != 1 || runtime.reconciles != 2 {
-		t.Fatalf("bootstrap refreshes=%d reconciles=%d, want 1 and 2", source.refreshes, runtime.reconciles)
+	if source.refreshes != 0 || runtime.reconciles != 2 {
+		t.Fatalf("bootstrap refreshes=%d reconciles=%d, want 0 and 2", source.refreshes, runtime.reconciles)
 	}
 
-	runtime.reconcileFailures = 1
-	catalogAccepted := false
-	catalogAccepted, err = host.refreshAndReconcileInstalled(ctx, catalogAccepted)
-	if err == nil || !catalogAccepted {
-		t.Fatalf("scheduled first retry accepted=%v error=%v, want accepted catalog and reconcile error", catalogAccepted, err)
+	if err := host.refreshAndWait(ctx); err == nil || !strings.Contains(err.Error(), "refresh failed") {
+		t.Fatalf("refresh error = %v, want catalog failure", err)
 	}
-	catalogAccepted, err = host.refreshAndReconcileInstalled(ctx, catalogAccepted)
-	if err != nil || catalogAccepted {
-		t.Fatalf("scheduled second retry accepted=%v error=%v, want completed cycle", catalogAccepted, err)
-	}
-	if source.refreshes != 2 || runtime.reconciles != 4 {
-		t.Fatalf("total refreshes=%d reconciles=%d, want 2 and 4", source.refreshes, runtime.reconciles)
+	if source.refreshes != 1 || runtime.reconciles != 2 {
+		t.Fatalf("refreshes=%d reconciles=%d, want catalog retry isolated from runtime", source.refreshes, runtime.reconciles)
 	}
 }
 
@@ -202,7 +203,8 @@ func hostTestRelease() market.Release {
 			},
 		},
 		Artifact: market.Artifact{
-			Key:       "connectors/github/1.0.0.tgz",
+			StorageRealm: connectorArtifactRealm,
+			Key:          "connectors/github/1.0.0.tgz", ObjectVersion: "version-1",
 			SHA256:    "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 			SizeBytes: 1024,
 			MediaType: "application/vnd.tutti.connector+tar+gzip",

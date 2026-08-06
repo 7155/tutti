@@ -3,7 +3,8 @@ import { proxy } from "valtio/vanilla";
 import type {
   ConnectorMarketChangedEvent,
   ConnectorMarketEventSource,
-  ConnectorMutationResult
+  ConnectorMutationResult,
+  ConnectorOperation
 } from "../contracts/index.ts";
 import type {
   ConnectorMarketServiceDependencies,
@@ -48,6 +49,8 @@ export class ConnectorMarketService implements IConnectorMarketService {
     ConnectorMarketChangedEvent
   >();
   private readonly connectorEventLoads = new Map<string, Promise<void>>();
+  private readonly operationTracks = new Map<string, Promise<void>>();
+  private readonly operationTrackerAbort = new AbortController();
   private eventUnsubscribe: (() => void) | null = null;
   private eventConnectionUnsubscribe: (() => void) | null = null;
   private refreshInFlight: Promise<void> | null = null;
@@ -121,6 +124,7 @@ export class ConnectorMarketService implements IConnectorMarketService {
       .then((result) => {
         if (this.isCurrent(generation)) {
           applyConnectorMutationResult(this.dataStore, result);
+          this.trackOperation(result.operation);
         }
       })
       .catch((error) => {
@@ -203,6 +207,7 @@ export class ConnectorMarketService implements IConnectorMarketService {
         return;
       }
       applyConnectorMutationResult(this.dataStore, result);
+      this.trackOperation(result.operation);
       if (result.authorizationUrl && this.dependencies.openAuthorizationUrl) {
         await this.dependencies.openAuthorizationUrl(result.authorizationUrl);
       }
@@ -235,6 +240,8 @@ export class ConnectorMarketService implements IConnectorMarketService {
     this.connectorMutations.clear();
     this.pendingConnectorEvents.clear();
     this.connectorEventLoads.clear();
+    this.operationTrackerAbort.abort();
+    this.operationTracks.clear();
     this.refreshInFlight = null;
     this.sectionLoads.clear();
     this.eventUnsubscribe?.();
@@ -446,6 +453,7 @@ export class ConnectorMarketService implements IConnectorMarketService {
     }
     if (operation?.connectorKey === connectorKey) {
       this.dataStore.operationsByConnectorKey[connectorKey] = operation;
+      this.trackOperation(operation);
     }
     this.dataStore.revision = event.revision;
     this.dataStore.lastError = null;
@@ -464,6 +472,7 @@ export class ConnectorMarketService implements IConnectorMarketService {
       const result = await operation();
       if (this.isCurrentMutation(connectorKey, token, generation)) {
         applyConnectorMutationResult(this.dataStore, result);
+        this.trackOperation(result.operation);
       }
     } catch (error) {
       if (this.isCurrentMutation(connectorKey, token, generation)) {
@@ -473,6 +482,164 @@ export class ConnectorMarketService implements IConnectorMarketService {
     } finally {
       this.releaseConnectorMutation(connectorKey, token);
     }
+  }
+
+  private trackOperation(operation: ConnectorOperation): void {
+    if (
+      this.disposed ||
+      operation.state === "completed" ||
+      operation.state === "failed" ||
+      this.operationTracks.has(operation.operationId)
+    ) {
+      return;
+    }
+    const generation = this.dataGeneration;
+    let promise!: Promise<void>;
+    promise = this.runOperationTrack(operation, generation)
+      .catch((error) => {
+        if (
+          this.isCurrent(generation) &&
+          !this.operationTrackerAbort.signal.aborted
+        ) {
+          this.recordError(error);
+        }
+      })
+      .finally(() => {
+        if (this.operationTracks.get(operation.operationId) === promise) {
+          this.operationTracks.delete(operation.operationId);
+        }
+      });
+    this.operationTracks.set(operation.operationId, promise);
+  }
+
+  private async runOperationTrack(
+    accepted: ConnectorOperation,
+    generation: number
+  ): Promise<void> {
+    let attempt = 0;
+    while (
+      this.isCurrent(generation) &&
+      !this.operationTrackerAbort.signal.aborted
+    ) {
+      let operation: ConnectorOperation;
+      try {
+        operation = await this.dependencies.backend.getOperation({
+          operationId: accepted.operationId
+        });
+      } catch (error) {
+        if (this.isRetryableOperationError(error)) {
+          // Event delivery and operation reads are independent recovery paths.
+          // A transient read failure must not abandon terminal convergence.
+          this.reportDiagnostic(error);
+          await this.waitForOperationPoll(attempt);
+          attempt += 1;
+          continue;
+        }
+        const permanentError = normalizeConnectorMarketError(error);
+        this.recordError(permanentError);
+        try {
+          // The accepted mutation can still have completed even when operation
+          // reads are permanently forbidden or missing. Reconcile once from
+          // the daemon's authoritative local projection, then stop tracking.
+          await this.reconcileTerminalOperation(accepted, generation);
+          if (this.isCurrent(generation)) {
+            this.dataStore.lastError = permanentError;
+          }
+        } catch (reconcileError) {
+          this.reportDiagnostic(reconcileError);
+        }
+        return;
+      }
+      if (!this.isCurrent(generation)) {
+        return;
+      }
+      this.applyTrackedOperation(operation);
+      if (operation.state === "completed" || operation.state === "failed") {
+        try {
+          await this.reconcileTerminalOperation(operation, generation);
+          return;
+        } catch (error) {
+          if (this.isRetryableOperationError(error)) {
+            // Reading the terminal operation and reading its authoritative
+            // local projection are separate calls. Keep the tracker alive only
+            // while that projection is transiently unavailable.
+            this.reportDiagnostic(error);
+            await this.waitForOperationPoll(attempt);
+            attempt += 1;
+            continue;
+          }
+          this.recordError(error);
+          return;
+        }
+      }
+      await this.waitForOperationPoll(attempt);
+      attempt += 1;
+    }
+  }
+
+  private applyTrackedOperation(operation: ConnectorOperation): void {
+    if (operation.connectorKey) {
+      this.dataStore.operationsByConnectorKey[operation.connectorKey] =
+        operation;
+    } else if (operation.kind === "refresh_catalog") {
+      this.dataStore.catalogOperation = operation;
+    }
+  }
+
+  private async reconcileTerminalOperation(
+    operation: ConnectorOperation,
+    generation: number
+  ): Promise<void> {
+    if (operation.connectorKey) {
+      const connector = await this.dependencies.backend.getConnector({
+        connectorKey: operation.connectorKey
+      });
+      if (!this.isCurrent(generation)) {
+        return;
+      }
+      const current = this.dataStore.connectorsByKey[connector.key];
+      if (!current || connector.revision >= current.revision) {
+        applyConnector(this.dataStore, connector);
+      }
+      this.dataStore.revision = Math.max(
+        this.dataStore.revision,
+        connector.revision
+      );
+      return;
+    }
+    const snapshot = await this.dependencies.backend.getSnapshot();
+    if (this.isCurrent(generation)) {
+      // Refresh completion is a local daemon fact. Do not make its terminal UI
+      // state depend on another remote categories/icons request.
+      applyConnectorMarketSnapshot(this.dataStore, snapshot);
+    }
+  }
+
+  private waitForOperationPoll(attempt: number): Promise<void> {
+    const delayMs = Math.min(250 * 2 ** Math.min(attempt, 3), 2_000);
+    const signal = this.operationTrackerAbort.signal;
+    if (this.dependencies.waitForOperationPoll) {
+      return this.dependencies.waitForOperationPoll(delayMs, signal);
+    }
+    return new Promise((resolve) => {
+      if (signal.aborted) {
+        resolve();
+        return;
+      }
+      const timer = setTimeout(resolve, delayMs);
+      signal.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true }
+      );
+    });
+  }
+
+  private isRetryableOperationError(error: unknown): boolean {
+    return normalizeConnectorMarketError(error).retryable;
   }
 
   private acquireConnectorMutation(connectorKey: string): symbol {

@@ -28,18 +28,17 @@ type HostConfig struct {
 type Host struct {
 	Application *market.Application
 
-	cancel                   context.CancelFunc
-	scheduler                *OperationScheduler
-	outboxDone               chan struct{}
-	closeOnce                sync.Once
-	bootstrapMu              sync.Mutex
-	bootstrapped             bool
-	bootstrapCatalogAccepted bool
-	refreshWorkerStarted     bool
-	repository               market.Repository
-	implementationHost       market.ImplementationHost
-	activationGate           *activationGateHost
-	publicationGate          capabilityPublicationGate
+	cancel               context.CancelFunc
+	scheduler            *OperationScheduler
+	outboxDone           chan struct{}
+	closeOnce            sync.Once
+	bootstrapMu          sync.Mutex
+	bootstrapped         bool
+	refreshWorkerStarted bool
+	repository           market.Repository
+	implementationHost   market.ImplementationHost
+	activationGate       *activationGateHost
+	publicationGate      capabilityPublicationGate
 }
 
 type capabilityPublicationGate interface {
@@ -169,9 +168,9 @@ func NewHost(parent context.Context, config HostConfig) (*Host, error) {
 	return host, nil
 }
 
-// Bootstrap refreshes and accepts the current market catalog before any
-// installed runtime intent is allowed to recreate MCP/CLI routes. Failed
-// bootstrap attempts leave the connector host fenced and may be retried.
+// Bootstrap restores durable local runtime intent without depending on the
+// remote catalog. Catalog refresh has its own retry loop: a network, auth, or
+// presentation-policy failure must never keep installed MCP/CLI routes fenced.
 func (host *Host) Bootstrap(ctx context.Context) error {
 	if host == nil || host.Application == nil {
 		return errors.New("connector market host is unavailable")
@@ -212,7 +211,7 @@ func (host *Host) Bootstrap(ctx context.Context) error {
 	}()
 	// Fence any route left by an interrupted previous bootstrap before recovery
 	// can replay host-touching operations. Reconcile calls remain staged behind
-	// activationGate until a fresh market catalog has been accepted.
+	// activationGate until durable local recovery has completed.
 	if fencer, ok := host.implementationHost.(runtimeProjectionFencer); ok {
 		if err := fencer.FenceAll(ctx, time.Now().Add(10*time.Second)); err != nil {
 			return err
@@ -224,12 +223,6 @@ func (host *Host) Bootstrap(ctx context.Context) error {
 	if err := host.recoverAndWait(ctx); err != nil {
 		return err
 	}
-	if !host.bootstrapCatalogAccepted {
-		if err := host.refreshAndWait(ctx); err != nil {
-			return err
-		}
-		host.bootstrapCatalogAccepted = true
-	}
 	host.activationGate.setOpen(true)
 	if err := host.Application.ReconcileInstalledRuntimes(ctx); err != nil {
 		return err
@@ -239,7 +232,6 @@ func (host *Host) Bootstrap(ctx context.Context) error {
 	}
 	host.activationGate.markRecovered()
 	host.bootstrapped = true
-	host.bootstrapCatalogAccepted = false
 	committed = true
 	return nil
 }
@@ -260,6 +252,12 @@ func (host *Host) recoverAndWait(ctx context.Context) error {
 	for {
 		pending := false
 		for _, candidate := range operations {
+			// Remote refresh and authorization operations may legitimately wait on
+			// the network. Recover them, but do not make local route restoration
+			// wait for their terminal state.
+			if candidate.Kind != market.OperationKindInstall && candidate.Kind != market.OperationKindUninstall {
+				continue
+			}
 			operation, err := host.Application.GetOperation(ctx, candidate.OperationID)
 			if err != nil {
 				return err
@@ -311,34 +309,15 @@ func (host *Host) refreshAndWait(ctx context.Context) error {
 	}
 }
 
-func (host *Host) refreshAndReconcileInstalled(ctx context.Context, catalogAccepted bool) (bool, error) {
-	if !catalogAccepted {
-		if err := host.refreshAndWait(ctx); err != nil {
-			return false, err
-		}
-		catalogAccepted = true
-	}
-	if err := host.Application.ReconcileInstalledRuntimes(ctx); err != nil {
-		return catalogAccepted, err
-	}
-	if host.activationGate.requiresRecovery() {
-		if host.publicationGate != nil {
-			host.publicationGate.SetCapabilityPublication(true)
-		}
-		host.activationGate.markRecovered()
-	}
-	return false, nil
-}
-
 func (host *Host) runCatalogRefreshWorker() {
-	retry := time.Minute
-	catalogAccepted := false
+	bootstrapRetry := time.Second
+	catalogRetry := time.Duration(0)
 	for {
 		host.bootstrapMu.Lock()
 		bootstrapped := host.bootstrapped
 		host.bootstrapMu.Unlock()
 		if !bootstrapped {
-			timer := time.NewTimer(time.Second)
+			timer := time.NewTimer(bootstrapRetry)
 			select {
 			case <-host.scheduler.ctx.Done():
 				timer.Stop()
@@ -350,11 +329,15 @@ func (host *Host) runCatalogRefreshWorker() {
 			cancel()
 			if err != nil && !errors.Is(err, context.Canceled) {
 				slog.Warn("connector market bootstrap retry failed", "error", err)
+				if bootstrapRetry < time.Minute {
+					bootstrapRetry *= 2
+				}
+			} else {
+				bootstrapRetry = time.Second
 			}
 			continue
 		}
-		wait := retry
-		timer := time.NewTimer(wait)
+		timer := time.NewTimer(catalogRetry)
 		select {
 		case <-host.scheduler.ctx.Done():
 			timer.Stop()
@@ -362,17 +345,18 @@ func (host *Host) runCatalogRefreshWorker() {
 		case <-timer.C:
 		}
 		refreshContext, cancel := context.WithTimeout(host.scheduler.ctx, 45*time.Second)
-		var err error
-		catalogAccepted, err = host.refreshAndReconcileInstalled(refreshContext, catalogAccepted)
+		err := host.refreshAndWait(refreshContext)
 		cancel()
 		if err != nil && !errors.Is(err, context.Canceled) {
 			slog.Warn("connector market scheduled refresh failed", "error", err)
-			if retry < 5*time.Minute {
-				retry *= 2
+			if catalogRetry < time.Minute {
+				catalogRetry = time.Minute
+			} else if catalogRetry < 5*time.Minute {
+				catalogRetry *= 2
 			}
 			continue
 		}
-		retry = time.Minute
+		catalogRetry = time.Minute
 	}
 }
 

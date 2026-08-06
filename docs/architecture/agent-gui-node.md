@@ -205,6 +205,12 @@ entry capability may additionally hide or disable an experimental control; the
 activation boundary must fail closed as well, so a remembered `true` value
 cannot outlive a disabled host entry. Provider support comes from the resolved
 composer descriptor rather than provider-name checks in shared UI code.
+Extension-owned model catalogs can change independently of target-scoped
+remembered defaults. On Create, the daemon treats such a default as a fallback
+preference and resolves an obsolete value to the extension runtime's current
+model; a model explicitly supplied by the caller remains strict. If the runtime
+rejects that explicit selection, startup fails rather than continuing with an
+undisclosed provider default.
 
 Settings that affect provider preparation are immutable after launch. The
 daemon validates them against current product policy and resolved provider

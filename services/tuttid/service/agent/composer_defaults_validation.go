@@ -128,6 +128,7 @@ func (s *Service) validateExtensionComposerSettingsForCreate(
 	workspaceID string,
 	cwd string,
 	input *CreateSessionInput,
+	modelExplicit bool,
 	permissionModeExplicit bool,
 ) error {
 	if input == nil || providerTargetRefKind(input.ProviderTargetRef) != "agent_extension" {
@@ -138,6 +139,12 @@ func (s *Service) validateExtensionComposerSettingsForCreate(
 		PermissionModeID: strings.TrimSpace(value(input.PermissionModeID)),
 		ReasoningEffort:  strings.TrimSpace(value(input.ReasoningEffort)),
 		Speed:            strings.TrimSpace(value(input.Speed)),
+	}
+	if !modelExplicit {
+		// Persisted defaults may outlive an extension-owned model catalog. Let
+		// Composer Options resolve the runtime's current model rather than
+		// validating the retired preference as an explicit caller selection.
+		settings.Model = ""
 	}
 	if !permissionModeExplicit {
 		// Persisted defaults are fallback preferences, not caller selections.
@@ -155,6 +162,14 @@ func (s *Service) validateExtensionComposerSettingsForCreate(
 	})
 	if err != nil {
 		return err
+	}
+	if !modelExplicit {
+		resolved := strings.TrimSpace(options.EffectiveSettings.Model)
+		if resolved == "" {
+			input.Model = nil
+		} else {
+			input.Model = stringPointer(resolved)
+		}
 	}
 	if !permissionModeExplicit {
 		resolved := strings.TrimSpace(options.EffectiveSettings.PermissionModeID)

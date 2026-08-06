@@ -234,8 +234,10 @@ func TestServiceCreateRejectsExtensionSettingsOutsideDescriptor(t *testing.T) {
 		input    CreateSessionInput
 	}{
 		{
-			name:     "default model",
-			defaults: preferencesbiz.AgentComposerDefaults{Model: "unknown-model"},
+			name: "model override",
+			input: CreateSessionInput{
+				Model: stringPointer("unknown-model"),
+			},
 		},
 		{
 			name: "permission override",
@@ -276,6 +278,28 @@ func TestServiceCreateRejectsExtensionSettingsOutsideDescriptor(t *testing.T) {
 				t.Fatalf("visible starts = %#v, want none", starts)
 			}
 		})
+	}
+}
+
+func TestServiceCreateIgnoresRetiredExtensionModelDefault(t *testing.T) {
+	runtime, service := newExtensionComposerValidationService(t)
+	service.AgentComposerDefaultsReader = fakeAgentComposerDefaultsReader{
+		extensionComposerValidationTargetID: {Model: "retired-model"},
+	}
+
+	created, err := service.Create(context.Background(), "workspace-extension", CreateSessionInput{
+		AgentTargetID: extensionComposerValidationTargetID,
+		Cwd:           stringPointer(t.TempDir()),
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if created.Settings == nil || created.Settings.Model != "gemini-pro" {
+		t.Fatalf("created settings = %#v, want runtime current model", created.Settings)
+	}
+	visibleStarts := visibleRuntimeStarts(runtime.startCalls)
+	if len(visibleStarts) != 1 || visibleStarts[0].Model != "gemini-pro" {
+		t.Fatalf("visible starts = %#v, want runtime current model", visibleStarts)
 	}
 }
 

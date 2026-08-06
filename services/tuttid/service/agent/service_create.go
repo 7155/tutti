@@ -43,9 +43,17 @@ func (s *Service) CreateWithResult(ctx context.Context, workspaceID string, inpu
 	if !input.CodexSaverModeAllowed || !composerProviderSupportsSaverSubagentMode(provider) {
 		input.CodexSaverMode = nil
 	}
+	modelExplicit := strings.TrimSpace(value(input.Model)) != ""
 	permissionModeExplicit := strings.TrimSpace(value(input.PermissionModeID)) != ""
 	if err := s.applyCreateSessionComposerDefaults(ctx, &input); err != nil {
 		return CreateSessionResult{}, err
+	}
+	if providerTargetRefKind(input.ProviderTargetRef) == "agent_extension" && !modelExplicit {
+		// Extension defaults are fallback preferences, not caller selections.
+		// Their model catalog is runtime-owned and can change independently of
+		// persisted preferences, so defer the effective model to the live
+		// extension validation below.
+		input.Model = nil
 	}
 	input.ConversationDetailMode = preferencesbiz.NormalizeDesktopAgentConversationDetailMode(input.ConversationDetailMode)
 	requestedPermissionModeID := strings.TrimSpace(value(input.PermissionModeID))
@@ -158,11 +166,13 @@ func (s *Service) CreateWithResult(ctx context.Context, workspaceID string, inpu
 			workspaceID,
 			cwd,
 			&input,
+			modelExplicit,
 			permissionModeExplicit,
 		); err != nil {
 			s.reportAgentServiceNodeFailure(ctx, input.AgentSessionID, "session_create", "settings_validated", provider, nodeStartedAt, err)
 			return CreateSessionResult{}, err
 		}
+		input.RuntimeContext = runtimeContextWithSessionRuntimeSnapshot(input.RuntimeContext, input, provider, planResolution)
 		s.reportAgentServiceNodeSuccess(ctx, input.AgentSessionID, "session_create", "settings_validated", provider, nodeStartedAt)
 	}
 	nodeStartedAt = time.Now()

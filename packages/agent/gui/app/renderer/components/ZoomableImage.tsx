@@ -208,7 +208,7 @@ export function ZoomableImage({
     );
     setCopyStatus({
       busy: false,
-      message: t("common.imageDownloaded"),
+      message: t("agentHost.agentGui.imageDownloaded"),
       variant: "success"
     });
   }, [actionSource, alt, closeContextMenu, downloadName, t]);

@@ -61,6 +61,7 @@ import {
 import {
   createAgentRichTextControlledValueTracker,
   recordAgentRichTextLocalEdit,
+  resolveAgentRichTextControlledSelection,
   shouldApplyAgentRichTextControlledValue
 } from "./agentRichTextControlledValue";
 import { createAgentRichTextMentionSuggestionSuppression } from "./agentRichTextMentionSuggestionSuppression";
@@ -146,11 +147,9 @@ export const AgentRichTextEditor = forwardRef<
   const scrollFrameRef = useRef<number | null>(null);
   const [contextMenu, setContextMenu] =
     useState<AgentRichTextContextMenuState | null>(null);
-
   const closeContextMenu = useCallback(() => {
     setContextMenu(null);
   }, []);
-
   const insertPlainText = useCallback((text: string): void => {
     const currentEditor = editorRef.current;
     if (!currentEditor || currentEditor.isDestroyed || !text) {
@@ -254,7 +253,6 @@ export const AgentRichTextEditor = forwardRef<
       scrollEditorSelectionIntoView(currentEditor);
     });
   };
-
   const extensions = useMemo(
     () => [
       ...createAgentRichTextInputExtensions(
@@ -770,12 +768,11 @@ export const AgentRichTextEditor = forwardRef<
     editor.commands.setContent(nextDoc, { emitUpdate: false });
     const documentEnd = editor.state.doc.content.size;
     editor.commands.setTextSelection(
-      scopeChanged
-        ? documentEnd
-        : {
-            from: Math.min(previousSelection.from, documentEnd),
-            to: Math.min(previousSelection.to, documentEnd)
-          }
+      resolveAgentRichTextControlledSelection(
+        scopeChanged,
+        previousSelection,
+        documentEnd
+      )
     );
     lastEmittedPromptRef.current = value;
     appliedContentScopeKeyRef.current = contentScopeKey;

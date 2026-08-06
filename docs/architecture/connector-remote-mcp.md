@@ -7,7 +7,7 @@ sequenceDiagram
     participant Client as MCP Client
     participant Tutti as Tutti daemon
     participant Server as Tutti MCP service
-    participant Provider as Composio or business service
+    participant Provider as Composio or business service/Nango
     Client->>Tutti: tools/list or tools/call
     Tutti->>Server: POST /mcp/connectors/{connectorId}<br/>Cookie + Mcp-Session-Id
     Server->>Provider: provider-specific execution
@@ -25,3 +25,5 @@ Capability definitions are live. Activation performs `initialize`, `notification
 The market host calls the account-scoped Connector authorization API and returns the third-party redirect URL to the UI. The user already has a Tutti session, so only the upstream provider consent is interactive. A background reconciler polls the durable authorization session and moves the local Connector from `pending` to `connected` or `failed`; it recovers from daemon restarts by reading the completed start operation stored locally.
 
 Disconnect revokes the user's active Connector connections through the same control plane. Provider project secrets remain on the server.
+
+For a Nango-backed Connector, the control plane returns Nango's short-lived Connect Link. The server tags the Connect Session with opaque Tutti authorization-session and user references, then the normal reconciler discovers and verifies the resulting Nango connection. During Tool execution, the business service calls Nango Proxy with the durable connection ID and integration ID; Nango performs credential lookup and token refresh. Neither the Nango Secret Key nor upstream credentials cross the public MCP boundary.

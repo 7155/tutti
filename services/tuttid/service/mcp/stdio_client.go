@@ -19,8 +19,9 @@ const defaultMaxStderrBytes = 64 * 1024
 const callbackQueueDepth = 64
 
 type RPCError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data,omitempty"`
 }
 
 func (err *RPCError) Error() string {

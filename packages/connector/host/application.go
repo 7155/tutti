@@ -306,6 +306,59 @@ func (application *Application) BeginAuthorization(
 	}, nil
 }
 
+// ReconcileAuthorizations observes durable completed start operations for
+// Connectors that are still pending and projects terminal provider state into
+// the local Connector snapshot. It is safe to call repeatedly and after a
+// daemon restart.
+func (application *Application) ReconcileAuthorizations(ctx context.Context) error {
+	observer, ok := application.config.Authorization.(AuthorizationObserver)
+	if !ok {
+		return nil
+	}
+	snapshot, err := application.Snapshot(ctx)
+	if err != nil {
+		return err
+	}
+	sessions := make(map[string]AuthorizationSession)
+	updated := make(map[string]time.Time)
+	for _, operation := range snapshot.Operations {
+		if operation.Kind != OperationKindStartAuthorization || operation.State != OperationStateCompleted ||
+			operation.Execution.AuthorizationSession == nil {
+			continue
+		}
+		if previous, exists := updated[operation.ConnectorKey]; !exists || operation.UpdatedAt.After(previous) {
+			sessions[operation.ConnectorKey] = *operation.Execution.AuthorizationSession
+			updated[operation.ConnectorKey] = operation.UpdatedAt
+		}
+	}
+	var reconcileErr error
+	for _, connector := range snapshot.Connectors {
+		if connector.Authorization.State != AuthorizationStatePending {
+			continue
+		}
+		session, exists := sessions[connector.Key]
+		if !exists {
+			continue
+		}
+		observation, observeErr := observer.Observe(ctx, AuthorizationObserveRequest{Connector: connector, Session: session})
+		if observeErr != nil {
+			reconcileErr = errors.Join(reconcileErr, observeErr)
+			continue
+		}
+		if observation.State == AuthorizationObservationPending {
+			continue
+		}
+		if observation.State != AuthorizationObservationConnected && observation.State != AuthorizationObservationFailed {
+			reconcileErr = errors.Join(reconcileErr, errors.New("authorization observer returned an invalid state"))
+			continue
+		}
+		if err := application.completeAuthorizationObservation(ctx, connector.Key, observation); err != nil {
+			reconcileErr = errors.Join(reconcileErr, err)
+		}
+	}
+	return reconcileErr
+}
+
 func (application *Application) DisconnectAuthorization(
 	ctx context.Context,
 	mutation ConnectorMutation,

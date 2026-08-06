@@ -564,6 +564,41 @@ func (application *Application) completeAuthorizationStart(
 	})
 }
 
+func (application *Application) completeAuthorizationObservation(
+	ctx context.Context,
+	connectorKey string,
+	observation AuthorizationObservation,
+) error {
+	return application.config.Repository.Transaction(ctx, func(tx Transaction) error {
+		connector, err := tx.Connector(connectorKey)
+		if err != nil {
+			return err
+		}
+		if connector.Authorization.State != AuthorizationStatePending {
+			return nil
+		}
+		target := AuthorizationStateConnected
+		failureCode := ""
+		if observation.State == AuthorizationObservationFailed {
+			target = AuthorizationStateFailed
+			failureCode = strings.TrimSpace(observation.FailureCode)
+			if failureCode == "" {
+				failureCode = string(ErrorCodeAuthorizationFailed)
+			}
+		}
+		if !CanTransitionAuthorization(connector.Authorization.State, target) {
+			return invalidTransition("authorization", string(connector.Authorization.State), string(target))
+		}
+		revision := tx.AdvanceRevision()
+		connector.Authorization = Authorization{State: target, FailureCode: failureCode}
+		connector.Revision = revision
+		if err := tx.SaveConnector(connector); err != nil {
+			return err
+		}
+		return tx.EnqueueConnectorMarketChanged(ChangedEvent{ConnectorKey: connector.Key, Revision: revision})
+	})
+}
+
 func (application *Application) failOperation(ctx context.Context, operationID string, code ErrorCode) error {
 	return application.config.Repository.Transaction(ctx, func(tx Transaction) error {
 		operation, err := tx.Operation(operationID)

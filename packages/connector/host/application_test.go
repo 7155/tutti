@@ -579,6 +579,33 @@ func TestApplicationRefreshPreservesManifestFailureCode(t *testing.T) {
 	}
 }
 
+func TestApplicationReconcilesCompletedAuthorizationSession(t *testing.T) {
+	connector := testConnector("gmail")
+	connector.Authorization = Authorization{State: AuthorizationStatePending}
+	repository := newMemoryRepository(connector)
+	repository.operations["authorization-1"] = Operation{
+		OperationID: "authorization-1", ConnectorKey: connector.Key,
+		Kind: OperationKindStartAuthorization, State: OperationStateCompleted,
+		Execution: OperationExecution{AuthorizationSession: &AuthorizationSession{
+			OperationID: "authorization-1", ConnectorKey: connector.Key,
+			SessionID: "session-1", AuthorizationURL: "https://example.test/authorize",
+		}},
+		UpdatedAt: time.Date(2026, 8, 3, 0, 1, 0, 0, time.UTC),
+	}
+	application := newTestApplication(t, repository, &memoryScheduler{}, &memoryInstallRuntime{}, CatalogSnapshot{})
+	application.config.Authorization = observingAuthorizationProvider{observation: AuthorizationObservation{State: AuthorizationObservationConnected}}
+	if err := application.ReconcileAuthorizations(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := repository.Connector(context.Background(), connector.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Authorization.State != AuthorizationStateConnected || len(repository.events) != 1 {
+		t.Fatalf("connector=%#v events=%#v", updated, repository.events)
+	}
+}
+
 func newTestApplication(
 	t *testing.T,
 	repository *memoryRepository,
@@ -863,6 +890,15 @@ func (authorizationProviderStub) Begin(_ context.Context, request AuthorizationS
 
 func (authorizationProviderStub) Disconnect(context.Context, AuthorizationDisconnectRequest) error {
 	return nil
+}
+
+type observingAuthorizationProvider struct {
+	authorizationProviderStub
+	observation AuthorizationObservation
+}
+
+func (provider observingAuthorizationProvider) Observe(context.Context, AuthorizationObserveRequest) (AuthorizationObservation, error) {
+	return provider.observation, nil
 }
 
 type compatibilityEvaluatorStub struct{}

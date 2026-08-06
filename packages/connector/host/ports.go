@@ -197,6 +197,12 @@ type AuthorizationProvider interface {
 	Disconnect(ctx context.Context, request AuthorizationDisconnectRequest) error
 }
 
+// AuthorizationObserver is an optional asynchronous extension implemented by
+// providers whose user interaction completes outside the daemon process.
+type AuthorizationObserver interface {
+	Observe(ctx context.Context, request AuthorizationObserveRequest) (AuthorizationObservation, error)
+}
+
 type AuthorizationStartRequest struct {
 	OperationID     string
 	ClientRequestID string
@@ -207,6 +213,11 @@ type AuthorizationStartRequest struct {
 type AuthorizationDisconnectRequest struct {
 	OperationID string
 	Connector   Connector
+}
+
+type AuthorizationObserveRequest struct {
+	Connector Connector
+	Session   AuthorizationSession
 }
 
 type CompatibilityEvaluator interface {

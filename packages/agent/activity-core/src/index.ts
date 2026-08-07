@@ -210,6 +210,7 @@ export type {
   AttentionReadIntent,
   AttentionReadRecord,
   AttentionObservationProvenance,
+  AttentionReadStateProvenance,
   AttentionReadState
 } from "./engine/attentionReadState.types.ts";
 export {

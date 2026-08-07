@@ -1301,10 +1301,13 @@ a historical Session that is temporarily injected into the visible summary
 list does not make an idle Session a newly discovered Activity task; only its
 live waiting, unread, or active facts can admit it to Priority.
 The Engine preserves this distinction at the Turn boundary: `turn/upserted`
-must carry explicit `live` provenance. Historical detail hydration writes
-canonical Turns with `live: false` and cannot create new unread attention;
-realtime projections and live reconcile writes use `live: true`. Existing
-durable unread markers remain authoritative during hydration.
+uses `live` provenance. Historical detail hydration writes canonical Turns with
+`live: false` and cannot create new unread attention; realtime projections and
+live reconcile writes use `live: true`. Omitted `live` remains compatible with
+older hosts and is treated as live, while historical producers must pass
+`false`. Existing durable read and unread markers remain authoritative during
+hydration; only a read marker synthesized by the current historical observation
+may be upgraded by a later live observation for the same completion.
 The activation is scoped by the workspace, authenticated user, rail filter,
 AgentGUI node, and Engine identity, not by the currently selected Session's
 provider or target; selecting a row must not rebuild a cross-provider Activity

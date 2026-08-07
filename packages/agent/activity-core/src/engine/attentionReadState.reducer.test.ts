@@ -49,7 +49,8 @@ test("a live canonical completion becomes unread and read intent clears it", () 
       isUnread: true,
       kind: "completed",
       markedUnreadByUser: false,
-      observationProvenance: "live"
+      observationProvenance: "live",
+      readStateProvenance: "live"
     }
   );
   state = attentionReadStateReducer(state, {
@@ -85,9 +86,34 @@ test("a live canonical completion becomes unread and read intent clears it", () 
   );
 });
 
-test("a historical canonical completion does not create unread attention", () => {
+test("an omitted live flag remains a live turn upsert for older hosts", () => {
   const state = attentionReadStateReducer(
     createInitialAttentionReadState(),
+    { type: "turn/upserted", turn },
+    acceptedTurnContext(turn)
+  ).state;
+
+  assert.equal(
+    state.partitionsByUserId["user-1"]?.recordsBySessionId["session-1"]
+      ?.isUnread,
+    true
+  );
+  assert.equal(
+    state.partitionsByUserId["user-1"]?.recordsBySessionId["session-1"]
+      ?.observationProvenance,
+    "live"
+  );
+});
+
+test("a historical canonical completion does not create unread attention", () => {
+  let state = attentionReadStateReducer(createInitialAttentionReadState(), {
+    type: "attention/readStateHydrated",
+    userId: "user-1",
+    completed: { readIds: [], unreadIds: [] },
+    failed: { readIds: [], unreadIds: [] }
+  }).state;
+  state = attentionReadStateReducer(
+    state,
     {
       live: false,
       turn,
@@ -147,7 +173,8 @@ test("manual unread provenance survives until the completion is read or replaced
       isUnread: true,
       kind: "completed",
       markedUnreadByUser: true,
-      observationProvenance: "live"
+      observationProvenance: "live",
+      readStateProvenance: "durable"
     }
   );
 

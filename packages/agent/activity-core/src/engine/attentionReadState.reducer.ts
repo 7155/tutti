@@ -7,6 +7,7 @@ import type {
 import type {
   AttentionCompletionKind,
   AttentionObservationProvenance,
+  AttentionReadStateProvenance,
   AttentionReadRecord,
   AttentionReadPartition,
   AttentionReadState
@@ -72,7 +73,7 @@ export function attentionReadStateReducer(
         state,
         context.sessionsById[turn.agentSessionId]?.userId ?? "",
         turn,
-        intent.type === "turn/projectionReceived" || intent.live
+        intent.type === "turn/projectionReceived" || intent.live !== false
       );
     }
     case "session/historyAuthoritativeSnapshotReceived":
@@ -285,10 +286,23 @@ function observeTurn(
     return unchanged(state);
   }
   const sameCompletion = current?.completionKey === completionKey;
-  const isUnread = hydratedUnread(partition, completionKey, kind) ?? live;
+  const hydratedIsUnread = hydratedUnread(partition, completionKey, kind);
+  const liveUpgradeMustIgnoreHistoricalMarker =
+    live && sameCompletion && current?.readStateProvenance === "historical";
+  const isUnread = liveUpgradeMustIgnoreHistoricalMarker
+    ? true
+    : (hydratedIsUnread ?? live);
   const observationProvenance: AttentionObservationProvenance = live
     ? "live"
     : "historical";
+  const readStateProvenance: AttentionReadStateProvenance =
+    liveUpgradeMustIgnoreHistoricalMarker
+      ? "live"
+      : hydratedIsUnread !== null
+        ? "durable"
+        : live
+          ? "live"
+          : "historical";
   const durablePartition = updateDurableMarker(
     partition,
     id,
@@ -306,7 +320,8 @@ function observeTurn(
         kind,
         markedUnreadByUser:
           sameCompletion && current ? current.markedUnreadByUser : false,
-        observationProvenance
+        observationProvenance,
+        readStateProvenance
       }
     }
   };
@@ -377,7 +392,12 @@ function setUnread(
     ...durablePartition,
     recordsBySessionId: {
       ...durablePartition.recordsBySessionId,
-      [id]: { ...next, isUnread, markedUnreadByUser }
+      [id]: {
+        ...next,
+        isUnread,
+        markedUnreadByUser,
+        readStateProvenance: "durable" as const
+      }
     }
   };
   const persistence = queuePersistence(nextPartition, userId);

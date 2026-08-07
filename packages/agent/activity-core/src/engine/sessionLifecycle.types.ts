@@ -154,9 +154,10 @@ export interface TurnUpsertedIntent {
   /**
    * Whether this upsert is a live observation capable of creating attention.
    * Historical detail hydration uses false while preserving the same
-   * canonical lifecycle write.
+   * canonical lifecycle write. Omission remains compatible with older hosts
+   * and is treated as a live observation.
    */
-  live: boolean;
+  live?: boolean;
   turn: AgentActivityTurn;
 }
 

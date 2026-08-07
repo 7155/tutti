@@ -505,7 +505,8 @@ test("rejected historical snapshot cannot replace newer attention", () => {
       isUnread: true,
       kind: "completed",
       markedUnreadByUser: false,
-      observationProvenance: "live"
+      observationProvenance: "live",
+      readStateProvenance: "live"
     }
   );
 

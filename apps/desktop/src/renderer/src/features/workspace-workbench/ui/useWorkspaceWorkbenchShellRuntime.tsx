@@ -8,10 +8,7 @@ import {
 } from "react";
 import { useService } from "@tutti-os/infra/di";
 import { IConnectorMarketModule } from "@tutti-os/connector-market/services";
-import {
-  connectConnectorFromComposer,
-  openConnectorDialogFromComposer
-} from "../services/connectConnectorFromComposer.ts";
+import { openConnectorDialogFromComposer } from "../services/openConnectorDialogFromComposer.ts";
 import type {
   WorkspaceAgentProvider,
   WorkspaceSummary
@@ -183,13 +180,6 @@ export function useWorkspaceWorkbenchShellRuntime({
   const handleCapabilitySettingsRequest = useCallback(
     (target: WorkspaceWorkbenchCapabilitySettingsTarget) => {
       if (typeof target !== "string") {
-        if (target.action === "connect") {
-          void connectConnectorFromComposer(
-            connectorMarketModule.root,
-            target.connectorKey
-          ).catch(() => undefined);
-          return;
-        }
         if (target.action === "open") {
           void openConnectorDialogFromComposer(
             connectorMarketModule.root,

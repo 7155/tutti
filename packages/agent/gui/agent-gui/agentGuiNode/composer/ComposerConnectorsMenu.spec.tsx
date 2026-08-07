@@ -119,6 +119,43 @@ describe("ComposerConnectorsMenu", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("replaces connected state with authorize when connector status refreshes", async () => {
+    const props = {
+      disabled: false,
+      labels,
+      onOpenConnector: vi.fn(),
+      onOpenConnectors: vi.fn()
+    };
+    const rendered = render(
+      <ComposerConnectorsMenu
+        {...props}
+        connectors={[connector("lark-cli", "available")]}
+      />
+    );
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Connectors" }), {
+      button: 0,
+      ctrlKey: false
+    });
+    expect(
+      await screen.findByTestId("agent-gui-composer-connector-lark-cli-status")
+    ).toHaveTextContent("Connected");
+
+    rendered.rerender(
+      <ComposerConnectorsMenu
+        {...props}
+        connectors={[connector("lark-cli", "authRequired")]}
+      />
+    );
+
+    expect(
+      screen.queryByTestId("agent-gui-composer-connector-lark-cli-status")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Authorize Connector lark-cli" })
+    ).toBeEnabled();
+  });
+
   it("limits the quick connector projection to ten catalog entries", async () => {
     const connectors = Array.from({ length: 12 }, (_, index) =>
       connector(`connector-${index}`, "setupRequired")

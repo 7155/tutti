@@ -445,7 +445,7 @@ export type AgentComposerCapabilitySettingsTarget =
   | {
       kind: "connector";
       connectorKey: string;
-      action?: "connect" | "open";
+      action?: "open";
     };
 
 export interface AgentComposerCapabilityMenuState {

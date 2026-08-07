@@ -97,7 +97,7 @@ export type WorkspaceWorkbenchCapabilitySettingsTarget =
   | {
       kind: "connector";
       connectorKey: string;
-      action?: "connect" | "open";
+      action?: "open";
     };
 
 export interface WorkspaceWorkbenchHostInput {

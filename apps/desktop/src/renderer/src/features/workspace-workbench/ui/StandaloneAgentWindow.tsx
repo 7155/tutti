@@ -46,10 +46,7 @@ import {
 } from "@renderer/features/workspace-app-center";
 import { useService } from "@tutti-os/infra/di";
 import { IConnectorMarketModule } from "@tutti-os/connector-market/services";
-import {
-  connectConnectorFromComposer,
-  openConnectorDialogFromComposer
-} from "../services/connectConnectorFromComposer.ts";
+import { openConnectorDialogFromComposer } from "../services/openConnectorDialogFromComposer.ts";
 import { IWorkspaceFileManagerService } from "@renderer/features/workspace-file-manager";
 import { IWorkspaceFilePreviewSurfaceHost } from "@renderer/features/workspace-file-preview";
 import type {
@@ -681,13 +678,6 @@ export function StandaloneAgentWindow({
   const handleCapabilitySettingsRequest = useCallback(
     (target: WorkspaceWorkbenchCapabilitySettingsTarget) => {
       if (typeof target !== "string") {
-        if (target.action === "connect") {
-          void connectConnectorFromComposer(
-            connectorMarketModule.root,
-            target.connectorKey
-          ).catch(() => undefined);
-          return;
-        }
         if (target.action === "open") {
           void openConnectorDialogFromComposer(
             connectorMarketModule.root,

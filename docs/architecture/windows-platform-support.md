@@ -22,8 +22,8 @@ Current implementation and evidence:
 | ------------------------ | ------------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | Desktop daemon lifecycle | Electron main process                                   | packages `tuttid.exe` and injects native resource paths    | Windows Alpha CI packages it                                                                    |
 | Workspace Apps           | daemon app lifecycle, health, state, and events         | `AppShellAdapter` invokes the packaged managed POSIX shell | Onboarding fat package is exercised in Windows Alpha CI                                         |
-| Terminal                 | terminal service and shared terminal contracts          | `TerminalProcessFactory` uses ConPTY                       | focused adapter and daemon WebSocket tests run in Windows Alpha CI                              |
-| Agent processes          | provider-neutral agent/runtime services                 | build-tagged executable, command, and process handling     | focused Windows tests run in Windows Alpha CI                                                   |
+| Terminal                 | terminal service and shared terminal contracts          | `TerminalProcessFactory` uses ConPTY                       | focused adapter and daemon WebSocket tests run in Windows daemon-adapter and Alpha CI           |
+| Agent processes          | provider-neutral agent/runtime services                 | build-tagged executable, command, and process handling     | focused Windows tests run in Agent adapter and Alpha CI                                         |
 | Browser                  | browser service contract                                | focused Windows executable/profile path behavior           | focused Windows tests exist; full browser E2E remains a promotion gate                          |
 | Computer use             | computer service contract                               | Cua Driver 0.18.0 doctor/MCP boundary and owned daemon     | focused Windows tests and opt-in MCP smoke exist; screenshot/input E2E remains a promotion gate |
 | Files                    | workspace file APIs and portable Go filesystem behavior | add a narrow adapter only where Windows semantics differ   | full Windows Files E2E remains a promotion gate                                                 |
@@ -169,6 +169,10 @@ MCP contract, and real screenshot/input gates before changing the pin.
 
 The Alpha workflow is intentionally separate from the formal desktop release:
 
+- `.github/workflows/windows-agent-adapters.yml` and
+  `.github/workflows/windows-daemon-adapters.yml` provide focused pull-request
+  coverage and maintain reusable caches on matching `main` pushes; they do not
+  produce desktop packages;
 - `.github/workflows/windows-desktop-alpha.yml` builds and tests Windows x64;
 - the output is an unsigned NSIS installer uploaded as a workflow artifact;
 - the workflow does not publish a GitHub Release or mutate stable/prerelease

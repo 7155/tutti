@@ -445,6 +445,9 @@ export function AgentComposerView(input: Props): React.JSX.Element {
                         ? input.addExternalPromptEntries
                         : undefined
                     }
+                    onResolvePastedPath={
+                      input.props.resolvePastedPath ?? undefined
+                    }
                   />
                   {!isHeroLayout ? composerActionButton : null}
                 </div>

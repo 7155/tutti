@@ -10,6 +10,7 @@ import type { AgentPromptContentBlock } from "../../../shared/contracts/dto/agen
 import type { WorkspaceUserProjectI18nRuntime } from "@tutti-os/workspace-user-project/i18n";
 import type { WorkspaceLinkAction } from "../../../actions/workspaceLinkActions";
 import type { AgentContextMentionItem } from "../agentRichText/agentFileMentionExtension";
+import type { AgentRichTextEditorProps } from "../agentRichText/AgentRichTextEditor.types";
 import type { AgentExternalPromptEntryResolver } from "../model/agentExternalPromptEntries";
 import type { AgentExternalPromptFilePreparer } from "../model/agentExternalPromptFiles";
 import type { AgentProjectPathChangeMetadata } from "../AgentComposerSettingsMenus";
@@ -434,6 +435,7 @@ export interface AgentComposerProps {
     | null;
   resolveExternalPromptEntries?: AgentExternalPromptEntryResolver | null;
   prepareExternalPromptFiles?: AgentExternalPromptFilePreparer | null;
+  resolvePastedPath?: AgentRichTextEditorProps["onResolvePastedPath"] | null;
   promptAssetLimit?: number | null;
   selectProjectDirectory?: () => Promise<{ path: string } | null>;
   onRequestGitBranches?: AgentComposerGitBranchLoader | null;

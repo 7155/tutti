@@ -1,6 +1,7 @@
 package computer
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -10,7 +11,7 @@ import (
 func TestResolveComputerMCPCommandHonorsExplicitOverrides(t *testing.T) {
 	t.Setenv(computerMCPCommandOverrideEnv, "custom-cua-driver")
 	t.Setenv(computerMCPEntryPathEnv, "ignored-entry")
-	if got := resolveComputerMCPCommand(nil); len(got) != 2 || got[0] != "custom-cua-driver" || got[1] != "mcp" {
+	if got := resolveComputerMCPCommand(context.TODO()); len(got) != 2 || got[0] != "custom-cua-driver" || got[1] != "mcp" {
 		t.Fatalf("resolveComputerMCPCommand() = %#v", got)
 	}
 }
@@ -30,7 +31,7 @@ func TestResolveComputerMCPCommandDiscoversWindowsInstall(t *testing.T) {
 	t.Setenv(computerMCPCommandOverrideEnv, "")
 	t.Setenv(computerMCPEntryPathEnv, "")
 	t.Setenv("LOCALAPPDATA", root)
-	got := resolveComputerMCPCommand(nil)
+	got := resolveComputerMCPCommand(context.TODO())
 	if len(got) != 2 || got[0] != entry || got[1] != "mcp" {
 		t.Fatalf("resolveComputerMCPCommand() = %#v, want %q", got, entry)
 	}

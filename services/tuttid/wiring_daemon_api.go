@@ -255,12 +255,7 @@ func buildDaemonAPI(
 	}
 	agentRuntimePreparer := runtimeprep.NewDefaultPreparer(tuttitypes.DefaultStateDir())
 	agentRuntimePreparer.RegisterProvider(tuttiagentservice.NewPreparer(tuttitypes.DefaultStateDir()))
-	agentRuntimePreparer.ComputerUseAvailable = func() bool {
-		return runtimeprep.ComputerUseDefaultEnabled() && computerService != nil && computerService.CheckReady(context.Background()) == nil
-	}
-	agentRuntimePreparer.BrowserUseAvailable = func() bool {
-		return runtimeprep.BrowserUseDefaultEnabled() && browserService != nil && browserService.CheckReady() == nil
-	}
+	configureAgentRuntimeAvailability(agentRuntimePreparer, browserService, computerService)
 	userProjectService := userprojectservice.Service{
 		Store:     userProjectStore,
 		Publisher: eventstreamservice.UserProjectPublisher{Service: events},

@@ -1451,6 +1451,9 @@ func TestReporterProjectsTurnFailureErrorToStatePatch(t *testing.T) {
 	if item.Payload["detail"] != "API Error: 403 Key limit exceeded (total limit)" {
 		t.Fatalf("visible failure detail = %#v", item.Payload["detail"])
 	}
+	if item.Semantics == nil || !item.Semantics.UserVisibleAssistantResponse {
+		t.Fatalf("visible failure semantics = %#v, want explicit user-visible assistant response", item.Semantics)
+	}
 }
 
 func TestReporterDoesNotSendEmptyOrUnreportableBatches(t *testing.T) {

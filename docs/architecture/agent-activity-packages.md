@@ -58,12 +58,13 @@ Daemon packages retain compatibility aliases, while runtime mechanics remain
 daemon-owned.
 
 New canonical messages always carry an explicit
-`userVisibleAssistantResponse` classification. Provider adapters classify the
-message before the runtime reporter writes it: user-facing assistant text and
-plans are `true`; user input, reasoning, tool calls, and system notices are
-`false`. Replication and read contracts continue to accept a missing value from
-older stored messages, so compatibility stays at the read boundary instead of
-being inferred by presentation code.
+`userVisibleAssistantResponse` classification. Runtime message producers
+classify the message before reporter and local-store projections write it:
+user-facing assistant text, plans, and visible failures are `true`; user input,
+reasoning, tool calls, and system notices are `false`. Every projection preserves
+that classification. Replication and read contracts continue to accept a
+missing value from older stored messages, so compatibility stays at the read
+boundary instead of being inferred by presentation code.
 
 ## Responsibilities
 

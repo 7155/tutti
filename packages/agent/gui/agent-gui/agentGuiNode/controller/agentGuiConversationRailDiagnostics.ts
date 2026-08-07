@@ -88,11 +88,35 @@ export interface ConversationRailScopeChangeDiagnostic {
   workspaceId: string;
 }
 
+export interface ConversationActivityDiagnostic {
+  available: boolean;
+  activeCandidateCount: number;
+  candidateCount: number;
+  deletedCandidateCount: number;
+  enabled: boolean;
+  event: "agent_gui.conversation_activity.state_changed";
+  idleCandidateCount: number;
+  lateIdleIgnoredCount: number;
+  operation: "configure" | "toggle_on" | "toggle_off";
+  priorityAddedCount: number;
+  priorityAfterCount: number;
+  priorityBeforeCount: number;
+  priorityRemovedCount: number;
+  priorityRetainedCount: number;
+  recentAfterCount: number;
+  recentBeforeCount: number;
+  sameContext: boolean;
+  unreadCandidateCount: number;
+  waitingCandidateCount: number;
+  workspaceId: string;
+}
+
 export type ConversationRailDiagnosticLogger = (
   payload:
     | ConversationRailFirstPagesDiagnostic
     | ConversationRailProviderSwitchDiagnostic
     | ConversationRailScopeChangeDiagnostic
+    | ConversationActivityDiagnostic
 ) => void;
 
 interface PendingProviderSwitchDiagnostic {
@@ -529,7 +553,8 @@ export function createConversationRailDiagnosticLogger(
         reportDiagnostic.call(runtime, {
           details: { ...payload },
           event: payload.event,
-          level: payload.status === "error" ? "warn" : "info",
+          level:
+            "status" in payload && payload.status === "error" ? "warn" : "info",
           source: "agent-gui",
           workspaceId: payload.workspaceId
         })
@@ -539,6 +564,20 @@ export function createConversationRailDiagnosticLogger(
       ignoreConversationRailDiagnosticFailure(error);
     }
   };
+}
+
+export function emitConversationActivityDiagnostic(input: {
+  diagnosticLogger: ConversationRailDiagnosticLogger;
+  payload: Omit<ConversationActivityDiagnostic, "event">;
+}): void {
+  try {
+    input.diagnosticLogger({
+      ...input.payload,
+      event: "agent_gui.conversation_activity.state_changed"
+    });
+  } catch (error) {
+    ignoreConversationRailDiagnosticFailure(error);
+  }
 }
 
 function ignoreConversationRailDiagnosticFailure(error: unknown): void {

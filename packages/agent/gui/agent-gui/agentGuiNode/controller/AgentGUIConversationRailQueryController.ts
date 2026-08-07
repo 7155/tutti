@@ -61,8 +61,7 @@ const SECTION_REFRESH_LIMIT_MAX = 100;
 type Listener = (snapshot: AgentGUIConversationRailQuerySnapshot) => void;
 type PublicationRefreshState = "idle" | "pending" | "failed";
 export class AgentGUIConversationRailQueryController {
-  readonly activityController: AgentGUIConversationActivityController =
-    createAgentGUIConversationActivityController();
+  readonly activityController: AgentGUIConversationActivityController;
   readonly getSnapshot = (): AgentGUIConversationRailQuerySnapshot =>
     this.snapshot;
   readonly isInteractionLocked = (): boolean =>
@@ -152,6 +151,10 @@ export class AgentGUIConversationRailQueryController {
       positiveInteger(input.sectionRefreshLimitMax, SECTION_REFRESH_LIMIT_MAX)
     );
     this.workspaceId = input.workspaceId;
+    this.activityController = createAgentGUIConversationActivityController({
+      diagnosticLogger: this.diagnosticLogger,
+      workspaceId: this.workspaceId
+    });
     const initialEngineState = this.engine.getSnapshot();
     this.searchController = new AgentGUIConversationRailSearchController({
       isSectionPublicationBlocked: () =>

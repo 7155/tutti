@@ -1947,10 +1947,12 @@ test("WorkspaceAgentActivityService preserves realtime turn provenance for atten
   let messageReconcileCalls = 0;
   const running = workspaceAgentSession({
     status: "working",
+    userId: "local",
     updatedAt: "2026-07-14T00:00:01.000Z"
   });
   const settled = workspaceAgentSession({
     status: "completed",
+    userId: "local",
     updatedAt: "2026-07-14T00:00:02.000Z"
   });
   const service = new WorkspaceAgentActivityService({
@@ -2049,10 +2051,12 @@ test("WorkspaceAgentActivityService preserves live provenance across a transient
   let getCalls = 0;
   const running = workspaceAgentSession({
     status: "working",
+    userId: "local",
     updatedAt: "2026-07-14T00:00:01.000Z"
   });
   const settled = workspaceAgentSession({
     status: "completed",
+    userId: "local",
     updatedAt: "2026-07-14T00:00:02.000Z"
   });
   const service = new WorkspaceAgentActivityService({
@@ -3796,6 +3800,7 @@ function workspaceAgentSession(overrides: {
   submitAvailability?: Record<string, unknown>;
   turnLifecycle?: Record<string, unknown>;
   updatedAt?: string;
+  userId?: string;
 }): Record<string, unknown> {
   const updatedAtUnixMs = overrides.updatedAt
     ? Date.parse(overrides.updatedAt)
@@ -3857,6 +3862,7 @@ function workspaceAgentSession(overrides: {
     title: "Session 1",
     tuttiModeActivation: null,
     updatedAtUnixMs,
+    ...(overrides.userId ? { userId: overrides.userId } : {}),
     visible: true
   };
 }

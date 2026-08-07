@@ -1,9 +1,14 @@
 import {
   createAgentGUIConversationActivityActivation,
   reconcileAgentGUIConversationActivityActivation,
+  resolveAgentGUIConversationActivityPriorityReason,
   type AgentGUIConversationActivityActivation
 } from "../model/agentGuiConversationActivityView";
 import type { AgentGUIConversationSummary } from "../model/agentGuiConversationTypes";
+import {
+  emitConversationActivityDiagnostic,
+  type ConversationRailDiagnosticLogger
+} from "./agentGuiConversationRailDiagnostics";
 
 const EMPTY_DELETED_SESSION_IDS: Readonly<Record<string, true>> = {};
 
@@ -44,10 +49,17 @@ const AVAILABLE_OFF_SNAPSHOT: AgentGUIConversationActivityControllerSnapshot = {
   available: true
 };
 
-export function createAgentGUIConversationActivityController(): AgentGUIConversationActivityController {
+export function createAgentGUIConversationActivityController(
+  options: {
+    diagnosticLogger?: ConversationRailDiagnosticLogger;
+    workspaceId?: string;
+  } = {}
+): AgentGUIConversationActivityController {
   let snapshot = DISABLED_SNAPSHOT;
   let latestInput: AgentGUIConversationActivityControllerInput | null = null;
   const listeners = new Set<() => void>();
+  const diagnosticLogger = options.diagnosticLogger;
+  const workspaceId = options.workspaceId ?? "";
 
   const publish = (
     next: AgentGUIConversationActivityControllerSnapshot
@@ -60,15 +72,38 @@ export function createAgentGUIConversationActivityController(): AgentGUIConversa
   const configure = (
     input: AgentGUIConversationActivityControllerInput
   ): void => {
+    const previousSnapshot = snapshot;
     latestInput = input;
     if (!input.available) {
       if (snapshot !== DISABLED_SNAPSHOT) publish(DISABLED_SNAPSHOT);
+      reportActivityDiagnostic({
+        candidates: [],
+        deletedSessionIds: input.deletedSessionIds,
+        input,
+        lateIdleIgnoredCount: 0,
+        nextSnapshot: snapshot,
+        operation: "configure",
+        previousSnapshot,
+        sameContext: false
+      });
       return;
     }
     if (!snapshot.enabled) {
       if (snapshot !== AVAILABLE_OFF_SNAPSHOT) {
         publish(AVAILABLE_OFF_SNAPSHOT);
       }
+      reportActivityDiagnostic({
+        candidates: input.conversations.filter(
+          (conversation) => !input.deletedSessionIds?.[conversation.id]
+        ),
+        deletedSessionIds: input.deletedSessionIds,
+        input,
+        lateIdleIgnoredCount: 0,
+        nextSnapshot: snapshot,
+        operation: "configure",
+        previousSnapshot,
+        sameContext: false
+      });
       return;
     }
 
@@ -93,11 +128,25 @@ export function createAgentGUIConversationActivityController(): AgentGUIConversa
       candidates,
       deletedSessionIds
     );
+    const lateIdleIgnoredCount = countLateIdleCandidates(
+      candidates,
+      sameContext ? snapshot.activation : null
+    );
     if (
       sameContext &&
       activation === snapshot.activation &&
       conversationCache === snapshot.conversationCache
     ) {
+      reportActivityDiagnostic({
+        candidates,
+        deletedSessionIds,
+        input,
+        lateIdleIgnoredCount,
+        nextSnapshot: snapshot,
+        operation: "configure",
+        previousSnapshot,
+        sameContext
+      });
       return;
     }
     publish({
@@ -108,14 +157,35 @@ export function createAgentGUIConversationActivityController(): AgentGUIConversa
       identityKey: input.identityKey,
       scopeKey: input.scopeKey
     });
+    reportActivityDiagnostic({
+      candidates,
+      deletedSessionIds,
+      input,
+      lateIdleIgnoredCount,
+      nextSnapshot: snapshot,
+      operation: "configure",
+      previousSnapshot,
+      sameContext
+    });
   };
 
   const toggle = (): void => {
     const input = latestInput;
     if (!input) return;
     if (!input.available) return;
+    const previousSnapshot = snapshot;
     if (snapshot.enabled) {
       publish(AVAILABLE_OFF_SNAPSHOT);
+      reportActivityDiagnostic({
+        candidates: [],
+        deletedSessionIds: input.deletedSessionIds,
+        input,
+        lateIdleIgnoredCount: 0,
+        nextSnapshot: snapshot,
+        operation: "toggle_off",
+        previousSnapshot,
+        sameContext: true
+      });
       return;
     }
     const deletedSessionIds =
@@ -138,6 +208,74 @@ export function createAgentGUIConversationActivityController(): AgentGUIConversa
       identityKey: input.identityKey,
       scopeKey: input.scopeKey
     });
+    reportActivityDiagnostic({
+      candidates,
+      deletedSessionIds,
+      input,
+      lateIdleIgnoredCount: 0,
+      nextSnapshot: snapshot,
+      operation: "toggle_on",
+      previousSnapshot,
+      sameContext: false
+    });
+  };
+
+  const reportActivityDiagnostic = (input: {
+    candidates: readonly AgentGUIConversationSummary[];
+    deletedSessionIds?: Readonly<Record<string, true>>;
+    input: AgentGUIConversationActivityControllerInput;
+    lateIdleIgnoredCount: number;
+    nextSnapshot: AgentGUIConversationActivityControllerSnapshot;
+    operation: "configure" | "toggle_on" | "toggle_off";
+    previousSnapshot: AgentGUIConversationActivityControllerSnapshot;
+    sameContext: boolean;
+  }): void => {
+    if (!diagnosticLogger) return;
+    const previousPriorityIds = new Set(
+      input.previousSnapshot.activation?.priority.map((member) => member.id)
+    );
+    const nextPriorityIds = new Set(
+      input.nextSnapshot.activation?.priority.map((member) => member.id)
+    );
+    const priorityAddedCount = [...nextPriorityIds].filter(
+      (id) => !previousPriorityIds.has(id)
+    ).length;
+    const priorityRemovedCount = [...previousPriorityIds].filter(
+      (id) => !nextPriorityIds.has(id)
+    ).length;
+    const priorityRetainedCount = [...nextPriorityIds].filter((id) =>
+      previousPriorityIds.has(id)
+    ).length;
+    const deletedSessionIds = input.deletedSessionIds ?? {};
+    const deletedCandidateCount = input.input.conversations.filter(
+      (conversation) => deletedSessionIds[conversation.id]
+    ).length;
+    const candidateStats = summarizeActivityCandidates(input.candidates);
+    emitConversationActivityDiagnostic({
+      diagnosticLogger,
+      payload: {
+        activeCandidateCount: candidateStats.activeCandidateCount,
+        available: input.nextSnapshot.available,
+        candidateCount: input.candidates.length,
+        deletedCandidateCount,
+        enabled: input.nextSnapshot.enabled,
+        idleCandidateCount: candidateStats.idleCandidateCount,
+        lateIdleIgnoredCount: input.lateIdleIgnoredCount,
+        operation: input.operation,
+        priorityAddedCount,
+        priorityAfterCount: nextPriorityIds.size,
+        priorityBeforeCount: previousPriorityIds.size,
+        priorityRemovedCount,
+        priorityRetainedCount,
+        recentAfterCount: input.nextSnapshot.activation?.recent.length ?? 0,
+        recentBeforeCount:
+          input.previousSnapshot.activation?.recent.length ?? 0,
+        sameContext: input.sameContext,
+        unreadCandidateCount: candidateStats.unreadCandidateCount,
+        waitingCandidateCount: candidateStats.waitingCandidateCount,
+        workspaceId
+      }
+    });
   };
 
   return {
@@ -149,6 +287,50 @@ export function createAgentGUIConversationActivityController(): AgentGUIConversa
     configure,
     toggle
   };
+}
+
+function summarizeActivityCandidates(
+  conversations: readonly AgentGUIConversationSummary[]
+): {
+  activeCandidateCount: number;
+  idleCandidateCount: number;
+  unreadCandidateCount: number;
+  waitingCandidateCount: number;
+} {
+  let activeCandidateCount = 0;
+  let idleCandidateCount = 0;
+  let unreadCandidateCount = 0;
+  let waitingCandidateCount = 0;
+  for (const conversation of conversations) {
+    const reason =
+      resolveAgentGUIConversationActivityPriorityReason(conversation);
+    if (reason === "active") activeCandidateCount += 1;
+    else if (reason === "unread") unreadCandidateCount += 1;
+    else if (reason === "waiting") waitingCandidateCount += 1;
+    else idleCandidateCount += 1;
+  }
+  return {
+    activeCandidateCount,
+    idleCandidateCount,
+    unreadCandidateCount,
+    waitingCandidateCount
+  };
+}
+
+function countLateIdleCandidates(
+  conversations: readonly AgentGUIConversationSummary[],
+  activation: AgentGUIConversationActivityActivation | null
+): number {
+  if (!activation) return 0;
+  const existingIds = new Set([
+    ...activation.priority.map((member) => member.id),
+    ...activation.recent.map((member) => member.id)
+  ]);
+  return conversations.filter(
+    (conversation) =>
+      !existingIds.has(conversation.id) &&
+      resolveAgentGUIConversationActivityPriorityReason(conversation) === null
+  ).length;
 }
 
 function mergeConversationCache(

@@ -6,6 +6,7 @@ import type {
 } from "./types.ts";
 import type {
   AttentionCompletionKind,
+  AttentionObservationProvenance,
   AttentionReadRecord,
   AttentionReadPartition,
   AttentionReadState
@@ -71,7 +72,7 @@ export function attentionReadStateReducer(
         state,
         context.sessionsById[turn.agentSessionId]?.userId ?? "",
         turn,
-        true
+        intent.type === "turn/projectionReceived" || intent.live
       );
     }
     case "session/historyAuthoritativeSnapshotReceived":
@@ -277,8 +278,17 @@ function observeTurn(
   const partition = partitionFor(state, userId);
   const completionKey = `turn:${id}:${turnId}:${kind}`;
   const current = partition.recordsBySessionId[id];
-  if (current?.completionKey === completionKey) return unchanged(state);
+  if (
+    current?.completionKey === completionKey &&
+    (current.observationProvenance === "live" || !live)
+  ) {
+    return unchanged(state);
+  }
+  const sameCompletion = current?.completionKey === completionKey;
   const isUnread = hydratedUnread(partition, completionKey, kind) ?? live;
+  const observationProvenance: AttentionObservationProvenance = live
+    ? "live"
+    : "historical";
   const durablePartition = updateDurableMarker(
     partition,
     id,
@@ -290,7 +300,14 @@ function observeTurn(
     ...durablePartition,
     recordsBySessionId: {
       ...durablePartition.recordsBySessionId,
-      [id]: { completionKey, isUnread, kind, markedUnreadByUser: false }
+      [id]: {
+        completionKey,
+        isUnread,
+        kind,
+        markedUnreadByUser:
+          sameCompletion && current ? current.markedUnreadByUser : false,
+        observationProvenance
+      }
     }
   };
   const persistence = queuePersistence(nextPartition, userId);

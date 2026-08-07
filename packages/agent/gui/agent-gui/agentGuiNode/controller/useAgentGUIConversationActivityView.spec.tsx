@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AgentGUIConversationSummary } from "../model/agentGuiConversationTypes";
 import { createAgentGUIConversationActivityController } from "./agentGUIConversationActivityController";
 import { useAgentGUIConversationActivityView } from "./useAgentGUIConversationActivityView";
@@ -203,6 +203,43 @@ describe("useAgentGUIConversationActivityView", () => {
     expect(rendered.result.current.conversationsById.get("unchanged")).toBe(
       unchangedBefore
     );
+  });
+
+  it("reports late idle candidates without exposing session content", () => {
+    const diagnosticLogger = vi.fn();
+    const activityController = createAgentGUIConversationActivityController({
+      diagnosticLogger,
+      workspaceId: "workspace-1"
+    });
+
+    configure(activityController, [CONVERSATION]);
+    activityController.toggle();
+    configure(activityController, [
+      CONVERSATION,
+      {
+        ...CONVERSATION,
+        id: "historical-session",
+        status: "ready",
+        title: "Historical title"
+      }
+    ]);
+
+    const diagnostic = diagnosticLogger.mock.lastCall?.[0];
+    expect(diagnostic).toMatchObject({
+      activeCandidateCount: 1,
+      candidateCount: 2,
+      event: "agent_gui.conversation_activity.state_changed",
+      idleCandidateCount: 1,
+      lateIdleIgnoredCount: 1,
+      operation: "configure",
+      priorityAfterCount: 1,
+      priorityBeforeCount: 1,
+      priorityAddedCount: 0,
+      priorityRemovedCount: 0,
+      workspaceId: "workspace-1"
+    });
+    expect(JSON.stringify(diagnostic)).not.toContain("historical-session");
+    expect(JSON.stringify(diagnostic)).not.toContain("Historical title");
   });
 });
 

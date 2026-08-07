@@ -1,10 +1,13 @@
 export type AttentionCompletionKind = "completed" | "failed";
+export type AttentionObservationProvenance = "historical" | "live";
 
 export interface AttentionReadRecord {
   completionKey: string;
   isUnread: boolean;
   kind: AttentionCompletionKind;
   markedUnreadByUser: boolean;
+  /** Whether this completion has been observed from a live event in this run. */
+  observationProvenance: AttentionObservationProvenance;
 }
 
 export interface AttentionReadPartition {

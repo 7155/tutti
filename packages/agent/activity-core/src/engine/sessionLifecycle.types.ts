@@ -151,6 +151,12 @@ export interface SessionMetadataPatchedIntent {
 
 export interface TurnUpsertedIntent {
   type: "turn/upserted";
+  /**
+   * Whether this upsert is a live observation capable of creating attention.
+   * Historical detail hydration uses false while preserving the same
+   * canonical lifecycle write.
+   */
+  live: boolean;
   turn: AgentActivityTurn;
 }
 

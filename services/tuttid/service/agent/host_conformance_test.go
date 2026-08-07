@@ -435,6 +435,22 @@ func (d *legacyHostConformanceDriver) Reset(_ context.Context, fixture hostconfo
 			Evidence: map[string]any{"confidence": "authoritative"},
 		}, nil
 	}
+	if fixture.DisconnectGoalFenceDelivery {
+		var disconnectOnce sync.Once
+		d.runtime.goalGenerationFenceHook = func(_ context.Context, input RuntimeGoalGenerationFenceInput) error {
+			disconnected := false
+			disconnectOnce.Do(func() {
+				d.runtime.mu.Lock()
+				delete(d.runtime.sessions, input.WorkspaceID+":"+input.AgentSessionID)
+				d.runtime.mu.Unlock()
+				disconnected = true
+			})
+			if disconnected {
+				return ErrSessionNotFound
+			}
+			return nil
+		}
+	}
 	if fixture.LiveOnlySession != nil {
 		seed := *fixture.LiveOnlySession
 		settings := seed.Settings
@@ -1207,7 +1223,11 @@ func (d *legacyHostConformanceDriver) Metrics() hostconformance.Metrics {
 			last.RequireProviderAcceptance
 	}
 	if len(d.runtime.resumeCalls) > 0 {
-		metrics.LastResumeRecreate = d.runtime.resumeCalls[len(d.runtime.resumeCalls)-1].RecreateIfMissing
+		lastResume := d.runtime.resumeCalls[len(d.runtime.resumeCalls)-1]
+		metrics.LastResumeRecreate = lastResume.RecreateIfMissing
+		metrics.LastResumeGoalGenerationFences = append(
+			[]agenthost.RuntimeGoalGenerationFenceInput(nil), lastResume.GoalGenerationFences...,
+		)
 	}
 	return metrics
 }

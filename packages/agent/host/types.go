@@ -308,6 +308,9 @@ type RuntimeResumeInput struct {
 	ProviderTargetRef      map[string]any
 	Metadata               storesqlite.SessionMetadata
 	InternalRuntimeContext map[string]any
+	// GoalGenerationFences are loaded from durable Host state and retained by
+	// the Runtime before the resumed Session is exposed for Goal/Turn work.
+	GoalGenerationFences []RuntimeGoalGenerationFenceInput
 	// RecreateIfMissing lets the runtime start a fresh provider session in place
 	// when the existing one can't be restored locally (imported conversations),
 	// instead of surfacing a non-recoverable restore error.

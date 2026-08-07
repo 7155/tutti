@@ -63,8 +63,12 @@ type Fixture struct {
 	AcceptGoalControlsOnly bool
 	CompleteGoalOnSet      bool
 	EmptyPauseResumeGoal   bool
-	FailCommitObserver     bool
-	RejectInitialExec      bool
+	// DisconnectGoalFenceDelivery drops the live Runtime Session during the
+	// first fence delivery, modeling a Host restart with accepted durable intent
+	// but no in-memory provider Session.
+	DisconnectGoalFenceDelivery bool
+	FailCommitObserver          bool
+	RejectInitialExec           bool
 	// GuidanceTargetMismatch makes the test runtime reject guidance whose
 	// explicit TurnID is not the Session.ActiveTurnID. It models the runtime
 	// target race without exposing a runtime/provider API to scenarios.
@@ -146,6 +150,7 @@ type Metrics struct {
 	LastExecRequiresProviderAcceptance bool
 	LastClosePreservedCanonicalState   bool
 	LastResumeRecreate                 bool
+	LastResumeGoalGenerationFences     []agenthost.RuntimeGoalGenerationFenceInput
 	RecoverySteps                      []string
 	DeleteAdmissionPlans               []agenthost.DeleteSessionsPlan
 	DeleteReports                      []agenthost.DeleteSessionsReport

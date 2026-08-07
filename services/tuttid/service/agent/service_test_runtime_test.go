@@ -24,42 +24,43 @@ import (
 )
 
 type fakeRuntime struct {
-	mu                     sync.Mutex
-	nextID                 int
-	canResumeCalls         []RuntimeResumeInput
-	canResumeHook          func(RuntimeResumeInput) bool
-	cancelCalls            []RuntimeCancelInput
-	cancelResult           RuntimeCancelResult
-	cancelResultSet        bool
-	closeErr               error
-	closeCalls             []RuntimeCloseInput
-	execErr                error
-	execHook               func(RuntimeExecInput) (RuntimeExecResult, error)
-	execCalls              []RuntimeExecInput
-	guidanceTargetMismatch bool
-	guidanceTarget         string
-	guidanceProviderCalls  int
-	provenanceErr          error
-	provenanceHook         func(RuntimeSubmitProvenanceInput) error
-	provenanceCalls        []RuntimeSubmitProvenanceInput
-	goalControlCalls       []RuntimeGoalControlInput
-	goalControlHook        func(context.Context, RuntimeGoalControlInput) (RuntimeGoalControlResult, error)
-	goalReconcileCalls     []RuntimeGoalControlInput
-	goalReconcileHook      func(context.Context, RuntimeGoalControlInput) (RuntimeGoalReconcileResult, error)
-	goalRecoveryPolicyHook func(context.Context, RuntimeGoalControlInput) (RuntimeGoalRecoveryPolicy, error)
-	goalGenerationFences   []RuntimeGoalGenerationFenceInput
-	resumeCalls            []RuntimeResumeInput
-	sessions               map[string]ProviderRuntimeSession
-	submitInteractiveCalls []RuntimeSubmitInteractiveInput
-	submitInteractiveErr   error
-	interactiveDisposition RuntimeInteractiveDisposition
-	startErr               error
-	startCalls             []RuntimeStartInput
-	startHook              func(RuntimeStartInput, ProviderRuntimeSession) ProviderRuntimeSession
-	updateSettingsCalls    []RuntimeUpdateSettingsInput
-	closeHook              func(RuntimeCloseInput)
-	validateErr            error
-	validateCalls          []RuntimeExecInput
+	mu                      sync.Mutex
+	nextID                  int
+	canResumeCalls          []RuntimeResumeInput
+	canResumeHook           func(RuntimeResumeInput) bool
+	cancelCalls             []RuntimeCancelInput
+	cancelResult            RuntimeCancelResult
+	cancelResultSet         bool
+	closeErr                error
+	closeCalls              []RuntimeCloseInput
+	execErr                 error
+	execHook                func(RuntimeExecInput) (RuntimeExecResult, error)
+	execCalls               []RuntimeExecInput
+	guidanceTargetMismatch  bool
+	guidanceTarget          string
+	guidanceProviderCalls   int
+	provenanceErr           error
+	provenanceHook          func(RuntimeSubmitProvenanceInput) error
+	provenanceCalls         []RuntimeSubmitProvenanceInput
+	goalControlCalls        []RuntimeGoalControlInput
+	goalControlHook         func(context.Context, RuntimeGoalControlInput) (RuntimeGoalControlResult, error)
+	goalReconcileCalls      []RuntimeGoalControlInput
+	goalReconcileHook       func(context.Context, RuntimeGoalControlInput) (RuntimeGoalReconcileResult, error)
+	goalRecoveryPolicyHook  func(context.Context, RuntimeGoalControlInput) (RuntimeGoalRecoveryPolicy, error)
+	goalGenerationFences    []RuntimeGoalGenerationFenceInput
+	goalGenerationFenceHook func(context.Context, RuntimeGoalGenerationFenceInput) error
+	resumeCalls             []RuntimeResumeInput
+	sessions                map[string]ProviderRuntimeSession
+	submitInteractiveCalls  []RuntimeSubmitInteractiveInput
+	submitInteractiveErr    error
+	interactiveDisposition  RuntimeInteractiveDisposition
+	startErr                error
+	startCalls              []RuntimeStartInput
+	startHook               func(RuntimeStartInput, ProviderRuntimeSession) ProviderRuntimeSession
+	updateSettingsCalls     []RuntimeUpdateSettingsInput
+	closeHook               func(RuntimeCloseInput)
+	validateErr             error
+	validateCalls           []RuntimeExecInput
 }
 
 type fakeAgentTargetStore struct {
@@ -521,10 +522,14 @@ func (f *fakeRuntime) GoalRecoveryPolicy(ctx context.Context, input RuntimeGoalC
 	return RuntimeGoalRecoveryPolicy{QuerySupported: true, ReplaySetAfterRestart: true}, nil
 }
 
-func (f *fakeRuntime) FenceGoalGeneration(_ context.Context, input RuntimeGoalGenerationFenceInput) error {
+func (f *fakeRuntime) FenceGoalGeneration(ctx context.Context, input RuntimeGoalGenerationFenceInput) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.goalGenerationFences = append(f.goalGenerationFences, input)
+	hook := f.goalGenerationFenceHook
+	f.mu.Unlock()
+	if hook != nil {
+		return hook(ctx, input)
+	}
 	return nil
 }
 

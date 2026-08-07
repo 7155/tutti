@@ -558,7 +558,14 @@ export type AgentGUIConversationRailLabels = Pick<
   | "viewActivity"
   | "viewActivityNeedsAttention"
 >;
-export interface AgentGUINodeViewProps {
+type AgentGUIComposerExternalPromptProps = Pick<
+  AgentComposerProps,
+  | "resolveExternalPromptEntries"
+  | "prepareExternalPromptFiles"
+  | "resolvePastedPath"
+  | "promptAssetLimit"
+>;
+export interface AgentGUINodeViewProps extends AgentGUIComposerExternalPromptProps {
   viewModel: AgentGUINodeViewModel;
   referenceProvenanceFilters?: AgentComposerReferenceProvenanceFilters | null;
   sessionInputHistoryEnabled?: boolean;
@@ -710,10 +717,6 @@ export interface AgentGUINodeViewProps {
   onWorkspaceFileReferencesAdded?: (
     references: readonly WorkspaceFileReference[]
   ) => void | Promise<void>;
-  resolveExternalPromptEntries?: AgentComposerProps["resolveExternalPromptEntries"];
-  prepareExternalPromptFiles?: AgentComposerProps["prepareExternalPromptFiles"];
-  resolvePastedPath?: AgentComposerProps["resolvePastedPath"];
-  promptAssetLimit?: number | null;
   onConversationRailWidthChanged: (widthPx: number) => void;
   onConversationRailLayoutChange?: (
     layout: AgentGUIConversationRailLayout
@@ -738,7 +741,7 @@ export interface AgentGUINodeViewProps {
   workspaceAppIcons?: readonly AgentMessageMarkdownWorkspaceAppIcon[];
   renderComposerFooterAccessory?: AgentGUIComposerFooterAccessoryRenderer;
 }
-export interface AgentGUIDetailPaneProps {
+export interface AgentGUIDetailPaneProps extends AgentGUIComposerExternalPromptProps {
   shell: AgentGUINodeViewModel["shell"];
   rail: AgentGUINodeViewModel["rail"];
   detail: AgentGUINodeViewModel["detail"];
@@ -778,10 +781,6 @@ export interface AgentGUIDetailPaneProps {
         entity?: AgentContextMentionItem | null
       ) => Promise<WorkspaceReferencePickResult>)
     | null;
-  resolveExternalPromptEntries?: AgentComposerProps["resolveExternalPromptEntries"];
-  prepareExternalPromptFiles?: AgentComposerProps["prepareExternalPromptFiles"];
-  resolvePastedPath?: AgentComposerProps["resolvePastedPath"];
-  promptAssetLimit?: number | null;
   selectProjectDirectory?: () => Promise<{ path: string } | null>;
   onRequestGitBranches?: AgentComposerGitBranchLoader | null;
   onRequestComposerFocus: () => void;
@@ -797,6 +796,5 @@ export interface AgentGUISidebarFooterContext {
 export type AgentGUISidebarFooterRenderer = (
   ctx: AgentGUISidebarFooterContext
 ) => ReactNode;
-
 /** Renders the host-owned empty state for an exact provider rail. */
 export type AgentGUIAgentsEmptyRenderer = () => ReactNode;

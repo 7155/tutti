@@ -35,11 +35,8 @@ import type {
 } from "./AgentRichTextEditor.types";
 import {
   buildWorkspaceFileMentionDropContent,
-  classifyAgentRichTextTextPaste,
   createAgentRichTextCaretAnchorExtension,
   createAgentRichTextPlaceholderExtension,
-  insertAgentRichTextClipboardHtml,
-  isAgentRichTextAbsolutePathPasteCandidate,
   isAgentRichTextLargeTextPaste,
   isPromptVisualLineStart,
   readEditorDomSelectionRange,
@@ -51,11 +48,8 @@ import {
   scrollEditorSelectionIntoView,
   writePlainTextToClipboard
 } from "./agentRichTextEditorSupport";
-export {
-  isAgentRichTextAbsolutePathPasteCandidate,
-  isAgentRichTextLargeTextPaste
-} from "./agentRichTextEditorSupport";
-import { createAgentFileMentionContent } from "./agentWorkspaceFileReferences";
+export { isAgentRichTextLargeTextPaste } from "./agentRichTextEditorSupport";
+import { routeAgentRichTextTextPaste } from "./routeAgentRichTextTextPaste";
 import { useAgentRichTextEditorHandle } from "./useAgentRichTextEditorHandle";
 import { AgentRichTextEditorSurface } from "./AgentRichTextEditorSurface";
 import { handleAgentRichTextKeyDownCapture } from "./agentRichTextKeyboard";
@@ -441,105 +435,20 @@ export const AgentRichTextEditor = forwardRef<
           }
           const html = event.clipboardData?.getData("text/html") ?? "";
           const text = event.clipboardData?.getData("text/plain") ?? "";
-          const textPasteKind = classifyAgentRichTextTextPaste(
-            text,
+          const handled = routeAgentRichTextTextPaste({
+            availableCapabilities: availableCapabilitiesRef.current,
+            availableSkills: availableSkillsRef.current,
+            editorRef,
             html,
-            Boolean(onPasteLargeTextRef.current)
-          );
-          if (textPasteKind === "empty") {
-            return false;
-          }
-          if (textPasteKind === "large-text") {
+            mentionSuggestionSuppression,
+            onPasteLargeText: onPasteLargeTextRef.current,
+            resolvePastedPath: onResolvePastedPathRef.current,
+            text
+          });
+          if (handled) {
             event.preventDefault();
-            onPasteLargeTextRef.current?.(text);
-            return true;
           }
-          if (textPasteKind === "structured-mention") {
-            event.preventDefault();
-            const currentEditor = editorRef.current;
-            if (!currentEditor) {
-              return true;
-            }
-            if (insertAgentRichTextClipboardHtml(currentEditor, html)) {
-              mentionSuggestionSuppression.suppressTextInsertion(text);
-            }
-            return true;
-          }
-          const pathCandidate = text.trim();
-          const resolvePastedPath = onResolvePastedPathRef.current;
-          if (
-            resolvePastedPath &&
-            isAgentRichTextAbsolutePathPasteCandidate(pathCandidate)
-          ) {
-            event.preventDefault();
-            const insertPlainPasteText = (): void => {
-              const currentEditor = editorRef.current;
-              if (!currentEditor || currentEditor.isDestroyed) {
-                return;
-              }
-              if (!currentEditor.isFocused) {
-                currentEditor.commands.setTextSelection(
-                  currentEditor.state.doc.content.size
-                );
-              }
-              mentionSuggestionSuppression.suppressTextInsertion(text);
-              currentEditor.commands.insertContent(
-                plainTextToAgentRichTextInlineContent(text, {
-                  capabilities: availableCapabilitiesRef.current,
-                  skills: availableSkillsRef.current
-                })
-              );
-            };
-            void resolvePastedPath(pathCandidate)
-              .then((reference) => {
-                const currentEditor = editorRef.current;
-                if (!currentEditor || currentEditor.isDestroyed) {
-                  return;
-                }
-                if (!reference) {
-                  insertPlainPasteText();
-                  return;
-                }
-                if (!currentEditor.isFocused) {
-                  currentEditor.commands.setTextSelection(
-                    currentEditor.state.doc.content.size
-                  );
-                }
-                mentionSuggestionSuppression.suppressTextInsertion(
-                  pathCandidate
-                );
-                currentEditor.commands.insertContent(
-                  createAgentFileMentionContent([reference], {
-                    prefixCaretAnchor: isPromptVisualLineStart(
-                      currentEditor,
-                      currentEditor.state.selection.from
-                    )
-                  })
-                );
-              })
-              .catch(() => {
-                insertPlainPasteText();
-              });
-            return true;
-          }
-          event.preventDefault();
-          const currentEditor = editorRef.current;
-          if (!currentEditor) {
-            return true;
-          }
-          if (!currentEditor.isFocused) {
-            currentEditor.commands.setTextSelection(
-              currentEditor.state.doc.content.size
-            );
-          }
-          mentionSuggestionSuppression.suppressTextInsertion(text);
-          currentEditor.commands.insertContent(
-            plainTextToAgentRichTextInlineContent(text, {
-              capabilities: availableCapabilitiesRef.current,
-              skills: availableSkillsRef.current
-            })
-          );
-          return true;
+          return handled;
         },
         keydown: (_view, event) => {
           if (isAgentRichTextImeComposing(event)) {

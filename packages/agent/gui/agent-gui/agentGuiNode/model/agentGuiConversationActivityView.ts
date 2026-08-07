@@ -74,8 +74,7 @@ export function createAgentGUIConversationActivityActivation(
     seenIds.add(conversation.id);
     const admittedAtUnixMs =
       resolveAgentGUIConversationSortTimeUnixMs(conversation);
-    const priorityReason =
-      resolveAgentGUIConversationActivityPriorityReason(conversation);
+    const priorityReason = livePriorityReason(conversation);
     if (priorityReason) {
       priority.push({
         admissionOrder: admissionOrder++,
@@ -135,8 +134,7 @@ export function reconcileAgentGUIConversationActivityActivation(
     currentIds.add(conversation.id);
     const currentRecency =
       resolveAgentGUIConversationSortTimeUnixMs(conversation);
-    const liveReason =
-      resolveAgentGUIConversationActivityPriorityReason(conversation);
+    const liveReason = livePriorityReason(conversation);
     if (priorityIds.has(conversation.id)) continue;
 
     if (recentIds.has(conversation.id) && !liveReason) continue;
@@ -216,7 +214,7 @@ export function localDayStartUnixMs(value: number): number {
   ).getTime();
 }
 
-export function resolveAgentGUIConversationActivityPriorityReason(
+function livePriorityReason(
   conversation: AgentGUIConversationActivityCandidate
 ): AgentGUIConversationActivityPriorityReason | null {
   if (conversation.needsUserAction || conversation.status === "waiting") {

@@ -1305,12 +1305,6 @@ must carry explicit `live` provenance. Historical detail hydration writes
 canonical Turns with `live: false` and cannot create new unread attention;
 realtime projections and live reconcile writes use `live: true`. Existing
 durable unread markers remain authoritative during hydration.
-The controller emits `agent_gui.conversation_activity.state_changed` diagnostics
-at each toggle and canonical reconciliation. These diagnostics contain only
-candidate/status counts, Priority before/after/added/removed counts, context
-identity changes, and the count of late idle candidates ignored; they do not
-record Session IDs, titles, prompts, cwd, or project paths. Use this event to
-separate Activity admission from detail-layer `render_state_changed` noise.
 The activation is scoped by the workspace, authenticated user, rail filter,
 AgentGUI node, and Engine identity, not by the currently selected Session's
 provider or target; selecting a row must not rebuild a cross-provider Activity

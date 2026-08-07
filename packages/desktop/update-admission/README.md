@@ -18,10 +18,10 @@ Electron talks only to its authenticated local daemon and never calls the
 public policy endpoint directly.
 
 Hosts may show their business UI before awaiting startup admission. When the
-startup result requires an upgrade, the Electron controller immediately hides
-the existing business windows before showing the forced-upgrade window, so a
-slow policy check does not create a blank startup while a resolved block still
-prevents further business interaction.
+startup result requires an upgrade, the Electron controller keeps the business
+window visible and presents the forced-upgrade window as its modal child. A
+slow policy check therefore does not create a blank startup, while a resolved
+block prevents further interaction with the parent business window.
 
 ## Daemon API
 

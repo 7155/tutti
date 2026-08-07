@@ -161,11 +161,12 @@ test("controller consumes daemon startup and foreground snapshots without owning
   assert.equal(registeredHandlers.size, 0);
 });
 
-test("startup admission isolates existing business windows after an upgrade is required", async () => {
+test("startup admission opens a modal upgrade window over the visible business window", async () => {
   const app = new EventEmitter();
   const snapshot = upgradeRequiredSnapshot();
   let businessWindowHidden = false;
   let upgradeWindowCreated = false;
+  const upgradeWindowOptions: Array<Record<string, unknown>> = [];
   const businessWindow = {
     focus() {},
     hide() {
@@ -186,8 +187,9 @@ test("startup admission isolates existing business windows after an upgrade is r
       on() {}
     };
 
-    public constructor() {
+    public constructor(options: Record<string, unknown>) {
       upgradeWindowCreated = true;
+      upgradeWindowOptions.push(options);
     }
 
     public destroy() {}
@@ -249,7 +251,9 @@ test("startup admission isolates existing business windows after an upgrade is r
   });
 
   assert.equal(await controller.runStartupCheck(), true);
-  assert.equal(businessWindowHidden, true);
+  assert.equal(businessWindowHidden, false);
   assert.equal(upgradeWindowCreated, true);
+  assert.equal(upgradeWindowOptions[0]?.modal, true);
+  assert.equal(upgradeWindowOptions[0]?.parent, businessWindow);
   controller.dispose();
 });

@@ -38,6 +38,7 @@ type Config struct {
 	Runtimes               connectorruntime.ConnectorRuntimeResolver
 	Processes              agentruntime.ProcessTransport
 	Routes                 RouteObserver
+	Authorization          AuthorizationObserver
 	Commands               *CommandRegistry
 	StateRoot              string
 	UserHome               string
@@ -51,10 +52,13 @@ type Host struct {
 	planner                *connectorruntime.ManagedRoutePlanner
 	processes              agentruntime.ProcessTransport
 	routeObserver          RouteObserver
+	authorizationObserver  AuthorizationObserver
 	mcpStartupTimeout      time.Duration
 	routes                 *connectorruntime.RouteTable
 	snapshots              *connectorruntime.ExecutionSnapshotter
 	authorizationProvider  *managedCredentialAuthorizationProvider
+	authorizationMu        sync.Mutex
+	authorizationRoutes    map[string]*connectorRoute
 	remoteHTTPClient       *http.Client
 	authorizeRemoteRequest mcp.RequestAuthorizer
 }
@@ -114,9 +118,10 @@ func New(config Config) (*Host, error) {
 	}
 	config.Commands.attach(routes)
 	host := &Host{artifacts: config.Artifacts, planner: planner, processes: config.Processes,
-		routeObserver: config.Routes, mcpStartupTimeout: config.MCPStartupTimeout,
-		remoteHTTPClient: config.RemoteHTTPClient, authorizeRemoteRequest: config.AuthorizeRemoteRequest,
-		routes: routes, snapshots: snapshots}
+		routeObserver: config.Routes, authorizationObserver: config.Authorization,
+		mcpStartupTimeout: config.MCPStartupTimeout, routes: routes, snapshots: snapshots,
+		authorizationRoutes: make(map[string]*connectorRoute),
+		remoteHTTPClient:    config.RemoteHTTPClient, authorizeRemoteRequest: config.AuthorizeRemoteRequest}
 	host.authorizationProvider = newManagedCredentialAuthorizationProvider(host)
 	return host, nil
 }
@@ -181,6 +186,7 @@ func (host *Host) Reconcile(ctx context.Context, request ReconcileRequest) (mark
 		_ = route.Close(time.Now().Add(3 * time.Second))
 		return market.RuntimeReceipt{}, err
 	}
+	host.releaseAuthorizationRouteByKey(key)
 	if route.mcpClient != nil {
 		go host.monitorMCPRoute(route, route.mcpClient)
 	}
@@ -237,7 +243,20 @@ func (host *Host) Close() error {
 	if host == nil {
 		return nil
 	}
-	return host.routes.Close(time.Now().Add(3 * time.Second))
+	deadline := time.Now().Add(3 * time.Second)
+	host.authorizationMu.Lock()
+	authorizationRoutes := make([]*connectorRoute, 0, len(host.authorizationRoutes))
+	for key, route := range host.authorizationRoutes {
+		delete(host.authorizationRoutes, key)
+		authorizationRoutes = append(authorizationRoutes, route)
+	}
+	host.authorizationMu.Unlock()
+	errs := []error{host.routes.Close(deadline)}
+	for _, route := range authorizationRoutes {
+		route.Fence()
+		errs = append(errs, route.Close(deadline))
+	}
+	return errors.Join(errs...)
 }
 
 func (host *Host) SetCapabilityPublication(enabled bool) {

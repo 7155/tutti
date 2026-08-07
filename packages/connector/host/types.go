@@ -398,6 +398,7 @@ type RuntimeReceipt struct {
 type AuthorizationSession struct {
 	OperationID      string             `json:"operationId"`
 	ConnectorKey     string             `json:"connectorKey"`
+	ConnectionID     string             `json:"-"`
 	SessionID        string             `json:"sessionId"`
 	ActionType       string             `json:"actionType"`
 	AuthorizationURL string             `json:"-"`

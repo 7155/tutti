@@ -38,7 +38,7 @@ func NewService() *Service {
 // CheckReady performs a bounded, side-effect-free cua-driver readiness probe.
 // On Windows it does not start the driver daemon; callers that are about to
 // open an MCP session use ensureReady instead.
-func (_ *Service) CheckReady(ctx context.Context) error {
+func (*Service) CheckReady(ctx context.Context) error {
 	return checkReady(ctx)
 }
 

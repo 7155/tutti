@@ -88,6 +88,10 @@ Before preparing commits or pull requests, read `CONTRIBUTING.md` and follow it
 for repository-wide contribution requirements, including Conventional Commits,
 DCO sign-off, PR workflow, review gates, and multilingual documentation updates.
 
+When creating pull requests for the user, create a regular ready-for-review PR
+(not a draft), write the PR title in English, and write the PR description in
+Chinese.
+
 ## Hard Rules
 
 - Published workspace packages use `@tutti-os/*`; keep manifests, imports, docs, and release config aligned.

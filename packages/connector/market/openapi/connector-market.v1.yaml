@@ -758,9 +758,8 @@ components:
       enum:
         - accepted
         - refreshing
-        - downloading
-        - prepared
-        - activating
+        - installing
+        - installed
         - deactivating
         - authorizing
         - disconnecting

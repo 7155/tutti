@@ -4763,9 +4763,8 @@ export type ConnectorMarketOperationState =
 export type ConnectorMarketOperationStage =
   | "accepted"
   | "refreshing"
-  | "downloading"
-  | "prepared"
-  | "activating"
+  | "installing"
+  | "installed"
   | "deactivating"
   | "authorizing"
   | "disconnecting"

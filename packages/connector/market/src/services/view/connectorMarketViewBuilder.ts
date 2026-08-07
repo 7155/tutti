@@ -139,9 +139,13 @@ function buildConnectorCardView(
     ["installing", "updating", "uninstalling"].includes(
       connector.installation.state
     ) ||
-    ["accepted", "activating", "deactivating", "disconnecting"].includes(
-      operationStage ?? ""
-    );
+    [
+      "accepted",
+      "installing",
+      "installed",
+      "deactivating",
+      "disconnecting"
+    ].includes(operationStage ?? "");
   const installed = connectorHasInstalledArtifact(connector);
   const currentReleaseInstalled =
     connectorHasCurrentReleaseInstalled(connector);

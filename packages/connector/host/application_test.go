@@ -58,6 +58,9 @@ func TestApplicationClientRequestIDIsReusableOnlyAfterTerminalRetention(t *testi
 	if err := application.ExecuteOperation(context.Background(), accepted.Operation.OperationID); err != nil {
 		t.Fatal(err)
 	}
+	if err := application.ExecuteOperation(context.Background(), scheduler.operationIDs[len(scheduler.operationIDs)-1]); err != nil {
+		t.Fatal(err)
+	}
 	retried, err := application.Install(context.Background(), command)
 	if err != nil {
 		t.Fatal(err)
@@ -123,7 +126,8 @@ func TestApplicationExecutesTypedCLIInstallationBeforeCompletion(t *testing.T) {
 			Launch: NodePackageLaunch{Kind: "native", Entrypoint: "bin/lark-cli", SHA256: strings.Repeat("c", 64)}}}}
 	repository := newMemoryRepository(connector)
 	host := &memoryInstallRuntime{}
-	application := newTestApplication(t, repository, &memoryScheduler{}, host, CatalogSnapshot{})
+	scheduler := &memoryScheduler{}
+	application := newTestApplication(t, repository, scheduler, host, CatalogSnapshot{})
 	accepted, err := application.Install(context.Background(), ConnectorMutation{Mutation: Mutation{ClientRequestID: "install-lark"},
 		ConnectorKey: "lark"})
 	if err != nil {
@@ -136,7 +140,8 @@ func TestApplicationExecutesTypedCLIInstallationBeforeCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if host.cliInstalls != 1 || operation.Execution.CLIInstallation == nil || operation.State != OperationStateCompleted {
+	if host.cliInstalls != 1 || operation.Execution.ReleaseInstallation == nil ||
+		operation.Execution.ReleaseInstallation.CLIInstallation == nil || operation.State != OperationStateCompleted {
 		t.Fatalf("CLI installs = %d, operation = %#v", host.cliInstalls, operation)
 	}
 }
@@ -163,7 +168,11 @@ func TestCrossMachineReceiptsUseOpaqueReferences(t *testing.T) {
 		Package: install.Package, PackageVersion: install.Version, PackageIntegrity: install.Integrity,
 		LaunchKind: install.Launch.Kind, Entrypoint: "node_modules/@larksuite/cli/bin/lark-cli",
 		EntrypointSHA256: strings.Repeat("2", 64), EntrypointSize: 7, OpaqueInstallationRef: "guest-install-1"}
-	if err := validateCLIInstallationReceipt(operation, release, *install, installed); err != nil {
+	receipt := ReleaseInstallationReceipt{OperationID: operation.OperationID, ConnectorKey: release.ConnectorKey,
+		Version: release.Version, ReleaseID: release.ReleaseID, ReleaseDigest: release.ReleaseDigest,
+		ArtifactSHA256: release.Artifact.SHA256, Artifact: prepared, CLIInstallation: &installed,
+		OpaqueRuntimeRef: "guest-runtime-1"}
+	if err := validateReleaseInstallationReceipt(operation, release, receipt); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -188,7 +197,7 @@ func TestApplicationReconcilesInstalledRuntimeAtStartup(t *testing.T) {
 	}
 }
 
-func TestApplicationInstallUsesAccountScopedInactiveRuntimeBinding(t *testing.T) {
+func TestApplicationInstallKeepsRuntimeReconcileSeparate(t *testing.T) {
 	repository := newMemoryRepository(testConnector("github"))
 	host := &memoryInstallRuntime{}
 	resolver := &runtimeBindingResolverStub{binding: RuntimeBinding{ConnectionID: "account-connection", Enabled: false}}
@@ -207,9 +216,7 @@ func TestApplicationInstallUsesAccountScopedInactiveRuntimeBinding(t *testing.T)
 	}
 	operation := repository.operations[accepted.Operation.OperationID]
 	if operation.Scope.AccountID != "account-1" || host.lastPrepare.Scope.AccountID != "account-1" ||
-		host.lastPrepare.Generation != operation.HostGeneration ||
-		host.lastReconcile.Scope.AccountID != "account-1" || host.lastReconcile.ConnectionID != "account-connection" ||
-		host.lastReconcile.Enabled {
+		host.lastPrepare.Generation != operation.HostGeneration || host.reconciles != 0 {
 		t.Fatalf("operation=%#v prepare=%#v reconcile=%#v", operation, host.lastPrepare, host.lastReconcile)
 	}
 	if repository.connectors["github"].Installation.State != InstallationStateInstalled {
@@ -221,7 +228,8 @@ func TestApplicationCredentialGrantIsNotPersistedAndIsCleared(t *testing.T) {
 	repository := newMemoryRepository(testConnector("github"))
 	host := &memoryInstallRuntime{}
 	grant := []byte("one-shot-grant")
-	application := newTestApplication(t, repository, &memoryScheduler{}, host, CatalogSnapshot{})
+	scheduler := &memoryScheduler{}
+	application := newTestApplication(t, repository, scheduler, host, CatalogSnapshot{})
 	application.config.RuntimeBindings = &runtimeBindingResolverStub{binding: RuntimeBinding{
 		ConnectionID: "account-connection", Enabled: true, CredentialBrokerGrant: grant,
 	}}
@@ -232,6 +240,9 @@ func TestApplicationCredentialGrantIsNotPersistedAndIsCleared(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := application.ExecuteOperation(context.Background(), accepted.Operation.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if err := application.ExecuteOperation(context.Background(), scheduler.operationIDs[len(scheduler.operationIDs)-1]); err != nil {
 		t.Fatal(err)
 	}
 	if host.lastCredentialGrant != "one-shot-grant" {
@@ -411,14 +422,17 @@ func TestApplicationRecoveryObservesActivatedRuntimeBeforeCompleting(t *testing.
 	release := repository.connectors["github"].Release
 	operation := repository.operations[accepted.Operation.OperationID]
 	operation.State = OperationStateRunning
-	operation.Stage = OperationStageActivating
-	operation.Execution.PreparedArtifact = &PreparedArtifactReceipt{
+	operation.Stage = OperationStageInstalled
+	operation.Execution.ReleaseInstallation = &ReleaseInstallationReceipt{
 		OperationID:    operation.OperationID,
 		ConnectorKey:   release.ConnectorKey,
 		Version:        release.Version,
+		ReleaseID:      release.ReleaseID,
 		ReleaseDigest:  release.ReleaseDigest,
 		ArtifactSHA256: release.Artifact.SHA256,
-		PreparedPath:   "/prepared/" + release.ReleaseDigest,
+		Artifact: PreparedArtifactReceipt{OperationID: operation.OperationID, ConnectorKey: release.ConnectorKey,
+			Version: release.Version, ReleaseDigest: release.ReleaseDigest, ArtifactSHA256: release.Artifact.SHA256,
+			InventoryDigest: strings.Repeat("e", 64), PreparedPath: "/prepared/" + release.ReleaseDigest},
 	}
 	repository.operations[operation.OperationID] = operation
 	installationHost.activeDigest = release.ReleaseDigest
@@ -779,8 +793,7 @@ func newTestApplication(
 	repository *memoryRepository,
 	scheduler *memoryScheduler,
 	installationHost interface {
-		ArtifactPreparer
-		CLIInstallationManager
+		ReleaseInstallationManager
 		ImplementationHost
 	},
 	catalog CatalogSnapshot,
@@ -799,8 +812,7 @@ func newTestApplicationWithCatalogSource(
 	repository *memoryRepository,
 	scheduler *memoryScheduler,
 	installationHost interface {
-		ArtifactPreparer
-		CLIInstallationManager
+		ReleaseInstallationManager
 		ImplementationHost
 	},
 	catalogSource CatalogSource,
@@ -808,10 +820,9 @@ func newTestApplicationWithCatalogSource(
 	t.Helper()
 	nextID := 0
 	application, err := NewApplication(ApplicationConfig{
-		Repository:       repository,
-		CatalogSource:    catalogSource,
-		ArtifactPreparer: installationHost,
-		CLIInstallations: installationHost,
+		Repository:           repository,
+		CatalogSource:        catalogSource,
+		ReleaseInstallations: installationHost,
 		InstallationChecker: func() InstallationChecker {
 			checker, _ := any(installationHost).(InstallationChecker)
 			return checker
@@ -1005,6 +1016,44 @@ func (host *memoryInstallRuntime) Prepare(_ context.Context, request PrepareArti
 	}, nil
 }
 
+func (host *memoryInstallRuntime) InstallRelease(
+	ctx context.Context,
+	request InstallReleaseRequest,
+) (ReleaseInstallationReceipt, error) {
+	prepared, err := host.Prepare(ctx, PrepareArtifactRequest(request))
+	if err != nil {
+		return ReleaseInstallationReceipt{}, err
+	}
+	receipt := ReleaseInstallationReceipt{OperationID: request.OperationID, ConnectorKey: request.Release.ConnectorKey,
+		Version: request.Release.Version, ReleaseID: request.Release.ReleaseID, ReleaseDigest: request.Release.ReleaseDigest,
+		ArtifactSHA256: request.Release.Artifact.SHA256, Artifact: prepared}
+	if releaseCLIInstallation(request.Release) != nil {
+		installed, err := host.InstallCLI(ctx, InstallCLIRequest(request))
+		if err != nil {
+			return ReleaseInstallationReceipt{}, err
+		}
+		receipt.CLIInstallation = &installed
+	}
+	return receipt, nil
+}
+
+func (host *memoryInstallRuntime) UninstallRelease(ctx context.Context, request UninstallReleaseRequest) error {
+	if releaseCLIInstallation(request.Release) != nil {
+		if err := host.RemoveCLI(ctx, RemoveCLIRequest{OperationID: request.OperationID, Scope: request.Scope,
+			Generation: request.Generation, ConnectorKey: request.Release.ConnectorKey,
+			ReleaseDigest: request.Release.ReleaseDigest}); err != nil {
+			return err
+		}
+	}
+	return host.Remove(ctx, RemoveArtifactRequest{OperationID: request.OperationID, Scope: request.Scope,
+		Generation: request.Generation, ConnectorKey: request.Release.ConnectorKey, Version: request.Release.Version,
+		ReleaseDigest: request.Release.ReleaseDigest})
+}
+
+func (*memoryInstallRuntime) CommitReleaseInstallation(context.Context, CommitReleaseInstallationRequest) error {
+	return nil
+}
+
 type runtimeBindingResolverStub struct {
 	binding RuntimeBinding
 }
@@ -1078,25 +1127,26 @@ func newBlockingInstallerWithError(err error) *blockingInstaller {
 	}
 }
 
-func (installer *blockingInstaller) Prepare(ctx context.Context, request PrepareArtifactRequest) (PreparedArtifactReceipt, error) {
+func (installer *blockingInstaller) InstallRelease(ctx context.Context, request InstallReleaseRequest) (ReleaseInstallationReceipt, error) {
 	installer.installs.Add(1)
 	installer.once.Do(func() { close(installer.started) })
 	select {
 	case <-installer.release:
 		if installer.err != nil {
-			return PreparedArtifactReceipt{}, installer.err
+			return ReleaseInstallationReceipt{}, installer.err
 		}
-		return PreparedArtifactReceipt{
-			OperationID:     request.OperationID,
-			ConnectorKey:    request.Release.ConnectorKey,
-			Version:         request.Release.Version,
-			ReleaseDigest:   request.Release.ReleaseDigest,
-			ArtifactSHA256:  request.Release.Artifact.SHA256,
-			InventoryDigest: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-			PreparedPath:    "/prepared/" + request.Release.ReleaseDigest,
+		return ReleaseInstallationReceipt{
+			OperationID: request.OperationID, ConnectorKey: request.Release.ConnectorKey,
+			Version: request.Release.Version, ReleaseID: request.Release.ReleaseID,
+			ReleaseDigest: request.Release.ReleaseDigest, ArtifactSHA256: request.Release.Artifact.SHA256,
+			Artifact: PreparedArtifactReceipt{OperationID: request.OperationID, ConnectorKey: request.Release.ConnectorKey,
+				Version: request.Release.Version, ReleaseDigest: request.Release.ReleaseDigest,
+				ArtifactSHA256:  request.Release.Artifact.SHA256,
+				InventoryDigest: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+				PreparedPath:    "/prepared/" + request.Release.ReleaseDigest},
 		}, nil
 	case <-ctx.Done():
-		return PreparedArtifactReceipt{}, ctx.Err()
+		return ReleaseInstallationReceipt{}, ctx.Err()
 	}
 }
 

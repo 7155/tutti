@@ -63,13 +63,14 @@ The shared Connector modules own:
   delivery
 - `connector/store-sqlite`: the canonical repository, transactions, leases,
   migrations, and durable outbox implementation
-- `connector/runtime`: secure artifact preparation, managed runtime identity,
-  ABI verification, and typed Node package installation
+- `connector/runtime`: latest-only artifact download caching, no-network archive
+  import, secure artifact preparation, managed runtime identity, ABI
+  verification, and typed Node package installation
 - a default remote-catalog domain adapter built over the authoritative market
   client
-- reusable artifact preparation: bounded download, size and
-  digest verification, safe extraction, release-to-package verification,
-  staging layout, atomic promotion mechanics, cleanup, and reconcile rules
+- reusable artifact mechanics: bounded download, `current + candidate` cache
+  replacement, size and digest verification, no-network import, safe
+  extraction, release-to-package verification, atomic promotion, and cleanup
 - `connector/market`: the reusable local daemon OpenAPI fragment under
   `openapi/connector-market.v1.yaml`
 - the renderer `ConnectorMarketBackend` contract, module Root/Runtime,
@@ -99,22 +100,26 @@ Artifact preparation and runtime activation are different responsibilities.
 They may also live on different machines:
 
 ```text
-durable operation
-    -> host artifact port (direct download or account grant issuance)
-    -> connector/runtime artifact resolver/downloader, local or VM-owned
-    -> bounded staging download
-    -> size and digest verification
-    -> safe extraction and packaged-manifest verification
-    -> prepared artifact receipt (local path or opaque runtime reference)
+durable install operation
+    -> ReleaseInstallationManager
+    -> control-plane DownloadCache prepares one verified candidate
+    -> same-machine import, or host data-plane sync to the runtime machine
+    -> runtime Importer revalidates size/SHA and safely extracts
+    -> optional typed CLI package installation
+    -> release installation receipt (local paths or opaque runtime reference)
+    -> repository commits device-installed truth
+    -> cache candidate becomes current
+
+authorization observation / runtime reconcile
+    -> RuntimeBindingResolver derives active or inactive account intent
     -> connector/runtime implementation adapter
     -> generation-fenced MCP/CLI routes and observed process state
-    -> repository result commit
 ```
 
 For a CLI declared with a typed `node_package` installation, the prepared
-artifact contains connector metadata and skills, not the CLI npm package. The
-daemon inserts one additional, replay-safe stage between artifact preparation
-and route reconciliation:
+artifact contains connector metadata and skills, not the CLI npm package. CLI
+installation remains part of the physical release install receipt, while route
+reconciliation is a separate operation:
 
 The local daemon connector-manifest v1 contract includes required icons, typed
 package installation, explicit Node ranges, and mapping-free generic CLI. It is
@@ -267,12 +272,14 @@ identity plus an explicit account execution scope. Each stage is idempotent for 
 operationId + connectorKey + version + releaseDigest
 ```
 
-The durable flow is:
+The durable install flow is intentionally coarse-grained. A failed attempt is
+restarted from the idempotent release installer; the business repository does
+not persist internal download/sync/import sub-stages:
 
 ```text
-accepted -> downloading -> prepared -> activating -> completed
-     |            |            |             |
-     +------------+------------+-------------+-> failed
+accepted -> installing -> installed -> completed
+     |            |            |
+     +------------+------------+-> failed
 ```
 
 The repository owns operation leases and attempt metadata. Recovery observes
@@ -433,8 +440,8 @@ but cannot be installed.
 ## Current Checkpoint
 
 The shared package now contains immutable operation targets and execution
-receipts, recoverable install/uninstall/authorization flows, secure
-content-addressed artifact preparation, host ports, the local daemon OpenAPI
+receipts, recoverable install/uninstall/authorization flows, latest-only
+artifact download caching, a no-network archive importer, host ports, the local daemon OpenAPI
 fragment, and the complete reusable renderer module: Root, Runtime, lifecycle,
 per-service StartupJobs, UiState, render-ready View, i18n, catalog, and modal
 state branches.
@@ -449,13 +456,14 @@ authoritative snapshot reload.
 
 The registered Tutti Host reads the ordinary TSH market item API, downloads an
 artifact directly from the configured artifact base URL, verifies its declared
-SHA-256 and size, prepares a content-addressed snapshot, selects the local
+SHA-256 and size, retains only the current archive plus one replaceable
+candidate, prepares an installed snapshot, selects the local
 Node/Python runtime, installs typed Node CLI packages into a private shared-store
 layout when requested, and exposes one daemon-owned MCP/CLI runtime per installed
-connector connection. Crash recovery adopts every host-touching operation into the current
-boot epoch. Startup requires one successful catalog refresh before restoring
-routes; later refresh failures preserve installed last-known-good capabilities
-while the daemon retries.
+connector connection. Installation commits before runtime publication;
+authorization state and bootstrap drive separate generation-fenced reconcile.
+Crash recovery adopts every host-touching operation into the current boot
+epoch. Catalog refresh failure does not invalidate installed release evidence.
 
 The public `connector available`, `connector capabilities`, `connector skills`,
 `connector skill read`, and `connector invoke` commands expose installed

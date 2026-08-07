@@ -126,14 +126,21 @@ persists `(operationId, revision, repairEpoch)` in
 `IntentAccepted` means Host owns later retries even when the provider is
 offline. Accepting or recovering a fence never resumes an offline provider
 Session. Host immediately prepares a revision-conditional local clear so the
-revoked target cannot replay; provider delivery waits until the Session is
-already live or a user action resumes it. A fence is an admission rule, not
-session deletion: completed rows remain durable and are restored to the
-runtime after restart or resume so a delayed provider generation cannot become
-canonical. The runtime Controller retains the exact fence set independently
-of an adapter connection and installs it into every replacement connection
-before dispatching a user operation; failed installation closes the
-unprotected connection. Host cancels a live Turn only when its
+revoked target cannot replay. During startup recovery, an absent Runtime
+Session completes that clear and the fence locally without resuming a provider;
+the operation remains explicit that provider application is unknown. Provider
+delivery waits until the Session is already live or a user action resumes it.
+A pre-crash live revocation may already have prepared its exact-Turn cancel;
+startup completes that internal operation locally with an interrupted outcome
+instead of retrying a missing Runtime or letting the operation shield a stale
+Turn from restart settlement.
+A fence is an admission rule, not session deletion: completed rows remain
+durable and are loaded into Runtime resume before the Session can accept Goal
+or Turn work, so a delayed provider generation cannot become canonical. The
+runtime Controller retains the exact fence set independently of an adapter
+connection and installs it into every replacement connection before dispatching
+a user operation; failed installation closes the unprotected connection. Host
+cancels a live Turn only when its
 immutable Goal provenance exactly matches the fenced identity; that internal
 cancel is require-live and never reconnects an offline provider. The fence
 remains unsettled until the Turn reaches an authoritative terminal state. It

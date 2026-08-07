@@ -146,6 +146,34 @@ type RuntimeObservation struct {
 	ReleaseDigest string
 }
 
+type InstallationObservationState string
+
+const (
+	InstallationObservationPresent InstallationObservationState = "present"
+	InstallationObservationAbsent  InstallationObservationState = "absent"
+)
+
+type InstallationObservation struct {
+	State         InstallationObservationState
+	ConnectorKey  string
+	ReleaseDigest string
+}
+
+// InstallationChecker executes only signed, bounded probes declared by a
+// release that was previously installed. It must not probe unaccepted catalog
+// entries or turn transient execution errors into an absent observation.
+type InstallationChecker interface {
+	CheckInstallation(context.Context, InstallationCheckRequest) (InstallationObservation, error)
+}
+
+type InstallationCheckRequest struct {
+	OperationID  string
+	Scope        OperationScope
+	ConnectionID string
+	Connector    Connector
+	Generation   HostGeneration
+}
+
 // ImplementationHost reconciles installed connector releases into global MCP
 // routes and CLI registrations.
 type ImplementationHost interface {
@@ -195,8 +223,9 @@ type RuntimeBindingRequest struct {
 type RuntimeBindingPurpose string
 
 const (
-	RuntimeBindingPurposeReconcile  RuntimeBindingPurpose = "reconcile"
-	RuntimeBindingPurposeDeactivate RuntimeBindingPurpose = "deactivate"
+	RuntimeBindingPurposeReconcile         RuntimeBindingPurpose = "reconcile"
+	RuntimeBindingPurposeDeactivate        RuntimeBindingPurpose = "deactivate"
+	RuntimeBindingPurposeInstallationProbe RuntimeBindingPurpose = "installation_probe"
 )
 
 type RuntimeBinding struct {

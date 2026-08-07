@@ -12,6 +12,12 @@ transport, HTTP client/proxy policy, state roots, and product-facing command
 transport. Runtime code must not import `services/tuttid` or expose host
 filesystem paths as a cross-machine protocol.
 
+Managed MCP and CLI releases may provide a bounded `installationProbe` argv.
+The runtime launches it through the interface's verified entrypoint and runtime
+without a shell; only exit codes 0 (present) and 1 (absent) are observations.
+Timeouts, transport failures, and other exit codes remain indeterminate so they
+cannot erase durable installation truth.
+
 Authorized `managed_stdio` Connectors declare a connector-owned
 credential broker entrypoint. The broker translates its provider-specific
 flow into the `tutti.connector.credentials.v1` event protocol. Tutti validates

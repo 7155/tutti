@@ -60,7 +60,7 @@ func (resolver AccountRuntimeBindingResolver) ResolveRuntimeBinding(
 	if projection.State != AuthorizationStateConnected {
 		return RuntimeBinding{ConnectionID: connectionID, Enabled: false}, nil
 	}
-	if request.Purpose == RuntimeBindingPurposeDeactivate {
+	if request.Purpose == RuntimeBindingPurposeDeactivate || request.Purpose == RuntimeBindingPurposeInstallationProbe {
 		return RuntimeBinding{ConnectionID: connectionID, Enabled: true}, nil
 	}
 	if resolver.Credentials == nil {

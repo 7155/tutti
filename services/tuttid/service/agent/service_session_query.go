@@ -166,14 +166,14 @@ func (s *Service) cleanupRuntime(ctx context.Context, workspaceID string, agentS
 	if s.ModelGateway != nil {
 		s.ModelGateway.Unregister(ctx, workspaceID, agentSessionID)
 	}
-	if s.ConnectorMCPRevoke != nil {
-		s.ConnectorMCPRevoke(workspaceID, agentSessionID)
-	}
 	return runtimeErr
 }
 
 func (s *Service) cleanupSessionResources(ctx context.Context, workspaceID string, agentSessionID string) error {
-	runtimeErr := s.cleanupRuntime(ctx, workspaceID, agentSessionID)
+	var runtimeErr error
+	if s.RuntimePreparer != nil {
+		runtimeErr = s.cleanupRuntime(ctx, workspaceID, agentSessionID)
+	}
 	var agentResourceErr error
 	if s.AgentSessionResourceReleaser != nil {
 		agentResourceErr = s.AgentSessionResourceReleaser.ReleaseAgent(ctx, strings.TrimSpace(agentSessionID))

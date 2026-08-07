@@ -69,7 +69,6 @@ type StartInput struct {
 	Provider                string
 	CWD                     string
 	Env                     []string
-	MCPServers              []MCPServerBinding
 	Title                   string
 	InitialTitleEstablished bool
 	Visible                 *bool
@@ -89,7 +88,6 @@ type ResumeInput struct {
 	Resumable         bool
 	CWD               string
 	Env               []string
-	MCPServers        []MCPServerBinding
 	Title             string
 	Status            string
 	Visible           *bool
@@ -379,7 +377,6 @@ type Session struct {
 	Resumable          bool                `json:"resumable"`
 	CWD                string              `json:"cwd,omitempty"`
 	Env                []string            `json:"-"`
-	MCPServers         []MCPServerBinding  `json:"-"`
 	Status             string              `json:"status"`
 	TurnLifecycle      *TurnLifecycle      `json:"turnLifecycle,omitempty"`
 	SubmitAvailability *SubmitAvailability `json:"submitAvailability,omitempty"`
@@ -410,29 +407,6 @@ type Session struct {
 	// title so a restarted runtime never lets a provider title clobber a
 	// persisted user title.
 	UserTitleSet bool `json:"-"`
-}
-
-type MCPServerBinding struct {
-	Name    string
-	Type    string
-	URL     string
-	Headers map[string]string
-}
-
-func cloneMCPServerBindings(input []MCPServerBinding) []MCPServerBinding {
-	if len(input) == 0 {
-		return nil
-	}
-	result := make([]MCPServerBinding, 0, len(input))
-	for _, binding := range input {
-		headers := make(map[string]string, len(binding.Headers))
-		for key, value := range binding.Headers {
-			headers[key] = value
-		}
-		binding.Headers = headers
-		result = append(result, binding)
-	}
-	return result
 }
 
 type SessionInteractivePrompt struct {

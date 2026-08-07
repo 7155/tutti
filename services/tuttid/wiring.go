@@ -34,7 +34,6 @@ import (
 	cliservice "github.com/tutti-os/tutti/services/tuttid/service/cli"
 	computersvc "github.com/tutti-os/tutti/services/tuttid/service/computer"
 	connectormarketservice "github.com/tutti-os/tutti/services/tuttid/service/connectormarket"
-	connectormcpservice "github.com/tutti-os/tutti/services/tuttid/service/connectormcp"
 	desktopupdateadmissionservice "github.com/tutti-os/tutti/services/tuttid/service/desktopupdateadmission"
 	eventstreamservice "github.com/tutti-os/tutti/services/tuttid/service/eventstream"
 	managedruntimeservice "github.com/tutti-os/tutti/services/tuttid/service/managedruntime"
@@ -56,7 +55,6 @@ type tuttiWiring struct {
 	workspaceStore               *workspacedata.SQLiteStore
 	connectorMarketStore         *connectormarketdata.Store
 	connectorMarketHost          *connectormarketdaemon.Host
-	connectorMCPServer           *connectormcpservice.Server
 	analyticsReporter            reporterservice.Reporter
 	browserService               *browsersvc.Service
 	computerService              *computersvc.Service
@@ -289,8 +287,8 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("configure connector release installer: %w", err)
 	}
-	connectorRegistry := connectormarketservice.NewConnectorRuntimeRegistry()
-	connectorBroker, err := connectormarketservice.NewConnectorBroker(connectorRegistry)
+	connectorCommands := connectormarketservice.NewConnectorCommandRegistry()
+	connectorBroker, err := connectormarketservice.NewConnectorBroker(connectorCommands)
 	if err != nil {
 		return fmt.Errorf("configure connector broker: %w", err)
 	}
@@ -300,10 +298,9 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	}
 	implementationHost, err := connectormarketservice.NewImplementationHost(connectormarketservice.ImplementationHostConfig{
 		Artifacts: artifactPreparer, CLIInstallations: nodePackageInstaller,
-		Runtimes: runtimeResolver, Processes: processTransport, Registry: connectorRegistry,
+		Runtimes: runtimeResolver, Processes: processTransport, Commands: connectorCommands,
 		RemoteHTTPClient: agenthttpx.NewClient(2 * time.Minute), AuthorizeRemoteRequest: marketAuthorizer.Authorize,
 		StateRoot: filepath.Join(connectorStateRoot, "user-state"),
-		BinDir:    filepath.Join(tuttitypes.DefaultStateDir(), "bin"),
 		UserHome:  userHome,
 	})
 	if err != nil {
@@ -335,12 +332,6 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 		providerAuthWatcher.Close()
 		return fmt.Errorf("start connector market host: %w", err)
 	}
-	connectorMCPServer, err := connectormcpservice.Start(connectormcpservice.Config{Registry: connectorRegistry.MCPRegistry()})
-	if err != nil {
-		connectorMarketHost.Close()
-		_ = connectorMarketStore.Close()
-		return fmt.Errorf("start connector MCP server: %w", err)
-	}
 	if service, ok := api.AgentSessionService.(*agentservice.Service); ok {
 		service.ConnectorMarketSnapshots = connectorMarketHost.Application
 		service.ConnectorRoutingHints = func() []runtimeprep.ConnectorRoutingHint {
@@ -352,12 +343,6 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 			}
 			return hints
 		}
-		service.ConnectorMCPBinding = func(workspaceID, agentSessionID string, connectorKeys []string) (runtimeprep.MCPServerBinding, error) {
-			binding, bindingErr := connectorMCPServer.Binding(workspaceID, agentSessionID, connectorKeys)
-			return runtimeprep.MCPServerBinding{Name: binding.Name, Type: binding.Type, URL: binding.URL,
-				Headers: binding.Headers}, bindingErr
-		}
-		service.ConnectorMCPRevoke = connectorMCPServer.Revoke
 	}
 	api.ConnectorMarketService = connectorMarketHost.Application
 	existingAccountLoginCompleted := accountService.OnLoginCompleted
@@ -369,7 +354,6 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	}
 	w.connectorMarketStore = connectorMarketStore
 	w.connectorMarketHost = connectorMarketHost
-	w.connectorMCPServer = connectorMCPServer
 	startExistingListenerWork := api.OnListenerReady
 	api.OnListenerReady = func() {
 		if startExistingListenerWork != nil {
@@ -664,13 +648,6 @@ func (w *tuttiWiring) Close() error {
 	}
 	if w.connectorMarketHost != nil {
 		w.connectorMarketHost.Close()
-	}
-	if w.connectorMCPServer != nil {
-		closeCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		if err := w.connectorMCPServer.Close(closeCtx); err != nil && closeErr == nil {
-			closeErr = err
-		}
-		cancel()
 	}
 	if w.connectorMarketStore != nil {
 		if err := w.connectorMarketStore.Close(); err != nil && closeErr == nil {

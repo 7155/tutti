@@ -15,3 +15,18 @@ The module provides the market catalog projection, while hosts inject their
 HTTP client/proxy policy, request authorization, event publication,
 persistence, and execution ports. Product account policy and generated HTTP
 handlers remain in the consuming daemon.
+
+Hosts with an account-scoped runtime call `BootstrapForScope`; the daemon
+reuses that explicit scope for recovery retries. The legacy `Bootstrap` method
+retains Tutti's device-global behavior through the default runtime-binding
+resolver.
+
+Remote runtimes inject `CapabilityPublicationController`; bootstrap awaits its
+fail-closed/open commands. Same-process Tutti runtimes remain compatible with
+the synchronous implementation-host publication gate.
+
+Account logout and switching use `Host.FenceForScope` to close remote
+publication, fail-close all processes, and force a later bootstrap even when
+the same account logs in again. The account-boundary fence never admits or
+starts a runtime with retired authority; per-Connector deactivation remains a
+normal uninstall/reconcile concern.

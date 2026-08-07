@@ -11,6 +11,7 @@ import (
 	runtimeprep "github.com/tutti-os/tutti/packages/agent/runtimeprep"
 	agentactivitybiz "github.com/tutti-os/tutti/packages/agent/store-sqlite"
 	"github.com/tutti-os/tutti/packages/agent/store-sqlite/canonical"
+	market "github.com/tutti-os/tutti/packages/connector/host"
 	agenttargetbiz "github.com/tutti-os/tutti/services/tuttid/biz/agenttarget"
 	automationrulebiz "github.com/tutti-os/tutti/services/tuttid/biz/automationrule"
 	modelplanbiz "github.com/tutti-os/tutti/services/tuttid/biz/modelplan"
@@ -66,10 +67,12 @@ type Service struct {
 	WorkspaceIDs                   func(context.Context) ([]string, error)
 	PromptAttachmentStore          PromptAttachmentStore
 	RuntimePreparer                runtimeprep.Preparer
+	ConnectorRoutingHints          func() []runtimeprep.ConnectorRoutingHint
 	ModelGateway                   ModelGatewayRegistry
+	BrowserUseAvailable            func() bool
 	ComputerUseAvailable           func() bool
 	CapabilityLister               ComposerCapabilityLister
-	InstalledConnectorSnapshots    InstalledConnectorSnapshotReader
+	ConnectorMarketSnapshots       market.SnapshotReader
 	ExtensionComposerProfiles      ExtensionComposerProfileResolver
 	AgentComposerDefaultsReader    AgentComposerDefaultsReader
 	ProviderAvailabilityCacheTTL   time.Duration
@@ -684,8 +687,10 @@ type CreateSessionInput struct {
 // for callers that need to correlate the initial submission. Create remains
 // the compatibility surface for consumers that only need the Session.
 type CreateSessionResult struct {
-	Session Session
-	TurnID  string
+	Session           Session
+	TurnID            string
+	SessionStatus     agenthost.CreateSessionStatus
+	InitialGoalStatus agenthost.CreateSessionInitialGoalStatus
 }
 
 type TuttiModeActivationIntent struct {

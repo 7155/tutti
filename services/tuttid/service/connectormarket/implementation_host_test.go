@@ -6,19 +6,44 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	agentruntime "github.com/tutti-os/tutti/packages/agent/daemon/runtime"
-	market "github.com/tutti-os/tutti/packages/connector/market/daemon"
+	market "github.com/tutti-os/tutti/packages/connector/host"
+	connectorruntime "github.com/tutti-os/tutti/packages/connector/runtime"
 	cliservice "github.com/tutti-os/tutti/services/tuttid/service/cli"
-	managedruntime "github.com/tutti-os/tutti/services/tuttid/service/managedruntime"
 )
+
+const implementationHostTestReleaseDigest = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+
+func completeImplementationHostTestRelease(release market.Release) market.Release {
+	release.SchemaVersion = "1"
+	release.ReleaseID = "github@1.0.0"
+	release.ConnectorKey = "github"
+	release.Version = "1.0.0"
+	release.ReleaseDigest = implementationHostTestReleaseDigest
+	release.ManifestDigest = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	release.Manifest.SchemaVersion = "1"
+	release.Manifest.DisplayName = "GitHub"
+	if managed := release.Manifest.Implementation.ManagedStdio; managed != nil && managed.CLI != nil {
+		managed.Runtime.VersionRange = ">=20.0.0 <21.0.0"
+	}
+	release.Artifact = market.Artifact{Key: "connectors/github/1.0.0.zip",
+		SHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", SizeBytes: 1024, MediaType: "application/vnd.tutti.connector+zip"}
+	release.PublishedAt = time.Unix(1, 0).UTC()
+	release.Status = market.ReleaseStatusAvailable
+	return release
+}
 
 type mcpProcessStub struct{ connection *mcpConnectionStub }
 
@@ -93,9 +118,17 @@ func (stub *blockingStartProcessStub) Start(ctx context.Context, _ agentruntime.
 	return nil, ctx.Err()
 }
 
-type retryCloseProcessStub struct{ connection *retryCloseConnection }
+type retryCloseProcessStub struct {
+	connection *retryCloseConnection
+	started    chan struct{}
+}
 
 func (stub *retryCloseProcessStub) Start(context.Context, agentruntime.ProcessSpec) (agentruntime.ProcessConnection, error) {
+	select {
+	case <-stub.started:
+	default:
+		close(stub.started)
+	}
 	return stub.connection, nil
 }
 
@@ -133,27 +166,27 @@ func testCLIHost(t *testing.T, processes agentruntime.ProcessTransport) (*Implem
 	if err := os.WriteFile(runtimePath, []byte("runtime"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	inventory, err := executionInventoryDigest(root)
+	inventory, err := connectorruntime.ExecutionInventoryDigest(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	commands := NewConnectorCommandRegistry()
 	host, err := NewImplementationHost(ImplementationHostConfig{Artifacts: preparedResolverStub{receipt: market.PreparedArtifactReceipt{PreparedPath: root, InventoryDigest: inventory}},
-		Runtimes: connectorRuntimeStub{executable: managedruntime.ConnectorExecutable{Path: runtimePath,
+		Runtimes: connectorRuntimeStub{executable: connectorruntime.ConnectorExecutable{Path: runtimePath,
 			SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", SizeBytes: 7}},
-		Processes: processes, Commands: commands, StateRoot: t.TempDir()})
+		Processes: processes, Commands: commands, StateRoot: t.TempDir(), MCPStartupTimeout: 20 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = host.Close() })
 	connector := market.Connector{Key: "github", Installation: market.Installation{State: market.InstallationStateInstalled,
-		InstalledReleaseDigest: "release-digest"}, Authorization: market.Authorization{State: market.AuthorizationStateNotRequired}}
-	connector.Release = market.Release{ConnectorKey: "github", ReleaseDigest: "release-digest", Manifest: market.Manifest{AuthorizationKind: "none", IconURL: "data:image/png;base64,iVBORw0KGgo=",
+		InstalledReleaseDigest: implementationHostTestReleaseDigest}, Authorization: market.Authorization{State: market.AuthorizationStateNotRequired}}
+	connector.Release = completeImplementationHostTestRelease(market.Release{Manifest: market.Manifest{AuthorizationKind: "none", IconURL: "data:image/png;base64,iVBORw0KGgo=",
 		Implementation: market.Implementation{Kind: market.ImplementationKindManagedStdio, ManagedStdio: &market.ManagedStdioImplementation{
-			Runtime: market.RuntimeRequirement{Language: "node", Profile: managedruntime.ConnectorNodeProfile, ABI: "node20-" + runtime.GOOS + "-" + runtime.GOARCH},
+			Runtime: market.RuntimeRequirement{Language: "node", Profile: connectorruntime.ConnectorNodeProfile, ABI: "node20-" + runtime.GOOS + "-" + runtime.GOARCH},
 			CLI: &market.ManagedCLIInterface{Entrypoint: "connector.js", Commands: []market.CLICommand{{Name: "status",
 				InputSchema: map[string]any{"type": "object"}, TimeoutMS: 120_000}}},
-		}}}}
+		}}}})
 	return host, commands, connector, market.HostGeneration{BootEpoch: "boot-1", Generation: 2}
 }
 
@@ -162,22 +195,25 @@ func (stub preparedResolverStub) ResolvePrepared(context.Context, market.Release
 }
 
 type connectorRuntimeStub struct {
-	executable managedruntime.ConnectorExecutable
+	executable connectorruntime.ConnectorExecutable
 }
 
-func (stub connectorRuntimeStub) ResolveProfile(context.Context, string) (managedruntime.ResolvedConnectorRuntime, error) {
-	return managedruntime.ResolvedConnectorRuntime{Root: filepath.Dir(stub.executable.Path), Profile: managedruntime.ConnectorNodeProfile,
-		ABI: "node20-" + runtime.GOOS + "-" + runtime.GOARCH, Node: &stub.executable}, nil
+func (stub connectorRuntimeStub) ResolveProfile(context.Context, string) (connectorruntime.ResolvedConnectorRuntime, error) {
+	return connectorruntime.ResolvedConnectorRuntime{Root: filepath.Dir(stub.executable.Path), Profile: connectorruntime.ConnectorNodeProfile,
+		ABI: "node20-" + runtime.GOOS + "-" + runtime.GOARCH, Node: &stub.executable, Components: map[string]string{"node": "20.0.0"}}, nil
 }
-func (stub connectorRuntimeStub) VerifyLaunch(string, string) (managedruntime.ConnectorExecutable, error) {
+func (stub connectorRuntimeStub) VerifyLaunch(string, string) (connectorruntime.ConnectorExecutable, error) {
 	return stub.executable, nil
 }
 
-type connectorProcessStub struct{ starts int }
+type connectorProcessStub struct {
+	starts   int
+	exitCode int
+}
 
 func (stub *connectorProcessStub) Start(context.Context, agentruntime.ProcessSpec) (agentruntime.ProcessConnection, error) {
 	stub.starts++
-	exit := 0
+	exit := stub.exitCode
 	return &connectorConnectionStub{frames: []agentruntime.ProcessFrame{{Stdout: []byte(`{"ok":true}`)}, {ExitCode: &exit}}}, nil
 }
 
@@ -220,11 +256,42 @@ func TestGenericCLIArgumentsRejectsNonInteractiveOverrides(t *testing.T) {
 }
 
 func TestContainsPermissionScopeAcceptsScopedPermission(t *testing.T) {
-	if !containsPermissionScope([]string{"network:larksuite.com"}, "network") {
+	if !connectorruntime.ContainsPermissionScope([]string{"network:larksuite.com"}, "network") {
 		t.Fatal("scoped network permission did not enable connector network access")
 	}
-	if containsPermissionScope([]string{"filesystem:workspace"}, "network") {
+	if connectorruntime.ContainsPermissionScope([]string{"filesystem:workspace"}, "network") {
 		t.Fatal("unrelated scoped permission enabled connector network access")
+	}
+}
+
+func TestImplementationHostChecksCLIInstallationWithDeclaredProbeArguments(t *testing.T) {
+	processes := &recordingConnectorProcessStub{}
+	host, _, connector, generation := testCLIHost(t, processes)
+	cli := connector.Release.Manifest.Implementation.ManagedStdio.CLI
+	cli.Arguments = []string{"--non-interactive"}
+	cli.InstallationProbe = &market.InstallationProbe{Arguments: []string{"doctor", "--quiet"}, TimeoutMS: 1_000}
+	request := market.InstallationCheckRequest{OperationID: "probe-1", ConnectionID: "workspace-1",
+		Connector: connector, Generation: generation}
+
+	observation, err := host.CheckInstallation(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observation.State != market.InstallationObservationPresent || observation.ConnectorKey != connector.Key ||
+		observation.ReleaseDigest != implementationHostTestReleaseDigest {
+		t.Fatalf("observation = %#v", observation)
+	}
+	entrypoint := filepath.Join(processes.spec.CWD, "connector.js")
+	wantSuffix := []string{entrypoint, "--non-interactive", "doctor", "--quiet"}
+	if len(processes.spec.Command) < len(wantSuffix)+1 ||
+		!slices.Equal(processes.spec.Command[len(processes.spec.Command)-len(wantSuffix):], wantSuffix) {
+		t.Fatalf("probe command = %#v, want suffix %#v", processes.spec.Command, wantSuffix)
+	}
+
+	processes.exitCode = 1
+	observation, err = host.CheckInstallation(context.Background(), request)
+	if err != nil || observation.State != market.InstallationObservationAbsent {
+		t.Fatalf("absent observation = %#v, error = %v", observation, err)
 	}
 }
 
@@ -238,7 +305,7 @@ func TestImplementationHostRegistersWorkspaceFencedCLIAndDeactivatesIt(t *testin
 	if err := os.WriteFile(runtimePath, []byte("runtime"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	inventory, err := executionInventoryDigest(root)
+	inventory, err := connectorruntime.ExecutionInventoryDigest(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +313,7 @@ func TestImplementationHostRegistersWorkspaceFencedCLIAndDeactivatesIt(t *testin
 	processes := &connectorProcessStub{}
 	host, err := NewImplementationHost(ImplementationHostConfig{
 		Artifacts: preparedResolverStub{receipt: market.PreparedArtifactReceipt{PreparedPath: root, InventoryDigest: inventory}},
-		Runtimes: connectorRuntimeStub{executable: managedruntime.ConnectorExecutable{Path: runtimePath,
+		Runtimes: connectorRuntimeStub{executable: connectorruntime.ConnectorExecutable{Path: runtimePath,
 			SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", SizeBytes: 7}},
 		Processes: processes, Commands: commands, StateRoot: t.TempDir(),
 	})
@@ -254,13 +321,13 @@ func TestImplementationHostRegistersWorkspaceFencedCLIAndDeactivatesIt(t *testin
 		t.Fatal(err)
 	}
 	connector := market.Connector{Key: "github", Installation: market.Installation{State: market.InstallationStateInstalled,
-		InstalledReleaseDigest: "release-digest"}, Authorization: market.Authorization{State: market.AuthorizationStateNotRequired}}
-	connector.Release = market.Release{ConnectorKey: "github", ReleaseDigest: "release-digest", Manifest: market.Manifest{AuthorizationKind: "none", IconURL: "data:image/png;base64,iVBORw0KGgo=",
+		InstalledReleaseDigest: implementationHostTestReleaseDigest}, Authorization: market.Authorization{State: market.AuthorizationStateNotRequired}}
+	connector.Release = completeImplementationHostTestRelease(market.Release{Manifest: market.Manifest{AuthorizationKind: "none", IconURL: "data:image/png;base64,iVBORw0KGgo=",
 		Implementation: market.Implementation{Kind: market.ImplementationKindManagedStdio, ManagedStdio: &market.ManagedStdioImplementation{
-			Runtime: market.RuntimeRequirement{Language: "node", Profile: managedruntime.ConnectorNodeProfile, ABI: "node20-" + runtime.GOOS + "-" + runtime.GOARCH},
+			Runtime: market.RuntimeRequirement{Language: "node", Profile: connectorruntime.ConnectorNodeProfile, ABI: "node20-" + runtime.GOOS + "-" + runtime.GOARCH},
 			CLI: &market.ManagedCLIInterface{Entrypoint: "connector.js", Commands: []market.CLICommand{{Name: "status",
 				InputSchema: map[string]any{"type": "object"}, TimeoutMS: 1_000}}},
-		}}}}
+		}}}})
 	generation := market.HostGeneration{BootEpoch: "boot-1", Generation: 2}
 	receipt, err := host.Reconcile(context.Background(), market.RuntimeReconcileRequest{OperationID: "op-1", ConnectionID: "workspace-1",
 		Connector: connector, Enabled: true, Generation: generation})
@@ -283,11 +350,115 @@ func TestImplementationHostRegistersWorkspaceFencedCLIAndDeactivatesIt(t *testin
 		t.Fatalf("invoke = %#v, %v starts=%d", output, err, processes.starts)
 	}
 	if err := host.DeactivateRuntime(context.Background(), market.RuntimeDeactivationRequest{ConnectionID: "workspace-1", ConnectorKey: "github",
-		ReleaseDigest: "release-digest", Generation: market.HostGeneration{BootEpoch: "boot-1", Generation: 3}}); err != nil {
+		ReleaseDigest: implementationHostTestReleaseDigest, Generation: market.HostGeneration{BootEpoch: "boot-1", Generation: 3}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := commands.Invoke(context.Background(), cliservice.InvokeRequest{CommandID: receipt.RouteIDs[0], Context: cliservice.InvokeContext{WorkspaceID: "workspace-1"}}); err == nil {
 		t.Fatal("deactivated connector CLI command remained routable")
+	}
+}
+
+func TestImplementationHostDiscoversAndInvokesRemoteStreamableHTTPMCP(t *testing.T) {
+	var calls []string
+	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("Cookie") != "session_id=user-session" {
+			t.Errorf("Cookie = %q", request.Header.Get("Cookie"))
+		}
+		if request.Header.Get("Tutti-Connector-Version") != "1.0.0" {
+			t.Errorf("Tutti-Connector-Version = %q", request.Header.Get("Tutti-Connector-Version"))
+		}
+		if request.Method == http.MethodDelete {
+			response.WriteHeader(http.StatusNoContent)
+			return
+		}
+		var message struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&message); err != nil {
+			t.Error(err)
+			return
+		}
+		if len(message.ID) == 0 {
+			response.WriteHeader(http.StatusAccepted)
+			return
+		}
+		calls = append(calls, message.Method)
+		result := map[string]any{}
+		switch message.Method {
+		case "initialize":
+			result = map[string]any{"protocolVersion": "2025-06-18"}
+		case "tools/list":
+			result = map[string]any{"tools": []any{map[string]any{
+				"name": "status", "description": "Read status",
+				"inputSchema": map[string]any{"type": "object"},
+			}}}
+		case "tools/call":
+			result = map[string]any{"content": []any{map[string]any{"type": "text", "text": "ready"}}}
+		}
+		response.Header().Set("Content-Type", "application/json")
+		response.Header().Set("Mcp-Session-Id", "mcp-session")
+		_ = json.NewEncoder(response).Encode(map[string]any{"jsonrpc": "2.0", "id": message.ID, "result": result})
+	}))
+	defer server.Close()
+
+	root := t.TempDir()
+	runtimePath := filepath.Join(root, "node")
+	if err := os.WriteFile(runtimePath, []byte("runtime"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	commands := NewConnectorCommandRegistry()
+	transport := server.Client().Transport.(*http.Transport).Clone()
+	transport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
+	}
+	host, err := NewImplementationHost(ImplementationHostConfig{
+		Artifacts: preparedResolverStub{}, Runtimes: connectorRuntimeStub{executable: connectorruntime.ConnectorExecutable{
+			Path: runtimePath, SHA256: strings.Repeat("a", 64), SizeBytes: 7,
+		}}, Processes: &connectorProcessStub{}, Commands: commands, StateRoot: t.TempDir(),
+		RemoteHTTPClient: &http.Client{Transport: transport}, AuthorizeRemoteRequest: func(request *http.Request) error {
+			request.Header.Set("Cookie", "session_id=user-session")
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = host.Close() })
+	endpoint := strings.Replace(server.URL, "127.0.0.1", "example.com", 1)
+	connector := market.Connector{Key: "github", Installation: market.Installation{
+		State: market.InstallationStateInstalled, InstalledReleaseDigest: implementationHostTestReleaseDigest,
+	}, Authorization: market.Authorization{State: market.AuthorizationStateNotRequired}}
+	connector.Release = completeImplementationHostTestRelease(market.Release{Manifest: market.Manifest{
+		AuthorizationKind: "none", IconURL: "data:image/png;base64,iVBORw0KGgo=",
+		Implementation: market.Implementation{Kind: market.ImplementationKindRemoteStreamableHTTP,
+			RemoteStreamableHTTP: &market.RemoteStreamableHTTPImplementation{
+				Endpoint: endpoint, AllowedHosts: []string{"example.com"},
+				Authentication: market.RemoteTransportAuthentication{Type: "host_session"},
+				Limits:         market.RemoteTransportLimits{TimeoutMS: 10_000, MaxResponseBytes: 4096},
+			}},
+	}})
+	generation := market.HostGeneration{BootEpoch: "boot-1", Generation: 2}
+	receipt, err := host.Reconcile(context.Background(), market.RuntimeReconcileRequest{
+		OperationID: "op-remote", ConnectionID: "default", Connector: connector, Enabled: true, Generation: generation,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(receipt.RouteIDs) != 1 || receipt.RouteIDs[0] != "connector.github.mcp.status" {
+		t.Fatalf("routes = %#v", receipt.RouteIDs)
+	}
+	output, err := commands.Invoke(context.Background(), cliservice.InvokeRequest{
+		CommandID: receipt.RouteIDs[0], Input: map[string]any{}, Context: cliservice.InvokeContext{WorkspaceID: "workspace-1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output.Value == nil {
+		t.Fatalf("output = %#v", output)
+	}
+	if len(calls) != 3 || calls[0] != "initialize" || calls[1] != "tools/list" || calls[2] != "tools/call" {
+		t.Fatalf("calls = %#v", calls)
 	}
 }
 
@@ -320,9 +491,8 @@ func TestImplementationHostExecutesFromVerifiedSnapshotAfterPreparedTreeReplacem
 	if string(contents) != "// connector" {
 		t.Fatalf("executed snapshot contents = %q", contents)
 	}
-	if processes.spec.ConnectorSandbox == nil || len(processes.spec.ConnectorSandbox.ReadOnlyTreeIdentities) != 1 ||
-		processes.spec.ConnectorSandbox.ReadOnlyTreeIdentities[0].Root != processes.spec.CWD {
-		t.Fatalf("snapshot sandbox identity = %#v", processes.spec.ConnectorSandbox)
+	if len(processes.spec.ArtifactTrees) != 1 || processes.spec.ArtifactTrees[0].Root != processes.spec.CWD {
+		t.Fatalf("snapshot artifact identity = %#v", processes.spec.ArtifactTrees)
 	}
 }
 
@@ -371,7 +541,7 @@ func TestImplementationHostDeactivationCancelsBlockingStartWithoutWaitingForCLIC
 	}
 	deadline := time.Now().Add(100 * time.Millisecond)
 	if err := host.DeactivateRuntime(context.Background(), market.RuntimeDeactivationRequest{ConnectionID: "workspace-1", ConnectorKey: "github",
-		ReleaseDigest: "release-digest", Generation: market.HostGeneration{BootEpoch: "boot-1", Generation: 3}, Deadline: deadline}); err != nil {
+		ReleaseDigest: implementationHostTestReleaseDigest, Generation: market.HostGeneration{BootEpoch: "boot-1", Generation: 3}, Deadline: deadline}); err != nil {
 		t.Fatal(err)
 	}
 	if time.Now().After(deadline) {
@@ -386,7 +556,8 @@ func TestImplementationHostDeactivationCancelsBlockingStartWithoutWaitingForCLIC
 
 func TestImplementationHostRetainsFencedRouteUntilCloseCanBeRetried(t *testing.T) {
 	connection := &retryCloseConnection{closed: make(chan struct{})}
-	host, commands, connector, generation := testCLIHost(t, &retryCloseProcessStub{connection: connection})
+	started := make(chan struct{})
+	host, commands, connector, generation := testCLIHost(t, &retryCloseProcessStub{connection: connection, started: started})
 	receipt, err := host.Reconcile(context.Background(), market.RuntimeReconcileRequest{OperationID: "op-1", ConnectionID: "workspace-1",
 		Connector: connector, Enabled: true, Generation: generation})
 	if err != nil {
@@ -398,25 +569,12 @@ func TestImplementationHostRetainsFencedRouteUntilCloseCanBeRetried(t *testing.T
 			Context: cliservice.InvokeContext{WorkspaceID: "workspace-1"}})
 		invokeDone <- invokeErr
 	}()
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		// Start has committed once the route owns the connection; Close below is
-		// the first observable operation, so a short yield is sufficient here.
-		host.mu.Lock()
-		route := host.routes[connectorRouteKey("workspace-1", "github")]
-		host.mu.Unlock()
-		hasProcess := false
-		if route != nil {
-			route.processMu.Lock()
-			hasProcess = len(route.processes) == 1
-			route.processMu.Unlock()
-		}
-		if hasProcess {
-			break
-		}
-		time.Sleep(time.Millisecond)
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("CLI process did not start")
 	}
-	deactivation := market.RuntimeDeactivationRequest{ConnectionID: "workspace-1", ConnectorKey: "github", ReleaseDigest: "release-digest",
+	deactivation := market.RuntimeDeactivationRequest{ConnectionID: "workspace-1", ConnectorKey: "github", ReleaseDigest: implementationHostTestReleaseDigest,
 		Generation: market.HostGeneration{BootEpoch: "boot-1", Generation: 3}, Deadline: time.Now().Add(time.Second)}
 	if err := host.DeactivateRuntime(context.Background(), deactivation); err == nil {
 		t.Fatal("first deactivation unexpectedly hid close failure")
@@ -477,7 +635,6 @@ func TestImplementationHostBoundsMCPProcessStart(t *testing.T) {
 	host, _, connector, generation := testCLIHost(t, processes)
 	connector.Release.Manifest.Implementation.ManagedStdio.CLI = nil
 	connector.Release.Manifest.Implementation.ManagedStdio.MCP = &market.ManagedMCPInterface{Entrypoint: "connector.js"}
-	host.mcpStartupTimeout = 20 * time.Millisecond
 	startedAt := time.Now()
 	if _, err := host.Reconcile(context.Background(), market.RuntimeReconcileRequest{OperationID: "op-1", ConnectionID: "workspace-1",
 		Connector: connector, Enabled: true, Generation: generation}); !errors.Is(err, context.DeadlineExceeded) {

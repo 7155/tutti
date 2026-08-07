@@ -6,9 +6,11 @@ export default defineConfig({
   entry: {
     index: "src/index.ts",
     "contracts/index": "src/contracts/index.ts",
+    "core/index": "src/services/core/index.ts",
     "i18n/index": "src/i18n/index.ts",
     "renderer/index": "src/renderer/index.ts",
-    "services/index": "src/services/index.ts"
+    "services/index": "src/services/index.ts",
+    "ui/index": "src/ui/index.ts"
   },
   external: [
     "@tutti-os/ui-i18n-runtime",

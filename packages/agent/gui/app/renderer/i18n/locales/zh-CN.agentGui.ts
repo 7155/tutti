@@ -9,6 +9,7 @@ import { zhCNAgentGuiCollaboration } from "./zh-CN.agentGuiCollaboration.ts";
 import { zhCNTuttiModePlan } from "./zh-CN.tuttiModePlan.ts";
 
 export const zhCNAgentGui = {
+  imageDownloaded: "图片已下载",
   codexSaverModeLabel: "Codex 省额度模式",
   codexSaverModeDescription:
     "主模型保持不变；合适的独立子任务改用 Luna Max，按当前额度口径约为 Sol High 的 1/10。实际效果与速度因任务而异。",
@@ -474,7 +475,7 @@ export const zhCNAgentGui = {
   activityNothingNeedsAttention: "暂无需要你关注的会话",
   activityToday: "今天",
   activityYesterday: "昨天",
-  activityLocalSource: "本地",
+  activityConversationSource: "对话",
   activityStatusFailed: "执行失败",
   activityStatusRecentlyActive: "最近活跃",
   activityStatusUnread: "有未读结果",

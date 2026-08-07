@@ -101,6 +101,7 @@ type ComposerCapabilityOption struct {
 	Kind        string
 	Name        string
 	Label       string
+	IconURL     string
 	Description string
 	Status      string
 	Source      string
@@ -274,10 +275,10 @@ func (s *Service) GetComposerOptions(ctx context.Context, input ComposerOptionsI
 	capabilityErrors := []string(nil)
 	if composerOptionsIncludeCapabilityCatalog(input) {
 		capabilityCatalog, capabilityErrors = s.listComposerCapabilityOptions(ctx, provider, input.Cwd, skills)
-		if s.InstalledConnectorSnapshots != nil {
-			localConnectors, err := installedConnectorCapabilityOptions(ctx, s.InstalledConnectorSnapshots)
+		if s.ConnectorMarketSnapshots != nil {
+			localConnectors, err := localConnectorCapabilityOptions(ctx, s.ConnectorMarketSnapshots)
 			if err != nil {
-				capabilityErrors = append(capabilityErrors, "load installed connectors: "+err.Error())
+				capabilityErrors = append(capabilityErrors, "load local connectors: "+err.Error())
 			}
 			capabilityCatalog = replaceComposerConnectorCapabilities(capabilityCatalog, localConnectors)
 		}
@@ -328,7 +329,7 @@ func (s *Service) GetComposerOptions(ctx context.Context, input ComposerOptionsI
 	}
 	reasoningOptions := composerReasoningOptionValues(provider, effectiveSettings.ReasoningEffort, locale)
 	speedOptions := composerSpeedOptionValues(provider, locale)
-	capabilities := composerProviderCapabilities(provider, s.computerUseAvailable())
+	capabilities := composerProviderCapabilities(provider, s.computerUseAvailable(), s.browserUseAvailable())
 	if providerTargetRefKind(input.providerTargetRef) == "agent_extension" {
 		capabilities = nil
 	}
@@ -454,7 +455,7 @@ func (s *Service) GetComposerOptions(ctx context.Context, input ComposerOptionsI
 		if err != nil {
 			return ComposerOptions{}, err
 		}
-		options = applyExtensionComposerCapabilities(options, extensionProfile, s.computerUseAvailable())
+		options = applyExtensionComposerCapabilities(options, extensionProfile, s.computerUseAvailable(), s.browserUseAvailable())
 	}
 	options = applyResolvedModelPlanComposerOverlay(options, modelPlanResolution)
 	options.CodexSaverModeSupported = codexSaverModeSupported

@@ -7,6 +7,7 @@ import (
 	agenthost "github.com/tutti-os/tutti/packages/agent/host"
 	runtimeprep "github.com/tutti-os/tutti/packages/agent/runtimeprep"
 	agentactivitybiz "github.com/tutti-os/tutti/packages/agent/store-sqlite"
+	market "github.com/tutti-os/tutti/packages/connector/host"
 	reporterservice "github.com/tutti-os/tutti/services/tuttid/service/reporter"
 )
 
@@ -32,6 +33,7 @@ type ServiceHostConfig struct {
 type ServiceRuntimeConfig struct {
 	Preparer                      runtimeprep.Preparer
 	ModelGateway                  ModelGatewayRegistry
+	BrowserUseAvailable           func() bool
 	ComputerUseAvailable          func() bool
 	RuntimeOperationStore         RuntimeOperationStore
 	RuntimeOperationOwner         string
@@ -74,7 +76,7 @@ type ServiceComposerConfig struct {
 	WorkspaceAgentResolver        WorkspaceAgentResolver
 	AgentComposerDefaultsReader   AgentComposerDefaultsReader
 	CapabilityLister              ComposerCapabilityLister
-	InstalledConnectorSnapshots   InstalledConnectorSnapshotReader
+	ConnectorMarketSnapshots      market.SnapshotReader
 	ExtensionComposerProfiles     ExtensionComposerProfileResolver
 	ProviderAvailabilityCacheTTL  time.Duration
 	CapabilityCatalogCacheTTL     time.Duration
@@ -147,9 +149,10 @@ func (s *Service) applyConfig(config ServiceConfig) {
 	s.PromptAttachmentStore = config.Resources.PromptAttachmentStore
 	s.RuntimePreparer = config.Runtime.Preparer
 	s.ModelGateway = config.Runtime.ModelGateway
+	s.BrowserUseAvailable = config.Runtime.BrowserUseAvailable
 	s.ComputerUseAvailable = config.Runtime.ComputerUseAvailable
 	s.CapabilityLister = config.Composer.CapabilityLister
-	s.InstalledConnectorSnapshots = config.Composer.InstalledConnectorSnapshots
+	s.ConnectorMarketSnapshots = config.Composer.ConnectorMarketSnapshots
 	s.ExtensionComposerProfiles = config.Composer.ExtensionComposerProfiles
 	s.AgentComposerDefaultsReader = config.Composer.AgentComposerDefaultsReader
 	s.ProviderAvailabilityCacheTTL = config.Composer.ProviderAvailabilityCacheTTL

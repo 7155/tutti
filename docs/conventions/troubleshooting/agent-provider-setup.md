@@ -1589,7 +1589,9 @@ invalid_grant`. Search `tuttid.log` for
 - Symptom:
   `opencode models --verbose` lists more models in a local terminal than the
   OpenCode model picker in Agent GUI. Custom provider ids or recently published
-  model variants are commonly absent.
+  model variants are commonly absent. A related presentation symptom shows a
+  provider-qualified recent item such as `newapi/deepseek-v4-pro`, while the
+  searchable catalog shows only the ambiguous model name `DeepSeek V4 Pro`.
 - Quick checks:
   Run `opencode models --verbose` from the same workspace cwd passed to the
   composer. Count exact `provider/model` lines and compare them with the
@@ -1601,18 +1603,25 @@ invalid_grant`. Search `tuttid.log` for
   daemon previously ran model discovery in its own inherited cwd and stored the
   resulting provider-wide list for six hours. A smaller result from the wrong
   project context therefore remained visible even after the terminal catalog
-  changed.
+  changed. Separately, verbose catalog normalization previously used only the
+  model metadata `name` as the display label even though the exact launch
+  identity remained the provider-qualified `provider/model` id.
 - Fix:
   Pass the composer workspace cwd through the daemon model-catalog request and
   set it as the `opencode models --verbose` process directory. Do not cache
   OpenCode model-list successes or failures. Keep one request-scoped catalog
   projection so a composer-options request starts the CLI only once. Preserve
   the auth/config invalidation event so an already-open composer refreshes when
-  global OpenCode credentials or config files change.
+  global OpenCode credentials or config files change. Append a non-built-in
+  provider id to verbose model labels while preserving the exact
+  provider-qualified id as the selection value. Keep the built-in `opencode`
+  provider suffix hidden so ordinary catalog entries stay concise, and avoid
+  renderer-side provider branches.
 - Validation:
   Cover cwd propagation, repeated uncached OpenCode lookups, all provider/model
   prefixes from verbose output, one catalog lookup per composer-options request,
-  and unchanged cache policies for Codex and Tutti Agent. Run
+  duplicate model names under different provider ids, and unchanged cache
+  policies for Codex and Tutti Agent. Run
   `cd services/tuttid && go test ./service/agent` and `pnpm check:changed`.
 - References:
   [opencode_model_catalog.go](../../../services/tuttid/service/agent/opencode_model_catalog.go)
@@ -2122,13 +2131,19 @@ invalid_grant`. Search `tuttid.log` for
   A Codex session bound to an OpenAI-protocol Model Plan fails immediately,
   stays working without output, or loses tool-call messages. The Plan's
   connection check can still pass because detection calls
-  `/v1/chat/completions` directly.
+  `/v1/chat/completions` directly. Another immediate-failure shape is a
+  terminal provider error such as `metadata value too long: ... (578 > 512)`
+  after a short prompt that produced no assistant content.
 - Quick checks:
   Inspect the session-scoped Codex `config.toml`. The
   `tutti-model-plan` provider must use a loopback `base_url`, a temporary
   `TUTTI_MODEL_PLAN_API_KEY`, and `wire_api = "responses"`. Verify the upstream
   server receives `/v1/chat/completions`, not `/v1/responses`. A direct
-  Chat-only Base URL paired with `wire_api = "responses"` is incomplete.
+  Chat-only Base URL paired with `wire_api = "responses"` is incomplete. For
+  the metadata failure, inspect the exported Session's terminal Turn error and
+  compare the reported value length with 512. Codex workspace diagnostics can
+  grow with Git remotes and usage-attribution fields. Adjacent model-list 404s
+  are not the terminal cause when the thread and Turn both start successfully.
 - Root cause:
   Current Codex emits Responses-shaped requests and requires terminal
   Responses SSE events. A Chat-only provider neither owns `/v1/responses` nor
@@ -2139,7 +2154,11 @@ invalid_grant`. Search `tuttid.log` for
   tools that Chat Completions cannot execute. Codex also sends Responses
   `developer` messages; Chat-compatible providers that only recognize
   `system`/`user`/`assistant`/`tool` can reject the otherwise valid request
-  during tokenization.
+  during tokenization. The gateway also used to forward Responses
+  `metadata`/`client_metadata` unchanged. Codex can encode its workspace
+  diagnostics as one optional metadata value larger than the 512-byte limit
+  enforced by common Chat-compatible endpoints, so the upstream rejects the
+  request before model execution.
 - Fix:
   Keep Codex on `wire_api = "responses"` and route the session through
   tuttid's loopback Model Gateway. The gateway authenticates the temporary
@@ -2157,6 +2176,11 @@ invalid_grant`. Search `tuttid.log` for
   index zero. This preserves instruction precedence without requiring newer
   OpenAI-only roles or mid-conversation system roles from the upstream
   tokenizer. OpenCode continues to use the Plan endpoint directly.
+  Before sending the converted Chat request, omit only metadata values larger
+  than 512 bytes. Do not truncate them, because a truncated diagnostic JSON
+  value is misleading and may be invalid. Keep the original Responses
+  metadata for local response reconstruction; metadata at or below the limit
+  and Responses-over-client key precedence remain unchanged.
 - Validation:
   Cover request/tool conversion, interleaved parallel tool arguments, UTF-8
   and arbitrary SSE byte boundaries, large arguments, usage, upstream errors,
@@ -2166,10 +2190,13 @@ invalid_grant`. Search `tuttid.log` for
   internal-role normalization and system-message collapse. A real smoke test
   must complete two Codex turns and one tool call while the upstream records
   `/v1/chat/completions` without any upstream `developer` role or `system`
-  message after index zero.
+  message after index zero. Cover the metadata boundary explicitly: a 512-byte
+  value is forwarded, a 513-byte value is omitted, and an omitted Responses
+  value is not replaced by lower-priority client metadata with the same key.
 - References:
   [model-access-plans.md](../../architecture/model-access-plans.md)
   [gateway.go](../../../services/tuttid/service/modelgateway/gateway.go)
+  [responses_request.go](../../../services/tuttid/service/modelgateway/responses_request.go)
   [stream_converter.go](../../../services/tuttid/service/modelgateway/stream_converter.go)
   [model_endpoint.go](../../../packages/agent/runtimeprep/model_endpoint.go)
 

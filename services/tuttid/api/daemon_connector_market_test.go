@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	market "github.com/tutti-os/tutti/packages/connector/market/daemon"
+	market "github.com/tutti-os/tutti/packages/connector/host"
 	tuttigenerated "github.com/tutti-os/tutti/services/tuttid/api/generated"
 )
 
@@ -66,6 +66,11 @@ func TestDaemonAPIConnectorMarketSnapshotHidesImplementationConfig(t *testing.T)
 	}
 	if implementation["kind"] != market.ImplementationKindManagedStdio {
 		t.Fatalf("implementation.kind = %#v, want managed_stdio", implementation["kind"])
+	}
+	routing := manifest["agentRouting"].(map[string]any)
+	aliases := routing["aliases"].([]any)
+	if len(aliases) != 2 || aliases[0] != "Notion" || aliases[1] != "Notion AI" {
+		t.Fatalf("public agent routing aliases = %#v", aliases)
 	}
 }
 
@@ -163,12 +168,16 @@ func connectorMarketTestConnector() market.Connector {
 				IconURL:       "data:image/png;base64,iVBORw0KGgo=",
 				SchemaVersion: "1",
 				DisplayName:   "Notion",
+				AgentRouting:  &market.AgentRouting{Aliases: []string{"Notion", "Notion AI"}},
 				Permissions:   []string{"pages.read"},
 				Implementation: market.Implementation{
 					Kind: market.ImplementationKindManagedStdio,
 					ManagedStdio: &market.ManagedStdioImplementation{
-						Runtime: market.RuntimeRequirement{Language: "node", Profile: "connector-node-static", ABI: "node20-darwin-arm64"},
-						MCP:     &market.ManagedMCPInterface{Entrypoint: "bin/notion.js"}, CredentialBrokerProtocol: market.CredentialBrokerProtocolV1,
+						Runtime: market.RuntimeRequirement{Language: "node", Profile: "connector-node-static", ABI: "node20-darwin-arm64", VersionRange: ">=20.0.0 <21.0.0"},
+						CLI: &market.ManagedCLIInterface{Entrypoint: "notion", TimeoutMS: 120_000,
+							Commands: []market.CLICommand{{Name: "run", InputSchema: map[string]any{"type": "object"}, TimeoutMS: 30_000}}},
+						CredentialBroker: &market.ManagedCredentialBroker{Protocol: market.CredentialBrokerProtocolV1,
+							Entrypoint: "authorization/broker.mjs", TimeoutMS: 300_000, AllowedHosts: []string{"notion.so"}},
 					},
 				},
 				AuthorizationKind: "oauth2",

@@ -39,9 +39,8 @@ export type ConnectorOperationState =
 export type ConnectorOperationStage =
   | "accepted"
   | "refreshing"
-  | "downloading"
-  | "prepared"
-  | "activating"
+  | "installing"
+  | "installed"
   | "deactivating"
   | "authorizing"
   | "disconnecting"
@@ -76,11 +75,18 @@ export interface ConnectorManagedCliInterface {
   commands: ConnectorManagedCliCommand[];
 }
 
+export interface ConnectorManagedCredentialBroker {
+  protocol: "tutti.connector.credentials.v1";
+  entrypoint: string;
+  timeoutMs: number;
+  allowedHosts: string[];
+}
+
 export interface ConnectorManagedStdioImplementation {
   runtime: ConnectorRuntimeRequirement;
   mcp?: ConnectorManagedMcpInterface;
   cli?: ConnectorManagedCliInterface;
-  credentialBrokerProtocol?: string;
+  credentialBroker?: ConnectorManagedCredentialBroker;
 }
 
 export interface ConnectorRemoteStreamableHttpImplementation {
@@ -108,11 +114,16 @@ export interface ConnectorCompatibilityRequirements {
   minimumHostVersion?: string;
 }
 
+export interface ConnectorAgentRouting {
+  aliases: string[];
+}
+
 export interface ConnectorManifest {
   schemaVersion: "1";
   displayName: string;
   iconUrl: string;
   description?: string;
+  agentRouting?: ConnectorAgentRouting;
   permissions: string[];
   implementation: ConnectorManifestImplementation;
   authorizationKind: string;
@@ -218,6 +229,10 @@ export interface ConnectorMarketMutationInput {
 
 export interface ConnectorMutationInput extends ConnectorMarketMutationInput {
   connectorKey: string;
+}
+
+export interface ConnectorAuthorizationInput extends ConnectorMutationInput {
+  secret?: string;
 }
 
 export interface ConnectorMutationResult {

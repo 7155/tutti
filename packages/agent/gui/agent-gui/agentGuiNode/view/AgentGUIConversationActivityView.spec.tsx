@@ -12,7 +12,7 @@ import type { AgentGUIConversationRailLabels } from "./agentGUIConversationRailL
 import { AgentGUIConversationActivityView } from "./AgentGUIConversationActivityView";
 
 describe("AgentGUIConversationActivityView", () => {
-  it("renders Priority, local date buckets, and only cached agent text", () => {
+  it("renders Priority, local date buckets, and project context without session content", () => {
     const snapshot = {
       sessionMessagesById: {
         active: [
@@ -34,8 +34,9 @@ describe("AgentGUIConversationActivityView", () => {
 
     expect(screen.getByRole("heading", { name: "Priority" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Today" })).toBeTruthy();
-    expect(screen.getByText("Cached agent response")).toBeTruthy();
-    expect(screen.getAllByText("Project Alpha")).toHaveLength(2);
+    expect(screen.queryByText("Cached agent response")).toBeNull();
+    expect(screen.getByText("Conversation")).toBeTruthy();
+    expect(screen.getAllByText("Project Alpha")).toHaveLength(1);
   });
 
   it("keeps an explicit empty Priority section", () => {
@@ -178,7 +179,7 @@ function conversation(id: string): AgentGUIConversationSummary {
 }
 
 const LABELS = {
-  activityLocalSource: "Local",
+  activityConversationSource: "Conversation",
   activityNothingNeedsAttention: "Nothing needs attention",
   activityPriority: "Priority",
   activityStatusFailed: "Failed",

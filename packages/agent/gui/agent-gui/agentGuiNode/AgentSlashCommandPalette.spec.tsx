@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AgentSlashCommandPalette } from "./AgentSlashCommandPalette";
 
@@ -154,6 +154,7 @@ describe("AgentSlashCommandPalette", () => {
   });
 
   it("separates catalog skills, plugins, and connectors into source groups", () => {
+    const onSelectSkill = vi.fn();
     render(
       <AgentSlashCommandPalette
         label="Slash commands"
@@ -196,17 +197,32 @@ describe("AgentSlashCommandPalette", () => {
             label: "google-drive",
             skill: {
               name: "Google Drive",
+              connectorKey: "google-drive",
+              iconUrl: "data:image/png;base64,ZHJpdmU=",
               trigger: "$google-drive",
               sourceKind: "connector",
               kind: "connector",
               status: "available"
+            }
+          },
+          {
+            type: "skill",
+            key: "skill:notion",
+            label: "Notion",
+            skill: {
+              name: "Notion",
+              connectorKey: "notion",
+              trigger: "/notion",
+              sourceKind: "connector",
+              kind: "connector",
+              status: "setupRequired"
             }
           }
         ]}
         onHighlightChange={vi.fn()}
         onSelect={vi.fn()}
         onSelectCapability={vi.fn()}
-        onSelectSkill={vi.fn()}
+        onSelectSkill={onSelectSkill}
       />
     );
 
@@ -221,6 +237,24 @@ describe("AgentSlashCommandPalette", () => {
     );
     expect(screen.getByText("Connected")).toHaveClass(
       "text-[var(--state-success)]"
+    );
+    const googleDriveOption = screen.getByRole("option", {
+      name: /google-drive/i
+    });
+    const googleDriveIcon = googleDriveOption.querySelector("img");
+    expect(googleDriveIcon).toHaveAttribute(
+      "src",
+      "data:image/png;base64,ZHJpdmU="
+    );
+    expect(googleDriveOption.querySelector("svg")).toBeNull();
+
+    fireEvent.error(googleDriveIcon!);
+
+    expect(googleDriveOption.querySelector("img")).toBeNull();
+    expect(googleDriveOption.querySelector("svg")).toBeInTheDocument();
+    screen.getByRole("button", { name: "Not connected" }).click();
+    expect(onSelectSkill).toHaveBeenCalledWith(
+      expect.objectContaining({ connectorKey: "notion" })
     );
   });
 });

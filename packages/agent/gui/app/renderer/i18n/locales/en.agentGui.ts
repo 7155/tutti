@@ -10,6 +10,7 @@ import { enAgentGuiCollaboration } from "./en.agentGuiCollaboration.ts";
 import { enAgentGuiUsageStatus } from "./en.agentGuiUsageStatus.ts";
 
 export const enAgentGui = {
+  imageDownloaded: "Image downloaded",
   initialPlaceholder: "Type @ to reference sessions, files, tasks, and apps",
   followupPlaceholder: "Request follow-up changes from {{provider}}",
   installRequiredPlaceholder: "Connect {{provider}} to send messages",
@@ -444,7 +445,7 @@ export const enAgentGui = {
   activityNothingNeedsAttention: "Nothing needs attention",
   activityToday: "Today",
   activityYesterday: "Yesterday",
-  activityLocalSource: "Local",
+  activityConversationSource: "Conversation",
   activityStatusFailed: "Failed",
   activityStatusRecentlyActive: "Recently active",
   activityStatusUnread: "Unread result",

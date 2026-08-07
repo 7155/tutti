@@ -153,7 +153,7 @@ test("one dialog host projects authorization and management as mutually exclusiv
               authorization: { state: "connected" },
               installation: {
                 installedReleaseDigest:
-                  "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
                 installedReleaseId: "notion@1.0.0",
                 installedVersion: "1.0.0",
                 state: "installed"

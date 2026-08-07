@@ -111,15 +111,18 @@ func (e AgentPromptContentBlockMimeType) Valid() bool {
 
 // Defines values for AgentPromptContentBlockType.
 const (
-	AgentPromptContentBlockTypeImage   AgentPromptContentBlockType = "image"
-	AgentPromptContentBlockTypeMention AgentPromptContentBlockType = "mention"
-	AgentPromptContentBlockTypeSkill   AgentPromptContentBlockType = "skill"
-	AgentPromptContentBlockTypeText    AgentPromptContentBlockType = "text"
+	AgentPromptContentBlockTypeConnector AgentPromptContentBlockType = "connector"
+	AgentPromptContentBlockTypeImage     AgentPromptContentBlockType = "image"
+	AgentPromptContentBlockTypeMention   AgentPromptContentBlockType = "mention"
+	AgentPromptContentBlockTypeSkill     AgentPromptContentBlockType = "skill"
+	AgentPromptContentBlockTypeText      AgentPromptContentBlockType = "text"
 )
 
 // Valid indicates whether the value is a known member of the AgentPromptContentBlockType enum.
 func (e AgentPromptContentBlockType) Valid() bool {
 	switch e {
+	case AgentPromptContentBlockTypeConnector:
+		return true
 	case AgentPromptContentBlockTypeImage:
 		return true
 	case AgentPromptContentBlockTypeMention:
@@ -1582,14 +1585,13 @@ func (e ConnectorMarketOperationKind) Valid() bool {
 // Defines values for ConnectorMarketOperationStage.
 const (
 	ConnectorMarketOperationStageAccepted      ConnectorMarketOperationStage = "accepted"
-	ConnectorMarketOperationStageActivating    ConnectorMarketOperationStage = "activating"
 	ConnectorMarketOperationStageAuthorizing   ConnectorMarketOperationStage = "authorizing"
 	ConnectorMarketOperationStageCompleted     ConnectorMarketOperationStage = "completed"
 	ConnectorMarketOperationStageDeactivating  ConnectorMarketOperationStage = "deactivating"
 	ConnectorMarketOperationStageDisconnecting ConnectorMarketOperationStage = "disconnecting"
-	ConnectorMarketOperationStageDownloading   ConnectorMarketOperationStage = "downloading"
 	ConnectorMarketOperationStageFailed        ConnectorMarketOperationStage = "failed"
-	ConnectorMarketOperationStagePrepared      ConnectorMarketOperationStage = "prepared"
+	ConnectorMarketOperationStageInstalled     ConnectorMarketOperationStage = "installed"
+	ConnectorMarketOperationStageInstalling    ConnectorMarketOperationStage = "installing"
 	ConnectorMarketOperationStageRefreshing    ConnectorMarketOperationStage = "refreshing"
 )
 
@@ -1597,8 +1599,6 @@ const (
 func (e ConnectorMarketOperationStage) Valid() bool {
 	switch e {
 	case ConnectorMarketOperationStageAccepted:
-		return true
-	case ConnectorMarketOperationStageActivating:
 		return true
 	case ConnectorMarketOperationStageAuthorizing:
 		return true
@@ -1608,11 +1608,11 @@ func (e ConnectorMarketOperationStage) Valid() bool {
 		return true
 	case ConnectorMarketOperationStageDisconnecting:
 		return true
-	case ConnectorMarketOperationStageDownloading:
-		return true
 	case ConnectorMarketOperationStageFailed:
 		return true
-	case ConnectorMarketOperationStagePrepared:
+	case ConnectorMarketOperationStageInstalled:
+		return true
+	case ConnectorMarketOperationStageInstalling:
 		return true
 	case ConnectorMarketOperationStageRefreshing:
 		return true
@@ -4722,6 +4722,9 @@ type AgentModelBinding struct {
 type AgentPromptContentBlock struct {
 	AttachmentId *string `json:"attachmentId,omitempty"`
 
+	// ConnectorKey Stable key of an installed local connector selected for this prompt.
+	ConnectorKey *string `json:"connectorKey,omitempty"`
+
 	// Data Base64-encoded image bytes. Mutually exclusive with url.
 	Data     *string                          `json:"data,omitempty"`
 	MimeType *AgentPromptContentBlockMimeType `json:"mimeType,omitempty"`
@@ -4838,6 +4841,7 @@ type AgentProviderAvailabilityStatus string
 // AgentProviderCapabilityOption defines model for AgentProviderCapabilityOption.
 type AgentProviderCapabilityOption struct {
 	Description *string                                 `json:"description,omitempty"`
+	IconUrl     *string                                 `json:"iconUrl,omitempty"`
 	Id          string                                  `json:"id"`
 	Invocation  AgentProviderCapabilityOptionInvocation `json:"invocation"`
 	Kind        AgentProviderCapabilityOptionKind       `json:"kind"`
@@ -5897,6 +5901,11 @@ type CompleteWorkspaceAppUploadResponse struct {
 	File WorkspaceAppUploadedFile `json:"file"`
 }
 
+// ConnectorMarketAgentRouting defines model for ConnectorMarketAgentRouting.
+type ConnectorMarketAgentRouting struct {
+	Aliases []string `json:"aliases"`
+}
+
 // ConnectorMarketArtifact defines model for ConnectorMarketArtifact.
 type ConnectorMarketArtifact struct {
 	Key       string `json:"key"`
@@ -5909,6 +5918,13 @@ type ConnectorMarketArtifact struct {
 type ConnectorMarketAuthorization struct {
 	FailureCode *string                           `json:"failureCode,omitempty"`
 	State       ConnectorMarketAuthorizationState `json:"state"`
+}
+
+// ConnectorMarketAuthorizationRequest defines model for ConnectorMarketAuthorizationRequest.
+type ConnectorMarketAuthorizationRequest struct {
+	ClientRequestId  string  `json:"clientRequestId"`
+	ExpectedRevision int64   `json:"expectedRevision"`
+	Secret           *string `json:"secret,omitempty"`
 }
 
 // ConnectorMarketAuthorizationResponse defines model for ConnectorMarketAuthorizationResponse.
@@ -6022,6 +6038,7 @@ type ConnectorMarketInstallationState string
 
 // ConnectorMarketManifest defines model for ConnectorMarketManifest.
 type ConnectorMarketManifest struct {
+	AgentRouting      *ConnectorMarketAgentRouting              `json:"agentRouting,omitempty"`
 	AuthorizationKind string                                    `json:"authorizationKind"`
 	Compatibility     *ConnectorMarketCompatibilityRequirements `json:"compatibility,omitempty"`
 	Description       *string                                   `json:"description,omitempty"`
@@ -8879,6 +8896,7 @@ type WorkspaceAgentTurnCancelResultReason string
 // WorkspaceAgentTurnError Protocol v2 turn-scoped error; never pollutes session state.
 type WorkspaceAgentTurnError struct {
 	Code    *string `json:"code,omitempty"`
+	Detail  *string `json:"detail,omitempty"`
 	Message string  `json:"message"`
 }
 
@@ -10068,7 +10086,7 @@ type InvokeCliCommandJSONRequestBody = CliInvokeRequest
 type DisconnectConnectorMarketAuthorizationJSONRequestBody = ConnectorMarketMutationRequest
 
 // StartConnectorMarketAuthorizationJSONRequestBody defines body for StartConnectorMarketAuthorization for application/json ContentType.
-type StartConnectorMarketAuthorizationJSONRequestBody = ConnectorMarketMutationRequest
+type StartConnectorMarketAuthorizationJSONRequestBody = ConnectorMarketAuthorizationRequest
 
 // InstallConnectorMarketConnectorJSONRequestBody defines body for InstallConnectorMarketConnector for application/json ContentType.
 type InstallConnectorMarketConnectorJSONRequestBody = ConnectorMarketMutationRequest

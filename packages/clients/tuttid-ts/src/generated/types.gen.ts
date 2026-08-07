@@ -1924,6 +1924,7 @@ export type AgentProviderCapabilityOption = {
   name: string;
   label: string;
   description?: string;
+  iconUrl?: string;
   status:
     | "available"
     | "disabled"
@@ -2623,6 +2624,7 @@ export type WorkspaceAgentTurnOutcome =
 export type WorkspaceAgentTurnError = {
   message: string;
   code?: string;
+  detail?: string;
 };
 
 /**
@@ -3353,7 +3355,7 @@ export type AgentSubmitDiagnostics = {
 };
 
 export type AgentPromptContentBlock = {
-  type: "text" | "image" | "skill" | "mention";
+  type: "text" | "image" | "skill" | "mention" | "connector";
   text?: string;
   mimeType?: "image/png" | "image/jpeg" | "image/webp";
   /**
@@ -3367,6 +3369,10 @@ export type AgentPromptContentBlock = {
   attachmentId?: string;
   name?: string;
   path?: string;
+  /**
+   * Stable key of an installed local connector selected for this prompt.
+   */
+  connectorKey?: string;
 };
 
 export type WorkspaceAgentSessionAttachmentResponse = {
@@ -4611,10 +4617,15 @@ export type ConnectorMarketManifest = {
   displayName: string;
   iconUrl: string;
   description?: string;
+  agentRouting?: ConnectorMarketAgentRouting;
   permissions: Array<string>;
   implementation: ConnectorMarketImplementation;
   authorizationKind: string;
   compatibility?: ConnectorMarketCompatibilityRequirements;
+};
+
+export type ConnectorMarketAgentRouting = {
+  aliases: Array<string>;
 };
 
 export type ConnectorMarketArtifact = {
@@ -4678,6 +4689,11 @@ export type ConnectorMarketOperationTarget = {
 };
 
 export type ConnectorMarketMutationRequest = {
+  clientRequestId: string;
+  expectedRevision: number;
+};
+
+export type ConnectorMarketAuthorizationRequest = {
   clientRequestId: string;
   expectedRevision: number;
 };
@@ -4753,9 +4769,8 @@ export type ConnectorMarketOperationState =
 export type ConnectorMarketOperationStage =
   | "accepted"
   | "refreshing"
-  | "downloading"
-  | "prepared"
-  | "activating"
+  | "installing"
+  | "installed"
   | "deactivating"
   | "authorizing"
   | "disconnecting"
@@ -4815,6 +4830,16 @@ export type MobileRemotePairingConfirmResponse = {
 
 export type MobileRemotePairingListResponse = {
   pairings: Array<MobileRemoteDevicePairing>;
+};
+
+export type DesktopFileDefaultOpenersByExtensionWritable = {
+  [key: string]: DesktopFileDefaultOpener;
+};
+
+export type ConnectorMarketAuthorizationRequestWritable = {
+  clientRequestId: string;
+  expectedRevision: number;
+  secret?: string;
 };
 
 /**
@@ -16374,7 +16399,7 @@ export type UninstallConnectorMarketConnectorResponse =
   UninstallConnectorMarketConnectorResponses[keyof UninstallConnectorMarketConnectorResponses];
 
 export type StartConnectorMarketAuthorizationData = {
-  body: ConnectorMarketMutationRequest;
+  body: ConnectorMarketAuthorizationRequestWritable;
   path: {
     connectorKey: string;
   };

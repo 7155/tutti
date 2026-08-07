@@ -17,6 +17,7 @@ type HostConfig struct {
 	CatalogSource            market.CatalogSource
 	ArtifactPreparer         market.ArtifactPreparer
 	CLIInstallations         market.CLIInstallationManager
+	InstallationChecker      market.InstallationChecker
 	ImplementationHost       market.ImplementationHost
 	Authorization            market.AuthorizationProvider
 	AuthorizationProjections market.AuthorizationProjectionStore
@@ -138,11 +139,16 @@ func NewHost(parent context.Context, config HostConfig) (*Host, error) {
 	hostContext, cancel := context.WithCancel(parent)
 	scheduler := NewOperationScheduler(hostContext)
 	activationGate := newActivationGateHost(config.ImplementationHost)
+	installationChecker := config.InstallationChecker
+	if installationChecker == nil {
+		installationChecker, _ = config.ImplementationHost.(market.InstallationChecker)
+	}
 	application, err := market.NewApplication(market.ApplicationConfig{
 		Repository:               config.Repository,
 		CatalogSource:            config.CatalogSource,
 		ArtifactPreparer:         config.ArtifactPreparer,
 		CLIInstallations:         config.CLIInstallations,
+		InstallationChecker:      installationChecker,
 		Host:                     activationGate,
 		Authorization:            config.Authorization,
 		AuthorizationProjections: config.AuthorizationProjections,
@@ -246,6 +252,11 @@ func (host *Host) BootstrapForScope(ctx context.Context, scope market.OperationS
 	}
 	if err := host.recoverAndWait(ctx); err != nil {
 		return err
+	}
+	if err := host.Application.CalibrateInstalledConnectorsForScope(ctx, scope); err != nil {
+		// A timeout or other indeterminate probe must preserve durable truth. The
+		// following runtime reconcile remains authoritative and may still recover.
+		slog.Warn("connector installation calibration was indeterminate", "error", err)
 	}
 	host.activationGate.setOpen(true)
 	if err := host.Application.ReconcileInstalledRuntimesForScope(ctx, scope); err != nil {

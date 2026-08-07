@@ -19,6 +19,7 @@ type ApplicationConfig struct {
 	CatalogSource            CatalogSource
 	ArtifactPreparer         ArtifactPreparer
 	CLIInstallations         CLIInstallationManager
+	InstallationChecker      InstallationChecker
 	Host                     ImplementationHost
 	Authorization            AuthorizationProvider
 	AuthorizationProjections AuthorizationProjectionStore

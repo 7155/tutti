@@ -44,6 +44,16 @@ import type {
   BrowserNodeUnregisterGuestInput,
   BrowserNodeUpdateAutomationTargetInput
 } from "@tutti-os/browser-node";
+import type { WorkspaceFileReference } from "@tutti-os/workspace-file-reference/contracts";
+import type {
+  DesktopCaptureComposerOptions,
+  DesktopCaptureComposerOptionsInput,
+  DesktopCaptureSelectionInput,
+  DesktopCaptureSelectionResult,
+  DesktopCaptureState,
+  DesktopCaptureSubmitInput,
+  DesktopCaptureSubmitResult
+} from "./capture.ts";
 import type {
   TuttiExternalAtQueryDirectoryInput,
   TuttiExternalAtQueryInput,
@@ -91,6 +101,21 @@ import type {
 } from "@tutti-os/workspace-user-project/contracts";
 
 export const desktopIpcChannels = {
+  capture: {
+    cancel: "capture:cancel",
+    getComposerOptions: "capture:get-composer-options",
+    getState: "capture:get-state",
+    queryMentionDirectory: "capture:query-mention-directory",
+    queryMentions: "capture:query-mentions",
+    resolveMention: "capture:resolve-mention",
+    select: "capture:select",
+    selectFiles: "capture:select-files",
+    selectProjectDirectory: "capture:select-project-directory",
+    userProjectsList: "capture:user-projects:list",
+    userProjectsPrepareSelection: "capture:user-projects:prepare-selection",
+    userProjectsUse: "capture:user-projects:use",
+    submit: "capture:submit"
+  },
   computerUse: {
     checkStatus: "computerUse:checkStatus",
     install: "computerUse:install",
@@ -135,6 +160,7 @@ export const desktopIpcChannels = {
     referencesSelect: "workspace-app-references:select",
     guestEvent: "workspace-app-external:guest-event",
     rendererEvent: "workspace-app-external:renderer-event",
+    rendererReady: "workspace-app-external:renderer-ready",
     rendererRequest: "workspace-app-external:renderer-request",
     rendererResponse: "workspace-app-external:renderer-response",
     settingsOpen: "workspace-app-settings:open",
@@ -817,6 +843,10 @@ export interface DesktopWorkspaceAppExternalRendererResponse {
   result: DesktopIpcResult<DesktopWorkspaceAppExternalRendererResult>;
 }
 
+export interface DesktopWorkspaceAppExternalRendererReadiness {
+  ready: boolean;
+}
+
 export type DesktopWorkspaceAppExternalRendererEvent =
   | {
       invalidation: TuttiExternalAtInvalidation;
@@ -1053,6 +1083,23 @@ export type DesktopBrowserAutomationResponse =
     };
 
 export interface DesktopInvokePayloadByChannel {
+  [desktopIpcChannels.capture.cancel]: undefined;
+  [desktopIpcChannels.capture
+    .getComposerOptions]: DesktopCaptureComposerOptionsInput;
+  [desktopIpcChannels.capture.getState]: undefined;
+  [desktopIpcChannels.capture
+    .queryMentionDirectory]: TuttiExternalAtQueryDirectoryInput;
+  [desktopIpcChannels.capture.queryMentions]: TuttiExternalAtQueryInput;
+  [desktopIpcChannels.capture.resolveMention]: TuttiExternalAtResolveInput;
+  [desktopIpcChannels.capture.select]: DesktopCaptureSelectionInput;
+  [desktopIpcChannels.capture.selectFiles]: undefined;
+  [desktopIpcChannels.capture.selectProjectDirectory]: undefined;
+  [desktopIpcChannels.capture.userProjectsList]: undefined;
+  [desktopIpcChannels.capture
+    .userProjectsPrepareSelection]: WorkspaceUserProjectSelectionPreparationInput;
+  [desktopIpcChannels.capture
+    .userProjectsUse]: TuttiExternalUserProjectPathInput;
+  [desktopIpcChannels.capture.submit]: DesktopCaptureSubmitInput;
   [desktopIpcChannels.computerUse.checkStatus]: undefined;
   [desktopIpcChannels.computerUse.install]: undefined;
   [desktopIpcChannels.computerUse.uninstall]: undefined;
@@ -1248,6 +1295,25 @@ export interface DesktopInvokePayloadByChannel {
 }
 
 export interface DesktopInvokeResultByChannel {
+  [desktopIpcChannels.capture.cancel]: void;
+  [desktopIpcChannels.capture
+    .getComposerOptions]: DesktopCaptureComposerOptions;
+  [desktopIpcChannels.capture.getState]: DesktopCaptureState;
+  [desktopIpcChannels.capture
+    .queryMentionDirectory]: TuttiExternalAtQueryResult[];
+  [desktopIpcChannels.capture.queryMentions]: TuttiExternalAtQueryResult[];
+  [desktopIpcChannels.capture
+    .resolveMention]: TuttiExternalAtResolveResult | null;
+  [desktopIpcChannels.capture.select]: DesktopCaptureSelectionResult;
+  [desktopIpcChannels.capture.selectFiles]: WorkspaceFileReference[];
+  [desktopIpcChannels.capture.selectProjectDirectory]: { path: string } | null;
+  [desktopIpcChannels.capture.userProjectsList]: {
+    projects: WorkspaceUserProject[];
+  };
+  [desktopIpcChannels.capture
+    .userProjectsPrepareSelection]: WorkspaceUserProjectSelectionPreparation;
+  [desktopIpcChannels.capture.userProjectsUse]: WorkspaceUserProject;
+  [desktopIpcChannels.capture.submit]: DesktopCaptureSubmitResult;
   [desktopIpcChannels.computerUse.checkStatus]: DesktopComputerUseStatus;
   [desktopIpcChannels.computerUse.install]: DesktopComputerUseActionResult;
   [desktopIpcChannels.computerUse.uninstall]: DesktopComputerUseActionResult;

@@ -952,6 +952,7 @@ function createDependenciesStub(): {
       createWorkspaceIssueTasks: fail,
       createWorkspaceIssueTaskRun: fail,
       createWorkspaceIssueRun: fail,
+      startWorkspaceIssueRun: fail,
       createWorkspace: fail,
       createWorkspaceAgentSession: fail,
       forkWorkspaceAgentSession: fail,
@@ -1082,7 +1083,8 @@ function createDependenciesStub(): {
       decideWorkspaceWorkflowCheckpoint: fail,
       cancelWorkspaceIssueExecution: fail,
       setCollaborationRunAdoption: fail,
-      cancelTuttiModeExecution: fail
+      cancelTuttiModeExecution: fail,
+      readWorkspaceIssueAttachment: fail
     },
     platformApi: {
       homeDirectory: "/Users/local",

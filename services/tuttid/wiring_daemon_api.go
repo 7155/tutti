@@ -86,6 +86,10 @@ func buildDaemonAPI(
 	workflowStore, _ := store.(tuttimodeplanservice.Store)
 	tuttiModeActivationStore, _ := store.(tuttimodeactivationservice.Store)
 	fileAdapter := workspacedata.LocalFilesAdapter{}
+	issueAttachmentFiles, err := reconcileIssueAttachmentFiles(ctx, store)
+	if err != nil {
+		return tuttiapi.DaemonAPI{}, nil, nil, nil, err
+	}
 
 	events := eventstreamservice.NewService(eventstreamservice.DefaultCatalog(), nil)
 	preferencesPublisher := eventstreamservice.DesktopPreferencesPublisher{Service: events}
@@ -533,9 +537,7 @@ func buildDaemonAPI(
 		Executions: tuttiModeExecutions,
 	}
 	sourceActivityObservers.Add(tuttiModeSourceActivity)
-	tuttiModeMainWakeRecovery := &tuttiModeMainWakeReadyRecovery{
-		Delegate: tuttiModeExecutions,
-	}
+	tuttiModeMainWakeRecovery := &tuttiModeMainWakeReadyRecovery{Delegate: tuttiModeExecutions}
 	issueService := workspaceservice.IssueManagerService{
 		RunLauncher:                  issueRunAgentLauncher{Sessions: agentSessionService, Host: agentHost},
 		RunLaunchGate:                issueRunLaunchGate,
@@ -543,6 +545,8 @@ func buildDaemonAPI(
 		SourceSessionContextResolver: issueSourceSessionContextResolver{Sessions: agentActivityProjection},
 		Publisher:                    eventstreamservice.WorkspaceIssuePublisher{Service: events},
 		Store:                        issueStore,
+		AttachmentFiles:              issueAttachmentFiles,
+		AttachmentLaunchPins:         workspaceservice.NewIssueAttachmentLaunchPins(),
 		AgentTargetReader:            agentTargetStore,
 		PlanningTimeline:             agentservice.IssuePlanningTimelineReporter{Projection: agentActivityProjection},
 		TuttiModeExecutions:          tuttiModeExecutions,
@@ -596,7 +600,7 @@ func buildDaemonAPI(
 				ctx,
 				workspaceID,
 				tuttiModeMainWakeOwner,
-				issueExecutionCoordinator.ReconcileTuttiModeRunLaunchesAndRunningRuns,
+				issueExecutionCoordinator.ReconcileIssueExecutions,
 				tuttiModeMainWakeRecovery,
 			)
 			if err != nil {
@@ -710,28 +714,15 @@ func buildDaemonAPI(
 		agentRuntime.Close()
 		return tuttiapi.DaemonAPI{}, nil, nil, nil, fmt.Errorf("reconcile interrupted app factory jobs: %w", err)
 	}
-	workspaces, err := workspaceService.List(ctx)
+	workspaces, err := recoverIssueExecutionsAtStartup(
+		ctx,
+		workspaceService,
+		issueExecutionCoordinator,
+		tuttiModeExecutions,
+	)
 	if err != nil {
 		agentRuntime.Close()
-		return tuttiapi.DaemonAPI{}, nil, nil, nil, fmt.Errorf(
-			"list workspaces for Issue Run startup recovery: %w",
-			err,
-		)
-	}
-	for _, workspace := range workspaces {
-		if _, err := issueExecutionCoordinator.ReconcileTuttiModeRunLaunchesAndRunningRuns(ctx, workspace.ID); err != nil {
-			agentRuntime.Close()
-			return tuttiapi.DaemonAPI{}, nil, nil, nil, fmt.Errorf(
-				"recover Tutti mode Run launch intents at startup for workspace %q: %w",
-				workspace.ID,
-				err,
-			)
-		}
-		repairTuttiModeMainWakesAtStartup(
-			ctx,
-			tuttiModeExecutions,
-			workspace.ID,
-		)
+		return tuttiapi.DaemonAPI{}, nil, nil, nil, err
 	}
 	tuttiModeWatchdogWorker := newTuttiModeWatchdogWorker(
 		ctx, tuttiModeExecutions, tuttiModeMainWakeOwner,

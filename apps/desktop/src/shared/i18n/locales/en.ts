@@ -21,6 +21,17 @@ export const en = {
     workspace: "workspace",
     zipArchive: "ZIP Archive"
   },
+  capture: {
+    error: "Could not start the Agent. Try again.",
+    loading: "Preparing screenshot…",
+    screenPreviewAlt: "Screen ready for area selection",
+    selectHint: "Drag to select an area · Esc to cancel",
+    taskPrompt:
+      "Before starting, create a Qute Task to track this request. Then immediately carry out the request, using the Task as the ongoing work record and keeping its status and notes updated. Do not stop after creating the Task.",
+    taskPromptAction: "Create Task and track",
+    taskPromptHint: "Agent works now and keeps the Task updated",
+    title: "Tutti"
+  },
   dashboard: {
     chooseWorkspaceTitle: "Choose a workspace",
     chooseWorkspaceDescription: "Choose a workspace to continue",

@@ -80,11 +80,13 @@ Electron startup, daemon supervision, macOS packaging, updates, and performance 
 - [App update diagnostics flood with identical download progress states](./desktop-release.md#app-update-diagnostics-flood-with-identical-download-progress-states)
 - [macOS in-app update closes Tutti but does not install the new version](./desktop-release.md#macos-in-app-update-closes-tutti-but-does-not-install-the-new-version)
 - [Desktop Performance trace export runs out of memory](./desktop-release.md#desktop-performance-trace-export-runs-out-of-memory)
+- [macOS screenshot selector leaves the menu bar and Dock uncovered](./desktop-release.md#macos-screenshot-selector-leaves-the-menu-bar-and-dock-uncovered)
 
 ## [Workbench And Renderer](./workbench-renderer.md)
 
 React rendering, Workbench state, external stores, input composition, and UI performance.
 
+- [Renderer Vite cannot resolve a workspace package subpath](./workbench-renderer.md#renderer-vite-cannot-resolve-a-workspace-package-subpath)
 - [Renderer body requests fail with `ERR_H2_OR_QUIC_REQUIRED`](./workbench-renderer.md#renderer-body-requests-fail-with-err_h2_or_quic_required)
 - [Renderer `fetch()` rejects an Electron image protocol that `<img>` can load](./workbench-renderer.md#renderer-fetch-rejects-an-electron-image-protocol-that-img-can-load)
 - [AgentGUI Mermaid flowcharts render shapes without labels](./workbench-renderer.md#agentgui-mermaid-flowcharts-render-shapes-without-labels)
@@ -109,6 +111,7 @@ React rendering, Workbench state, external stores, input composition, and UI per
 - [Daemon validation error appears as untranslated developer text](./workbench-renderer.md#daemon-validation-error-appears-as-untranslated-developer-text)
 - [Mask-backed icon renders as a solid color block](./workbench-renderer.md#mask-backed-icon-renders-as-a-solid-color-block)
 - [Restored fullscreen window overflows after the host surface becomes smaller](./workbench-renderer.md#restored-fullscreen-window-overflows-after-the-host-surface-becomes-smaller)
+- [Hidden workspace owner loads but its first IPC request times out](./workbench-renderer.md#hidden-workspace-owner-loads-but-its-first-ipc-request-times-out)
 
 ## [Workspace Apps And Files](./workspace-apps-files.md)
 

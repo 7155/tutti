@@ -41,6 +41,7 @@ import type {
   CheckUserProjectPathRequest,
   CreateIssueManagerIssueRequest,
   CreateIssueManagerRunRequest,
+  StartIssueManagerRunRequest,
   CreateIssueManagerTaskRequest,
   CreateIssueManagerTasksRequest,
   CancelIssueManagerExecutionResponse,
@@ -81,6 +82,7 @@ import type {
   ImportExternalAgentSessionsRequest,
   LoadLocalWorkspaceAppRequest,
   IssueManagerContextRefsResponse,
+  IssueManagerAttachmentContentResponse,
   IssueManagerIssue,
   IssueManagerIssueDetailResponse,
   IssueManagerIssueListResponse,
@@ -324,6 +326,11 @@ export interface TuttidClient
     workspaceID: string,
     issueID: string,
     request: CreateIssueManagerRunRequest
+  ): Promise<IssueManagerRun>;
+  startWorkspaceIssueRun(
+    workspaceID: string,
+    issueID: string,
+    request: StartIssueManagerRunRequest
   ): Promise<IssueManagerRun>;
   createWorkspaceFile(
     workspaceID: string,
@@ -846,6 +853,11 @@ export interface TuttidClient
     issueID: string,
     contextRefID: string
   ): Promise<DeleteIssueManagerContextRefResponse>;
+  readWorkspaceIssueAttachment(
+    workspaceID: string,
+    issueID: string,
+    contextRefID: string
+  ): Promise<IssueManagerAttachmentContentResponse>;
   removeWorkspaceIssueTaskContextRef(
     workspaceID: string,
     issueID: string,

@@ -1708,6 +1708,88 @@ A controller may compose flows but cannot become a second lifecycle state machin
 
 Activation and existing-Session submit share a canonical prompt envelope. Submit eligibility includes text and renderable structured content; an individual composer does not redefine it.
 
+`@tutti-os/agent-gui/quick-composer` is the draft-only public entry for
+launch surfaces that need the canonical DOM Composer without a Rail or
+timeline. It may present rich text, image draft blocks, and an exact Agent
+Target selector, but it owns no Session, Turn, option-loading, or recovery
+state. The host receives its typed prompt envelope and must route new Session
+creation through the workspace's existing `AgentSessionEngine`; the entry must
+never construct a second Engine or call a lifecycle transport.
+
+The embedding host owns target readiness and capability loading. It passes the
+canonical `agentTargetId` plus a capability snapshot for each selectable
+target. Quick Composer resolves only the exact identifier and fails closed for
+unknown, disabled, or capability-less targets; it never falls back to array
+position, legacy `targetId`, or an inferred provider. Structured image content
+is accepted only when the selected target declares image support. Submit emits
+the resolved target identity with the prompt envelope, preserving the target
+the user actually selected across the host activation boundary.
+The Quick Composer public target omits legacy `targetId` and AgentGUI-internal
+`ref`; the adapter derives both from canonical `agentTargetId` for the shared
+Composer VM. Provider-menu selection therefore cannot cross or collide with a
+second identifier namespace.
+
+When an embedding host supports pre-session settings, it passes one explicit
+settings capability containing authoritative `AgentActivityComposerOptions`,
+a controlled sparse settings draft, its change callback, and option-loading
+state for the exact target and project. Omitting any persistence path means
+omitting the whole capability, so Quick Composer fails closed instead of
+rendering interactive no-op controls. It projects supported values into the
+same model, reasoning, speed, permission, plan, and browser controls rendered
+by the full Composer; it does not maintain a second menu implementation or
+fetch options itself. `computerUse` and gated `codexSaverMode` remain hidden
+until an embedding activation seam preserves and authorizes them end to end. A
+settings change returns a typed patch to the host, which refreshes authority
+and forwards the settled draft through its existing activation command. While
+authority refreshes, only settings controls and submit are locked. Rich-text
+entry, references, target selection, and project selection remain usable
+unless the host independently disables the whole draft.
+
+The Quick Composer uses the Composer's `embedded` layout contract. Unlike
+`dock`, which intentionally grows attachments and long drafts upward over a
+conversation timeline, `embedded` keeps the entire draft in normal document
+flow. Compact host surfaces must select that layout instead of compensating for
+dock overhang with consumer-specific offsets or clipping.
+
+Embedding hosts may inject the same `RichTextMentionService` and workspace
+reference-picker callback used by a full AgentGUI surface. Quick Composer wraps
+those inputs in the canonical mention-service boundary and delegates reference
+insertion to `AgentComposer`; it does not own a parallel mention catalog or
+picker. A constrained host may also declare a top viewport inset for portaled
+menus. Provider Select collision padding and mention-palette geometry must
+honor that inset so host chrome is never treated as usable menu space.
+An embedding host may also opt into the canonical project selector with a
+controlled selected path and an explicit `WorkspaceUserProjectApi`. That
+capability supplies the real registered-project catalog, selection preparation,
+native directory choice, and project registration. A native directory callback
+alone is insufficient: Quick Composer does not invent a project registry or
+Session state, so it hides the project selector when no real project capability
+is available. The host carries the resulting path through its existing
+activation command as `cwd`.
+AgentGUI's standalone locale runtime includes the scoped defaults of package
+surfaces it mounts, including workspace-user-project. A host-supplied app
+runtime may override those keys, but a standalone Quick Composer must never
+render an unresolved scoped key as user-visible copy.
+Quick Composer also establishes the canonical AgentGUI semantic-token scope,
+so embedded placeholder, foreground, border, and menu colors never fall back
+to inherited host text styles. Hosts may provide a compact action accessory;
+`AgentComposer` renders it immediately before the primary send/stop action in
+non-hero layouts instead of requiring consumer CSS to position controls over
+the Composer DOM. An embedding host with a definite block size may opt into
+`fillAvailableHeight`; the embedded Composer then gives its input group and
+each rich-text editor wrapper the remaining height while keeping attachment and
+footer rows intrinsic. The entire assigned editor block remains a native
+contenteditable hit target instead of relying on a host-level click-to-focus
+proxy. This remains explicit so ordinary launch surfaces keep the default
+content-sized behavior.
+
+An embedded host may also choose `composerActionPlacement="footer"`. In that
+mode the same primary action cluster (including an optional host accessory)
+joins the canonical Composer footer instead of the prompt row. This keeps the
+reference controls, Agent selector, host modifier, and send button on one
+alignment baseline without host positioning CSS; the default remains `input`
+for existing consumers.
+
 The canonical Composer gate belongs to the Session-presentation projection and
 travels through the Composer view-model slice as one object. View-local
 transition or workflow locks may layer on top as explicit presentation locks;

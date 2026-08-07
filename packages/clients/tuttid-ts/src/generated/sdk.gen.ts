@@ -553,6 +553,9 @@ import type {
   ReadWorkspaceFilePreviewData,
   ReadWorkspaceFilePreviewErrors,
   ReadWorkspaceFilePreviewResponses,
+  ReadWorkspaceIssueAttachmentData,
+  ReadWorkspaceIssueAttachmentErrors,
+  ReadWorkspaceIssueAttachmentResponses,
   ReconcileWorkspaceAgentSessionGoalData,
   ReconcileWorkspaceAgentSessionGoalErrors,
   ReconcileWorkspaceAgentSessionGoalResponses,
@@ -658,6 +661,9 @@ import type {
   StartMobileRemotePairingData,
   StartMobileRemotePairingErrors,
   StartMobileRemotePairingResponses,
+  StartWorkspaceIssueRunData,
+  StartWorkspaceIssueRunErrors,
+  StartWorkspaceIssueRunResponses,
   StopAllWorkspaceAppsData,
   StopAllWorkspaceAppsErrors,
   StopAllWorkspaceAppsResponses,
@@ -4920,6 +4926,24 @@ export const removeWorkspaceIssueContextRef = <
   });
 
 /**
+ * Read one managed issue attachment by opaque ContextRef identity
+ */
+export const readWorkspaceIssueAttachment = <
+  ThrowOnError extends boolean = false
+>(
+  options: Options<ReadWorkspaceIssueAttachmentData, ThrowOnError>
+) =>
+  (options.client ?? client).get<
+    ReadWorkspaceIssueAttachmentResponses,
+    ReadWorkspaceIssueAttachmentErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/v1/workspaces/{workspaceID}/issues/{issueID}/context-refs/{contextRefID}/attachment",
+    ...options
+  });
+
+/**
  * Stop one issue-manager issue's execution
  *
  * Durably pauses future task dispatch, cancels the live agent turn of every running run's session, and settles those runs as canceled. Idempotent.
@@ -4968,6 +4992,28 @@ export const createWorkspaceIssueRun = <ThrowOnError extends boolean = false>(
   >({
     security: [{ scheme: "bearer", type: "http" }],
     url: "/v1/workspaces/{workspaceID}/issues/{issueID}/runs",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers
+    }
+  });
+
+/**
+ * Create and launch one Agent-backed run for an issue-manager issue
+ *
+ * Resolves the issue's managed image attachments before durably creating and delivering the run to Agent Host.
+ */
+export const startWorkspaceIssueRun = <ThrowOnError extends boolean = false>(
+  options: Options<StartWorkspaceIssueRunData, ThrowOnError>
+) =>
+  (options.client ?? client).post<
+    StartWorkspaceIssueRunResponses,
+    StartWorkspaceIssueRunErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/v1/workspaces/{workspaceID}/issues/{issueID}/run-launches",
     ...options,
     headers: {
       "Content-Type": "application/json",

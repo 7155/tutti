@@ -192,7 +192,7 @@ func TestBootstrapRestoresInstalledRuntimeWithoutRefreshingCatalog(t *testing.T)
 	host, err := NewHost(ctx, HostConfig{
 		Repository:             store,
 		CatalogSource:          source,
-		ArtifactPreparer:       unavailableArtifactPreparer{},
+		ReleaseInstallations:   unavailableReleaseInstaller{},
 		ImplementationHost:     runtime,
 		RuntimeBindings:        bindings,
 		Authorization:          unavailableAuthorization{},

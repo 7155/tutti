@@ -39,9 +39,8 @@ export type ConnectorOperationState =
 export type ConnectorOperationStage =
   | "accepted"
   | "refreshing"
-  | "downloading"
-  | "prepared"
-  | "activating"
+  | "installing"
+  | "installed"
   | "deactivating"
   | "authorizing"
   | "disconnecting"

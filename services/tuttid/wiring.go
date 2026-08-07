@@ -283,6 +283,10 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("configure connector node package installer: %w", err)
 	}
+	releaseInstaller, err := connectorruntime.NewReleaseInstaller(artifactPreparer, nodePackageInstaller)
+	if err != nil {
+		return fmt.Errorf("configure connector release installer: %w", err)
+	}
 	connectorCommands := connectormarketservice.NewConnectorCommandRegistry()
 	connectorBroker, err := connectormarketservice.NewConnectorBroker(connectorCommands)
 	if err != nil {
@@ -310,7 +314,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	}}
 	connectorMarketHost, err := connectormarketdaemon.NewHost(ctx, connectormarketdaemon.HostConfig{
 		Repository: connectorMarketStore, CatalogSource: connectorCatalog,
-		ArtifactPreparer: artifactPreparer, CLIInstallations: nodePackageInstaller, ImplementationHost: connectorRuntime,
+		ReleaseInstallations: releaseInstaller, ImplementationHost: connectorRuntime,
 		Authorization: connectorAuthorization, Compatibility: compatibility,
 		ImplementationRegistry: implementations, Outbox: connectorMarketStore, Lifecycle: connectorMarketStore,
 		Publisher: eventstreamservice.ConnectorMarketPublisher{Service: events},

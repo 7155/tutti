@@ -75,9 +75,8 @@ type OperationStage string
 const (
 	OperationStageAccepted      OperationStage = "accepted"
 	OperationStageRefreshing    OperationStage = "refreshing"
-	OperationStageDownloading   OperationStage = "downloading"
-	OperationStagePrepared      OperationStage = "prepared"
-	OperationStageActivating    OperationStage = "activating"
+	OperationStageInstalling    OperationStage = "installing"
+	OperationStageInstalled     OperationStage = "installed"
 	OperationStageDeactivating  OperationStage = "deactivating"
 	OperationStageAuthorizing   OperationStage = "authorizing"
 	OperationStageDisconnecting OperationStage = "disconnecting"
@@ -293,10 +292,24 @@ type OperationTarget struct {
 }
 
 type OperationExecution struct {
-	PreparedArtifact     *PreparedArtifactReceipt  `json:"preparedArtifact,omitempty"`
-	CLIInstallation      *CLIInstallationReceipt   `json:"cliInstallation,omitempty"`
-	RuntimeActivation    *RuntimeActivationReceipt `json:"runtimeActivation,omitempty"`
-	AuthorizationSession *AuthorizationSession     `json:"authorizationSession,omitempty"`
+	ReleaseInstallation  *ReleaseInstallationReceipt `json:"releaseInstallation,omitempty"`
+	RuntimeActivation    *RuntimeActivationReceipt   `json:"runtimeActivation,omitempty"`
+	AuthorizationSession *AuthorizationSession       `json:"authorizationSession,omitempty"`
+}
+
+// ReleaseInstallationReceipt is the control-plane evidence that the exact
+// accepted release was installed by its physical runtime owner. Local paths
+// are optional because remote installations expose only opaque references.
+type ReleaseInstallationReceipt struct {
+	OperationID      string                  `json:"operationId"`
+	ConnectorKey     string                  `json:"connectorKey"`
+	Version          string                  `json:"version"`
+	ReleaseID        string                  `json:"releaseId"`
+	ReleaseDigest    string                  `json:"releaseDigest"`
+	ArtifactSHA256   string                  `json:"artifactSha256"`
+	Artifact         PreparedArtifactReceipt `json:"artifact"`
+	CLIInstallation  *CLIInstallationReceipt `json:"cliInstallation,omitempty"`
+	OpaqueRuntimeRef string                  `json:"opaqueRuntimeRef,omitempty"`
 }
 
 type CLIInstallationReceipt struct {

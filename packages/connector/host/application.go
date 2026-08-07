@@ -17,8 +17,7 @@ import (
 type ApplicationConfig struct {
 	Repository               Repository
 	CatalogSource            CatalogSource
-	ArtifactPreparer         ArtifactPreparer
-	CLIInstallations         CLIInstallationManager
+	ReleaseInstallations     ReleaseInstallationManager
 	Host                     ImplementationHost
 	Authorization            AuthorizationProvider
 	AuthorizationProjections AuthorizationProjectionStore
@@ -56,8 +55,8 @@ func NewApplication(config ApplicationConfig) (*Application, error) {
 	if config.CatalogSource == nil {
 		return nil, errors.New("connector market catalog source is required")
 	}
-	if config.ArtifactPreparer == nil {
-		return nil, errors.New("connector market artifact preparer is required")
+	if config.ReleaseInstallations == nil {
+		return nil, errors.New("connector market release installation manager is required")
 	}
 	if config.Host == nil {
 		return nil, errors.New("connector market implementation host is required")

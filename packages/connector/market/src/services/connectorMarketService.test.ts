@@ -346,7 +346,7 @@ test("polls an accepted connector operation to terminal state when its event is 
           connectorKey: "github",
           kind: "install",
           state: operationReads === 1 ? "running" : "completed",
-          stage: operationReads === 1 ? "activating" : "completed",
+          stage: operationReads === 1 ? "installing" : "completed",
           attempt: 1,
           createdAt: "2026-08-03T00:00:00Z",
           updatedAt: `2026-08-03T00:00:0${operationReads}Z`
@@ -737,7 +737,7 @@ test("reconciles connector-scoped events without reloading the catalog", async (
     connectorKey: "github",
     kind: "install",
     state: "running",
-    stage: "downloading",
+    stage: "installing",
     attempt: 1,
     createdAt: "2026-08-03T00:00:00Z",
     updatedAt: "2026-08-03T00:00:01Z"

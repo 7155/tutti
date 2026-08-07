@@ -15,8 +15,7 @@ import (
 type HostConfig struct {
 	Repository               market.Repository
 	CatalogSource            market.CatalogSource
-	ArtifactPreparer         market.ArtifactPreparer
-	CLIInstallations         market.CLIInstallationManager
+	ReleaseInstallations     market.ReleaseInstallationManager
 	ImplementationHost       market.ImplementationHost
 	Authorization            market.AuthorizationProvider
 	AuthorizationProjections market.AuthorizationProjectionStore
@@ -141,8 +140,7 @@ func NewHost(parent context.Context, config HostConfig) (*Host, error) {
 	application, err := market.NewApplication(market.ApplicationConfig{
 		Repository:               config.Repository,
 		CatalogSource:            config.CatalogSource,
-		ArtifactPreparer:         config.ArtifactPreparer,
-		CLIInstallations:         config.CLIInstallations,
+		ReleaseInstallations:     config.ReleaseInstallations,
 		Host:                     activationGate,
 		Authorization:            config.Authorization,
 		AuthorizationProjections: config.AuthorizationProjections,
@@ -433,24 +431,28 @@ func (host *Host) Close() {
 // host can safely expose remote browsing before a concrete runtime activator,
 // artifact resolver, and authorization provider are registered.
 func CatalogOnlyPorts() (
-	market.ArtifactPreparer,
+	market.ReleaseInstallationManager,
 	market.ImplementationHost,
 	market.AuthorizationProvider,
 	market.CompatibilityEvaluator,
 	market.ImplementationRegistry,
 ) {
-	return unavailableArtifactPreparer{}, unavailableRuntime{}, unavailableAuthorization{},
+	return unavailableReleaseInstaller{}, unavailableRuntime{}, unavailableAuthorization{},
 		rejectingCompatibility{}, market.NewImplementationRegistry(nil)
 }
 
-type unavailableArtifactPreparer struct{}
+type unavailableReleaseInstaller struct{}
 
-func (unavailableArtifactPreparer) Prepare(context.Context, market.PrepareArtifactRequest) (market.PreparedArtifactReceipt, error) {
-	return market.PreparedArtifactReceipt{}, errors.New("connector artifact preparation is not registered")
+func (unavailableReleaseInstaller) InstallRelease(context.Context, market.InstallReleaseRequest) (market.ReleaseInstallationReceipt, error) {
+	return market.ReleaseInstallationReceipt{}, errors.New("connector release installation is not registered")
 }
 
-func (unavailableArtifactPreparer) Remove(context.Context, market.RemoveArtifactRequest) error {
-	return errors.New("connector artifact preparation is not registered")
+func (unavailableReleaseInstaller) CommitReleaseInstallation(context.Context, market.CommitReleaseInstallationRequest) error {
+	return errors.New("connector release installation is not registered")
+}
+
+func (unavailableReleaseInstaller) UninstallRelease(context.Context, market.UninstallReleaseRequest) error {
+	return errors.New("connector release installation is not registered")
 }
 
 type unavailableRuntime struct{}

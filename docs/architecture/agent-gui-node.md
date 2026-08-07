@@ -1300,6 +1300,14 @@ row summary until the next toggle or an explicit canonical tombstone. Selecting
 a historical Session that is temporarily injected into the visible summary
 list does not make an idle Session a newly discovered Activity task; only its
 live waiting, unread, or active facts can admit it to Priority.
+The Engine preserves this distinction at the Turn boundary: `turn/upserted`
+uses `live` provenance. Historical detail hydration writes canonical Turns with
+`live: false` and cannot create new unread attention; realtime projections and
+live reconcile writes use `live: true`. Omitted `live` remains compatible with
+older hosts and is treated as live, while historical producers must pass
+`false`. Existing durable read and unread markers remain authoritative during
+hydration; only a read marker synthesized by the current historical observation
+may be upgraded by a later live observation for the same completion.
 The activation is scoped by the workspace, authenticated user, rail filter,
 AgentGUI node, and Engine identity, not by the currently selected Session's
 provider or target; selecting a row must not rebuild a cross-provider Activity
@@ -1574,6 +1582,23 @@ options. This keeps installable connectors visible in the slash menu while
 ensuring that only installed and authorized connectors can be invoked. AgentGUI
 does not scan external MCP, plugin, or package-manager configuration and does not
 infer installation from a remote market response.
+
+The device-global `lab.connectors` UI-preference flag controls whether that
+projection is returned. The daemon fails closed when the preference is absent
+or unreadable and removes Provider-reported connector entries as well as local
+ones. Desktop invalidates cached Composer Options when the preference changes,
+publishes the same invalidation through the AgentGUI host event bus, and
+projects the host capability into the palette so stale cached connector rows
+are hidden immediately. Workspace and standalone AgentGUI surfaces therefore
+converge on the next canonical read without exposing stale entries. The flag
+does not uninstall connectors, stop their runtimes, or reject an already
+structured connector prompt.
+
+Desktop also projects the flag through AgentGUI's existing host-owned
+capability-menu state. The primary footer capability slot is mutually
+exclusive: when `lab.connectors` is off it renders Tutti Mode, and when the
+flag is on it renders only the Connectors menu. The same footer serves both the
+home hero and existing-session dock, so the two AgentGUI contexts cannot drift.
 
 ### 5.3 Agent Directory and setup
 

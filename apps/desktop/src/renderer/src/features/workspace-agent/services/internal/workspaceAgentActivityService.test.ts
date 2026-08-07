@@ -1450,6 +1450,10 @@ test("WorkspaceAgentActivityService starts session-event streams and forwards ca
     {
       scope: null,
       topic: "connector.market.changed"
+    },
+    {
+      scope: null,
+      topic: "preferences.desktop.updated"
     }
   ]);
   assert.equal(connectCalls, 1);
@@ -1939,7 +1943,7 @@ test("WorkspaceAgentActivityService dispose releases every event stream subscrip
   });
 
   service.onSessionEvent("ws-1", () => {});
-  assert.equal(activeSubscriptions.size, 6);
+  assert.equal(activeSubscriptions.size, 7);
 
   service.dispose();
   service.dispose();
@@ -1951,10 +1955,12 @@ test("WorkspaceAgentActivityService preserves realtime turn provenance for atten
   let messageReconcileCalls = 0;
   const running = workspaceAgentSession({
     status: "working",
+    userId: "local",
     updatedAt: "2026-07-14T00:00:01.000Z"
   });
   const settled = workspaceAgentSession({
     status: "completed",
+    userId: "local",
     updatedAt: "2026-07-14T00:00:02.000Z"
   });
   const service = new WorkspaceAgentActivityService({
@@ -2053,10 +2059,12 @@ test("WorkspaceAgentActivityService preserves live provenance across a transient
   let getCalls = 0;
   const running = workspaceAgentSession({
     status: "working",
+    userId: "local",
     updatedAt: "2026-07-14T00:00:01.000Z"
   });
   const settled = workspaceAgentSession({
     status: "completed",
+    userId: "local",
     updatedAt: "2026-07-14T00:00:02.000Z"
   });
   const service = new WorkspaceAgentActivityService({
@@ -3800,6 +3808,7 @@ function workspaceAgentSession(overrides: {
   submitAvailability?: Record<string, unknown>;
   turnLifecycle?: Record<string, unknown>;
   updatedAt?: string;
+  userId?: string;
 }): Record<string, unknown> {
   const updatedAtUnixMs = overrides.updatedAt
     ? Date.parse(overrides.updatedAt)
@@ -3861,6 +3870,7 @@ function workspaceAgentSession(overrides: {
     title: "Session 1",
     tuttiModeActivation: null,
     updatedAtUnixMs,
+    ...(overrides.userId ? { userId: overrides.userId } : {}),
     visible: true
   };
 }

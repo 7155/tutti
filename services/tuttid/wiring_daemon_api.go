@@ -381,6 +381,7 @@ func buildDaemonAPI(
 			AgentTargetStore:            agentTargetStore,
 			WorkspaceAgentResolver:      workspaceAgents,
 			AgentComposerDefaultsReader: preferences,
+			DesktopPreferencesReader:    preferences,
 			ExtensionComposerProfiles: agentExtensionComposerProfileResolver{
 				manager: agentExtensionManager,
 			},

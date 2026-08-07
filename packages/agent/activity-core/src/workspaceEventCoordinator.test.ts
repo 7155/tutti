@@ -474,7 +474,11 @@ test("stale historical snapshot cannot leak completion into attention", () => {
 test("rejected historical snapshot cannot replace newer attention", () => {
   const harness = createHarness();
   const oldTurn = turn("settled", 2, "turn-a");
-  harness.engine.dispatch({ turn: oldTurn, type: "turn/upserted" });
+  harness.engine.dispatch({
+    live: true,
+    turn: oldTurn,
+    type: "turn/upserted"
+  });
   harness.engine.dispatch({
     session: session(null, 10),
     type: "session/upserted"
@@ -500,7 +504,9 @@ test("rejected historical snapshot cannot replace newer attention", () => {
       completionKey: "turn:session-1:turn-b:completed",
       isUnread: true,
       kind: "completed",
-      markedUnreadByUser: false
+      markedUnreadByUser: false,
+      observationProvenance: "live",
+      readStateProvenance: "live"
     }
   );
 

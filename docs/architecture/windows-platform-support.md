@@ -18,14 +18,15 @@ formal `latest` release path.
 
 Current implementation and evidence:
 
-| Area                     | Shared owner                                            | Windows boundary                                           | Status                                                                                  |
-| ------------------------ | ------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Desktop daemon lifecycle | Electron main process                                   | packages `tuttid.exe` and injects native resource paths    | Windows Alpha CI packages it                                                            |
-| Workspace Apps           | daemon app lifecycle, health, state, and events         | `AppShellAdapter` invokes the packaged managed POSIX shell | Onboarding fat package is exercised in Windows Alpha CI                                 |
-| Terminal                 | terminal service and shared terminal contracts          | `TerminalProcessFactory` uses ConPTY                       | focused adapter and daemon WebSocket tests run in Windows Alpha CI                      |
-| Agent processes          | provider-neutral agent/runtime services                 | build-tagged executable, command, and process handling     | focused Windows tests run in Windows Alpha CI                                           |
-| Browser                  | browser service contract                                | focused Windows executable/profile path behavior           | focused Windows tests exist; full browser E2E remains a promotion gate                  |
-| Files                    | workspace file APIs and portable Go filesystem behavior | add a narrow adapter only where Windows semantics differ   | full Windows Files E2E remains a promotion gate                                         |
+| Area                     | Shared owner                                            | Windows boundary                                           | Status                                                                                          |
+| ------------------------ | ------------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Desktop daemon lifecycle | Electron main process                                   | packages `tuttid.exe` and injects native resource paths    | Windows Alpha CI packages it                                                                    |
+| Workspace Apps           | daemon app lifecycle, health, state, and events         | `AppShellAdapter` invokes the packaged managed POSIX shell | Onboarding fat package is exercised in Windows Alpha CI                                         |
+| Terminal                 | terminal service and shared terminal contracts          | `TerminalProcessFactory` uses ConPTY                       | focused adapter and daemon WebSocket tests run in Windows Alpha CI                              |
+| Agent processes          | provider-neutral agent/runtime services                 | build-tagged executable, command, and process handling     | focused Windows tests run in Windows Alpha CI                                                   |
+| Browser                  | browser service contract                                | focused Windows executable/profile path behavior           | focused Windows tests exist; full browser E2E remains a promotion gate                          |
+| Computer use             | computer service contract                               | Cua Driver 0.18.0 doctor/MCP boundary and owned daemon     | focused Windows tests and opt-in MCP smoke exist; screenshot/input E2E remains a promotion gate |
+| Files                    | workspace file APIs and portable Go filesystem behavior | add a narrow adapter only where Windows semantics differ   | full Windows Files E2E remains a promotion gate                                                 |
 | Release                  | desktop release policy                                  | unsigned NSIS plus a separately gated Store AppX artifact  | Store build/submission automation exists; production certification is not yet validated |
 
 Passing `windows-latest` CI proves the build and automated paths above. It does
@@ -145,6 +146,24 @@ adapter only after a real difference is identified, such as browser executable
 discovery, profile location, process termination, path containment, atomic
 move, or timestamp behavior. Prefer standard Go and Electron APIs when they
 already provide equivalent semantics.
+
+### Computer use
+
+Computer use keeps the Tutti MCP/tool policy and session lifecycle shared. On
+Windows, the narrow adapter invokes the installed Cua Driver 0.18.0 binary,
+uses its read-only `doctor --json` probe for readiness, and lazily owns a local
+`serve` process while the computer service is active. The desktop resolves the
+official per-user install locations and passes an explicit entry path when it
+starts a new `tuttid`; the daemon also resolves those locations so an install
+performed while the current desktop process is running is visible without a
+restart. The native UI Automation, capture, and input implementation remains
+inside Cua Driver rather than becoming a Tutti platform library.
+
+The desktop does not currently vendor `cua-driver.exe` into the Windows
+package. Users or deployment tooling must install the pinned driver (or set
+`TUTTI_COMPUTER_MCP_ENTRY_PATH`); packaging a signed helper is a separate
+promotion decision. Updating the driver version requires rerunning the doctor,
+MCP contract, and real screenshot/input gates before changing the pin.
 
 ## Packaging And Release Boundary
 

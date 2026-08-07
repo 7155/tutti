@@ -77,7 +77,7 @@ func TestStreamableHTTPClientCarriesHostSessionAndMCPTransportSession(t *testing
 }
 
 func TestStreamableHTTPClientReadsMatchingSSEMessageAndRejectsRedirects(t *testing.T) {
-	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
 		response.Header().Set("Content-Type", "text/event-stream")
 		_, _ = response.Write([]byte("event: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\"}\n\n"))
 		_, _ = response.Write([]byte("event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[]}}\n\n"))

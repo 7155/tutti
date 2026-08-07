@@ -32,7 +32,7 @@ type ConnectorAuthorizationClient struct {
 
 func NewConnectorAuthorizationClient(config ConnectorAuthorizationClientConfig) (*ConnectorAuthorizationClient, error) {
 	baseURL, err := url.Parse(strings.TrimSpace(config.BaseURL))
-	if err != nil || baseURL.Host == "" || (baseURL.Scheme != "https" && !(baseURL.Scheme == "http" && isLoopbackConnectorAuthorizationHost(baseURL.Hostname()))) {
+	if err != nil || baseURL.Host == "" || (baseURL.Scheme != "https" && (baseURL.Scheme != "http" || !isLoopbackConnectorAuthorizationHost(baseURL.Hostname()))) {
 		return nil, errors.New("connector authorization base URL must use https")
 	}
 	if config.HTTPClient == nil || config.AuthorizeRequest == nil {

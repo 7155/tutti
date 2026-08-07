@@ -351,6 +351,7 @@ func validateRuntimeReceipt(receipt RuntimeReceipt, operationID, connectionID, c
 func (application *Application) beginAuthorizationSession(
 	ctx context.Context,
 	operation Operation,
+	secret []byte,
 ) (AuthorizationSession, error) {
 	release, err := frozenRelease(operation)
 	if err != nil {
@@ -377,6 +378,7 @@ func (application *Application) beginAuthorizationSession(
 		ClientRequestID: operation.ClientRequestID,
 		Connector:       connector,
 		Release:         release,
+		Secret:          secret,
 	})
 	if err != nil {
 		return AuthorizationSession{}, NewDomainError(
@@ -387,7 +389,7 @@ func (application *Application) beginAuthorizationSession(
 		)
 	}
 	if session.OperationID != operation.OperationID || session.ConnectorKey != operation.ConnectorKey ||
-		strings.TrimSpace(session.SessionID) == "" || strings.TrimSpace(session.AuthorizationURL) == "" {
+		strings.TrimSpace(session.SessionID) == "" || !validAuthorizationSessionAction(session) {
 		return AuthorizationSession{}, invalidOperationReceipt("authorization provider returned an invalid session")
 	}
 	if operation.State != OperationStateCompleted {
@@ -396,6 +398,17 @@ func (application *Application) beginAuthorizationSession(
 		}
 	}
 	return session, nil
+}
+
+func validAuthorizationSessionAction(session AuthorizationSession) bool {
+	switch strings.TrimSpace(session.ActionType) {
+	case "redirect":
+		return strings.TrimSpace(session.AuthorizationURL) != ""
+	case "submit_secret":
+		return strings.TrimSpace(session.AuthorizationURL) == ""
+	default:
+		return false
+	}
 }
 
 func (application *Application) executeDisconnectAuthorization(ctx context.Context, operation Operation) error {

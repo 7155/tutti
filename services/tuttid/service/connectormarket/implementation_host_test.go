@@ -321,6 +321,9 @@ func TestImplementationHostDiscoversAndInvokesRemoteStreamableHTTPMCP(t *testing
 		if request.Header.Get("Cookie") != "session_id=user-session" {
 			t.Errorf("Cookie = %q", request.Header.Get("Cookie"))
 		}
+		if request.Header.Get("Tutti-Connector-Version") != "1.0.0" {
+			t.Errorf("Tutti-Connector-Version = %q", request.Header.Get("Tutti-Connector-Version"))
+		}
 		if request.Method == http.MethodDelete {
 			response.WriteHeader(http.StatusNoContent)
 			return

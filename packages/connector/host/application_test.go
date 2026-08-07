@@ -884,6 +884,7 @@ func (authorizationProviderStub) Begin(_ context.Context, request AuthorizationS
 		OperationID:      request.OperationID,
 		ConnectorKey:     request.Connector.Key,
 		SessionID:        "session-1",
+		ActionType:       "redirect",
 		AuthorizationURL: "https://example.test/authorize",
 	}, nil
 }

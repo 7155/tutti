@@ -61,7 +61,7 @@ export interface IConnectorMarketService {
   loadMore(sectionId: string): Promise<void>;
   install(connectorKey: string): Promise<void>;
   uninstall(connectorKey: string): Promise<void>;
-  beginAuthorization(connectorKey: string): Promise<void>;
+  beginAuthorization(connectorKey: string, secret?: string): Promise<void>;
   disconnectAuthorization(connectorKey: string): Promise<void>;
   /** Releases subscriptions and makes the service terminal. */
   dispose(): void;

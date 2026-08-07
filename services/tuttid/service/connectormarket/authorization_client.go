@@ -44,8 +44,10 @@ func NewConnectorAuthorizationClient(config ConnectorAuthorizationClientConfig) 
 }
 
 func (client *ConnectorAuthorizationClient) Begin(ctx context.Context, request market.AuthorizationStartRequest) (market.AuthorizationSession, error) {
+	defer clear(request.Secret)
 	connectorID := strings.TrimSpace(request.Connector.Key)
-	method, err := client.resolveMethod(ctx, connectorID, request.Release.Manifest.AuthorizationKind)
+	connectorVersion := strings.TrimSpace(request.Release.Version)
+	method, err := client.resolveMethod(ctx, connectorID, connectorVersion, request.Release.Manifest.AuthorizationKind)
 	if err != nil {
 		return market.AuthorizationSession{}, err
 	}
@@ -53,21 +55,48 @@ func (client *ConnectorAuthorizationClient) Begin(ctx context.Context, request m
 	err = client.doJSON(ctx, http.MethodPost, "/v1/connectors/"+url.PathEscape(connectorID)+"/authorization-sessions", nil, map[string]any{
 		"authorizationMethod": method,
 		"clientRequestId":     strings.TrimSpace(request.ClientRequestID),
+		"connectorVersion":    connectorVersion,
 	}, &response)
 	if err != nil {
 		return market.AuthorizationSession{}, err
 	}
-	if strings.TrimSpace(response.Session.SessionID) == "" || strings.TrimSpace(response.Session.NextAction.URL) == "" {
+	if strings.TrimSpace(response.Session.SessionID) == "" || strings.TrimSpace(response.Session.ConnectorRevision) != connectorVersion {
 		return market.AuthorizationSession{}, errors.New("connector authorization start returned an invalid session")
 	}
-	authorizationURL, err := url.Parse(strings.TrimSpace(response.Session.NextAction.URL))
-	if err != nil || authorizationURL.Scheme != "https" || authorizationURL.Host == "" || authorizationURL.User != nil {
-		return market.AuthorizationSession{}, errors.New("connector authorization start returned an unsafe redirect URL")
+	actionType := strings.TrimSpace(response.Session.NextAction.Type)
+	if actionType == "" && request.Release.Manifest.AuthorizationKind == "api_key" {
+		actionType = "submit_secret"
 	}
-	return market.AuthorizationSession{
+	session := market.AuthorizationSession{
 		OperationID: request.OperationID, ConnectorKey: connectorID,
-		SessionID: response.Session.SessionID, AuthorizationURL: response.Session.NextAction.URL,
-	}, nil
+		SessionID: response.Session.SessionID, ActionType: actionType,
+	}
+	switch actionType {
+	case "redirect":
+		authorizationURL, parseErr := url.Parse(strings.TrimSpace(response.Session.NextAction.URL))
+		if parseErr != nil || authorizationURL.Scheme != "https" || authorizationURL.Host == "" || authorizationURL.User != nil {
+			return market.AuthorizationSession{}, errors.New("connector authorization start returned an unsafe redirect URL")
+		}
+		session.AuthorizationURL = response.Session.NextAction.URL
+	case "submit_secret":
+		if authorizationSessionSucceeded(response.Session.Status) {
+			return session, nil
+		}
+		if len(request.Secret) == 0 || len(request.Secret) > 16384 {
+			return market.AuthorizationSession{}, errors.New("connector authorization requires a valid secret")
+		}
+		path := "/v1/connector-authorization-sessions/" + url.PathEscape(response.Session.SessionID) + ":complete"
+		var completed connectorAuthorizationSessionReply
+		if err := client.doJSON(ctx, http.MethodPost, path, nil, map[string]any{"secret": map[string]string{"secret": string(request.Secret)}}, &completed); err != nil {
+			return market.AuthorizationSession{}, err
+		}
+		if completed.Session.SessionID != response.Session.SessionID || strings.TrimSpace(completed.Session.ConnectorRevision) != connectorVersion || !authorizationSessionSucceeded(completed.Session.Status) {
+			return market.AuthorizationSession{}, errors.New("connector secret authorization did not complete")
+		}
+	default:
+		return market.AuthorizationSession{}, errors.New("connector authorization start returned an unsupported action")
+	}
+	return session, nil
 }
 
 func (client *ConnectorAuthorizationClient) Disconnect(ctx context.Context, request market.AuthorizationDisconnectRequest) error {
@@ -119,14 +148,15 @@ func (client *ConnectorAuthorizationClient) Observe(ctx context.Context, request
 	}
 }
 
-func (client *ConnectorAuthorizationClient) resolveMethod(ctx context.Context, connectorID, authorizationKind string) (string, error) {
+func (client *ConnectorAuthorizationClient) resolveMethod(ctx context.Context, connectorID, connectorVersion, authorizationKind string) (string, error) {
 	var response struct {
 		Options []struct {
 			Method string `json:"authorizationMethod"`
 		} `json:"options"`
 	}
 	path := "/v1/connectors/" + url.PathEscape(connectorID) + "/authorization-options"
-	if err := client.doJSON(ctx, http.MethodGet, path, nil, nil, &response); err != nil {
+	query := url.Values{"connectorVersion": {strings.TrimSpace(connectorVersion)}}
+	if err := client.doJSON(ctx, http.MethodGet, path, query, nil, &response); err != nil {
 		return "", err
 	}
 	kind := strings.TrimSpace(authorizationKind)
@@ -154,11 +184,14 @@ func (client *ConnectorAuthorizationClient) doJSON(ctx context.Context, method, 
 		parsed.RawQuery = query.Encode()
 	}
 	var body io.Reader
+	var encoded []byte
 	if input != nil {
-		encoded, encodeErr := json.Marshal(input)
+		var encodeErr error
+		encoded, encodeErr = json.Marshal(input)
 		if encodeErr != nil {
 			return encodeErr
 		}
+		defer clear(encoded)
 		body = bytes.NewReader(encoded)
 	}
 	httpRequest, err := http.NewRequestWithContext(ctx, method, parsed.String(), body)
@@ -197,11 +230,19 @@ func (client *ConnectorAuthorizationClient) doJSON(ctx context.Context, method, 
 
 type connectorAuthorizationSessionReply struct {
 	Session struct {
-		SessionID  string `json:"sessionId"`
-		NextAction struct {
-			URL string `json:"url"`
+		SessionID         string `json:"sessionId"`
+		ConnectorRevision string `json:"connectorRevision"`
+		Status            string `json:"status"`
+		NextAction        struct {
+			Type string `json:"type"`
+			URL  string `json:"url"`
 		} `json:"nextAction"`
 	} `json:"session"`
+}
+
+func authorizationSessionSucceeded(status string) bool {
+	status = strings.ToUpper(strings.TrimSpace(status))
+	return status == "SUCCEEDED" || strings.HasSuffix(status, "_SUCCEEDED")
 }
 
 func isLoopbackConnectorAuthorizationHost(host string) bool {

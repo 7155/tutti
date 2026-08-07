@@ -254,7 +254,9 @@ func (application *Application) Uninstall(
 func (application *Application) BeginAuthorization(
 	ctx context.Context,
 	mutation ConnectorMutation,
+	secret []byte,
 ) (AuthorizationResult, error) {
+	defer clear(secret)
 	accepted, err := application.acceptConnectorOperation(
 		ctx,
 		mutation,
@@ -283,7 +285,7 @@ func (application *Application) BeginAuthorization(
 		)
 	}
 
-	session, err := application.beginAuthorizationSession(ctx, accepted.Operation)
+	session, err := application.beginAuthorizationSession(ctx, accepted.Operation, secret)
 	if err != nil {
 		if accepted.Operation.State != OperationStateCompleted {
 			_ = application.failOperation(ctx, accepted.Operation.OperationID, ErrorCodeAuthorizationFailed)
@@ -472,7 +474,7 @@ func (application *Application) executeOperation(ctx context.Context, operationI
 	case OperationKindDisconnectAuthorization:
 		executeErr = application.executeDisconnectAuthorization(executionContext, operation)
 	case OperationKindStartAuthorization:
-		_, executeErr = application.beginAuthorizationSession(executionContext, operation)
+		_, executeErr = application.beginAuthorizationSession(executionContext, operation, nil)
 	default:
 		executeErr = invalidRequest(fmt.Sprintf("operation kind %q is not executable", operation.Kind))
 	}

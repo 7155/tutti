@@ -20,7 +20,7 @@ type Service interface {
 	RefreshCatalog(ctx context.Context, mutation Mutation) (MutationResult, error)
 	Install(ctx context.Context, mutation ConnectorMutation) (MutationResult, error)
 	Uninstall(ctx context.Context, mutation ConnectorMutation) (MutationResult, error)
-	BeginAuthorization(ctx context.Context, mutation ConnectorMutation) (AuthorizationResult, error)
+	BeginAuthorization(ctx context.Context, mutation ConnectorMutation, secret []byte) (AuthorizationResult, error)
 	DisconnectAuthorization(ctx context.Context, mutation ConnectorMutation) (MutationResult, error)
 	ExecuteOperation(ctx context.Context, operationID string) error
 	Recover(ctx context.Context) error

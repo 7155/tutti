@@ -265,7 +265,11 @@ func (host *ImplementationHost) buildRemoteRoute(ctx context.Context, request ma
 		if host.authorizeRemoteRequest == nil {
 			return nil, errors.New("remote MCP host-session authentication is unavailable")
 		}
-		authorizer = host.authorizeRemoteRequest
+		connectorVersion := strings.TrimSpace(request.Connector.Release.Version)
+		authorizer = func(httpRequest *http.Request) error {
+			httpRequest.Header.Set("Tutti-Connector-Version", connectorVersion)
+			return host.authorizeRemoteRequest(httpRequest)
+		}
 	default:
 		return nil, errors.New("remote MCP authentication type is unsupported")
 	}

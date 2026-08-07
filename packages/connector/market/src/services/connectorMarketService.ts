@@ -191,7 +191,10 @@ export class ConnectorMarketService implements IConnectorMarketService {
     );
   }
 
-  async beginAuthorization(connectorKey: string): Promise<void> {
+  async beginAuthorization(
+    connectorKey: string,
+    secret?: string
+  ): Promise<void> {
     if (this.disposed || !this.canRequest()) {
       return;
     }
@@ -201,7 +204,8 @@ export class ConnectorMarketService implements IConnectorMarketService {
       const result = await this.dependencies.backend.beginAuthorization({
         connectorKey,
         clientRequestId: this.createRequestId(),
-        expectedRevision: this.dataStore.revision
+        expectedRevision: this.dataStore.revision,
+        ...(secret ? { secret } : {})
       });
       if (!this.isCurrentMutation(connectorKey, token, generation)) {
         return;

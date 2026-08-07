@@ -343,6 +343,7 @@ type AuthorizationSession struct {
 	OperationID      string `json:"operationId"`
 	ConnectorKey     string `json:"connectorKey"`
 	SessionID        string `json:"sessionId"`
+	ActionType       string `json:"actionType"`
 	AuthorizationURL string `json:"-"`
 }
 

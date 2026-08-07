@@ -4689,6 +4689,11 @@ export type ConnectorMarketMutationRequest = {
   expectedRevision: number;
 };
 
+export type ConnectorMarketAuthorizationRequest = {
+  clientRequestId: string;
+  expectedRevision: number;
+};
+
 export type ConnectorMarketMutationResponse = {
   connector?: ConnectorMarketConnector;
   operation: ConnectorMarketOperation;
@@ -4822,6 +4827,16 @@ export type MobileRemotePairingConfirmResponse = {
 
 export type MobileRemotePairingListResponse = {
   pairings: Array<MobileRemoteDevicePairing>;
+};
+
+export type DesktopFileDefaultOpenersByExtensionWritable = {
+  [key: string]: DesktopFileDefaultOpener;
+};
+
+export type ConnectorMarketAuthorizationRequestWritable = {
+  clientRequestId: string;
+  expectedRevision: number;
+  secret?: string;
 };
 
 /**
@@ -16381,7 +16396,7 @@ export type UninstallConnectorMarketConnectorResponse =
   UninstallConnectorMarketConnectorResponses[keyof UninstallConnectorMarketConnectorResponses];
 
 export type StartConnectorMarketAuthorizationData = {
-  body: ConnectorMarketMutationRequest;
+  body: ConnectorMarketAuthorizationRequestWritable;
   path: {
     connectorKey: string;
   };

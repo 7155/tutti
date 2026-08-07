@@ -31,14 +31,15 @@ export function ConnectorMarketDialogs() {
         />
       ) : dialog.kind === "authorization" ? (
         <ConnectorAuthorizationDialog
+          authorizationKind={dialog.authorizationKind}
           displayName={dialog.displayName}
           iconUrl={dialog.iconUrl}
           i18n={i18n}
           pending={dialog.pending}
           permissions={dialog.permissions}
-          onAuthorize={() =>
+          onAuthorize={(secret) =>
             void market
-              .beginAuthorization(dialog.connectorKey)
+              .beginAuthorization(dialog.connectorKey, secret)
               .catch(() => undefined)
           }
           onClose={() => uiState.closeDialog()}

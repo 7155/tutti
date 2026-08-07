@@ -212,6 +212,7 @@ type AuthorizationStartRequest struct {
 	ClientRequestID string
 	Connector       Connector
 	Release         Release
+	Secret          []byte
 }
 
 type AuthorizationDisconnectRequest struct {

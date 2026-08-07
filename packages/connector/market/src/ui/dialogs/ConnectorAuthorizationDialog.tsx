@@ -5,8 +5,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  Input,
   Spinner
 } from "@tutti-os/ui-system/components";
+import { useState } from "react";
 import {
   LinkIcon,
   LockGridHorizontalLinedIcon,
@@ -21,16 +23,18 @@ import { ConnectorDialogSection } from "./ConnectorDialogSection.tsx";
 import { ConnectorPermissionList } from "./ConnectorPermissionList.tsx";
 
 export interface ConnectorAuthorizationDialogProps {
+  authorizationKind: string;
   displayName: string;
   iconUrl: string;
   i18n: ConnectorMarketI18nRuntime;
-  onAuthorize: () => void;
+  onAuthorize: (secret?: string) => void;
   onClose: () => void;
   pending: boolean;
   permissions: ReadonlyArray<Readonly<ConnectorPermissionView>>;
 }
 
 export function ConnectorAuthorizationDialog({
+  authorizationKind,
   displayName,
   iconUrl,
   i18n,
@@ -39,6 +43,8 @@ export function ConnectorAuthorizationDialog({
   pending,
   permissions
 }: ConnectorAuthorizationDialogProps) {
+  const [secret, setSecret] = useState("");
+  const usesSecret = authorizationKind === "api_key";
   return (
     <DialogContent className="max-h-[min(720px,calc(100vh-32px))] overflow-y-auto sm:max-w-[520px]">
       <DialogHeader className="items-center px-5 pt-4 text-center">
@@ -77,6 +83,25 @@ export function ConnectorAuthorizationDialog({
         <ConnectorPermissionList i18n={i18n} permissions={permissions} />
       </ConnectorDialogSection>
 
+      {usesSecret ? (
+        <ConnectorDialogSection title={i18n.t("secretInputTitle")}>
+          <div className="space-y-2">
+            <Input
+              aria-label={i18n.t("secretInputTitle")}
+              autoComplete="off"
+              disabled={pending}
+              placeholder={i18n.t("secretInputPlaceholder")}
+              type="password"
+              value={secret}
+              onChange={(event) => setSecret(event.currentTarget.value)}
+            />
+            <p className="m-0 text-[11px] leading-[1.45] text-[var(--text-tertiary)]">
+              {i18n.t("secretInputDescription")}
+            </p>
+          </div>
+        </ConnectorDialogSection>
+      ) : null}
+
       <ConnectorDialogSection title={i18n.t("accessScopeTitle")}>
         <div className="overflow-hidden rounded-lg border border-[var(--border-1)]">
           <ConnectorDialogInfoRow
@@ -109,10 +134,16 @@ export function ConnectorAuthorizationDialog({
           {i18n.t("cancel")}
         </Button>
         <Button
-          disabled={pending}
+          disabled={pending || (usesSecret && !secret.trim())}
           size="dialog"
           type="button"
-          onClick={onAuthorize}
+          onClick={() => {
+            const submittedSecret = usesSecret ? secret : undefined;
+            if (usesSecret) {
+              setSecret("");
+            }
+            onAuthorize(submittedSecret);
+          }}
         >
           {pending ? <Spinner size={14} /> : null}
           {pending

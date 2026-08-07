@@ -17,7 +17,6 @@ export type SidecarClaudeOptions = {
   plugins: SdkPluginConfig[];
   extraArgs: Record<string, string | null>;
   tools: ClaudeToolsOption;
-  mcpServers: NonNullable<ClaudeQueryOptions["mcpServers"]>;
 };
 
 export function sidecarClaudeOptionsFromPayload(
@@ -61,8 +60,7 @@ export function sidecarClaudeOptionsFromPayload(
     tools: toolsValue(payload.tools) ?? {
       type: "preset",
       preset: "claude_code"
-    },
-    mcpServers: mcpServersValue(payload.mcpServers)
+    }
   };
 }
 
@@ -92,7 +90,6 @@ export function claudeQueryOptionOverrides(
   | "disallowedTools"
   | "plugins"
   | "extraArgs"
-  | "mcpServers"
 > {
   return {
     systemPrompt: {
@@ -115,21 +112,8 @@ export function claudeQueryOptionOverrides(
     ...(options.plugins.length > 0 ? { plugins: options.plugins } : {}),
     ...(Object.keys(options.extraArgs).length > 0
       ? { extraArgs: options.extraArgs }
-      : {}),
-    ...(Object.keys(options.mcpServers).length > 0
-      ? { mcpServers: options.mcpServers }
       : {})
   };
-}
-
-function mcpServersValue(
-  value: unknown
-): NonNullable<ClaudeQueryOptions["mcpServers"]> {
-  const record = recordValue(value);
-  if (!record) {
-    return {};
-  }
-  return record as NonNullable<ClaudeQueryOptions["mcpServers"]>;
 }
 
 function stringValue(value: unknown): string {

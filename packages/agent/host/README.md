@@ -93,7 +93,12 @@ same durable saga without opening a turn. `GoalControlResult.Goal` is always
 the durable desired projection after persistence; provider output is retained
 separately in `GoalState.Observed`. A provider may return no observation for
 pause or resume without erasing the visible Goal, and only a durable tombstone
-returns a nil Goal. `AdoptProviderGoal` is the narrow
+returns a nil Goal. `GoalControlResult.IntentAccepted` becomes true as soon as
+that durable operation exists, even when immediate runtime readiness or
+delivery returns an error; `GoalState` then distinguishes pending delivery
+from terminal failure. A provider-accepted or applied Goal is also canonical
+resume evidence for a turnless Goal session after the live runtime disappears.
+`AdoptProviderGoal` is the narrow
 reverse boundary for a Goal created by a provider tool during an already
 accepted Turn. It atomically records the active provider generation as a
 completed, applied operation and converged desired/observed state; it never

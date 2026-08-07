@@ -100,6 +100,7 @@ type SendObservation struct {
 
 type GoalObservation struct {
 	Goal               map[string]any
+	IntentAccepted     bool
 	OperationID        string
 	Revision           int64
 	PendingOperationID string
@@ -163,6 +164,7 @@ type Metrics struct {
 // provider-neutral Host application surface rather than any transport API.
 type Driver interface {
 	Reset(context.Context, Fixture) error
+	DisconnectRuntimeSession(context.Context, agenthost.SessionRef) error
 	Create(context.Context, string, agenthost.CreateSessionInput) (SessionObservation, string, error)
 	EnsureSession(context.Context, agenthost.SessionRef) (SessionObservation, error)
 	SendInput(context.Context, agenthost.SessionRef, agenthost.SendInput) (SendObservation, error)

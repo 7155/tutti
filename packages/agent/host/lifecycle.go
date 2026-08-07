@@ -166,6 +166,15 @@ func (h *Host) CreateSession(ctx context.Context, workspaceID string, input Crea
 		goalInput.AgentSessionID = session.ID
 		goalResult, goalErr := h.goalControl(ctx, goalInput)
 		if goalErr != nil {
+			if goalControlResultPending(goalResult) {
+				if refreshed, ok := h.runtime.Session(workspaceID, session.ID); ok {
+					session = refreshed
+				}
+				return CreateSessionResult{
+					Session: session, Canonical: canonicalSession, Kind: "goalControl", GoalControl: &goalResult,
+					SessionStatus: CreateSessionStatusCreated, InitialGoalStatus: CreateSessionInitialGoalStatusUnknown,
+				}, goalErr
+			}
 			// A typed goal starts from a non-provisional, already published
 			// session. Preserve that canonical session on command failure just as
 			// the legacy Service did; rolling it back would leave subscribers with
@@ -321,6 +330,12 @@ func (h *Host) ensureRuntimeSessionLocked(ctx context.Context, ref SessionRef) (
 		if err != nil {
 			return ProviderRuntimeSession{}, err
 		}
+		if !evidence.Established {
+			evidence.Established, err = h.goalStateProvesProviderSessionEstablished(ctx, ref)
+			if err != nil {
+				return ProviderRuntimeSession{}, err
+			}
+		}
 	}
 	if live, ok := h.runtime.Session(ref.WorkspaceID, ref.AgentSessionID); ok {
 		if !ExternalImportResumeSupported(live.RuntimeContext) {
@@ -394,12 +409,6 @@ func (h *Host) ensureRuntimeSessionLocked(ctx context.Context, ref SessionRef) (
 	}
 	h.goalFencesRestored.Store(ref.WorkspaceID+"\x00"+ref.AgentSessionID, struct{}{})
 	return result, nil
-}
-
-func runtimeSessionHasActiveTurn(session ProviderRuntimeSession) bool {
-	return session.TurnLifecycle != nil &&
-		session.TurnLifecycle.ActiveTurnID != nil &&
-		strings.TrimSpace(*session.TurnLifecycle.ActiveTurnID) != ""
 }
 
 func (h *Host) SendInput(ctx context.Context, ref SessionRef, input SendInput) (SendInputResult, error) {
@@ -819,12 +828,6 @@ func imageOnlyDisplayText(content []PromptContentBlock) string {
 	return ""
 }
 
-func persistedRuntimeStatus(activeTurnID string) string {
-	if strings.TrimSpace(activeTurnID) != "" {
-		return "working"
-	}
-	return "ready"
-}
 func value(input *string) string {
 	if input == nil {
 		return ""

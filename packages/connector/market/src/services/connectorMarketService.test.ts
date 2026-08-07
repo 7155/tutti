@@ -38,9 +38,7 @@ function connector(key: string, revision: number): Connector {
         authorizationKind: "none"
       },
       artifact: {
-        storageRealm: "tutti.connector.artifacts.v1",
         key: `connectors/${key}/1.0.0.tgz`,
-        objectVersion: "version-1",
         sha256:
           "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         sizeBytes: 1024,
@@ -216,6 +214,10 @@ test("rejects overlapping mutations for one connector", async () => {
     createRequestId: () => "request-1"
   });
   const first = service.install("github");
+  assert.equal(
+    service.dataStore.pendingInstallationsByConnectorKey.github,
+    true
+  );
   await assert.rejects(service.install("github"), ConnectorMarketBusyError);
   install.resolve({
     connector: connector("github", 1),
@@ -234,8 +236,33 @@ test("rejects overlapping mutations for one connector", async () => {
   await first;
 
   assert.equal(
+    service.dataStore.pendingInstallationsByConnectorKey.github,
+    undefined
+  );
+  assert.equal(
     service.dataStore.operationsByConnectorKey.github?.operationId,
     "operation-1"
+  );
+  service.dispose();
+});
+
+test("clears the projected pending installation when install fails", async () => {
+  const install = deferred<never>();
+  const service = new ConnectorMarketService({
+    backend: backendWith({ installConnector: async () => install.promise })
+  });
+
+  const pending = service.install("github");
+  assert.equal(
+    service.dataStore.pendingInstallationsByConnectorKey.github,
+    true
+  );
+  install.reject(new Error("install failed"));
+  await assert.rejects(pending, /install failed/);
+
+  assert.equal(
+    service.dataStore.pendingInstallationsByConnectorKey.github,
+    undefined
   );
   service.dispose();
 });
@@ -319,7 +346,7 @@ test("polls an accepted connector operation to terminal state when its event is 
           connectorKey: "github",
           kind: "install",
           state: operationReads === 1 ? "running" : "completed",
-          stage: operationReads === 1 ? "activating" : "completed",
+          stage: operationReads === 1 ? "installing" : "completed",
           attempt: 1,
           createdAt: "2026-08-03T00:00:00Z",
           updatedAt: `2026-08-03T00:00:0${operationReads}Z`
@@ -591,6 +618,111 @@ test("does not let a stale authorization response overwrite a newer daemon snaps
   service.dispose();
 });
 
+test("forwards a user-provided secret only to the authorization mutation", async () => {
+  let receivedSecret: string | undefined;
+  const initial = connector("token-mail", 1);
+  initial.installation = {
+    state: "installed",
+    installedReleaseDigest: initial.release.releaseDigest
+  };
+  initial.authorization = { state: "disconnected" };
+  const service = new ConnectorMarketService({
+    backend: backendWith({
+      getSnapshot: async () => snapshot(1, [initial]),
+      beginAuthorization: async (input) => {
+        receivedSecret = input.secret;
+        const connected = connector("token-mail", 2);
+        connected.authorization = { state: "connected" };
+        return {
+          connector: connected,
+          operation: {
+            ...operation("start_authorization", 2),
+            connectorKey: "token-mail",
+            state: "completed"
+          },
+          revision: 2
+        };
+      }
+    })
+  });
+  await service.ensureLoaded();
+
+  await service.beginAuthorization("token-mail", "secret-value");
+
+  assert.equal(receivedSecret, "secret-value");
+  assert.equal(service.dataStore.revision, 2);
+  service.dispose();
+});
+
+test("continues one authorization session, opens each URL once, and clears loading", async () => {
+  const requests: Array<{ clientRequestId: string; expectedRevision: number }> =
+    [];
+  const openedUrls: string[] = [];
+  let step = 0;
+  const initial = connector("lark-cli", 1);
+  initial.authorization = { state: "disconnected" };
+  const service = new ConnectorMarketService({
+    backend: backendWith({
+      getSnapshot: async () => snapshot(1, [initial]),
+      beginAuthorization: async (request) => {
+        requests.push(request);
+        step += 1;
+        const next = connector("lark-cli", step + 1);
+        next.authorization = { state: step === 3 ? "connected" : "pending" };
+        return {
+          connector: next,
+          operation: {
+            ...operation("start_authorization", step + 1),
+            connectorKey: "lark-cli",
+            state: "completed" as const
+          },
+          authorizationUrl:
+            step === 2
+              ? "https://accounts.feishu.cn/device?user_code=authorization"
+              : "https://open.feishu.cn/page/cli?user_code=configuration",
+          revision: step + 1
+        };
+      }
+    }),
+    createRequestId: () => "one-authorization-request",
+    openAuthorizationUrl: async (url) => {
+      openedUrls.push(url);
+    }
+  });
+  await service.ensureLoaded();
+
+  await service.beginAuthorization("lark-cli");
+
+  assert.equal(step, 3);
+  assert.deepEqual(requests, [
+    {
+      connectorKey: "lark-cli",
+      clientRequestId: "one-authorization-request",
+      expectedRevision: 1
+    },
+    {
+      connectorKey: "lark-cli",
+      clientRequestId: "one-authorization-request",
+      expectedRevision: 1
+    },
+    {
+      connectorKey: "lark-cli",
+      clientRequestId: "one-authorization-request",
+      expectedRevision: 1
+    }
+  ]);
+  assert.deepEqual(openedUrls, [
+    "https://open.feishu.cn/page/cli?user_code=configuration",
+    "https://accounts.feishu.cn/device?user_code=authorization"
+  ]);
+  assert.equal(
+    service.dataStore.connectorsByKey["lark-cli"]?.authorization.state,
+    "connected"
+  );
+  assert.deepEqual(service.dataStore.authorizingConnectorKeys, {});
+  service.dispose();
+});
+
 test("late event subscription reconciles the authoritative snapshot and disposes once", async () => {
   const events = new TestEventSource();
   let revision = 1;
@@ -641,7 +773,7 @@ test("reconciles connector-scoped events without reloading the catalog", async (
     connectorKey: "github",
     kind: "install",
     state: "running",
-    stage: "downloading",
+    stage: "installing",
     attempt: 1,
     createdAt: "2026-08-03T00:00:00Z",
     updatedAt: "2026-08-03T00:00:01Z"

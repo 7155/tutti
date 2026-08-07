@@ -4616,16 +4616,19 @@ export type ConnectorMarketManifest = {
   displayName: string;
   iconUrl: string;
   description?: string;
+  agentRouting?: ConnectorMarketAgentRouting;
   permissions: Array<string>;
   implementation: ConnectorMarketImplementation;
   authorizationKind: string;
   compatibility?: ConnectorMarketCompatibilityRequirements;
 };
 
+export type ConnectorMarketAgentRouting = {
+  aliases: Array<string>;
+};
+
 export type ConnectorMarketArtifact = {
-  storageRealm: "tutti.connector.artifacts.v1";
   key: string;
-  objectVersion: string;
   sha256: string;
   sizeBytes: number;
   mediaType: string;
@@ -4685,6 +4688,11 @@ export type ConnectorMarketOperationTarget = {
 };
 
 export type ConnectorMarketMutationRequest = {
+  clientRequestId: string;
+  expectedRevision: number;
+};
+
+export type ConnectorMarketAuthorizationRequest = {
   clientRequestId: string;
   expectedRevision: number;
 };
@@ -4760,9 +4768,8 @@ export type ConnectorMarketOperationState =
 export type ConnectorMarketOperationStage =
   | "accepted"
   | "refreshing"
-  | "downloading"
-  | "prepared"
-  | "activating"
+  | "installing"
+  | "installed"
   | "deactivating"
   | "authorizing"
   | "disconnecting"
@@ -4822,6 +4829,16 @@ export type MobileRemotePairingConfirmResponse = {
 
 export type MobileRemotePairingListResponse = {
   pairings: Array<MobileRemoteDevicePairing>;
+};
+
+export type DesktopFileDefaultOpenersByExtensionWritable = {
+  [key: string]: DesktopFileDefaultOpener;
+};
+
+export type ConnectorMarketAuthorizationRequestWritable = {
+  clientRequestId: string;
+  expectedRevision: number;
+  secret?: string;
 };
 
 /**
@@ -16381,7 +16398,7 @@ export type UninstallConnectorMarketConnectorResponse =
   UninstallConnectorMarketConnectorResponses[keyof UninstallConnectorMarketConnectorResponses];
 
 export type StartConnectorMarketAuthorizationData = {
-  body: ConnectorMarketMutationRequest;
+  body: ConnectorMarketAuthorizationRequestWritable;
   path: {
     connectorKey: string;
   };

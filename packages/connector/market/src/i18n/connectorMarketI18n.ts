@@ -28,6 +28,7 @@ const connectorMarketEn = {
   actionAuthorize: "Authorize",
   actionContinueAuthorization: "Continue",
   actionDisconnect: "Disconnect",
+  actionDisconnecting: "Disconnecting…",
   actionInstall: "Install",
   actionInstalling: "Installing…",
   actionManage: "Manage",
@@ -35,7 +36,10 @@ const connectorMarketEn = {
   actionRetry: "Retry",
   actionTry: "Try it",
   actionUninstall: "Uninstall",
+  actionUpdate: "Update",
   actionUpdateAuthorization: "Reauthorize",
+  actionUpdating: "Updating…",
+  actionWaitingAuthorization: "Waiting for authorization…",
   availableTab: "Available",
   blockedDescription:
     "This connector cannot be used in the current environment",
@@ -58,6 +62,12 @@ const connectorMarketEn = {
   categoryProductivity: "Productivity",
   close: "Close",
   connectedStatus: "Connected",
+  connectorAuthorizationFailed:
+    "Authorization could not be started. Try again.",
+  connectorDisconnectFailed:
+    "Authorization could not be disconnected. Try again.",
+  connectorInstallFailed: "Installation failed. Try again.",
+  connectorUpdateFailed: "Update failed. Try again.",
   connectorInitial: "Connector icon for {{name}}",
   description: "Install and authorize external services for every Agent",
   detailAuthorization: "Authorization",
@@ -78,6 +88,9 @@ const connectorMarketEn = {
   dialogInstallationDescription:
     "Once installed, this connector is available to every Agent.",
   dialogInstallationTitle: "Install {{name}}",
+  dialogUpdateDescription:
+    "Update to the active connector release before continuing.",
+  dialogUpdateTitle: "Update {{name}}",
   exactAccessNotice:
     "The exact resources you can access are determined by your account and organization policies",
   installedTab: "Installed",
@@ -98,15 +111,20 @@ const connectorMarketEn = {
     "Organization access remains controlled by provider and organization policy",
   organizationResourcesTitle: "Organization resources",
   permissionNotice:
-    "Authorization credentials are encrypted in the local keychain. Agents cannot read the original token",
+    "Authorization credentials are encrypted by Tutti. Agents cannot read the original token",
   permissionsTitle: "Permissions",
   refreshFailed: "Refresh failed",
   searchLabel: "Search connectors",
   searchPlaceholder: "Search connectors",
+  secretInputDescription:
+    "The token is sent directly to Tutti for validation and encrypted storage. It is not saved by the desktop app",
+  secretInputPlaceholder: "Paste token",
+  secretInputTitle: "Access token",
   statusAuthorizationRequired: "Authorization required",
   statusInstalled: "Installed",
   statusNotInstalled: "Not installed",
   statusUnavailable: "Unavailable",
+  statusUpdateAvailable: "Update available",
   title: "Connectors"
 } as const satisfies I18nDictionary;
 
@@ -119,7 +137,8 @@ const connectorMarketZhCN = {
   accountSelectionTitle: "在 {{name}} 中选择账号",
   actionAuthorize: "授权",
   actionContinueAuthorization: "继续授权",
-  actionDisconnect: "解绑",
+  actionDisconnect: "解除授权",
+  actionDisconnecting: "解除中…",
   actionInstall: "安装",
   actionInstalling: "安装中…",
   actionManage: "管理",
@@ -127,7 +146,10 @@ const connectorMarketZhCN = {
   actionRetry: "重试",
   actionTry: "去试试",
   actionUninstall: "卸载",
+  actionUpdate: "更新",
   actionUpdateAuthorization: "重新授权",
+  actionUpdating: "更新中…",
+  actionWaitingAuthorization: "等待授权…",
   availableTab: "可安装",
   blockedDescription: "当前环境无法使用这个连接器",
   blockedTitle: "连接器不可用",
@@ -147,6 +169,10 @@ const connectorMarketZhCN = {
   categoryProductivity: "生产力",
   close: "关闭",
   connectedStatus: "已连接",
+  connectorAuthorizationFailed: "无法启动授权，请重试",
+  connectorDisconnectFailed: "无法解除授权，请重试",
+  connectorInstallFailed: "安装失败，请重试",
+  connectorUpdateFailed: "更新失败，请重试",
   connectorInitial: "{{name}} 连接器图标",
   description: "安装并授权外部服务，让所有 Agent 使用数据与工具",
   detailAuthorization: "授权方式",
@@ -164,6 +190,8 @@ const connectorMarketZhCN = {
   dialogManagementTitle: "{{name}} 连接器",
   dialogInstallationDescription: "安装后，所有 Agent 都可以使用这个连接器。",
   dialogInstallationTitle: "安装 {{name}}",
+  dialogUpdateDescription: "继续前需先更新到当前连接器版本",
+  dialogUpdateTitle: "更新 {{name}}",
   exactAccessNotice: "具体可访问范围由你的账号权限和组织策略决定",
   installedTab: "已安装",
   loading: "正在加载连接器…",
@@ -181,16 +209,20 @@ const connectorMarketZhCN = {
   operationRefreshing: "刷新中",
   organizationResourcesDescription: "组织访问范围仍由服务商与组织策略决定",
   organizationResourcesTitle: "组织资源",
-  permissionNotice:
-    "授权凭证会加密保存在本机钥匙串中，Agent 无法读取原始 Token",
+  permissionNotice: "授权凭证会由 Tutti 加密保存，Agent 无法读取原始 Token",
   permissionsTitle: "申请的权限",
   refreshFailed: "刷新失败",
   searchLabel: "搜索连接器",
   searchPlaceholder: "搜索连接器",
+  secretInputDescription:
+    "Token 会直接发送给 Tutti 完成校验和加密存储，桌面端不会保存明文",
+  secretInputPlaceholder: "粘贴 Token",
+  secretInputTitle: "访问令牌",
   statusAuthorizationRequired: "需要授权",
   statusInstalled: "已安装",
   statusNotInstalled: "未安装",
   statusUnavailable: "不可用",
+  statusUpdateAvailable: "可更新",
   title: "连接器"
 } as const satisfies I18nDictionary;
 

@@ -66,7 +66,8 @@ export const en = {
     downloadingTitle: "Downloading {{percent}}",
     errorTitle: "Unable to check for updates",
     restartAction: "Restart & install",
-    retryAction: "Retry"
+    retryAction: "Retry",
+    storeManaged: "Updates are managed by Microsoft Store."
   },
   desktop: {
     installGuard: {
@@ -741,7 +742,7 @@ export const en = {
           "Cleanup couldn't run right now. Finish active Agent work and try again.",
         computerUseLabel: "Computer use",
         computerUseDescription:
-          "Allows the agent to control your Mac desktop — take screenshots, click, type, and more.",
+          "Allows the agent to control your desktop — take screenshots, click, type, and more.",
         computerUseInstallButton: "Install",
         computerUseInstalling: "Installing…",
         computerUseInstallSuccess: "cua-driver installed successfully.",
@@ -800,8 +801,7 @@ export const en = {
           "Screen Recording Settings is open. Enable CuaDriver there; Tutti will check automatically.",
         computerUsePrivacySettingsOpenedInstruction:
           "Privacy Settings is open. Enable CuaDriver permissions there; Tutti will check automatically.",
-        computerUseAuthorizedTooltip:
-          "CuaDriver has Screen Recording and Accessibility permissions.",
+        computerUseAuthorizedTooltip: "CuaDriver is ready for desktop control.",
         computerUsePermissionUnknownTooltip:
           "Authorization status cannot be confirmed. CuaDriver will check and guide authorization when clicked.",
         computerUsePermissionMissingTooltip:

@@ -46,6 +46,7 @@ func (application *Application) executeRefresh(ctx context.Context, operation Op
 			if !ok {
 				connector = newCatalogConnector(release)
 			}
+			connector.Authorization = authorizationForManifest(connector.Authorization, release.Manifest.AuthorizationKind)
 			connector.Release = release
 			compatibility, err := application.compatibilityFor(release.Manifest)
 			if err != nil {
@@ -82,14 +83,6 @@ func (application *Application) executeRefresh(ctx context.Context, operation Op
 		if err := tx.SaveOperation(storedOperation); err != nil {
 			return err
 		}
-		if catalog.TrustState != nil {
-			if strings.TrimSpace(catalog.MarketType) == "" {
-				return invalidManifest("connector catalog trust state market is required", nil)
-			}
-			if err := tx.SaveCatalogTrustState(catalog.MarketType, *catalog.TrustState); err != nil {
-				return err
-			}
-		}
 		if err := tx.SaveCatalogRevision(catalog.SourceRevision); err != nil {
 			return err
 		}
@@ -115,59 +108,32 @@ func (application *Application) executeInstall(ctx context.Context, operation Op
 	if err := application.config.ImplementationRegistry.Validate(release.Manifest); err != nil {
 		return err
 	}
-	operation, err = application.updateOperationStage(ctx, operation.OperationID, OperationStageDownloading, nil)
+	operation, err = application.updateOperationStage(ctx, operation.OperationID, OperationStageInstalling, nil)
 	if err != nil {
 		return err
 	}
-	prepared, prepareErr := application.config.ArtifactPreparer.Prepare(ctx, PrepareArtifactRequest{
+	installed, installErr := application.config.ReleaseInstallations.InstallRelease(ctx, InstallReleaseRequest{
 		OperationID: operation.OperationID,
+		Scope:       operation.Scope,
+		Generation:  operation.HostGeneration,
 		Release:     release,
 	})
-	if prepareErr != nil {
-		return NewDomainError(ErrorCodeInstallFailed, "connector artifact preparation failed", true, prepareErr)
+	if installErr != nil {
+		return NewDomainError(ErrorCodeInstallFailed, "connector release installation failed", true, installErr)
 	}
-	if err := validatePreparedArtifact(operation, release, prepared); err != nil {
+	if err := validateReleaseInstallationReceipt(operation, release, installed); err != nil {
 		return err
 	}
 	operation, err = application.updateOperationStage(
 		ctx,
 		operation.OperationID,
-		OperationStagePrepared,
-		func(current *Operation) { current.Execution.PreparedArtifact = &prepared },
+		OperationStageInstalled,
+		func(current *Operation) { current.Execution.ReleaseInstallation = &installed },
 	)
 	if err != nil {
 		return err
 	}
-	if cliInstall := releaseCLIInstallation(release); cliInstall != nil {
-		if application.config.CLIInstallations == nil {
-			return NewDomainError(ErrorCodeInstallFailed, "connector CLI installation is not registered", false, nil)
-		}
-		operation, err = application.updateOperationStage(ctx, operation.OperationID, OperationStageActivating, nil)
-		if err != nil {
-			return err
-		}
-		installed, installErr := application.config.CLIInstallations.InstallCLI(ctx, InstallCLIRequest{
-			OperationID: operation.OperationID,
-			Release:     release,
-		})
-		if installErr != nil {
-			return NewDomainError(ErrorCodeInstallFailed, "connector CLI installation failed", true, installErr)
-		}
-		if err := validateCLIInstallationReceipt(operation, release, *cliInstall, installed); err != nil {
-			return err
-		}
-		operation, err = application.updateOperationStage(ctx, operation.OperationID, OperationStageActivating,
-			func(current *Operation) { current.Execution.CLIInstallation = &installed })
-		if err != nil {
-			return err
-		}
-	}
-
-	rollout, err := application.rolloutInstalledBindings(ctx, operation, release)
-	if err != nil {
-		return err
-	}
-	err = application.completeConnectorOperation(ctx, operation.OperationID, func(connector Connector) Connector {
+	if err := application.completeConnectorOperation(ctx, operation.OperationID, func(connector Connector) Connector {
 		connector.Installation = Installation{
 			State:                  InstallationStateInstalled,
 			InstalledVersion:       release.Version,
@@ -175,89 +141,33 @@ func (application *Application) executeInstall(ctx context.Context, operation Op
 			InstalledReleaseDigest: release.ReleaseDigest,
 		}
 		return connector
-	})
-	if err != nil {
-		return errors.Join(err, application.rollbackInstalledBindings(context.WithoutCancel(ctx), operation, rollout))
+	}); err != nil {
+		return err
 	}
+	if err := application.config.ReleaseInstallations.CommitReleaseInstallation(ctx, CommitReleaseInstallationRequest{
+		OperationID: operation.OperationID, Scope: operation.Scope, Generation: operation.HostGeneration,
+		Release: release, Receipt: installed,
+	}); err != nil {
+		return NewDomainError(ErrorCodeInstallFailed, "connector release cache commit failed", true, err)
+	}
+	// Runtime publication is a distinct durable operation. Failure to enqueue it
+	// cannot roll back installed truth; bootstrap and authorization observation
+	// provide independent convergence paths.
+	_ = application.schedulePostInstallRuntimeReconcile(ctx, operation)
 	return nil
 }
 
-type installRollout struct {
-	previous *Release
-	applied  []string
-}
-
-func (application *Application) rolloutInstalledBindings(ctx context.Context, operation Operation, release Release) (installRollout, error) {
-	rollout := installRollout{}
+func (application *Application) schedulePostInstallRuntimeReconcile(ctx context.Context, operation Operation) error {
 	connector, err := application.config.Repository.Connector(ctx, operation.ConnectorKey)
 	if err != nil {
-		return rollout, err
+		return err
 	}
-	if connector.Installation.InstalledReleaseDigest != "" && connector.Installation.InstalledReleaseDigest != release.ReleaseDigest {
-		previous, evidenceErr := application.installedReleaseEvidence(ctx, connector)
-		if evidenceErr != nil {
-			return rollout, evidenceErr
-		}
-		rollout.previous = &previous
-	}
-	connector.Release = release
-	connector.Installation = Installation{State: InstallationStateInstalled, InstalledVersion: release.Version,
-		InstalledReleaseID: release.ReleaseID, InstalledReleaseDigest: release.ReleaseDigest}
-	generation := operation.HostGeneration
-	if strings.TrimSpace(generation.BootEpoch) == "" || generation.Generation == 0 {
-		return rollout, invalidOperationReceipt("install rollout generation is missing")
-	}
-	for _, connectionID := range []string{defaultConnectorConnectionID} {
-		operationID := operation.OperationID + "/rollout/" + connectionID
-		receipt, reconcileErr := application.config.Host.Reconcile(ctx, RuntimeReconcileRequest{
-			OperationID: operationID, ConnectionID: connectionID, Connector: connector, Enabled: true, Generation: generation,
-		})
-		if reconcileErr == nil {
-			reconcileErr = validateRuntimeReceipt(receipt, operationID, connectionID,
-				operation.ConnectorKey, release.ReleaseDigest, generation)
-		}
-		if reconcileErr != nil {
-			rollbackErr := application.rollbackInstalledBindings(context.WithoutCancel(ctx), operation, rollout)
-			return rollout, NewDomainError(ErrorCodeInstallFailed, "connector runtime could not be rolled forward", true, errors.Join(reconcileErr, rollbackErr))
-		}
-		rollout.applied = append(rollout.applied, connectionID)
-	}
-	return rollout, nil
-}
-
-func (application *Application) rollbackInstalledBindings(ctx context.Context, operation Operation, rollout installRollout) error {
-	if len(rollout.applied) == 0 {
-		return nil
-	}
-	var rollbackErrors []error
-	for index := len(rollout.applied) - 1; index >= 0; index-- {
-		connectionID := rollout.applied[index]
-		if rollout.previous == nil {
-			rollbackErrors = append(rollbackErrors, application.config.Host.DeactivateRuntime(ctx, RuntimeDeactivationRequest{
-				ConnectionID: connectionID, ConnectorKey: operation.ConnectorKey,
-				ReleaseDigest: operation.Target.ReleaseDigest, Generation: operation.HostGeneration,
-				Deadline: application.config.Now().UTC().Add(5 * time.Second),
-			}))
-			continue
-		}
-		previousConnector, err := application.config.Repository.Connector(ctx, operation.ConnectorKey)
-		if err != nil {
-			rollbackErrors = append(rollbackErrors, err)
-			continue
-		}
-		previousConnector.Release = *rollout.previous
-		previousConnector.Installation = Installation{State: InstallationStateInstalled, InstalledVersion: rollout.previous.Version,
-			InstalledReleaseID: rollout.previous.ReleaseID, InstalledReleaseDigest: rollout.previous.ReleaseDigest}
-		rollbackOperationID := operation.OperationID + "/rollback/" + connectionID
-		receipt, err := application.config.Host.Reconcile(ctx, RuntimeReconcileRequest{OperationID: rollbackOperationID,
-			ConnectionID: connectionID, Connector: previousConnector, Enabled: true, Generation: operation.HostGeneration})
-		if err == nil {
-			err = validateRuntimeReceipt(receipt, rollbackOperationID, connectionID,
-				operation.ConnectorKey, rollout.previous.ReleaseDigest, operation.HostGeneration)
-		}
-		rollbackErrors = append(rollbackErrors, err)
-	}
-	return errors.Join(rollbackErrors...)
+	_, err = application.ReconcileRuntime(ctx, ConnectorMutation{
+		Mutation:     Mutation{ClientRequestID: operation.ClientRequestID + "/runtime", ExpectedRevision: connector.Revision},
+		ConnectorKey: operation.ConnectorKey,
+		AccountID:    operation.Scope.AccountID,
+	})
+	return err
 }
 
 func (application *Application) installedReleaseEvidence(ctx context.Context, connector Connector) (Release, error) {
@@ -279,31 +189,33 @@ func (application *Application) executeUninstall(ctx context.Context, operation 
 	if err != nil {
 		return err
 	}
+	connector, err := application.config.Repository.Connector(ctx, operation.ConnectorKey)
+	if err != nil {
+		return err
+	}
+	release, err := application.installedReleaseEvidence(ctx, connector)
+	if err != nil {
+		return err
+	}
+	binding, err := application.resolveRuntimeBinding(ctx, operation, connector, release, RuntimeBindingPurposeDeactivate)
+	if err != nil {
+		return err
+	}
+	clear(binding.CredentialBrokerGrant)
 	if err := application.config.Host.DeactivateRuntime(ctx, RuntimeDeactivationRequest{
-		ConnectionID: defaultConnectorConnectionID, ConnectorKey: operation.Target.ConnectorKey, ReleaseDigest: operation.Target.ReleaseDigest,
+		Scope: operation.Scope, ConnectionID: binding.ConnectionID, ConnectorKey: operation.Target.ConnectorKey, ReleaseDigest: operation.Target.ReleaseDigest,
 		Generation: operation.HostGeneration,
 		Deadline:   application.config.Now().UTC().Add(5 * time.Second),
 	}); err != nil {
 		return NewDomainError(ErrorCodeInstallFailed, "connector runtime routes could not be deactivated", true, err)
 	}
-	if operation.Target.Release != nil && releaseCLIInstallation(*operation.Target.Release) != nil {
-		if application.config.CLIInstallations == nil {
-			return NewDomainError(ErrorCodeInstallFailed, "connector CLI installation is not registered", false, nil)
-		}
-		if err := application.config.CLIInstallations.RemoveCLI(ctx, RemoveCLIRequest{
-			OperationID: operation.OperationID, ConnectorKey: operation.Target.ConnectorKey,
-			ReleaseDigest: operation.Target.ReleaseDigest,
-		}); err != nil {
-			return NewDomainError(ErrorCodeInstallFailed, "connector CLI installation cleanup failed", true, err)
-		}
-	}
-	if err := application.config.ArtifactPreparer.Remove(ctx, RemoveArtifactRequest{
-		OperationID:   operation.OperationID,
-		ConnectorKey:  operation.Target.ConnectorKey,
-		Version:       operation.Target.Version,
-		ReleaseDigest: operation.Target.ReleaseDigest,
+	if err := application.config.ReleaseInstallations.UninstallRelease(ctx, UninstallReleaseRequest{
+		OperationID: operation.OperationID,
+		Scope:       operation.Scope,
+		Generation:  operation.HostGeneration,
+		Release:     release,
 	}); err != nil {
-		return NewDomainError(ErrorCodeInstallFailed, "connector prepared artifact cleanup failed", true, err)
+		return NewDomainError(ErrorCodeInstallFailed, "connector release cleanup failed", true, err)
 	}
 	return application.completeUninstall(ctx, operation.OperationID)
 }
@@ -351,6 +263,7 @@ func validateRuntimeReceipt(receipt RuntimeReceipt, operationID, connectionID, c
 func (application *Application) beginAuthorizationSession(
 	ctx context.Context,
 	operation Operation,
+	secret []byte,
 ) (AuthorizationSession, error) {
 	release, err := frozenRelease(operation)
 	if err != nil {
@@ -375,8 +288,10 @@ func (application *Application) beginAuthorizationSession(
 	session, err := application.config.Authorization.Begin(ctx, AuthorizationStartRequest{
 		OperationID:     operation.OperationID,
 		ClientRequestID: operation.ClientRequestID,
+		Scope:           operation.Scope,
 		Connector:       connector,
 		Release:         release,
+		Secret:          secret,
 	})
 	if err != nil {
 		return AuthorizationSession{}, NewDomainError(
@@ -387,15 +302,27 @@ func (application *Application) beginAuthorizationSession(
 		)
 	}
 	if session.OperationID != operation.OperationID || session.ConnectorKey != operation.ConnectorKey ||
-		strings.TrimSpace(session.SessionID) == "" || strings.TrimSpace(session.AuthorizationURL) == "" {
+		strings.TrimSpace(session.SessionID) == "" || !validAuthorizationSessionAction(session) {
 		return AuthorizationSession{}, invalidOperationReceipt("authorization provider returned an invalid session")
 	}
-	if operation.State != OperationStateCompleted {
-		if err := application.completeAuthorizationStart(ctx, operation.OperationID, session); err != nil {
-			return AuthorizationSession{}, err
-		}
+	if err := application.completeAuthorizationStart(ctx, operation.OperationID, session); err != nil {
+		return AuthorizationSession{}, err
 	}
 	return session, nil
+}
+
+func validAuthorizationSessionAction(session AuthorizationSession) bool {
+	switch strings.TrimSpace(session.ActionType) {
+	case "":
+		return (session.State == AuthorizationStatePending && strings.TrimSpace(session.AuthorizationURL) != "") ||
+			(session.State == AuthorizationStateConnected && strings.TrimSpace(session.AuthorizationURL) == "")
+	case "redirect":
+		return session.State == AuthorizationStatePending && strings.TrimSpace(session.AuthorizationURL) != ""
+	case "submit_secret":
+		return session.State == AuthorizationStateConnected && strings.TrimSpace(session.AuthorizationURL) == ""
+	default:
+		return false
+	}
 }
 
 func (application *Application) executeDisconnectAuthorization(ctx context.Context, operation Operation) error {
@@ -409,6 +336,7 @@ func (application *Application) executeDisconnectAuthorization(ctx context.Conte
 	}
 	if err := application.config.Authorization.Disconnect(ctx, AuthorizationDisconnectRequest{
 		OperationID: operation.OperationID,
+		Scope:       operation.Scope,
 		Connector:   connector,
 	}); err != nil {
 		return NewDomainError(ErrorCodeAuthorizationFailed, "connector authorization disconnect failed", true, err)
@@ -537,17 +465,24 @@ func (application *Application) completeAuthorizationStart(
 		if err != nil {
 			return err
 		}
-		if operation.State == OperationStateCompleted {
-			return nil
-		}
 		connector, err := tx.Connector(operation.ConnectorKey)
 		if err != nil {
 			return err
 		}
+		stateChanged := connector.Authorization.State != session.State
+		if operation.State == OperationStateCompleted && !stateChanged {
+			return nil
+		}
+		if stateChanged && !CanTransitionAuthorization(connector.Authorization.State, session.State) {
+			return invalidTransition("authorization", string(connector.Authorization.State), string(session.State))
+		}
 		revision := tx.AdvanceRevision()
+		connector.Authorization = Authorization{State: session.State}
 		connector.Revision = revision
-		operation.State = OperationStateCompleted
-		operation.Stage = OperationStageCompleted
+		if operation.State != OperationStateCompleted {
+			operation.State = OperationStateCompleted
+			operation.Stage = OperationStageCompleted
+		}
 		operation.Execution.AuthorizationSession = &session
 		operation.UpdatedAt = application.config.Now().UTC()
 		if err := tx.SaveConnector(connector); err != nil {
@@ -561,6 +496,41 @@ func (application *Application) completeAuthorizationStart(
 			OperationID:  operation.OperationID,
 			Revision:     revision,
 		})
+	})
+}
+
+func (application *Application) completeAuthorizationObservation(
+	ctx context.Context,
+	connectorKey string,
+	observation AuthorizationObservation,
+) error {
+	return application.config.Repository.Transaction(ctx, func(tx Transaction) error {
+		connector, err := tx.Connector(connectorKey)
+		if err != nil {
+			return err
+		}
+		if connector.Authorization.State != AuthorizationStatePending {
+			return nil
+		}
+		target := AuthorizationStateConnected
+		failureCode := ""
+		if observation.State == AuthorizationObservationFailed {
+			target = AuthorizationStateFailed
+			failureCode = strings.TrimSpace(observation.FailureCode)
+			if failureCode == "" {
+				failureCode = string(ErrorCodeAuthorizationFailed)
+			}
+		}
+		if !CanTransitionAuthorization(connector.Authorization.State, target) {
+			return invalidTransition("authorization", string(connector.Authorization.State), string(target))
+		}
+		revision := tx.AdvanceRevision()
+		connector.Authorization = Authorization{State: target, FailureCode: failureCode}
+		connector.Revision = revision
+		if err := tx.SaveConnector(connector); err != nil {
+			return err
+		}
+		return tx.EnqueueConnectorMarketChanged(ChangedEvent{ConnectorKey: connector.Key, Revision: revision})
 	})
 }
 
@@ -663,6 +633,19 @@ func initialAuthorization(kind string) Authorization {
 	return Authorization{State: AuthorizationStateDisconnected}
 }
 
+// authorizationForManifest migrates the stored state when catalog metadata
+// corrects whether a connector requires credentials. This is a catalog schema
+// reconciliation, not a user-driven authorization transition.
+func authorizationForManifest(current Authorization, kind string) Authorization {
+	if kind == "none" {
+		return Authorization{State: AuthorizationStateNotRequired}
+	}
+	if current.State == AuthorizationStateNotRequired {
+		return Authorization{State: AuthorizationStateDisconnected}
+	}
+	return current
+}
+
 func frozenRelease(operation Operation) (Release, error) {
 	if operation.Target == nil || operation.Target.Release == nil {
 		return Release{}, invalidOperationReceipt("operation does not contain a frozen release")
@@ -691,10 +674,39 @@ func validatePreparedArtifact(
 		receipt.ReleaseDigest != release.ReleaseDigest ||
 		receipt.ArtifactSHA256 != release.Artifact.SHA256 ||
 		!artifactSHA256Pattern.MatchString(receipt.InventoryDigest) ||
-		strings.TrimSpace(receipt.PreparedPath) == "" {
+		(strings.TrimSpace(receipt.PreparedPath) == "" && strings.TrimSpace(receipt.OpaqueArtifactRef) == "") {
 		return invalidOperationReceipt("artifact preparer returned a mismatched receipt")
 	}
 	return nil
+}
+
+func validateReleaseInstallationReceipt(
+	operation Operation,
+	release Release,
+	receipt ReleaseInstallationReceipt,
+) error {
+	if receipt.OperationID != operation.OperationID ||
+		receipt.ConnectorKey != release.ConnectorKey ||
+		receipt.Version != release.Version ||
+		receipt.ReleaseID != release.ReleaseID ||
+		receipt.ReleaseDigest != release.ReleaseDigest ||
+		receipt.ArtifactSHA256 != release.Artifact.SHA256 {
+		return invalidOperationReceipt("release installer returned a mismatched receipt")
+	}
+	if err := validatePreparedArtifact(operation, release, receipt.Artifact); err != nil {
+		return err
+	}
+	cliInstall := releaseCLIInstallation(release)
+	if cliInstall == nil {
+		if receipt.CLIInstallation != nil {
+			return invalidOperationReceipt("release installer returned an unexpected CLI receipt")
+		}
+		return nil
+	}
+	if receipt.CLIInstallation == nil {
+		return invalidOperationReceipt("release installer did not return the required CLI receipt")
+	}
+	return validateCLIInstallationReceipt(operation, release, *cliInstall, *receipt.CLIInstallation)
 }
 
 func releaseCLIInstallation(release Release) *NodePackageInstallation {
@@ -713,10 +725,14 @@ func validateCLIInstallationReceipt(operation Operation, release Release, instal
 		receipt.LaunchKind != install.Launch.Kind || receipt.EntrypointSize <= 0 ||
 		!artifactSHA256Pattern.MatchString(receipt.NodeSHA256) ||
 		!artifactSHA256Pattern.MatchString(receipt.EntrypointSHA256) ||
-		!artifactSHA256Pattern.MatchString(receipt.LockSHA256) ||
 		strings.TrimSpace(receipt.RuntimeProfile) == "" || strings.TrimSpace(receipt.RuntimeABI) == "" ||
-		strings.TrimSpace(receipt.NodeVersion) == "" || !filepath.IsAbs(receipt.InstallRoot) ||
-		!filepath.IsAbs(receipt.StoreRoot) || !safeRelativeEntrypoint(receipt.Entrypoint) {
+		strings.TrimSpace(receipt.NodeVersion) == "" || !safeRelativeEntrypoint(receipt.Entrypoint) {
+		return invalidOperationReceipt("CLI installer returned a mismatched receipt")
+	}
+	localReceipt := filepath.IsAbs(receipt.InstallRoot) && filepath.IsAbs(receipt.StoreRoot) &&
+		artifactSHA256Pattern.MatchString(receipt.LockSHA256)
+	remoteReceipt := strings.TrimSpace(receipt.OpaqueInstallationRef) != ""
+	if !localReceipt && !remoteReceipt {
 		return invalidOperationReceipt("CLI installer returned a mismatched receipt")
 	}
 	return nil

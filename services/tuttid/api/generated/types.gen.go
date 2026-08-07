@@ -1345,21 +1345,6 @@ func (e CollaborationRunTriggerSource) Valid() bool {
 	}
 }
 
-// Defines values for ConnectorMarketArtifactStorageRealm.
-const (
-	TuttiConnectorArtifactsV1 ConnectorMarketArtifactStorageRealm = "tutti.connector.artifacts.v1"
-)
-
-// Valid indicates whether the value is a known member of the ConnectorMarketArtifactStorageRealm enum.
-func (e ConnectorMarketArtifactStorageRealm) Valid() bool {
-	switch e {
-	case TuttiConnectorArtifactsV1:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for ConnectorMarketAuthorizationState.
 const (
 	ConnectorMarketAuthorizationStateConnected    ConnectorMarketAuthorizationState = "connected"
@@ -1600,14 +1585,13 @@ func (e ConnectorMarketOperationKind) Valid() bool {
 // Defines values for ConnectorMarketOperationStage.
 const (
 	ConnectorMarketOperationStageAccepted      ConnectorMarketOperationStage = "accepted"
-	ConnectorMarketOperationStageActivating    ConnectorMarketOperationStage = "activating"
 	ConnectorMarketOperationStageAuthorizing   ConnectorMarketOperationStage = "authorizing"
 	ConnectorMarketOperationStageCompleted     ConnectorMarketOperationStage = "completed"
 	ConnectorMarketOperationStageDeactivating  ConnectorMarketOperationStage = "deactivating"
 	ConnectorMarketOperationStageDisconnecting ConnectorMarketOperationStage = "disconnecting"
-	ConnectorMarketOperationStageDownloading   ConnectorMarketOperationStage = "downloading"
 	ConnectorMarketOperationStageFailed        ConnectorMarketOperationStage = "failed"
-	ConnectorMarketOperationStagePrepared      ConnectorMarketOperationStage = "prepared"
+	ConnectorMarketOperationStageInstalled     ConnectorMarketOperationStage = "installed"
+	ConnectorMarketOperationStageInstalling    ConnectorMarketOperationStage = "installing"
 	ConnectorMarketOperationStageRefreshing    ConnectorMarketOperationStage = "refreshing"
 )
 
@@ -1615,8 +1599,6 @@ const (
 func (e ConnectorMarketOperationStage) Valid() bool {
 	switch e {
 	case ConnectorMarketOperationStageAccepted:
-		return true
-	case ConnectorMarketOperationStageActivating:
 		return true
 	case ConnectorMarketOperationStageAuthorizing:
 		return true
@@ -1626,11 +1608,11 @@ func (e ConnectorMarketOperationStage) Valid() bool {
 		return true
 	case ConnectorMarketOperationStageDisconnecting:
 		return true
-	case ConnectorMarketOperationStageDownloading:
-		return true
 	case ConnectorMarketOperationStageFailed:
 		return true
-	case ConnectorMarketOperationStagePrepared:
+	case ConnectorMarketOperationStageInstalled:
+		return true
+	case ConnectorMarketOperationStageInstalling:
 		return true
 	case ConnectorMarketOperationStageRefreshing:
 		return true
@@ -5919,23 +5901,30 @@ type CompleteWorkspaceAppUploadResponse struct {
 	File WorkspaceAppUploadedFile `json:"file"`
 }
 
-// ConnectorMarketArtifact defines model for ConnectorMarketArtifact.
-type ConnectorMarketArtifact struct {
-	Key           string                              `json:"key"`
-	MediaType     string                              `json:"mediaType"`
-	ObjectVersion string                              `json:"objectVersion"`
-	Sha256        string                              `json:"sha256"`
-	SizeBytes     int64                               `json:"sizeBytes"`
-	StorageRealm  ConnectorMarketArtifactStorageRealm `json:"storageRealm"`
+// ConnectorMarketAgentRouting defines model for ConnectorMarketAgentRouting.
+type ConnectorMarketAgentRouting struct {
+	Aliases []string `json:"aliases"`
 }
 
-// ConnectorMarketArtifactStorageRealm defines model for ConnectorMarketArtifact.StorageRealm.
-type ConnectorMarketArtifactStorageRealm string
+// ConnectorMarketArtifact defines model for ConnectorMarketArtifact.
+type ConnectorMarketArtifact struct {
+	Key       string `json:"key"`
+	MediaType string `json:"mediaType"`
+	Sha256    string `json:"sha256"`
+	SizeBytes int64  `json:"sizeBytes"`
+}
 
 // ConnectorMarketAuthorization defines model for ConnectorMarketAuthorization.
 type ConnectorMarketAuthorization struct {
 	FailureCode *string                           `json:"failureCode,omitempty"`
 	State       ConnectorMarketAuthorizationState `json:"state"`
+}
+
+// ConnectorMarketAuthorizationRequest defines model for ConnectorMarketAuthorizationRequest.
+type ConnectorMarketAuthorizationRequest struct {
+	ClientRequestId  string  `json:"clientRequestId"`
+	ExpectedRevision int64   `json:"expectedRevision"`
+	Secret           *string `json:"secret,omitempty"`
 }
 
 // ConnectorMarketAuthorizationResponse defines model for ConnectorMarketAuthorizationResponse.
@@ -6049,6 +6038,7 @@ type ConnectorMarketInstallationState string
 
 // ConnectorMarketManifest defines model for ConnectorMarketManifest.
 type ConnectorMarketManifest struct {
+	AgentRouting      *ConnectorMarketAgentRouting              `json:"agentRouting,omitempty"`
 	AuthorizationKind string                                    `json:"authorizationKind"`
 	Compatibility     *ConnectorMarketCompatibilityRequirements `json:"compatibility,omitempty"`
 	Description       *string                                   `json:"description,omitempty"`
@@ -10095,7 +10085,7 @@ type InvokeCliCommandJSONRequestBody = CliInvokeRequest
 type DisconnectConnectorMarketAuthorizationJSONRequestBody = ConnectorMarketMutationRequest
 
 // StartConnectorMarketAuthorizationJSONRequestBody defines body for StartConnectorMarketAuthorization for application/json ContentType.
-type StartConnectorMarketAuthorizationJSONRequestBody = ConnectorMarketMutationRequest
+type StartConnectorMarketAuthorizationJSONRequestBody = ConnectorMarketAuthorizationRequest
 
 // InstallConnectorMarketConnectorJSONRequestBody defines body for InstallConnectorMarketConnector for application/json ContentType.
 type InstallConnectorMarketConnectorJSONRequestBody = ConnectorMarketMutationRequest

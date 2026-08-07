@@ -18,15 +18,16 @@ formal `latest` release path.
 
 Current implementation and evidence:
 
-| Area                     | Shared owner                                            | Windows boundary                                           | Status                                                                 |
-| ------------------------ | ------------------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Desktop daemon lifecycle | Electron main process                                   | packages `tuttid.exe` and injects native resource paths    | Windows Alpha CI packages it                                           |
-| Workspace Apps           | daemon app lifecycle, health, state, and events         | `AppShellAdapter` invokes the packaged managed POSIX shell | Onboarding fat package is exercised in Windows Alpha CI                |
-| Terminal                 | terminal service and shared terminal contracts          | `TerminalProcessFactory` uses ConPTY                       | focused adapter and daemon WebSocket tests run in Windows Alpha CI     |
-| Agent processes          | provider-neutral agent/runtime services                 | build-tagged executable, command, and process handling     | focused Windows tests run in Windows Alpha CI                          |
-| Browser                  | browser service contract                                | focused Windows executable/profile path behavior           | focused Windows tests exist; full browser E2E remains a promotion gate |
-| Files                    | workspace file APIs and portable Go filesystem behavior | add a narrow adapter only where Windows semantics differ   | full Windows Files E2E remains a promotion gate                        |
-| Release                  | desktop release policy                                  | isolated unsigned NSIS Alpha artifact                      | not signed, mirrored, announced, or published to `latest`              |
+| Area                     | Shared owner                                            | Windows boundary                                           | Status                                                                                          |
+| ------------------------ | ------------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Desktop daemon lifecycle | Electron main process                                   | packages `tuttid.exe` and injects native resource paths    | Windows Alpha CI packages it                                                                    |
+| Workspace Apps           | daemon app lifecycle, health, state, and events         | `AppShellAdapter` invokes the packaged managed POSIX shell | Onboarding fat package is exercised in Windows Alpha CI                                         |
+| Terminal                 | terminal service and shared terminal contracts          | `TerminalProcessFactory` uses ConPTY                       | focused adapter and daemon WebSocket tests run in Windows daemon-adapter and Alpha CI           |
+| Agent processes          | provider-neutral agent/runtime services                 | build-tagged executable, command, and process handling     | focused Windows tests run in Agent adapter and Alpha CI                                         |
+| Browser                  | browser service contract                                | focused Windows executable/profile path behavior           | focused Windows tests exist; full browser E2E remains a promotion gate                          |
+| Computer use             | computer service contract                               | Cua Driver 0.18.0 doctor/MCP boundary and owned daemon     | focused Windows tests and opt-in MCP smoke exist; screenshot/input E2E remains a promotion gate |
+| Files                    | workspace file APIs and portable Go filesystem behavior | add a narrow adapter only where Windows semantics differ   | full Windows Files E2E remains a promotion gate                                                 |
+| Release                  | desktop release policy                                  | unsigned NSIS plus a separately gated Store AppX artifact  | Store build/submission automation exists; production certification is not yet validated         |
 
 Passing `windows-latest` CI proves the build and automated paths above. It does
 not by itself prove the supported Windows 10 floor, installer UX, upgrade, or
@@ -146,10 +147,32 @@ discovery, profile location, process termination, path containment, atomic
 move, or timestamp behavior. Prefer standard Go and Electron APIs when they
 already provide equivalent semantics.
 
+### Computer use
+
+Computer use keeps the Tutti MCP/tool policy and session lifecycle shared. On
+Windows, the narrow adapter invokes the installed Cua Driver 0.18.0 binary,
+uses its read-only `doctor --json` probe for readiness, and lazily owns a local
+`serve` process while the computer service is active. The desktop resolves the
+official per-user install locations and passes an explicit entry path when it
+starts a new `tuttid`; the daemon also resolves those locations so an install
+performed while the current desktop process is running is visible without a
+restart. The native UI Automation, capture, and input implementation remains
+inside Cua Driver rather than becoming a Tutti platform library.
+
+The desktop does not currently vendor `cua-driver.exe` into the Windows
+package. Users or deployment tooling must install the pinned driver (or set
+`TUTTI_COMPUTER_MCP_ENTRY_PATH`); packaging a signed helper is a separate
+promotion decision. Updating the driver version requires rerunning the doctor,
+MCP contract, and real screenshot/input gates before changing the pin.
+
 ## Packaging And Release Boundary
 
 The Alpha workflow is intentionally separate from the formal desktop release:
 
+- `.github/workflows/windows-agent-adapters.yml` and
+  `.github/workflows/windows-daemon-adapters.yml` provide focused pull-request
+  coverage and maintain reusable caches on matching `main` pushes; they do not
+  produce desktop packages;
 - `.github/workflows/windows-desktop-alpha.yml` builds and tests Windows x64;
 - the output is an unsigned NSIS installer uploaded as a workflow artifact;
 - the workflow does not publish a GitHub Release or mutate stable/prerelease
@@ -173,6 +196,34 @@ Until those gates pass, Windows artifacts must not be added to `latest.json`,
 the floating stable release, public stable downloads, or formal release
 notifications.
 
+The stable Microsoft Store path is a separate, opt-in release surface:
+
+- `pnpm --filter @tutti-os/desktop build:win:store` reuses the Windows payload
+  and emits one x64 AppX submission package;
+- `.github/workflows/desktop-store-submit.yml` accepts only a plain stable tag,
+  verifies that the tag and commit match, validates the package identity,
+  publisher, four-part version, architecture, and SHA-256, then optionally
+  submits it with the official Microsoft Store Developer CLI;
+- `.github/workflows/desktop-release.yml` calls that workflow only when
+  `TUTTI_WINDOWS_STORE_SUBMISSION_ENABLED=true`, the publication mode is
+  `publish`, and Direct promotion has succeeded; the Store job is downstream
+  from, never a dependency of, Direct staging or promotion;
+- the AppX manifest registers the `tutti` login callback protocol and the Store
+  workflow verifies that registration together with `runFullTrust`;
+- RC and beta tags remain Direct-only. A separate Store beta product or package
+  flight is not part of this implementation.
+
+The first Store submission is a one-time Partner Center operation: upload the
+validated AppX artifact and complete the listing, properties, age rating,
+pricing, and availability there. The Store Developer CLI does not implement a
+first submission from a loose MSIX file. Once that first submission has been
+accepted, later stable package updates use the automated Store workflow.
+
+Microsoft Store submission does not make the Direct NSIS installer signed. The
+Store package may be treated as a supported public download only after its
+Partner Center certification, installation, sidecar, protocol, update, and
+uninstall gates have passed on real Windows systems.
+
 ## Iteration Path
 
 1. **Alpha foundation:** keep Windows build and automated adapter/Onboarding
@@ -180,12 +231,12 @@ notifications.
 2. **Product-chain validation:** exercise Browser, Files, Terminal, Agent
    install/start, AgentGUI launch, persistence, event push, and restart recovery
    on Windows 10 and Windows 11 x64.
-3. **Signed preview:** resolve signing and third-party distribution obligations,
-   then validate signed Beta/RC install and upgrade paths without changing
-   stable metadata.
-4. **Formal release:** add Windows jobs and staged assets to the release workflow
-   only after promotion review; then enable Windows updater and public download
-   contracts deliberately.
+3. **Store prototype:** use the manual Store workflow with its submission flag
+   disabled first, then validate a test Partner Center product before replacing
+   the complete environment profile with production credentials and identity.
+4. **Store stable release:** enable automatic stable submission only after
+   certification and installation gates pass; keep Direct NSIS and Store update
+   responsibility isolated.
 5. **Additional architectures:** add an explicit platform key such as
    `windows-arm64`, its native artifacts, and CI coverage. Reuse common services
    and existing capability contracts unless ARM64 exposes a genuine new
@@ -204,6 +255,9 @@ manifests or common lifecycle contracts.
 - supporting Windows ARM64 before its binaries, packaging, and test matrix are
   explicitly added;
 - publishing unsigned Alpha artifacts through stable or `latest` channels.
+- publishing RC or beta builds to Microsoft Store in the first Store phase;
+- mirroring a Store-signed package back to GitHub Releases or the Direct updater
+  feed.
 
 ## Open Decisions
 
@@ -216,3 +270,9 @@ as completed support:
   Alpha, rather than later preview promotion gates;
 - Windows ARM64 schedule;
 - the final public wording and timing for announcing Windows support.
+- the production Partner Center product identity and least-privilege Entra
+  application ownership;
+- the version-controlled repository and staging environment for the
+  `tutti-desktop-download` Worker;
+- the exact Windows 10/11 Store install, update, sidecar, protocol, and data-path
+  evidence required before enabling production submission.

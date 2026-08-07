@@ -5920,6 +5920,13 @@ type ConnectorMarketAuthorization struct {
 	State       ConnectorMarketAuthorizationState `json:"state"`
 }
 
+// ConnectorMarketAuthorizationRequest defines model for ConnectorMarketAuthorizationRequest.
+type ConnectorMarketAuthorizationRequest struct {
+	ClientRequestId  string  `json:"clientRequestId"`
+	ExpectedRevision int64   `json:"expectedRevision"`
+	Secret           *string `json:"secret,omitempty"`
+}
+
 // ConnectorMarketAuthorizationResponse defines model for ConnectorMarketAuthorizationResponse.
 type ConnectorMarketAuthorizationResponse struct {
 	AuthorizationUrl *string                  `json:"authorizationUrl,omitempty"`
@@ -10078,7 +10085,7 @@ type InvokeCliCommandJSONRequestBody = CliInvokeRequest
 type DisconnectConnectorMarketAuthorizationJSONRequestBody = ConnectorMarketMutationRequest
 
 // StartConnectorMarketAuthorizationJSONRequestBody defines body for StartConnectorMarketAuthorization for application/json ContentType.
-type StartConnectorMarketAuthorizationJSONRequestBody = ConnectorMarketMutationRequest
+type StartConnectorMarketAuthorizationJSONRequestBody = ConnectorMarketAuthorizationRequest
 
 // InstallConnectorMarketConnectorJSONRequestBody defines body for InstallConnectorMarketConnector for application/json ContentType.
 type InstallConnectorMarketConnectorJSONRequestBody = ConnectorMarketMutationRequest

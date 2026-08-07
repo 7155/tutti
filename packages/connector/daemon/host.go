@@ -185,12 +185,33 @@ func NewHost(parent context.Context, config HostConfig) (*Host, error) {
 		defer close(host.outboxDone)
 		dispatcher.Run(hostContext)
 	}()
+	if _, ok := config.Authorization.(market.AuthorizationObserver); ok {
+		go host.runAuthorizationReconcileWorker(hostContext)
+	}
 	cleanupWorker := LifecycleCleanupWorker{Store: config.Lifecycle, Policy: config.LifecyclePolicy}
 	go func() {
 		defer close(host.lifecycleDone)
 		cleanupWorker.Run(hostContext)
 	}()
 	return host, nil
+}
+
+func (host *Host) runAuthorizationReconcileWorker(ctx context.Context) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			reconcileContext, cancel := context.WithTimeout(ctx, 15*time.Second)
+			err := host.Application.ReconcileAuthorizations(reconcileContext)
+			cancel()
+			if err != nil && !errors.Is(err, context.Canceled) {
+				slog.Warn("connector authorization reconciliation failed", "error", err)
+			}
+		}
+	}
 }
 
 // Bootstrap restores durable local runtime intent without depending on the

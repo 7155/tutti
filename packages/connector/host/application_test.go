@@ -344,8 +344,19 @@ func TestApplicationStartupReconcileAdvancesPastFence(t *testing.T) {
 	if err := application.ReconcileInstalledRuntimes(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if host.lastDeactivation.Generation.Generation != 7 || host.lastReconcile.Generation.Generation != 8 {
+	if host.lastDeactivation.Generation.Generation != 7 || host.lastReconcile.Generation.Generation != 8 || repository.connectors["github"].Revision < 8 {
 		t.Fatalf("startup generations: fence=%#v reconcile=%#v", host.lastDeactivation.Generation, host.lastReconcile.Generation)
+	}
+	firstReconcileGeneration := host.lastReconcile.Generation.Generation
+	if err := application.FenceInstalledRuntimes(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := application.ReconcileInstalledRuntimes(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if host.lastDeactivation.Generation.Generation < firstReconcileGeneration ||
+		host.lastReconcile.Generation.Generation <= host.lastDeactivation.Generation.Generation {
+		t.Fatalf("repeated startup generations: fence=%#v reconcile=%#v", host.lastDeactivation.Generation, host.lastReconcile.Generation)
 	}
 }
 

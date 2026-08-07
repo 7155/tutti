@@ -1908,6 +1908,14 @@ identity without a host DOM event interceptor.
 
 External OS file paste and drop enter one host-injected classification boundary before draft attachment creation. The synchronous `resolveExternalPromptEntries` port classifies each source index as a live `WorkspaceFileReference` or a snapshot requiring preparation. AgentGUI owns ordered mention insertion and draft reconciliation: references become ordinary file/folder mentions and never consume prompt-asset slots, while only `prepare` entries create pending attachment state and enter `prepareExternalPromptFiles`. A host without the resolver prepares every external entry. The preparer owns native-path or byte lookup, size enforcement, persistence, and remote transport; each prepared input has one `sourceIndex` result, one failure must not fail siblings, successful results include a provider-readable `path` or `url`, and failures carry typed error codes. Hosts that classify path-backed entries as references must reject any such entry that unexpectedly reaches preparation, so classification failure cannot silently create a duplicate snapshot.
 
+Plain-text absolute path paste may enter an optional host-owned
+`workspace.resolvePastedPath` boundary. AgentGUI applies only a strict sync
+candidate gate (one trimmed absolute path with no whitespace or quotes). The
+host returns a `WorkspaceFileReference` to insert as a file/folder mention, or
+`null`/rejection to fall back to plain text. Hosts that omit the callback keep
+the previous plain-text paste path; existence checks, host-namespace
+projection, and Shared-Agent policy remain host-owned.
+
 Workspace picker results and internal workspace-reference drags remain live references. They enter the rich-text document as mentions and never pass through external-file preparation. A picker source whose selected locator is not yet consumer-readable may perform source-owned confirmation preparation before the mention is inserted; the picker waits in a loading state, publishes no partial result on failure, and remains open for retry. This confirmation transaction belongs to the reference source contract and is distinct from the external OS file preparation pipeline. Removing an inline external-file mention removes its draft intent; a later async result must not revive it or lose its error reason when the draft is in another scope.
 
 A host may map a reference-source content error to a labeled recovery action

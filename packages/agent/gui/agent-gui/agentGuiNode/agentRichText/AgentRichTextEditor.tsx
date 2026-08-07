@@ -39,6 +39,7 @@ import {
   createAgentRichTextCaretAnchorExtension,
   createAgentRichTextPlaceholderExtension,
   insertAgentRichTextClipboardHtml,
+  isAgentRichTextAbsolutePathPasteCandidate,
   isAgentRichTextLargeTextPaste,
   isPromptVisualLineStart,
   readEditorDomSelectionRange,
@@ -50,7 +51,11 @@ import {
   scrollEditorSelectionIntoView,
   writePlainTextToClipboard
 } from "./agentRichTextEditorSupport";
-export { isAgentRichTextLargeTextPaste } from "./agentRichTextEditorSupport";
+export {
+  isAgentRichTextAbsolutePathPasteCandidate,
+  isAgentRichTextLargeTextPaste
+} from "./agentRichTextEditorSupport";
+import { createAgentFileMentionContent } from "./agentWorkspaceFileReferences";
 import { useAgentRichTextEditorHandle } from "./useAgentRichTextEditorHandle";
 import { AgentRichTextEditorSurface } from "./AgentRichTextEditorSurface";
 import { handleAgentRichTextKeyDownCapture } from "./agentRichTextKeyboard";
@@ -103,7 +108,8 @@ export const AgentRichTextEditor = forwardRef<
     onPasteImages,
     onPasteLargeText,
     onPasteFiles,
-    onDropFiles
+    onDropFiles,
+    onResolvePastedPath
   },
   ref
 ): React.JSX.Element {
@@ -136,6 +142,7 @@ export const AgentRichTextEditor = forwardRef<
   const onPasteLargeTextRef = useRef(onPasteLargeText);
   const onPasteFilesRef = useRef(onPasteFiles);
   const onDropFilesRef = useRef(onDropFiles);
+  const onResolvePastedPathRef = useRef(onResolvePastedPath);
   const promptImagesSupportedRef = useRef(promptImagesSupported);
   const placeholderRef = useRef(placeholder);
   const removeMentionLabelRef = useRef(removeMentionLabel);
@@ -290,6 +297,7 @@ export const AgentRichTextEditor = forwardRef<
   onPasteLargeTextRef.current = onPasteLargeText;
   onPasteFilesRef.current = onPasteFiles;
   onDropFilesRef.current = onDropFiles;
+  onResolvePastedPathRef.current = onResolvePastedPath;
   promptImagesSupportedRef.current = promptImagesSupported;
   placeholderRef.current = placeholder;
   removeMentionLabelRef.current = removeMentionLabel;
@@ -455,6 +463,63 @@ export const AgentRichTextEditor = forwardRef<
             if (insertAgentRichTextClipboardHtml(currentEditor, html)) {
               mentionSuggestionSuppression.suppressTextInsertion(text);
             }
+            return true;
+          }
+          const pathCandidate = text.trim();
+          const resolvePastedPath = onResolvePastedPathRef.current;
+          if (
+            resolvePastedPath &&
+            isAgentRichTextAbsolutePathPasteCandidate(pathCandidate)
+          ) {
+            event.preventDefault();
+            const insertPlainPasteText = (): void => {
+              const currentEditor = editorRef.current;
+              if (!currentEditor || currentEditor.isDestroyed) {
+                return;
+              }
+              if (!currentEditor.isFocused) {
+                currentEditor.commands.setTextSelection(
+                  currentEditor.state.doc.content.size
+                );
+              }
+              mentionSuggestionSuppression.suppressTextInsertion(text);
+              currentEditor.commands.insertContent(
+                plainTextToAgentRichTextInlineContent(text, {
+                  capabilities: availableCapabilitiesRef.current,
+                  skills: availableSkillsRef.current
+                })
+              );
+            };
+            void resolvePastedPath(pathCandidate)
+              .then((reference) => {
+                const currentEditor = editorRef.current;
+                if (!currentEditor || currentEditor.isDestroyed) {
+                  return;
+                }
+                if (!reference) {
+                  insertPlainPasteText();
+                  return;
+                }
+                if (!currentEditor.isFocused) {
+                  currentEditor.commands.setTextSelection(
+                    currentEditor.state.doc.content.size
+                  );
+                }
+                mentionSuggestionSuppression.suppressTextInsertion(
+                  pathCandidate
+                );
+                currentEditor.commands.insertContent(
+                  createAgentFileMentionContent([reference], {
+                    prefixCaretAnchor: isPromptVisualLineStart(
+                      currentEditor,
+                      currentEditor.state.selection.from
+                    )
+                  })
+                );
+              })
+              .catch(() => {
+                insertPlainPasteText();
+              });
             return true;
           }
           event.preventDefault();

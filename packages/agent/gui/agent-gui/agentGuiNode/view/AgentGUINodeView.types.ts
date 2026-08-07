@@ -712,6 +712,7 @@ export interface AgentGUINodeViewProps {
   ) => void | Promise<void>;
   resolveExternalPromptEntries?: AgentComposerProps["resolveExternalPromptEntries"];
   prepareExternalPromptFiles?: AgentComposerProps["prepareExternalPromptFiles"];
+  resolvePastedPath?: AgentComposerProps["resolvePastedPath"];
   promptAssetLimit?: number | null;
   onConversationRailWidthChanged: (widthPx: number) => void;
   onConversationRailLayoutChange?: (
@@ -779,6 +780,7 @@ export interface AgentGUIDetailPaneProps {
     | null;
   resolveExternalPromptEntries?: AgentComposerProps["resolveExternalPromptEntries"];
   prepareExternalPromptFiles?: AgentComposerProps["prepareExternalPromptFiles"];
+  resolvePastedPath?: AgentComposerProps["resolvePastedPath"];
   promptAssetLimit?: number | null;
   selectProjectDirectory?: () => Promise<{ path: string } | null>;
   onRequestGitBranches?: AgentComposerGitBranchLoader | null;

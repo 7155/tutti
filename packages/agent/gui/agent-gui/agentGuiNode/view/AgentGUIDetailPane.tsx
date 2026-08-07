@@ -71,6 +71,7 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
   onRequestWorkspaceReferences,
   resolveExternalPromptEntries = null,
   prepareExternalPromptFiles = null,
+  resolvePastedPath = null,
   promptAssetLimit = null,
   selectProjectDirectory,
   onRequestGitBranches,
@@ -489,6 +490,7 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       onRequestWorkspaceReferences: stableRequestWorkspaceReferences,
       resolveExternalPromptEntries,
       prepareExternalPromptFiles,
+      resolvePastedPath,
       promptAssetLimit,
       selectProjectDirectory: stableSelectProjectDirectory,
       onRequestGitBranches: stableRequestGitBranches
@@ -529,6 +531,7 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       removeQueuedPrompt,
       resolveExternalPromptEntries,
       prepareExternalPromptFiles,
+      resolvePastedPath,
       promptAssetLimit,
       sendQueuedPromptNext,
       showPromptImagesUnsupported,

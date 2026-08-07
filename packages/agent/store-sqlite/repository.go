@@ -695,7 +695,7 @@ type Message struct {
 }
 
 type MessageSemantics struct {
-	UserVisibleAssistantResponse bool   `json:"userVisibleAssistantResponse,omitempty"`
+	UserVisibleAssistantResponse bool   `json:"userVisibleAssistantResponse"`
 	TurnSettling                 bool   `json:"turnSettling,omitempty"`
 	NoticeCommand                string `json:"noticeCommand,omitempty"`
 	NoticeCommandStatus          string `json:"noticeCommandStatus,omitempty"`

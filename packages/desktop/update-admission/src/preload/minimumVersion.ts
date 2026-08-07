@@ -32,6 +32,8 @@ export function createDesktopMinimumVersionApi(input: {
     openManualDownload: () =>
       input.invoke<void>(desktopUpdateAdmissionIpcChannels.manualDownload),
     exit: () => input.invoke<void>(desktopUpdateAdmissionIpcChannels.exit),
+    restart: () =>
+      input.invoke<void>(desktopUpdateAdmissionIpcChannels.restart),
     onState(listener) {
       const handler = (
         _event: unknown,

@@ -266,5 +266,6 @@ export interface DesktopMinimumVersionApi {
   later(): Promise<void>;
   openManualDownload(): Promise<void>;
   exit(): Promise<void>;
+  restart(): Promise<void>;
   onState(listener: (state: MinimumVersionUpgradeState) => void): () => void;
 }

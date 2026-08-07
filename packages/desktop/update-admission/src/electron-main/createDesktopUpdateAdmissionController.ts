@@ -519,6 +519,16 @@ export function createDesktopUpdateAdmissionController<
     assertUpgradeWindowSender(event.sender.id);
     app.quit();
   });
+  ipcMain.handle(desktopUpdateAdmissionIpcChannels.restart, (event) => {
+    assertUpgradeWindowSender(event.sender.id);
+    if (state?.phase !== "simulationComplete") {
+      throw new Error(
+        "desktop update admission restart requires a completed update"
+      );
+    }
+    app.relaunch();
+    app.quit();
+  });
 
   return {
     async runStartupCheck() {

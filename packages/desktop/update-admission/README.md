@@ -8,14 +8,20 @@ The package provides:
 - a Go daemon core for proactive policy checks, timeout, throttling,
   single-flight, strict response validation, and feature-only persistence
 - TypeScript contracts for daemon snapshots and refresh results
-- the Electron startup gate, forced-updater lease, restricted IPC, preload API,
-  shared React UI, and i18n resources
+- Electron startup admission, forced-updater lease, restricted IPC, preload
+  API, shared React UI, and i18n resources
 - deterministic development policy/updater scenarios and a loopback mock
   server
 
 Tutti integrates the Go core in `tuttid`; TSH integrates it in `desktopd`.
 Electron talks only to its authenticated local daemon and never calls the
 public policy endpoint directly.
+
+Hosts may show their business UI before awaiting startup admission. When the
+startup result requires an upgrade, the Electron controller immediately hides
+the existing business windows before showing the forced-upgrade window, so a
+slow policy check does not create a blank startup while a resolved block still
+prevents further business interaction.
 
 ## Daemon API
 

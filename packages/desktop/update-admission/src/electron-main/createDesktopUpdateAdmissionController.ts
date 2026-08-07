@@ -584,6 +584,7 @@ export function createDesktopUpdateAdmissionController<
         phase: "blocked",
         update: options.updateService.getState()
       };
+      isolateBusinessWindows();
       openUpgradeWindow("startup");
       return true;
     },

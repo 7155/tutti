@@ -9,20 +9,35 @@ interface CodeBuddySettings {
 }
 
 interface CodeBuddyStoredSession {
+  account?: {
+    uid?: unknown;
+  };
   auth?: {
     accessToken?: unknown;
+    domain?: unknown;
     expiresAt?: unknown;
   };
+}
+
+export interface CodeBuddyAccountUsageCredential {
+  accessToken: string;
+  baseUrl: string;
+  userId: string;
 }
 
 export type CodeBuddyBillingTarget =
   | { billingMode: "api" }
   | { billingMode: "subscription" }
-  | { billingMode: "provider_account" };
+  | {
+      billingMode: "provider_account";
+      /** Main-process-only credential; never project this target over IPC. */
+      usageCredential?: CodeBuddyAccountUsageCredential;
+    };
 
 /**
- * Resolves only CodeBuddy's active billing mode. Credential values are used
- * for presence and key-kind checks, then discarded inside Electron main.
+ * Resolves CodeBuddy's active billing mode and, for provider accounts, the
+ * main-process-only credential needed for the bounded account-usage request.
+ * Callers must project only `billingMode` and parsed quota values over IPC.
  */
 export async function resolveCodeBuddyBillingTarget(): Promise<CodeBuddyBillingTarget> {
   const configHome =
@@ -36,7 +51,12 @@ export async function resolveCodeBuddyBillingTarget(): Promise<CodeBuddyBillingT
     settingsEnv.CODEBUDDY_AUTH_TOKEN,
     process.env.CODEBUDDY_AUTH_TOKEN
   );
-  if (authToken || stringValue(settings.apiKeyHelper)) {
+  if (authToken) {
+    return providerAccountTarget(
+      accountUsageCredential(authToken, jwtSubject(authToken), "")
+    );
+  }
+  if (stringValue(settings.apiKeyHelper)) {
     return providerAccountTarget();
   }
 
@@ -67,7 +87,16 @@ export async function resolveCodeBuddyBillingTarget(): Promise<CodeBuddyBillingT
   ) {
     throw new Error("CodeBuddy account session is expired.");
   }
-  return providerAccountTarget();
+  const accessToken = stringValue(storedSession.auth?.accessToken);
+  const userId = stringValue(storedSession.account?.uid);
+  const domain = stringValue(storedSession.auth?.domain);
+  return providerAccountTarget(
+    accountUsageCredential(
+      accessToken,
+      userId || jwtSubject(accessToken),
+      domain
+    )
+  );
 }
 
 function codingPlanTarget(): Extract<
@@ -80,8 +109,53 @@ function codingPlanTarget(): Extract<
 function providerAccountTarget(): Extract<
   CodeBuddyBillingTarget,
   { billingMode: "provider_account" }
-> {
-  return { billingMode: "provider_account" };
+>;
+function providerAccountTarget(
+  usageCredential: CodeBuddyAccountUsageCredential | null
+): Extract<CodeBuddyBillingTarget, { billingMode: "provider_account" }>;
+function providerAccountTarget(
+  usageCredential?: CodeBuddyAccountUsageCredential | null
+): Extract<CodeBuddyBillingTarget, { billingMode: "provider_account" }> {
+  return {
+    billingMode: "provider_account",
+    ...(usageCredential ? { usageCredential } : {})
+  };
+}
+
+function accountUsageCredential(
+  accessToken: string,
+  userId: string,
+  domain: string
+): CodeBuddyAccountUsageCredential | null {
+  const normalizedToken = accessToken.replace(/^Bearer\s+/iu, "").trim();
+  if (!normalizedToken || !userId) return null;
+  return {
+    accessToken: normalizedToken,
+    baseUrl: codeBuddyAccountBaseUrl(domain),
+    userId
+  };
+}
+
+function codeBuddyAccountBaseUrl(domain: string): string {
+  const normalized = domain.trim().toLowerCase();
+  if (normalized === "www.codebuddy.ai" || normalized === "codebuddy.ai") {
+    return "https://www.codebuddy.ai";
+  }
+  return "https://copilot.tencent.com";
+}
+
+function jwtSubject(token: string): string {
+  try {
+    const compactToken = token.replace(/^Bearer\s+/iu, "").trim();
+    const payload = compactToken.split(".")[1];
+    if (!payload) return "";
+    const value = objectValue(
+      JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as unknown
+    );
+    return stringValue(value?.sub);
+  } catch {
+    return "";
+  }
 }
 
 async function readCodeBuddySettings(path: string): Promise<CodeBuddySettings> {

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
 
+import { setOutboundFetcherForTesting } from "./net/outboundFetch.ts";
 import { probeCodeBuddyProvider } from "./codeBuddyProviderUsageProbe.ts";
 
 const ORIGINAL_ENVIRONMENT = {
@@ -17,6 +18,7 @@ const ORIGINAL_ENVIRONMENT = {
 };
 
 afterEach(() => {
+  setOutboundFetcherForTesting(null);
   for (const [name, value] of Object.entries(ORIGINAL_ENVIRONMENT)) {
     restoreEnvironment(name, value);
   }
@@ -121,12 +123,62 @@ test("probeCodeBuddyProvider detects CodeBuddy's native stored login without pro
     await writeFile(
       join(authDirectory, "Tencent-Cloud.coding-copilot.info"),
       JSON.stringify({
+        account: { uid: "test-user-id" },
         auth: {
           accessToken: "stored-token-must-not-be-projected",
+          domain: "www.codebuddy.cn",
           expiresAt: 4_102_444_800_000
         }
       })
     );
+    setOutboundFetcherForTesting(async (url, init) => {
+      assert.equal(
+        url,
+        "https://copilot.tencent.com/billing/meter/get-user-resource"
+      );
+      assert.equal(init?.method, "POST");
+      const headers = new Headers(init?.headers);
+      assert.equal(
+        headers.get("authorization"),
+        "Bearer stored-token-must-not-be-projected"
+      );
+      assert.equal(headers.get("x-user-id"), "test-user-id");
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      assert.equal(body.ProductCode, "p_tcaca");
+      assert.deepEqual(body.Status, [0, 3]);
+      assert.equal(body.PageNumber, 1);
+      assert.equal(body.PageSize, 200);
+      assert.ok(Array.isArray(body.PackageCodes));
+      return new Response(
+        JSON.stringify({
+          code: 0,
+          data: {
+            Response: {
+              Data: {
+                Accounts: [
+                  {
+                    CapacityRemainPrecise: "500",
+                    CapacitySizePrecise: "500",
+                    Status: 0
+                  },
+                  {
+                    CapacityRemainPrecise: 1_600,
+                    CapacitySizePrecise: 1_600,
+                    Status: 3
+                  },
+                  {
+                    CapacityRemainPrecise: 9_999,
+                    CapacitySizePrecise: 9_999,
+                    Status: 1
+                  }
+                ]
+              }
+            }
+          }
+        }),
+        { status: 200 }
+      );
+    });
 
     const result = await probeCodeBuddyProvider(
       {
@@ -139,10 +191,70 @@ test("probeCodeBuddyProvider detects CodeBuddy's native stored login without pro
     );
 
     assert.equal(result.usage?.billingMode, "provider_account");
+    assert.deepEqual(result.usage?.quotas, [
+      {
+        amountLimit: 2_100,
+        amountRemaining: 2_100,
+        amountUnit: "credits",
+        percentRemaining: 100,
+        quotaType: "credits"
+      }
+    ]);
+    assert.equal(
+      result.attempts?.some(
+        (attempt) =>
+          attempt.strategy === "codebuddy-account-credits" && attempt.success
+      ),
+      true
+    );
     assert.equal(
       JSON.stringify(result).includes("stored-token-must-not-be-projected"),
       false
     );
+    assert.equal(JSON.stringify(result).includes("test-user-id"), false);
+  } finally {
+    await rm(home, { force: true, recursive: true });
+  }
+});
+
+test("probeCodeBuddyProvider keeps account availability when the credit request is unauthorized", async () => {
+  const home = await createIsolatedCodeBuddyHome({});
+  try {
+    const authDirectory = codeBuddyNativeAuthDirectory(home);
+    await mkdir(authDirectory, { recursive: true });
+    await writeFile(
+      join(authDirectory, "Tencent-Cloud.coding-copilot.info"),
+      JSON.stringify({
+        account: { uid: "test-user-id" },
+        auth: {
+          accessToken: "stale-token-must-not-be-projected",
+          domain: "www.codebuddy.cn",
+          expiresAt: 4_102_444_800_000
+        }
+      })
+    );
+    setOutboundFetcherForTesting(
+      async () => new Response("unauthorized", { status: 401 })
+    );
+
+    const result = await probeCodeBuddyProvider(
+      {
+        includeUsage: true,
+        providers: ["acp:codebuddy"],
+        refresh: true,
+        workspaceId: "workspace-1"
+      },
+      900
+    );
+
+    assert.equal(result.availability.status, "available");
+    assert.equal(result.usage?.billingMode, "provider_account");
+    assert.equal(result.lastError?.code, "session_expired");
+    assert.equal(
+      JSON.stringify(result).includes("stale-token-must-not-be-projected"),
+      false
+    );
+    assert.equal(JSON.stringify(result).includes("test-user-id"), false);
   } finally {
     await rm(home, { force: true, recursive: true });
   }

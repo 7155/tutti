@@ -11,6 +11,7 @@ export type AgentQuotaType =
   | "monthly"
   | "daily"
   | "model"
+  | "credits"
   | "cost";
 
 export interface AgentAvailabilityCheck {
@@ -28,6 +29,10 @@ export interface AgentAvailability {
 export interface AgentUsageQuota {
   quotaType: AgentQuotaType;
   percentRemaining?: number;
+  /** Exact provider-neutral balance when percent alone loses useful detail. */
+  amountRemaining?: number;
+  amountLimit?: number;
+  amountUnit?: "credits";
   resetsAtUnixMs?: number;
   resetText?: string;
   dollarRemaining?: number;

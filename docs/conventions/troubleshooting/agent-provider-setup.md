@@ -1452,6 +1452,42 @@ invalid_grant`. Search `tuttid.log` for
   [Agent Extensions](../../architecture/agent-extensions.md)
   [Kimi Code Agent Extension](https://github.com/tutti-os/agent-extension-kimi-code)
 
+### CodeBuddy account panel does not distinguish API billing from Coding Plan
+
+- Symptom:
+  CodeBuddy `/status` opens the native account panel, but its limits row says
+  the current Agent does not provide quota limits. Ordinary API keys and Coding
+  Plan credentials also have the same presentation.
+- Quick checks:
+  Confirm the provider is `acp:codebuddy`. Inspect CodeBuddy's effective
+  `CODEBUDDY_API_KEY`, `CODEBUDDY_BASE_URL`, `CODEBUDDY_AUTH_TOKEN`, and native
+  login source without copying credential values into logs. Coding Plan keys
+  use the `sk-sp-` prefix or a Tencent endpoint whose path contains `coding`.
+- Root cause:
+  CodeBuddy's ACP `usage_update` reports context usage and per-request cost, but
+  the pinned runtime does not expose structured account quota windows. Tutti
+  previously had no CodeBuddy account probe, so the native panel treated the
+  provider as unsupported and could not even identify the billing mode.
+- Fix:
+  The Desktop CodeBuddy account probe resolves the active credential source in
+  Electron main and projects provider-neutral `api`, `subscription`, or
+  `provider_account` billing. The renderer labels ordinary API keys as
+  `API Usage Billing`, explicit `sk-sp-` or `/coding/` credentials as
+  `Coding Plan`, and native OAuth or helper-based login as `CodeBuddy Account`
+  without claiming a plan that CodeBuddy did not report. Keys, tokens, and raw
+  configuration never cross renderer IPC or enter logs. Keep quota rows empty
+  instead of inventing remaining percentages until CodeBuddy exposes a stable
+  structured quota contract.
+- Validation:
+  Cover ordinary API keys, Coding Plan keys, platform login credentials, secret
+  non-projection, provider dispatch, and both renderer labels. Run the Desktop
+  tests, typecheck, i18n check, and changed-aware push-ready gate.
+- References:
+  [codeBuddyProviderAccount.ts](../../../apps/desktop/src/main/codeBuddyProviderAccount.ts)
+  [codeBuddyProviderUsageProbe.ts](../../../apps/desktop/src/main/codeBuddyProviderUsageProbe.ts)
+  [agentProviderUsageProbe.ts](../../../apps/desktop/src/main/agentProviderUsageProbe.ts)
+  [createDesktopAgentStatusSource.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/createDesktopAgentStatusSource.ts)
+
 ### Claude Code sessions fail with `effectiveSource: "none"` when CC-Switch or similar proxy tools are used
 
 - Symptom:

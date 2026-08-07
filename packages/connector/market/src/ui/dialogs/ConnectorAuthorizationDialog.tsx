@@ -8,12 +8,13 @@ import {
   Input,
   Spinner
 } from "@tutti-os/ui-system/components";
-import { useState } from "react";
 import {
   LinkIcon,
   LockGridHorizontalLinedIcon,
+  TuttiMark,
   UserLinedIcon
 } from "@tutti-os/ui-system/icons";
+import { useState } from "react";
 
 import type { ConnectorMarketI18nRuntime } from "../../i18n/connectorMarketI18n.ts";
 import type { ConnectorPermissionView } from "../../services/view/connectorMarketViewTypes.ts";
@@ -24,17 +25,19 @@ import { ConnectorPermissionList } from "./ConnectorPermissionList.tsx";
 
 export interface ConnectorAuthorizationDialogProps {
   authorizationKind: string;
+  authorizing: boolean;
   displayName: string;
   iconUrl: string;
   i18n: ConnectorMarketI18nRuntime;
-  onAuthorize: (secret?: string) => void;
+  onAuthorize: (secret?: string) => Promise<void>;
   onClose: () => void;
   pending: boolean;
-  permissions: ReadonlyArray<Readonly<ConnectorPermissionView>>;
+  permissions: readonly ConnectorPermissionView[];
 }
 
 export function ConnectorAuthorizationDialog({
   authorizationKind,
+  authorizing,
   displayName,
   iconUrl,
   i18n,
@@ -55,8 +58,8 @@ export function ConnectorAuthorizationDialog({
             size="lg"
           />
           <LinkIcon className="size-4 text-[var(--text-tertiary)]" />
-          <span className="flex size-12 items-center justify-center rounded-xl bg-[var(--accent-bg)] text-[18px] font-bold text-[var(--accent)]">
-            T
+          <span className="flex size-12 items-center justify-center rounded-xl bg-[var(--accent-bg)] text-[var(--accent)]">
+            <TuttiMark size={28} />
           </span>
         </div>
         <DialogTitle>
@@ -65,9 +68,7 @@ export function ConnectorAuthorizationDialog({
         <DialogDescription>
           {pending
             ? i18n.t("dialogAuthorizationPending")
-            : i18n.t("dialogAuthorizationDescription", {
-                name: displayName
-              })}
+            : i18n.t("dialogAuthorizationDescription", { name: displayName })}
         </DialogDescription>
       </DialogHeader>
 
@@ -89,7 +90,7 @@ export function ConnectorAuthorizationDialog({
             <Input
               aria-label={i18n.t("secretInputTitle")}
               autoComplete="off"
-              disabled={pending}
+              disabled={authorizing || pending}
               placeholder={i18n.t("secretInputPlaceholder")}
               type="password"
               value={secret}
@@ -119,11 +120,6 @@ export function ConnectorAuthorizationDialog({
         </div>
       </ConnectorDialogSection>
 
-      <div className="flex items-start gap-2 px-1 text-[11px] leading-[1.45] text-[var(--text-tertiary)]">
-        <LockGridHorizontalLinedIcon className="mt-0.5 size-4 shrink-0" />
-        <span>{i18n.t("permissionNotice")}</span>
-      </div>
-
       <DialogFooter>
         <Button
           size="dialog"
@@ -134,21 +130,21 @@ export function ConnectorAuthorizationDialog({
           {i18n.t("cancel")}
         </Button>
         <Button
-          disabled={pending || (usesSecret && !secret.trim())}
+          disabled={authorizing || (usesSecret && !secret.trim())}
           size="dialog"
           type="button"
           onClick={() => {
             const submittedSecret = usesSecret ? secret : undefined;
-            if (usesSecret) {
-              setSecret("");
-            }
-            onAuthorize(submittedSecret);
+            if (usesSecret) setSecret("");
+            void onAuthorize(submittedSecret);
           }}
         >
-          {pending ? <Spinner size={14} /> : null}
-          {pending
-            ? i18n.t("actionContinueAuthorization")
-            : i18n.t("actionAuthorize")}
+          {authorizing && !pending ? <Spinner size={14} /> : null}
+          {authorizing && pending
+            ? i18n.t("actionWaitingAuthorization")
+            : pending
+              ? i18n.t("actionContinueAuthorization")
+              : i18n.t("actionAuthorize")}
         </Button>
       </DialogFooter>
       <p className="m-0 text-center text-[11px] text-[var(--text-tertiary)]">

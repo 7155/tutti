@@ -67,7 +67,9 @@ type Service struct {
 	WorkspaceIDs                   func(context.Context) ([]string, error)
 	PromptAttachmentStore          PromptAttachmentStore
 	RuntimePreparer                runtimeprep.Preparer
+	ConnectorRoutingHints          func() []runtimeprep.ConnectorRoutingHint
 	ModelGateway                   ModelGatewayRegistry
+	BrowserUseAvailable            func() bool
 	ComputerUseAvailable           func() bool
 	CapabilityLister               ComposerCapabilityLister
 	ConnectorMarketSnapshots       market.SnapshotReader
@@ -685,8 +687,10 @@ type CreateSessionInput struct {
 // for callers that need to correlate the initial submission. Create remains
 // the compatibility surface for consumers that only need the Session.
 type CreateSessionResult struct {
-	Session Session
-	TurnID  string
+	Session           Session
+	TurnID            string
+	SessionStatus     agenthost.CreateSessionStatus
+	InitialGoalStatus agenthost.CreateSessionInitialGoalStatus
 }
 
 type TuttiModeActivationIntent struct {

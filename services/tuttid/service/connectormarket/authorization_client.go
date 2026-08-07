@@ -73,6 +73,7 @@ func (client *ConnectorAuthorizationClient) Begin(ctx context.Context, request m
 	}
 	switch actionType {
 	case "redirect":
+		session.State = market.AuthorizationStatePending
 		authorizationURL, parseErr := url.Parse(strings.TrimSpace(response.Session.NextAction.URL))
 		if parseErr != nil || authorizationURL.Scheme != "https" || authorizationURL.Host == "" || authorizationURL.User != nil {
 			return market.AuthorizationSession{}, errors.New("connector authorization start returned an unsafe redirect URL")
@@ -80,6 +81,7 @@ func (client *ConnectorAuthorizationClient) Begin(ctx context.Context, request m
 		session.AuthorizationURL = response.Session.NextAction.URL
 	case "submit_secret":
 		if authorizationSessionSucceeded(response.Session.Status) {
+			session.State = market.AuthorizationStateConnected
 			return session, nil
 		}
 		if len(request.Secret) == 0 || len(request.Secret) > 16384 {
@@ -93,6 +95,7 @@ func (client *ConnectorAuthorizationClient) Begin(ctx context.Context, request m
 		if completed.Session.SessionID != response.Session.SessionID || strings.TrimSpace(completed.Session.ConnectorRevision) != connectorVersion || !authorizationSessionSucceeded(completed.Session.Status) {
 			return market.AuthorizationSession{}, errors.New("connector secret authorization did not complete")
 		}
+		session.State = market.AuthorizationStateConnected
 	default:
 		return market.AuthorizationSession{}, errors.New("connector authorization start returned an unsupported action")
 	}

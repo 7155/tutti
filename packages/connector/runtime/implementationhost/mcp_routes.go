@@ -10,7 +10,6 @@ import (
 	"time"
 
 	market "github.com/tutti-os/tutti/packages/connector/host"
-	"github.com/tutti-os/tutti/packages/connector/runtime/command"
 	"github.com/tutti-os/tutti/packages/connector/runtime/mcp"
 )
 
@@ -70,31 +69,23 @@ type mcpCaller interface {
 	Call(context.Context, string, any) (json.RawMessage, error)
 }
 
-func (host *Host) registerMCPTools(route *connectorRoute, client mcpCaller, tools []mcpTool) error {
+func (*Host) registerMCPTools(route *connectorRoute, client mcpCaller, tools []mcpTool) error {
 	if len(tools) == 0 {
 		return errors.New("connector MCP tools/list response is invalid")
 	}
 	for _, tool := range tools {
-		tool := tool
-		commandID, err := capabilityID(route.connectorKey, "mcp", tool.Name)
-		if err != nil || tool.InputSchema == nil || tool.InputSchema["type"] != "object" || command.ValidateInputSchema(tool.InputSchema) != nil {
+		localName := route.connectorKey + "_" + tool.Name
+		// Keep the upstream JSON Schema intact. MCP schemas are not constrained
+		// by Tutti's legacy command-input schema subset.
+		if tool.InputSchema == nil || len(localName) > 255 || !mcpLocalToolNamePattern.MatchString(localName) {
 			return errors.New("connector MCP tool contract is invalid")
 		}
-		if _, duplicate := route.capabilities[commandID]; duplicate {
+		if _, duplicate := route.mcpTools[localName]; duplicate {
 			return errors.New("connector MCP tool capability id is duplicated")
 		}
-		route.capabilities[commandID] = connectorCommand{capability: connectorCapability(commandID, route.connectorKey, "mcp", tool.Name, tool.Description, tool.InputSchema),
-			kind: "mcp", name: tool.Name,
-			invoke: func(callCtx context.Context, request command.InvokeRequest) (command.Output, error) {
-				if !host.routeCurrent(route) {
-					return command.Output{}, command.ErrServiceUnavailable
-				}
-				result, err := client.Call(callCtx, "tools/call", map[string]any{"name": tool.Name, "arguments": request.Input})
-				if err != nil {
-					return command.Output{}, command.ServiceUnavailable("connector MCP tool failed", err)
-				}
-				return jsonOutput(result)
-			}}
+		routeID := "connector." + route.connectorKey + ".mcp." + tool.Name
+		route.mcpTools[localName] = registeredMCPTool{routeID: routeID, localName: localName,
+			upstreamName: tool.Name, description: tool.Description, inputSchema: cloneJSONMap(tool.InputSchema), client: client}
 	}
 	return nil
 }

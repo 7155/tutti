@@ -283,6 +283,10 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("configure connector node package installer: %w", err)
 	}
+	releaseInstaller, err := connectorruntime.NewReleaseInstaller(artifactPreparer, nodePackageInstaller)
+	if err != nil {
+		return fmt.Errorf("configure connector release installer: %w", err)
+	}
 	connectorCommands := connectormarketservice.NewConnectorCommandRegistry()
 	connectorBroker, err := connectormarketservice.NewConnectorBroker(connectorCommands)
 	if err != nil {
@@ -310,7 +314,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	}}
 	connectorMarketHost, err := connectormarketdaemon.NewHost(ctx, connectormarketdaemon.HostConfig{
 		Repository: connectorMarketStore, CatalogSource: connectorCatalog,
-		ArtifactPreparer: artifactPreparer, CLIInstallations: nodePackageInstaller, ImplementationHost: connectorRuntime,
+		ReleaseInstallations: releaseInstaller, ImplementationHost: connectorRuntime,
 		Authorization: connectorAuthorization, Compatibility: compatibility,
 		ImplementationRegistry: implementations, Outbox: connectorMarketStore, Lifecycle: connectorMarketStore,
 		Publisher: eventstreamservice.ConnectorMarketPublisher{Service: events},
@@ -323,6 +327,15 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	}
 	if service, ok := api.AgentSessionService.(*agentservice.Service); ok {
 		service.ConnectorMarketSnapshots = connectorMarketHost.Application
+		service.ConnectorRoutingHints = func() []runtimeprep.ConnectorRoutingHint {
+			routes := connectorBroker.RoutingHints()
+			hints := make([]runtimeprep.ConnectorRoutingHint, 0, len(routes))
+			for _, route := range routes {
+				hints = append(hints, runtimeprep.ConnectorRoutingHint{ConnectorKey: route.Key,
+					DisplayName: route.DisplayName, Aliases: append([]string(nil), route.Aliases...), SkillRoot: route.SkillRoot})
+			}
+			return hints
+		}
 	}
 	api.ConnectorMarketService = connectorMarketHost.Application
 	existingAccountLoginCompleted := accountService.OnLoginCompleted

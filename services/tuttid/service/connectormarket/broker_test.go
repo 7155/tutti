@@ -14,6 +14,7 @@ import (
 
 func TestConnectorBrokerAdaptsPublicDiscoverySkillsAndInvocation(t *testing.T) {
 	host, commands, connector, generation := testCLIHost(t, &connectorProcessStub{})
+	connector.Release.Manifest.AgentRouting = &market.AgentRouting{Aliases: []string{"飞书", "Feishu"}}
 	root := host.artifacts.(preparedResolverStub).receipt.PreparedPath
 	if _, err := host.Reconcile(context.Background(), market.RuntimeReconcileRequest{OperationID: "op-1", ConnectionID: "workspace-1",
 		Connector: connector, Enabled: true, Generation: generation}); err != nil {
@@ -23,7 +24,7 @@ func TestConnectorBrokerAdaptsPublicDiscoverySkillsAndInvocation(t *testing.T) {
 	if err := os.MkdirAll(skillDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "tutti.connector.json"), []byte(`{"name":{"en-US":"Demo Package"},"description":{"en-US":"Package description"},"skills":["./skills/diagnostic/SKILL.md"]}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "tutti.connector.json"), []byte(`{"name":{"en-US":"Demo Package"},"description":{"en-US":"Package description"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: run-diagnostic\ndescription: Run one diagnostic.\n---\n\n# Run Diagnostic\n\nUse the broker.\n"), 0o600); err != nil {
@@ -41,8 +42,19 @@ func TestConnectorBrokerAdaptsPublicDiscoverySkillsAndInvocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	connectors, ok := available.Value["connectors"].([]implementationhost.ConnectorSummary)
-	if !ok || len(connectors) != 1 || connectors[0].Name != "Demo Package" {
+	if !ok || len(connectors) != 1 || connectors[0].Name != "Demo Package" || len(connectors[0].Skills) != 1 ||
+		connectors[0].Skills[0].Name != "run-diagnostic" || connectors[0].Skills[0].Description != "Run one diagnostic." ||
+		connectors[0].Skills[0].EntryPath != filepath.Join(skillDir, "SKILL.md") || connectors[0].Skills[0].BasePath != skillDir {
 		t.Fatalf("available = %#v", available.Value)
+	}
+	hints := broker.RoutingHints()
+	if len(hints) != 1 || hints[0].Key != "github" || hints[0].DisplayName != connector.Release.Manifest.DisplayName ||
+		len(hints[0].Aliases) != 2 || hints[0].Aliases[0] != "飞书" || hints[0].SkillRoot != filepath.Join(root, "skills") {
+		t.Fatalf("routing hints = %#v", hints)
+	}
+	hints[0].Aliases[0] = "mutated"
+	if got := broker.RoutingHints()[0].Aliases[0]; got != "飞书" {
+		t.Fatalf("routing aliases leaked mutable route state: %q", got)
 	}
 	discovered, err := broker.Invoke(context.Background(), cliservice.InvokeRequest{CommandID: connectorCapabilitiesCommandID,
 		Input: map[string]any{"connector": "github"}})
@@ -85,5 +97,8 @@ func TestConnectorBrokerRejectsInactiveConnector(t *testing.T) {
 		Input: map[string]any{"connector": "demo"}})
 	if err == nil || !strings.Contains(err.Error(), "runtime is not active") {
 		t.Fatalf("inactive connector error = %v", err)
+	}
+	if hints := broker.RoutingHints(); len(hints) != 0 {
+		t.Fatalf("inactive routing hints = %#v", hints)
 	}
 }

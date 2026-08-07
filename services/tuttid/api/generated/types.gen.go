@@ -1585,14 +1585,13 @@ func (e ConnectorMarketOperationKind) Valid() bool {
 // Defines values for ConnectorMarketOperationStage.
 const (
 	ConnectorMarketOperationStageAccepted      ConnectorMarketOperationStage = "accepted"
-	ConnectorMarketOperationStageActivating    ConnectorMarketOperationStage = "activating"
 	ConnectorMarketOperationStageAuthorizing   ConnectorMarketOperationStage = "authorizing"
 	ConnectorMarketOperationStageCompleted     ConnectorMarketOperationStage = "completed"
 	ConnectorMarketOperationStageDeactivating  ConnectorMarketOperationStage = "deactivating"
 	ConnectorMarketOperationStageDisconnecting ConnectorMarketOperationStage = "disconnecting"
-	ConnectorMarketOperationStageDownloading   ConnectorMarketOperationStage = "downloading"
 	ConnectorMarketOperationStageFailed        ConnectorMarketOperationStage = "failed"
-	ConnectorMarketOperationStagePrepared      ConnectorMarketOperationStage = "prepared"
+	ConnectorMarketOperationStageInstalled     ConnectorMarketOperationStage = "installed"
+	ConnectorMarketOperationStageInstalling    ConnectorMarketOperationStage = "installing"
 	ConnectorMarketOperationStageRefreshing    ConnectorMarketOperationStage = "refreshing"
 )
 
@@ -1600,8 +1599,6 @@ const (
 func (e ConnectorMarketOperationStage) Valid() bool {
 	switch e {
 	case ConnectorMarketOperationStageAccepted:
-		return true
-	case ConnectorMarketOperationStageActivating:
 		return true
 	case ConnectorMarketOperationStageAuthorizing:
 		return true
@@ -1611,11 +1608,11 @@ func (e ConnectorMarketOperationStage) Valid() bool {
 		return true
 	case ConnectorMarketOperationStageDisconnecting:
 		return true
-	case ConnectorMarketOperationStageDownloading:
-		return true
 	case ConnectorMarketOperationStageFailed:
 		return true
-	case ConnectorMarketOperationStagePrepared:
+	case ConnectorMarketOperationStageInstalled:
+		return true
+	case ConnectorMarketOperationStageInstalling:
 		return true
 	case ConnectorMarketOperationStageRefreshing:
 		return true
@@ -5904,6 +5901,11 @@ type CompleteWorkspaceAppUploadResponse struct {
 	File WorkspaceAppUploadedFile `json:"file"`
 }
 
+// ConnectorMarketAgentRouting defines model for ConnectorMarketAgentRouting.
+type ConnectorMarketAgentRouting struct {
+	Aliases []string `json:"aliases"`
+}
+
 // ConnectorMarketArtifact defines model for ConnectorMarketArtifact.
 type ConnectorMarketArtifact struct {
 	Key       string `json:"key"`
@@ -6029,6 +6031,7 @@ type ConnectorMarketInstallationState string
 
 // ConnectorMarketManifest defines model for ConnectorMarketManifest.
 type ConnectorMarketManifest struct {
+	AgentRouting      *ConnectorMarketAgentRouting              `json:"agentRouting,omitempty"`
 	AuthorizationKind string                                    `json:"authorizationKind"`
 	Compatibility     *ConnectorMarketCompatibilityRequirements `json:"compatibility,omitempty"`
 	Description       *string                                   `json:"description,omitempty"`

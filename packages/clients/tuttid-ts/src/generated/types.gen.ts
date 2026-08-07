@@ -4616,10 +4616,15 @@ export type ConnectorMarketManifest = {
   displayName: string;
   iconUrl: string;
   description?: string;
+  agentRouting?: ConnectorMarketAgentRouting;
   permissions: Array<string>;
   implementation: ConnectorMarketImplementation;
   authorizationKind: string;
   compatibility?: ConnectorMarketCompatibilityRequirements;
+};
+
+export type ConnectorMarketAgentRouting = {
+  aliases: Array<string>;
 };
 
 export type ConnectorMarketArtifact = {
@@ -4758,9 +4763,8 @@ export type ConnectorMarketOperationState =
 export type ConnectorMarketOperationStage =
   | "accepted"
   | "refreshing"
-  | "downloading"
-  | "prepared"
-  | "activating"
+  | "installing"
+  | "installed"
   | "deactivating"
   | "authorizing"
   | "disconnecting"

@@ -16,7 +16,7 @@ import (
 	market "github.com/tutti-os/tutti/packages/connector/host"
 )
 
-func TestPreparerVerifiesPromotesAndReusesContentAddressedArtifact(t *testing.T) {
+func TestPreparerVerifiesPromotesAndReusesLatestArtifact(t *testing.T) {
 	manifest := []byte(`{"schemaVersion":"1","connectorKey":"github"}`)
 	archive := testZIP(t, map[string][]byte{
 		packagedManifestPath: manifest,
@@ -57,9 +57,9 @@ func TestPreparerVerifiesPromotesAndReusesContentAddressedArtifact(t *testing.T)
 	if string(content) != "executable" {
 		t.Fatalf("prepared content = %q", content)
 	}
-	blob := filepath.Join(root, "blobs", "sha256", release.Artifact.SHA256)
-	if _, err := os.Stat(blob); err != nil {
-		t.Fatalf("content-addressed blob: %v", err)
+	cached := filepath.Join(root, "cache", release.ConnectorKey, "current", downloadCacheArtifactFile)
+	if _, err := os.Stat(cached); err != nil {
+		t.Fatalf("current cached artifact: %v", err)
 	}
 }
 
@@ -87,6 +87,9 @@ func TestResolvePreparedAllowsLegacyReleaseWithoutIcon(t *testing.T) {
 
 	legacyRelease := release
 	legacyRelease.Manifest.IconURL = ""
+	if err := os.WriteFile(filepath.Join(prepared.PreparedPath, ".DS_Store"), []byte("finder metadata"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	resolved, err := preparer.ResolvePrepared(context.Background(), legacyRelease)
 	if err != nil {
 		t.Fatalf("ResolvePrepared() rejected legacy presentation metadata: %v", err)
@@ -99,6 +102,90 @@ func TestResolvePreparedAllowsLegacyReleaseWithoutIcon(t *testing.T) {
 		Release:     legacyRelease,
 	}); err == nil || !strings.Contains(err.Error(), "iconUrl") {
 		t.Fatalf("Prepare() error = %v, want full icon validation", err)
+	}
+}
+
+func TestResolvePreparedRepairsInvalidInventoryFromLatestVerifiedArtifact(t *testing.T) {
+	manifest := []byte(`{"schemaVersion":"1","connectorKey":"github"}`)
+	archive := testZIP(t, map[string][]byte{
+		packagedManifestPath: manifest,
+		"bin/connector":      []byte("executable"),
+	})
+	release := testRelease(archive, manifest)
+	fetcher := &memoryFetcher{body: archive, mediaType: release.Artifact.MediaType}
+	preparer, err := NewPreparer(Config{RootDir: t.TempDir(), Fetcher: fetcher})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := preparer.Prepare(context.Background(), market.PrepareArtifactRequest{
+		OperationID: "operation-1",
+		Release:     release,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(prepared.PreparedPath, ".DS_Store"), []byte("finder metadata"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	resolved, err := preparer.ResolvePrepared(context.Background(), release)
+	if err != nil {
+		t.Fatalf("ResolvePrepared() failed to repair invalid inventory: %v", err)
+	}
+	if fetcher.calls != 1 {
+		t.Fatalf("fetch calls = %d, want 1 verified artifact download", fetcher.calls)
+	}
+	if resolved.PreparedPath != prepared.PreparedPath || resolved.InventoryDigest != prepared.InventoryDigest {
+		t.Fatalf("resolved receipt = %#v, want repaired %#v", resolved, prepared)
+	}
+	if _, err := os.Stat(filepath.Join(resolved.PreparedPath, ".DS_Store")); !os.IsNotExist(err) {
+		t.Fatalf("unexpected metadata survived repair: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(resolved.PreparedPath, "bin", "connector"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "executable" {
+		t.Fatalf("repaired content = %q", content)
+	}
+}
+
+func TestResolvePreparedRepairsModifiedContentFromLatestVerifiedArtifact(t *testing.T) {
+	manifest := []byte(`{"schemaVersion":"1","connectorKey":"github"}`)
+	archive := testZIP(t, map[string][]byte{
+		packagedManifestPath: manifest,
+		"bin/connector":      []byte("executable"),
+	})
+	release := testRelease(archive, manifest)
+	fetcher := &memoryFetcher{body: archive, mediaType: release.Artifact.MediaType}
+	preparer, err := NewPreparer(Config{RootDir: t.TempDir(), Fetcher: fetcher})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := preparer.Prepare(context.Background(), market.PrepareArtifactRequest{
+		OperationID: "operation-1",
+		Release:     release,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	connectorPath := filepath.Join(prepared.PreparedPath, "bin", "connector")
+	if err := os.WriteFile(connectorPath, []byte("tampered"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := preparer.ResolvePrepared(context.Background(), release); err != nil {
+		t.Fatalf("ResolvePrepared() failed to repair modified content: %v", err)
+	}
+	content, err := os.ReadFile(connectorPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "executable" {
+		t.Fatalf("repaired content = %q", content)
+	}
+	if fetcher.calls != 1 {
+		t.Fatalf("fetch calls = %d, want 1 verified artifact download", fetcher.calls)
 	}
 }
 

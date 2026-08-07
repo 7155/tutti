@@ -39,9 +39,8 @@ export type ConnectorOperationState =
 export type ConnectorOperationStage =
   | "accepted"
   | "refreshing"
-  | "downloading"
-  | "prepared"
-  | "activating"
+  | "installing"
+  | "installed"
   | "deactivating"
   | "authorizing"
   | "disconnecting"
@@ -115,11 +114,16 @@ export interface ConnectorCompatibilityRequirements {
   minimumHostVersion?: string;
 }
 
+export interface ConnectorAgentRouting {
+  aliases: string[];
+}
+
 export interface ConnectorManifest {
   schemaVersion: "1";
   displayName: string;
   iconUrl: string;
   description?: string;
+  agentRouting?: ConnectorAgentRouting;
   permissions: string[];
   implementation: ConnectorManifestImplementation;
   authorizationKind: string;

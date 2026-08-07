@@ -108,6 +108,16 @@ func (host *ImplementationHost) Reconcile(ctx context.Context, request market.Ru
 	return host.runtime.Reconcile(ctx, implementationhost.ReconcileRequest{Runtime: request})
 }
 
+func (host *ImplementationHost) CheckInstallation(
+	ctx context.Context,
+	request market.InstallationCheckRequest,
+) (market.InstallationObservation, error) {
+	if host == nil || host.runtime == nil {
+		return market.InstallationObservation{}, errors.New("connector implementation host is unavailable")
+	}
+	return host.runtime.CheckInstallation(ctx, request)
+}
+
 func (host *ImplementationHost) Begin(ctx context.Context, request market.AuthorizationStartRequest) (market.AuthorizationSession, error) {
 	if host == nil || host.runtime == nil {
 		return market.AuthorizationSession{}, errors.New("connector authorization provider is unavailable")

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 const (
@@ -15,6 +17,8 @@ const (
 	ImplementationKindManagedStdio         = "managed_stdio"
 	ImplementationKindRemoteStreamableHTTP = "remote_streamable_http"
 	CredentialBrokerProtocolV1             = "tutti.connector.credentials.v1"
+	maxAgentRoutingAliases                 = 12
+	maxAgentRoutingAliasRunes              = 48
 )
 
 var connectorKeyPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$`)
@@ -127,6 +131,9 @@ func validateManifestShape(manifest Manifest, validateIcon bool) error {
 	if validateIcon && !isSafeConnectorIconURL(manifest.IconURL) {
 		return invalidManifest("iconUrl must be a PNG, WebP, or SVG data URL", nil)
 	}
+	if err := validateAgentRouting(manifest.AgentRouting); err != nil {
+		return err
+	}
 	if err := validateUniquePermissions(manifest.Permissions); err != nil {
 		return err
 	}
@@ -180,6 +187,39 @@ func validateManifestShape(manifest Manifest, validateIcon bool) error {
 	return nil
 }
 
+func validateAgentRouting(routing *AgentRouting) error {
+	if routing == nil {
+		return nil
+	}
+	if len(routing.Aliases) == 0 || len(routing.Aliases) > maxAgentRoutingAliases {
+		return invalidManifest("agentRouting.aliases must contain between 1 and 12 aliases", nil)
+	}
+	seen := make(map[string]struct{}, len(routing.Aliases))
+	for _, alias := range routing.Aliases {
+		if alias == "" || alias != strings.TrimSpace(alias) || !utf8.ValidString(alias) ||
+			utf8.RuneCountInString(alias) > maxAgentRoutingAliasRunes || !safeAgentRoutingAlias(alias) {
+			return invalidManifest("agentRouting.aliases must be safe brand aliases of at most 48 characters", nil)
+		}
+		key := strings.ToLower(alias)
+		if _, duplicate := seen[key]; duplicate {
+			return invalidManifest("agentRouting.aliases must be unique ignoring case", nil)
+		}
+		seen[key] = struct{}{}
+	}
+	return nil
+}
+
+func safeAgentRoutingAlias(alias string) bool {
+	for _, character := range alias {
+		if unicode.IsLetter(character) || unicode.IsNumber(character) || unicode.IsMark(character) || character == ' ' ||
+			strings.ContainsRune("-_.+&/()", character) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func isSafeConnectorIconURL(value string) bool {
 	value = strings.TrimSpace(value)
 	for _, prefix := range []string{"data:image/png;base64,", "data:image/webp;base64,", "data:image/svg+xml;base64,"} {
@@ -206,8 +246,13 @@ func validateManagedStdio(managed ManagedStdioImplementation, authorizationKind 
 	if managed.MCP == nil && managed.CLI == nil {
 		return invalidManifest("managed_stdio requires an MCP or CLI interface", nil)
 	}
-	if managed.MCP != nil && !safeRelativeEntrypoint(managed.MCP.Entrypoint) {
-		return invalidManifest("managed MCP entrypoint must be a safe relative path", nil)
+	if managed.MCP != nil {
+		if !safeRelativeEntrypoint(managed.MCP.Entrypoint) {
+			return invalidManifest("managed MCP entrypoint must be a safe relative path", nil)
+		}
+		if err := validateInstallationProbe(managed.MCP.InstallationProbe); err != nil {
+			return err
+		}
 	}
 	if managed.CLI != nil {
 		if managed.Runtime.Language != "node" || managed.Runtime.Profile != "connector-node-static" {
@@ -223,6 +268,9 @@ func validateManagedStdio(managed ManagedStdioImplementation, authorizationKind 
 			if strings.ContainsRune(argument, '\x00') {
 				return invalidManifest("managed CLI arguments must not contain NUL", nil)
 			}
+		}
+		if err := validateInstallationProbe(managed.CLI.InstallationProbe); err != nil {
+			return err
 		}
 		if managed.CLI.Install != nil {
 			if err := validateCLIInstallation(*managed.CLI.Install, managed.Runtime, managed.CLI.Entrypoint); err != nil {
@@ -257,6 +305,23 @@ func validateManagedStdio(managed ManagedStdioImplementation, authorizationKind 
 	}
 	if authorizationKind == "none" && managed.CredentialBroker != nil {
 		return invalidManifest("credential broker must not be declared when authorization is none", nil)
+	}
+	return nil
+}
+
+func validateInstallationProbe(probe *InstallationProbe) error {
+	if probe == nil {
+		return nil
+	}
+	if len(probe.Arguments) == 0 || len(probe.Arguments) > 32 || probe.TimeoutMS < 100 || probe.TimeoutMS > 30_000 {
+		return invalidManifest("installationProbe requires between 1 and 32 arguments and timeoutMs between 100 and 30000", nil)
+	}
+	totalBytes := 0
+	for _, argument := range probe.Arguments {
+		totalBytes += len(argument)
+		if strings.ContainsRune(argument, '\x00') || totalBytes > 16*1024 {
+			return invalidManifest("installationProbe arguments are invalid", nil)
+		}
 	}
 	return nil
 }

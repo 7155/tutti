@@ -74,6 +74,7 @@ type connectorRoute struct {
 	installedRoot          string
 	displayName            string
 	description            string
+	routingAliases         []string
 	processes              *connectorruntime.ProcessGroup
 	snapshots              *connectorruntime.ExecutionSnapshotter
 	userHome               string
@@ -155,6 +156,9 @@ func (host *Host) Reconcile(ctx context.Context, request ReconcileRequest) (mark
 	route.executionRoot, route.installedRoot = executionRoot, installedRoot
 	route.displayName = runtimeRequest.Connector.Release.Manifest.DisplayName
 	route.description = runtimeRequest.Connector.Release.Manifest.Description
+	if routing := runtimeRequest.Connector.Release.Manifest.AgentRouting; routing != nil {
+		route.routingAliases = append([]string(nil), routing.Aliases...)
+	}
 	route.snapshots = host.snapshots
 	if err := host.routes.Commit(route); err != nil {
 		_ = route.Close(time.Now().Add(3 * time.Second))
@@ -290,7 +294,8 @@ func (*Host) attachCredentialBroker(route *connectorRoute, broker *market.Manage
 	route.credentialBrokerLaunch = &managedCredentialBrokerLaunch{
 		entrypoint: entrypoint, timeout: time.Duration(broker.TimeoutMS) * time.Millisecond, allowedHosts: allowedHosts,
 		cliLaunch: credentialBrokerCLILaunch{Executable: route.cliLaunch.executable.Path,
-			Arguments: append([]string(nil), route.cliLaunch.arguments...), CWD: route.cliLaunch.cwd},
+			// Native CLIs legitimately have no argv; preserve [] instead of encoding null for the broker protocol.
+			Arguments: append([]string{}, route.cliLaunch.arguments...), CWD: route.cliLaunch.cwd},
 		executable: executable, language: route.cliLaunch.language, cwd: prepared.PreparedPath, stateDir: stateDir,
 		artifactTrees: append([]agentruntime.ArtifactTreeIdentity(nil), artifactTrees...),
 	}
@@ -703,10 +708,11 @@ type CommandRegistry struct {
 }
 
 type RouteDescriptor struct {
-	ConnectorKey  string
-	DisplayName   string
-	Description   string
-	InstalledRoot string
+	ConnectorKey   string
+	DisplayName    string
+	Description    string
+	RoutingAliases []string
+	InstalledRoot  string
 }
 
 func NewCommandRegistry() *CommandRegistry { return &CommandRegistry{} }
@@ -739,7 +745,8 @@ func (registry *CommandRegistry) Routes() []RouteDescriptor {
 	result := make([]RouteDescriptor, 0, len(routes))
 	for _, route := range routes {
 		result = append(result, RouteDescriptor{ConnectorKey: route.connectorKey, DisplayName: route.displayName,
-			Description: route.description, InstalledRoot: route.installedRoot})
+			Description: route.description, RoutingAliases: append([]string(nil), route.routingAliases...),
+			InstalledRoot: route.installedRoot})
 	}
 	sort.Slice(result, func(left, right int) bool { return result[left].ConnectorKey < result[right].ConnectorKey })
 	return result

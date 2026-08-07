@@ -28,7 +28,10 @@ type Fetcher interface {
 }
 
 type FetchRequest struct {
-	Release market.Release
+	OperationID string
+	Scope       market.OperationScope
+	Generation  market.HostGeneration
+	Release     market.Release
 }
 
 type FetchResponse struct {
@@ -204,9 +207,9 @@ func (preparer *Preparer) prepare(
 	var cached CachedArtifact
 	var err error
 	if runtimeValidation {
-		cached, err = preparer.cache.prepareRuntimeCandidate(ctx, request.OperationID, request.Release)
+		cached, err = preparer.cache.prepareRuntimeCandidate(ctx, request)
 	} else {
-		cached, err = preparer.cache.PrepareCandidate(ctx, request.OperationID, request.Release)
+		cached, err = preparer.cache.PrepareCandidate(ctx, request)
 	}
 	if err != nil {
 		return market.PreparedArtifactReceipt{}, err

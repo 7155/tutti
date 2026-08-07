@@ -70,33 +70,30 @@ func NewDownloadCache(config DownloadCacheConfig) (*DownloadCache, error) {
 
 func (cache *DownloadCache) PrepareCandidate(
 	ctx context.Context,
-	operationID string,
-	release market.Release,
+	request market.PrepareArtifactRequest,
 ) (CachedArtifact, error) {
-	return cache.prepareCandidate(ctx, operationID, release, market.ValidateReleaseShape)
+	return cache.prepareCandidate(ctx, request, market.ValidateReleaseShape)
 }
 
 func (cache *DownloadCache) prepareRuntimeCandidate(
 	ctx context.Context,
-	operationID string,
-	release market.Release,
+	request market.PrepareArtifactRequest,
 ) (CachedArtifact, error) {
-	return cache.prepareCandidate(ctx, operationID, release, market.ValidateRuntimeReleaseShape)
+	return cache.prepareCandidate(ctx, request, market.ValidateRuntimeReleaseShape)
 }
 
 func (cache *DownloadCache) prepareCandidate(
 	ctx context.Context,
-	operationID string,
-	release market.Release,
+	request market.PrepareArtifactRequest,
 	validate func(market.Release) error,
 ) (CachedArtifact, error) {
 	if cache == nil {
 		return CachedArtifact{}, errors.New("connector download cache is unavailable")
 	}
-	if !safeSegment(operationID) {
+	if !safeSegment(request.OperationID) {
 		return CachedArtifact{}, errors.New("connector artifact operation id is invalid")
 	}
-	if err := validate(release); err != nil {
+	if err := validate(request.Release); err != nil {
 		return CachedArtifact{}, err
 	}
 	cache.mu.Lock()
@@ -104,20 +101,20 @@ func (cache *DownloadCache) prepareCandidate(
 	if err := ctx.Err(); err != nil {
 		return CachedArtifact{}, err
 	}
-	root, err := cache.connectorRoot(release.ConnectorKey)
+	root, err := cache.connectorRoot(request.Release.ConnectorKey)
 	if err != nil {
 		return CachedArtifact{}, err
 	}
 	if err := cache.recoverPromotion(root); err != nil {
 		return CachedArtifact{}, err
 	}
-	if current, ok := cache.readSlot(root, "current", operationID, release); ok {
+	if current, ok := cache.readSlot(root, "current", request.OperationID, request.Release); ok {
 		return current, nil
 	}
-	if candidate, ok := cache.readSlot(root, "candidate", operationID, release); ok {
+	if candidate, ok := cache.readSlot(root, "candidate", request.OperationID, request.Release); ok {
 		return candidate, nil
 	}
-	return cache.downloadCandidate(ctx, root, operationID, release)
+	return cache.downloadCandidate(ctx, root, request)
 }
 
 func (cache *DownloadCache) PromoteCandidate(
@@ -197,9 +194,9 @@ func (cache *DownloadCache) RemoveConnector(ctx context.Context, connectorKey st
 func (cache *DownloadCache) downloadCandidate(
 	ctx context.Context,
 	root string,
-	operationID string,
-	release market.Release,
+	request market.PrepareArtifactRequest,
 ) (CachedArtifact, error) {
+	release := request.Release
 	staging := filepath.Join(root, ".candidate-staging")
 	if err := os.RemoveAll(staging); err != nil {
 		return CachedArtifact{}, fmt.Errorf("reset connector artifact candidate staging: %w", err)
@@ -208,7 +205,12 @@ func (cache *DownloadCache) downloadCandidate(
 		return CachedArtifact{}, fmt.Errorf("create connector artifact candidate staging: %w", err)
 	}
 	defer os.RemoveAll(staging)
-	response, err := cache.fetcher.Fetch(ctx, FetchRequest{Release: release})
+	response, err := cache.fetcher.Fetch(ctx, FetchRequest{
+		OperationID: request.OperationID,
+		Scope:       request.Scope,
+		Generation:  request.Generation,
+		Release:     release,
+	})
 	if err != nil {
 		return CachedArtifact{}, fmt.Errorf("fetch connector artifact: %w", err)
 	}
@@ -247,7 +249,7 @@ func (cache *DownloadCache) downloadCandidate(
 	if actual := hex.EncodeToString(hash.Sum(nil)); actual != release.Artifact.SHA256 {
 		return CachedArtifact{}, errors.New("connector artifact SHA-256 does not match release")
 	}
-	receipt := CachedArtifact{SchemaVersion: downloadCacheReceiptSchema, OperationID: operationID,
+	receipt := CachedArtifact{SchemaVersion: downloadCacheReceiptSchema, OperationID: request.OperationID,
 		ConnectorKey: release.ConnectorKey, ReleaseID: release.ReleaseID, ReleaseDigest: release.ReleaseDigest,
 		ArtifactSHA: release.Artifact.SHA256, SizeBytes: release.Artifact.SizeBytes,
 		MediaType: release.Artifact.MediaType, ObjectVersion: release.Artifact.ObjectVersion, Slot: "candidate"}
@@ -264,7 +266,7 @@ func (cache *DownloadCache) downloadCandidate(
 	if err := syncDirectory(root); err != nil {
 		return CachedArtifact{}, err
 	}
-	result, ok := cache.readSlot(root, "candidate", operationID, release)
+	result, ok := cache.readSlot(root, "candidate", request.OperationID, release)
 	if !ok {
 		return CachedArtifact{}, errors.New("downloaded connector artifact candidate could not be verified")
 	}

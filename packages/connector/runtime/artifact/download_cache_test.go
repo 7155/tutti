@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	market "github.com/tutti-os/tutti/packages/connector/host"
 )
 
 func TestDownloadCacheKeepsCurrentUntilCandidateIsPromoted(t *testing.T) {
@@ -20,7 +22,7 @@ func TestDownloadCacheKeepsCurrentUntilCandidateIsPromoted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidate, err := cache.PrepareCandidate(context.Background(), "install-1", first)
+	candidate, err := cache.PrepareCandidate(context.Background(), market.PrepareArtifactRequest{OperationID: "install-1", Release: first})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +41,7 @@ func TestDownloadCacheKeepsCurrentUntilCandidateIsPromoted(t *testing.T) {
 	second.Artifact.Key = "connectors/github/2.0.0.zip"
 	fetcher.body = secondArchive
 
-	secondCandidate, err := cache.PrepareCandidate(context.Background(), "install-2", second)
+	secondCandidate, err := cache.PrepareCandidate(context.Background(), market.PrepareArtifactRequest{OperationID: "install-2", Release: second})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -18,6 +18,7 @@ type ApplicationConfig struct {
 	Repository               Repository
 	CatalogSource            CatalogSource
 	ReleaseInstallations     ReleaseInstallationManager
+	InstallationChecker      InstallationChecker
 	Host                     ImplementationHost
 	Authorization            AuthorizationProvider
 	AuthorizationProjections AuthorizationProjectionStore

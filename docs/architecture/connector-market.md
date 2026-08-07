@@ -189,6 +189,19 @@ exactly and never derives a short name by splitting the ID. The selected
 connector remains a separate routing and policy boundary, and invocation fails
 when the canonical ID belongs to a different connector.
 
+Managed MCP and CLI interfaces may declare an `installationProbe` containing
+only bounded argv and `timeoutMs`. The host reuses the interface's verified
+entrypoint and managed runtime; manifests cannot select another executable or
+provide shell text. Exit code `0` means the release-scoped implementation is
+present, exit code `1` means it is absent, and timeout, transport failure, or
+any other exit code is indeterminate. Probe output is ignored and bounded.
+
+Installation probes run only for a release with durable prior-installation
+evidence. Catalog-only entries are never executed before the user accepts an
+installation. The daemon therefore does not silently adopt an arbitrary
+user-global CLI as a signed Connector release: artifact, runtime, and release
+identity must already have crossed the normal install boundary.
+
 Connector releases may declare optional `agentRouting.aliases` containing only
 stable product or brand names. Connector id and display name are included by
 the host automatically; authors use aliases for additional language and legacy
@@ -290,13 +303,25 @@ permanent missing result, or a reconnect after the result window, converges
 from the authoritative connector/snapshot projection instead of relying on
 operation history.
 
-Installed release evidence is a current business fact, not operation history.
-The SQLite store records one complete release record per currently installed
-connector in `connector_market_installed_releases`; install completion updates
-it and uninstall completion removes it in the same transaction as the business
-transition. Runtime recovery therefore remains valid after the corresponding
-completed install operation has expired, including when the accepted catalog
-has advanced to a newer release.
+Installed release evidence is durable recovery input, not operation history.
+The SQLite store records one complete release record per installed connector in
+`connector_market_installed_releases`; install completion updates it and
+uninstall completion removes it in the same transaction as the business
+transition. Probe-detected drift retains that evidence while the installation
+projection is failed so repair and uninstall still target the accepted release.
+Runtime recovery therefore remains valid after the corresponding completed
+install operation has expired, including when the accepted catalog has advanced
+to a newer release.
+
+Before bootstrap republishes installed routes, it compares each previously
+installed release that declares a probe with the actual MCP/CLI implementation.
+An explicit absent result changes the installation projection to `failed` with
+`connector_installation_probe_absent`, retains the installed release evidence
+needed for safe repair or uninstall, advances the revision, and publishes the
+normal changed event. A later present result for that same release clears the
+failure and restores `installed`. Indeterminate probes preserve SQLite truth;
+the ordinary fail-closed runtime reconcile still decides whether bootstrap can
+publish the route.
 
 Authorization operations must follow the same recovery rule or remain fully
 synchronous without leaving a recoverable `running` operation. A provider uses

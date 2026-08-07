@@ -3,7 +3,10 @@
 `packages/connector/host` is the host-neutral Connector application core. It
 owns catalog acceptance, device installation and account authorization projections, durable
 operation transitions, compatibility evaluation, recovery, reconcile intent,
-manifest validation, and the ports implemented by daemon and runtime hosts.
+manifest validation, installation calibration, and the ports implemented by
+daemon and runtime hosts. Calibration executes only an already-installed
+release's bounded MCP/CLI probe and preserves durable state on indeterminate
+results.
 
 The package contains no HTTP client, SQLite driver, product account state,
 Electron API, absolute state root, or operating-system process policy.

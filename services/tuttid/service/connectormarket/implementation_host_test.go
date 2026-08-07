@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -202,11 +203,14 @@ func (stub connectorRuntimeStub) VerifyLaunch(string, string) (connectorruntime.
 	return stub.executable, nil
 }
 
-type connectorProcessStub struct{ starts int }
+type connectorProcessStub struct {
+	starts   int
+	exitCode int
+}
 
 func (stub *connectorProcessStub) Start(context.Context, agentruntime.ProcessSpec) (agentruntime.ProcessConnection, error) {
 	stub.starts++
-	exit := 0
+	exit := stub.exitCode
 	return &connectorConnectionStub{frames: []agentruntime.ProcessFrame{{Stdout: []byte(`{"ok":true}`)}, {ExitCode: &exit}}}, nil
 }
 
@@ -254,6 +258,37 @@ func TestContainsPermissionScopeAcceptsScopedPermission(t *testing.T) {
 	}
 	if connectorruntime.ContainsPermissionScope([]string{"filesystem:workspace"}, "network") {
 		t.Fatal("unrelated scoped permission enabled connector network access")
+	}
+}
+
+func TestImplementationHostChecksCLIInstallationWithDeclaredProbeArguments(t *testing.T) {
+	processes := &recordingConnectorProcessStub{}
+	host, _, connector, generation := testCLIHost(t, processes)
+	cli := connector.Release.Manifest.Implementation.ManagedStdio.CLI
+	cli.Arguments = []string{"--non-interactive"}
+	cli.InstallationProbe = &market.InstallationProbe{Arguments: []string{"doctor", "--quiet"}, TimeoutMS: 1_000}
+	request := market.InstallationCheckRequest{OperationID: "probe-1", ConnectionID: "workspace-1",
+		Connector: connector, Generation: generation}
+
+	observation, err := host.CheckInstallation(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observation.State != market.InstallationObservationPresent || observation.ConnectorKey != connector.Key ||
+		observation.ReleaseDigest != implementationHostTestReleaseDigest {
+		t.Fatalf("observation = %#v", observation)
+	}
+	entrypoint := filepath.Join(processes.spec.CWD, "connector.js")
+	wantSuffix := []string{entrypoint, "--non-interactive", "doctor", "--quiet"}
+	if len(processes.spec.Command) < len(wantSuffix)+1 ||
+		!slices.Equal(processes.spec.Command[len(processes.spec.Command)-len(wantSuffix):], wantSuffix) {
+		t.Fatalf("probe command = %#v, want suffix %#v", processes.spec.Command, wantSuffix)
+	}
+
+	processes.exitCode = 1
+	observation, err = host.CheckInstallation(context.Background(), request)
+	if err != nil || observation.State != market.InstallationObservationAbsent {
+		t.Fatalf("absent observation = %#v, error = %v", observation, err)
 	}
 }
 

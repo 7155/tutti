@@ -246,8 +246,13 @@ func validateManagedStdio(managed ManagedStdioImplementation, authorizationKind 
 	if managed.MCP == nil && managed.CLI == nil {
 		return invalidManifest("managed_stdio requires an MCP or CLI interface", nil)
 	}
-	if managed.MCP != nil && !safeRelativeEntrypoint(managed.MCP.Entrypoint) {
-		return invalidManifest("managed MCP entrypoint must be a safe relative path", nil)
+	if managed.MCP != nil {
+		if !safeRelativeEntrypoint(managed.MCP.Entrypoint) {
+			return invalidManifest("managed MCP entrypoint must be a safe relative path", nil)
+		}
+		if err := validateInstallationProbe(managed.MCP.InstallationProbe); err != nil {
+			return err
+		}
 	}
 	if managed.CLI != nil {
 		if managed.Runtime.Language != "node" || managed.Runtime.Profile != "connector-node-static" {
@@ -263,6 +268,9 @@ func validateManagedStdio(managed ManagedStdioImplementation, authorizationKind 
 			if strings.ContainsRune(argument, '\x00') {
 				return invalidManifest("managed CLI arguments must not contain NUL", nil)
 			}
+		}
+		if err := validateInstallationProbe(managed.CLI.InstallationProbe); err != nil {
+			return err
 		}
 		if managed.CLI.Install != nil {
 			if err := validateCLIInstallation(*managed.CLI.Install, managed.Runtime, managed.CLI.Entrypoint); err != nil {
@@ -297,6 +305,23 @@ func validateManagedStdio(managed ManagedStdioImplementation, authorizationKind 
 	}
 	if authorizationKind == "none" && managed.CredentialBroker != nil {
 		return invalidManifest("credential broker must not be declared when authorization is none", nil)
+	}
+	return nil
+}
+
+func validateInstallationProbe(probe *InstallationProbe) error {
+	if probe == nil {
+		return nil
+	}
+	if len(probe.Arguments) == 0 || len(probe.Arguments) > 32 || probe.TimeoutMS < 100 || probe.TimeoutMS > 30_000 {
+		return invalidManifest("installationProbe requires between 1 and 32 arguments and timeoutMs between 100 and 30000", nil)
+	}
+	totalBytes := 0
+	for _, argument := range probe.Arguments {
+		totalBytes += len(argument)
+		if strings.ContainsRune(argument, '\x00') || totalBytes > 16*1024 {
+			return invalidManifest("installationProbe arguments are invalid", nil)
+		}
 	}
 	return nil
 }

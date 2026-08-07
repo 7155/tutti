@@ -248,6 +248,12 @@ function buildConnectorDialogView(
 
 function connectorHasInstalledArtifact(connector: Connector): boolean {
   if (
+    connector.installation.state === "failed" &&
+    connector.installation.failureCode === "connector_installation_probe_absent"
+  ) {
+    return false;
+  }
+  if (
     connector.installation.installedReleaseDigest ||
     connector.installation.installedReleaseId ||
     connector.installation.installedVersion

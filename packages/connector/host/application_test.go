@@ -820,9 +820,13 @@ func newTestApplicationWithCatalogSource(
 	t.Helper()
 	nextID := 0
 	application, err := NewApplication(ApplicationConfig{
-		Repository:             repository,
-		CatalogSource:          catalogSource,
-		ReleaseInstallations:   installationHost,
+		Repository:           repository,
+		CatalogSource:        catalogSource,
+		ReleaseInstallations: installationHost,
+		InstallationChecker: func() InstallationChecker {
+			checker, _ := any(installationHost).(InstallationChecker)
+			return checker
+		}(),
 		Host:                   installationHost,
 		Authorization:          authorizationProviderStub{},
 		Compatibility:          compatibilityEvaluatorStub{},
@@ -938,20 +942,23 @@ func (scheduler *memoryScheduler) Schedule(_ context.Context, operationID string
 }
 
 type memoryInstallRuntime struct {
-	prepares            int
-	removes             int
-	activations         int
-	deactivations       int
-	activeDigest        string
-	reconciles          int
-	lastReconcile       RuntimeReconcileRequest
-	lastDeactivation    RuntimeDeactivationRequest
-	lastPrepare         PrepareArtifactRequest
-	lastCredentialGrant string
-	deactivationErr     error
-	failClosed          int
-	cliInstalls         int
-	cliRemoves          int
+	prepares             int
+	removes              int
+	activations          int
+	deactivations        int
+	activeDigest         string
+	reconciles           int
+	lastReconcile        RuntimeReconcileRequest
+	lastDeactivation     RuntimeDeactivationRequest
+	lastPrepare          PrepareArtifactRequest
+	lastCredentialGrant  string
+	deactivationErr      error
+	failClosed           int
+	cliInstalls          int
+	cliRemoves           int
+	installationChecks   int
+	installationResult   InstallationObservation
+	installationCheckErr error
 }
 
 func (host *memoryInstallRuntime) Reconcile(_ context.Context, request RuntimeReconcileRequest) (RuntimeReceipt, error) {
@@ -960,6 +967,24 @@ func (host *memoryInstallRuntime) Reconcile(_ context.Context, request RuntimeRe
 	host.lastCredentialGrant = string(request.CredentialBrokerGrant)
 	return RuntimeReceipt{OperationID: request.OperationID, ConnectionID: request.ConnectionID,
 		ConnectorKey: request.Connector.Key, ReleaseDigest: request.Connector.Release.ReleaseDigest, Generation: request.Generation}, nil
+}
+
+func (host *memoryInstallRuntime) CheckInstallation(_ context.Context, request InstallationCheckRequest) (InstallationObservation, error) {
+	host.installationChecks++
+	if host.installationCheckErr != nil {
+		return InstallationObservation{}, host.installationCheckErr
+	}
+	result := host.installationResult
+	if result.State == "" {
+		result.State = InstallationObservationPresent
+	}
+	if result.ConnectorKey == "" {
+		result.ConnectorKey = request.Connector.Key
+	}
+	if result.ReleaseDigest == "" {
+		result.ReleaseDigest = request.Connector.Release.ReleaseDigest
+	}
+	return result, nil
 }
 
 func (host *memoryInstallRuntime) DeactivateRuntime(_ context.Context, request RuntimeDeactivationRequest) error {

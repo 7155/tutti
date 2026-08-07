@@ -947,10 +947,14 @@ type GoalControlInput struct {
 }
 
 type GoalControlResult struct {
-	Canonical   storesqlite.Session
-	Goal        map[string]any
-	OperationID string
-	GoalState   *storesqlite.SessionGoalState
+	Canonical storesqlite.Session
+	Goal      map[string]any
+	// IntentAccepted means the durable Goal operation exists and Host owns
+	// recovery. It does not claim immediate provider delivery or convergence;
+	// callers must inspect GoalState for pending, applying, or terminal state.
+	IntentAccepted bool
+	OperationID    string
+	GoalState      *storesqlite.SessionGoalState
 }
 
 // ProviderGoalAdoptionInput identifies one Goal generation that the provider

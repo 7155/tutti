@@ -625,6 +625,13 @@ func (d *legacyHostConformanceDriver) Reset(_ context.Context, fixture hostconfo
 	return nil
 }
 
+func (d *legacyHostConformanceDriver) DisconnectRuntimeSession(ctx context.Context, ref agenthost.SessionRef) error {
+	return d.runtime.Close(ctx, RuntimeCloseInput{
+		WorkspaceID: ref.WorkspaceID, AgentSessionID: ref.AgentSessionID,
+		PreserveCanonicalState: true,
+	})
+}
+
 func (d *legacyHostConformanceDriver) Create(
 	ctx context.Context,
 	workspaceID string,
@@ -1088,16 +1095,16 @@ func (d *legacyHostConformanceDriver) GoalControl(ctx context.Context, input age
 		ClientSubmitID:     input.ClientSubmitID,
 		SubmissionMetadata: input.SubmissionMetadata,
 	})
-	if err != nil {
-		return hostconformance.GoalObservation{}, err
+	observation := hostconformance.GoalObservation{
+		Goal: clonePayload(result.Goal), IntentAccepted: result.IntentAccepted,
+		OperationID: result.OperationID, PendingOperationID: result.OperationID,
 	}
-	observation := hostconformance.GoalObservation{Goal: clonePayload(result.Goal), OperationID: result.OperationID, PendingOperationID: result.OperationID}
 	if result.GoalState != nil {
 		observation.Revision = result.GoalState.Revision
 		observation.PendingOperationID = result.GoalState.PendingOperationID
 		observation.SyncStatus = result.GoalState.SyncStatus
 	}
-	return observation, nil
+	return observation, err
 }
 
 func (d *legacyHostConformanceDriver) AdoptProviderGoal(ctx context.Context, input agenthost.ProviderGoalAdoptionInput) (hostconformance.GoalObservation, error) {
@@ -1160,7 +1167,10 @@ func (d *legacyHostConformanceDriver) StepGoalOperations(ctx context.Context, no
 }
 
 func hostGoalControlObservation(result agenthost.GoalControlResult) hostconformance.GoalObservation {
-	observation := hostconformance.GoalObservation{Goal: clonePayload(result.Goal), OperationID: result.OperationID, PendingOperationID: result.OperationID}
+	observation := hostconformance.GoalObservation{
+		Goal: clonePayload(result.Goal), IntentAccepted: result.IntentAccepted,
+		OperationID: result.OperationID, PendingOperationID: result.OperationID,
+	}
 	if result.GoalState != nil {
 		observation.Revision = result.GoalState.Revision
 		observation.PendingOperationID = result.GoalState.PendingOperationID

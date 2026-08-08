@@ -85,6 +85,10 @@ export type AgentLiveDelivery =
       kind: "session_deleted";
     }
   | {
+      agentSessionId: string;
+      kind: "session_restored";
+    }
+  | {
       attachment: AgentLiveAttachmentControl;
       kind: "attachment_changed";
     }

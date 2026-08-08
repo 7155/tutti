@@ -2627,6 +2627,35 @@ a link to a hidden preview agent surfaces an "enable Preview Agents" hint rather
 than failing silently. This is a settings surface, not a second Agent Target
 state store.
 
+### 8.2 Deleted-conversation settings surface
+
+Deleted conversations are maintained by a top-level desktop Settings section
+immediately before About; they do not belong to the Agent subsection. The page
+is scoped to the current Workspace, while its 15/30-day automatic-cleanup
+preference is device-global. Its fixed header owns the title-only search,
+project filter, retention selector, and destructive “delete all” action so the
+controls remain discoverable while the list scrolls.
+
+Each row represents one topmost deleted Session component—a canonical root or
+a child whose parent is not deleted—and reuses the two-line Activity View
+summary convention: title first, then original project identity and the
+pre-delete `updated_at`. The row body is not navigation. Restore and
+permanent delete are the only row actions; restore has no confirmation and does
+not navigate, while permanent delete uses the ordinary destructive
+confirmation. Legacy lossy tombstones explain why restore is unavailable.
+“Delete all” ignores search/project filters, confirms against the Workspace
+component count with a typed phrase, and remains subject to the daemon idle gate.
+
+The list uses stable cursor paging plus virtual scrolling and automatically
+loads near its end. Project options include the unscoped case and original
+paths whose project registration has since disappeared. Renderer state may
+optimistically remove a row only after a successful restore/purge response; it
+does not copy lifecycle semantics out of Host or trigger provider resume. The
+canonical restore commit emits `session_restored`; the workspace engine clears
+only that Session's deletion tombstone and performs an authoritative detail
+reconcile before AgentGUI renders it again. Generic activity events remain
+unable to resurrect a deleted Session.
+
 ## 9. Folder guide
 
 | Path                                                      | Responsibility                                      |

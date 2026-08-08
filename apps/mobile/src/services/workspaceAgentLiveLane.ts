@@ -160,6 +160,22 @@ export class WorkspaceAgentLiveLane {
       this.scheduleRailReconcile();
       return;
     }
+    if (delivery.kind === "session_restored") {
+      this.coordinator.ingestEvent({
+        agentSessionId: delivery.agentSessionId,
+        data: {
+          agentSessionId: delivery.agentSessionId,
+          eventType: "session_restored",
+          restoredAtUnixMs: 0,
+          workspaceId: this.options.workspaceId
+        },
+        eventType: "session_restored",
+        workspaceId: this.options.workspaceId
+      });
+      this.options.onActivityChanged();
+      this.scheduleRailReconcile();
+      return;
+    }
     if (delivery.kind === "discontinuity") {
       this.reconcileDiscontinuity(delivery);
       return;

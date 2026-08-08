@@ -258,6 +258,16 @@ and early write admission for the pending card. An observation gap may still
 govern the active Turn before or after that Interaction, but it cannot override
 the exact ready or blocked readiness result while the card is presented.
 
+Message Center and attention-card consumers preserve this separation in their
+presentation contract: `isSubmitting` describes an in-flight response, while
+an independently supplied interaction-disabled state blocks the nested prompt
+controls without hiding the pending card or its conversation navigation. A
+host-provided blocked reason is exposed through a focusable, hoverable
+description so a blocked card remains understandable without making Tooltip
+the command authority. If the Host omits the reason, the disabled wrapper stays
+out of the tab order and does not create an empty Tooltip. The final semantic
+command admission check remains in the consumer/controller path.
+
 ### 2.6 On-demand status
 
 AgentGUI owns one provider-neutral `AgentStatusController` for `/status`, Agent

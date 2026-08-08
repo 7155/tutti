@@ -69,14 +69,17 @@ export function parseAgentLiveDeliveries(
             : "stream_discontinuity";
         const reconcileKeys = parseReconcileKeys(discontinuity.reconcileKeys);
         hasDiscontinuity = true;
-        const deletedSessionId =
-          reason === "session_deleted"
-            ? deletedSessionIdFromReconcileKeys(workspaceId, reconcileKeys)
+        const lifecycleKind =
+          reason === "session_deleted" || reason === "session_restored"
+            ? reason
             : null;
-        if (deletedSessionId) {
+        const lifecycleSessionId = lifecycleKind
+          ? lifecycleSessionIdFromReconcileKeys(workspaceId, reconcileKeys)
+          : null;
+        if (lifecycleKind && lifecycleSessionId) {
           deliveries.push({
-            agentSessionId: deletedSessionId,
-            kind: "session_deleted"
+            agentSessionId: lifecycleSessionId,
+            kind: lifecycleKind
           });
           continue;
         }
@@ -211,7 +214,7 @@ function parseReconcileKeys(value: unknown): AgentLiveReconcileKey[] {
   });
 }
 
-function deletedSessionIdFromReconcileKeys(
+function lifecycleSessionIdFromReconcileKeys(
   workspaceId: string,
   reconcileKeys: readonly AgentLiveReconcileKey[]
 ): string | null {

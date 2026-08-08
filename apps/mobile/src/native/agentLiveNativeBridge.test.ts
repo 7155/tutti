@@ -154,6 +154,42 @@ describe("parseAgentLiveDeliveries", () => {
     ]);
   });
 
+  test("preserves canonical session restore as a typed delivery", () => {
+    expect(
+      parseAgentLiveDeliveries(
+        "workspace-1",
+        7,
+        JSON.stringify({
+          result: {
+            accepted: [
+              {
+                discontinuity: {
+                  reason: "session_restored",
+                  reconcileKeys: [
+                    {
+                      agentSessionId: "session-1",
+                      kind: "session",
+                      workspaceId: "workspace-1"
+                    }
+                  ]
+                },
+                kind: "discontinuity"
+              }
+            ],
+            reconcileRequired: true
+          },
+          subscriptionGeneration: 7,
+          workspaceId: "workspace-1"
+        })
+      )
+    ).toEqual([
+      {
+        agentSessionId: "session-1",
+        kind: "session_restored"
+      }
+    ]);
+  });
+
   test("preserves typed attachment recovery controls", () => {
     expect(
       parseAgentLiveDeliveries(

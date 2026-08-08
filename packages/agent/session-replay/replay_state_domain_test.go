@@ -368,6 +368,100 @@ func TestProjectPortableAgentStateExcludesOnlyToolRuntimeCWD(t *testing.T) {
 	}
 }
 
+func TestProjectPortableAgentStateProjectsMaterializedMessageFields(t *testing.T) {
+	userContent := []any{
+		map[string]any{
+			"type": "text",
+			"text": "See the attached file.",
+			"path": "/Users/recording/repo/attached.txt",
+		},
+		map[string]any{
+			"type":         "image",
+			"attachmentId": "attachment-recorded",
+			"path":         "/Users/recording/repo/attached.png",
+		},
+	}
+	agent := TuttiReplayAgent{
+		RootSessionID: "session-1",
+		Sessions: []agenthost.HistoricalSession{{
+			ID: "session-1",
+			Messages: []agenthost.HistoricalMessage{{
+				ID:   "user-message",
+				Role: "user",
+				Kind: "text",
+				Payload: map[string]any{
+					"clientSubmitId": "submit-1",
+					"content":        userContent,
+				},
+			}, {
+				ID:   "assistant-message",
+				Role: "assistant",
+				Kind: "tool_call",
+				Payload: map[string]any{
+					"clientSubmitId": "runtime-submit",
+					"input":          map[string]any{},
+				},
+			}},
+		}},
+	}
+
+	projected := ProjectPortableAgentState(agent, t.TempDir())
+	projectedUser := projected.Sessions[0].Messages[0]
+	projectedContent := projectedUser.Payload["content"].([]any)
+	for index, value := range projectedContent {
+		block := value.(map[string]any)
+		if _, ok := block["path"]; ok {
+			t.Fatalf("materialized content path %d was retained: %#v", index, block)
+		}
+	}
+	if projectedUser.Payload["clientSubmitId"] != "submit-1" {
+		t.Fatalf("user clientSubmitId changed: %#v", projectedUser.Payload)
+	}
+	if _, ok := projected.Sessions[0].Messages[1].Payload["clientSubmitId"]; ok {
+		t.Fatalf(
+			"assistant runtime clientSubmitId was retained: %#v",
+			projected.Sessions[0].Messages[1].Payload,
+		)
+	}
+	originalBlock := agent.Sessions[0].Messages[0].Payload["content"].([]any)[0].(map[string]any)
+	if originalBlock["path"] != "/Users/recording/repo/attached.txt" {
+		t.Fatalf("source message was mutated: %#v", originalBlock)
+	}
+}
+
+func TestProjectPortableAgentStateProjectsImagePathWithoutAttachmentID(t *testing.T) {
+	agent := TuttiReplayAgent{
+		RootSessionID: "session-1",
+		Sessions: []agenthost.HistoricalSession{{
+			ID: "session-1",
+			Messages: []agenthost.HistoricalMessage{{
+				ID:   "user-message",
+				Role: "user",
+				Kind: "text",
+				Payload: map[string]any{
+					"content": []map[string]any{{
+						"type": "image",
+						"path": "/var/cache/tsh/local-assets/image.png",
+					}},
+				},
+			}},
+		}},
+	}
+
+	projected := ProjectPortableAgentState(agent, t.TempDir())
+	content, ok := projected.Sessions[0].Messages[0].Payload["content"].([]any)
+	if !ok || len(content) != 1 {
+		t.Fatalf("projected content = %#v, want one normalized block", projected.Sessions[0].Messages[0].Payload["content"])
+	}
+	block, ok := content[0].(map[string]any)
+	if !ok {
+		t.Fatalf("projected block = %#v, want object", content[0])
+	}
+	if _, ok := block["path"]; ok {
+		t.Fatalf("image path was retained without attachment id: %#v", block)
+	}
+}
+
 func TestProjectPortableAgentStateNormalizesOnlyPlanDecisionRuntimeOperationIDs(
 	t *testing.T,
 ) {
@@ -579,6 +673,67 @@ func TestCompareTuttiReplayStateTreatsGoalControlOperationIDsAsAlphaEquivalent(
 			"goal-control operation identities must be alpha-equivalent, got %v",
 			err,
 		)
+	}
+}
+
+func TestCompareTuttiReplayStateCanonicalizesGoalControlIdentityRelations(
+	t *testing.T,
+) {
+	buildState := func(prefix string) TuttiReplayState {
+		messages := make([]agenthost.HistoricalMessage, 2)
+		turns := make([]agenthost.HistoricalTurn, 2)
+		for index, action := range []string{"set", "clear"} {
+			operationID := fmt.Sprintf("%s-operation-%d", prefix, index)
+			clientSubmitID := fmt.Sprintf("%s-submit-%d", prefix, index)
+			turns[index] = agenthost.HistoricalTurn{
+				ID:                    fmt.Sprintf("%s-turn-%d", prefix, index),
+				Phase:                 "settled",
+				Origin:                "user_prompt",
+				SourceGoalOperationID: operationID,
+			}
+			messages[index] = agenthost.HistoricalMessage{
+				ID:     "goal-control:" + operationID,
+				Role:   "user",
+				Kind:   "session_audit",
+				Status: "completed",
+				Payload: map[string]any{
+					"action":         action,
+					"auditId":        "goal-control:" + operationID,
+					"clientSubmitId": clientSubmitID,
+					"content":        "/goal " + action,
+					"goalControl":    true,
+					"messageId":      "client-submit:user:" + clientSubmitID,
+					"operationId":    operationID,
+				},
+			}
+		}
+		return TuttiReplayState{
+			SchemaVersion: SchemaVersion,
+			Agent: TuttiReplayAgent{
+				RootSessionID: "session-1",
+				Sessions: []agenthost.HistoricalSession{{
+					ID:                "session-1",
+					Kind:              "root",
+					AgentTargetID:     "codex",
+					Provider:          "codex",
+					ProviderSessionID: "provider-session-1",
+					Turns:             turns,
+					Messages:          messages,
+				}},
+			},
+			TuttiMode: TuttiReplayTuttiMode{
+				Activations:   []TuttiReplayActivation{},
+				TurnSnapshots: []TuttiReplayTurnSnapshot{},
+			},
+			Workflows: []TuttiReplayWorkflow{},
+			Issues:    []TuttiReplayIssue{},
+		}
+	}
+	if err := CompareTuttiReplayState(
+		buildState("recorded"),
+		buildState("replayed"),
+	); err != nil {
+		t.Fatalf("goal-control identity graph must be alpha-equivalent: %v", err)
 	}
 }
 

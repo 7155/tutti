@@ -14,6 +14,13 @@ import {
   replayActivityTurnIsFresh,
   replayPendingInteractionForIdentity
 } from "./turn-freshness.mjs";
+import {
+  createReplayDeadline,
+  fetchWithReplayDeadline,
+  readReplayResponseJson,
+  readReplayResponseText,
+  waitWithReplayDeadline
+} from "./replay-http.mjs";
 
 /**
  * Shared turn-identity tracker. Lean Room observation is gated by
@@ -26,6 +33,10 @@ import {
 export function createReplayTurnIdentityTracker(plan, runtime) {
   const ports = createReplayProductPorts(runtime.ports);
   const wait = runtime.wait ?? defaultDelay;
+  const fetchImpl = runtime.fetchImpl ?? fetch;
+  const signal = runtime.signal;
+  const operationDeadline = (label, timeoutMs = runtime.timeoutMs) =>
+    createReplayDeadline(timeoutMs, { signal, label });
   const lean = ports.sessionObservation === "lean-activity";
   const sessions = new Map(
     Object.entries(plan).map(([sessionId, session]) => [
@@ -122,38 +133,55 @@ export function createReplayTurnIdentityTracker(plan, runtime) {
       activityIdentityKey
     );
 
-  const readLocalAgentActivityTurn = async (workspaceId, actualSessionId) => {
+  const readLocalAgentActivityTurn = async (
+    workspaceId,
+    actualSessionId,
+    deadline = operationDeadline("replay local agent activity")
+  ) => {
     if (!lean) return {};
     try {
-      const response = await fetch(
+      const response = await fetchWithReplayDeadline(
+        fetchImpl,
         `${runtime.baseURL}/v1/${ports.workspaceScopeSegment}/${encodeURIComponent(workspaceId)}/local-agent-activity`,
-        { headers: runtime.headers }
+        { headers: runtime.headers },
+        deadline
       );
       if (!response.ok) return {};
-      return activityTurnFromSnapshot(await response.json(), actualSessionId);
+      return activityTurnFromSnapshot(
+        await readReplayResponseJson(response, deadline),
+        actualSessionId
+      );
     } catch {
+      if (signal?.aborted) throw signal.reason;
       return {};
     }
   };
 
-  const readSession = async (workspaceId, actualSessionId) => {
-    const response = await fetch(
+  const readSession = async (
+    workspaceId,
+    actualSessionId,
+    deadline = operationDeadline("replay Session observation")
+  ) => {
+    const response = await fetchWithReplayDeadline(
+      fetchImpl,
       `${runtime.baseURL}${replayAgentSessionUrl(ports, workspaceId, actualSessionId)}`,
-      { headers: runtime.headers }
+      { headers: runtime.headers },
+      deadline
     );
     if (!response.ok) {
       throw new Error(
-        `failed to resolve replay Session identity: ${response.status} ${await response.text()}`
+        `failed to resolve replay Session identity: ${response.status} ${await readReplayResponseText(response, deadline)}`
       );
     }
-    const raw = await response.json();
+    const raw = await readReplayResponseJson(response, deadline);
     if (!lean) {
       return normalizeIdleSession(ports, raw);
     }
     const state = raw;
     const activity = await readLocalAgentActivityTurn(
       workspaceId,
-      actualSessionId
+      actualSessionId,
+      deadline
     );
     let rendererActivity = {};
     if (typeof runtime.readRendererActivitySnapshot === "function") {
@@ -212,11 +240,14 @@ export function createReplayTurnIdentityTracker(plan, runtime) {
     if (!recordedTurnId) return;
     const key = activityBaselineKey(recordedSessionId, recordedTurnId);
     if (activityBaselines.has(key)) return;
-    const deadline = Date.now() + runtime.timeoutMs;
-    while (Date.now() < deadline) {
+    const deadline = operationDeadline(
+      `replay activity baseline ${recordedSessionId}`
+    );
+    while (deadline.remainingMs() > 0) {
       const activity = await readLocalAgentActivityTurn(
         workspaceId,
-        identity.actualSessionId
+        identity.actualSessionId,
+        deadline
       );
       if (activity.available) {
         activityBaselines.set(key, {
@@ -230,20 +261,31 @@ export function createReplayTurnIdentityTracker(plan, runtime) {
         });
         return;
       }
-      await wait(50);
+      await waitWithReplayDeadline(wait, 50, deadline);
     }
     throw new Error(
       `timed out capturing replay activity baseline ${recordedSessionId}/${recordedTurnId}`
     );
   };
 
-  const observeCurrentTurn = async (workspaceId, recordedSessionId) => {
+  const observeCurrentTurn = async (
+    workspaceId,
+    recordedSessionId,
+    suppliedDeadline = null
+  ) => {
+    const deadline =
+      suppliedDeadline ??
+      operationDeadline(
+        `replay turn observation ${recordedSessionId}`,
+        Math.min(2_000, runtime.timeoutMs)
+      );
     const actualSessionId = await resolveSession(
       workspaceId,
-      recordedSessionId
+      recordedSessionId,
+      deadline
     );
     if (!lean) {
-      const session = await readSession(workspaceId, actualSessionId);
+      const session = await readSession(workspaceId, actualSessionId, deadline);
       observeSessionTurn(recordedSessionId, session);
       return;
     }
@@ -255,9 +297,8 @@ export function createReplayTurnIdentityTracker(plan, runtime) {
           activityBaselineKey(recordedSessionId, recordedTurnId)
         )
       : null;
-    const deadline = Date.now() + Math.min(2_000, runtime.timeoutMs);
-    while (true) {
-      const session = await readSession(workspaceId, actualSessionId);
+    while (deadline.remainingMs() > 0) {
+      const session = await readSession(workspaceId, actualSessionId, deadline);
       const visible = session.rendererObservedTurnId;
       const visibleTurn = session.rendererTurns?.find(
         (turn) => turn?.turnId === visible
@@ -279,20 +320,20 @@ export function createReplayTurnIdentityTracker(plan, runtime) {
         return;
       }
       if (identity && !identity.recordedTurnIds[mappedAfter]) return;
-      if (Date.now() >= deadline) return;
-      await wait(50);
+      await waitWithReplayDeadline(wait, 50, deadline);
     }
   };
 
   const resolveLineageTurn = async (
     workspaceId,
     recordedSessionId,
-    recordedTurnId
+    recordedTurnId,
+    suppliedDeadline = null
   ) => {
     if (!recordedTurnId) return null;
     let actualTurnId = mappedTurnId(recordedSessionId, recordedTurnId);
     if (actualTurnId) return actualTurnId;
-    await observeCurrentTurn(workspaceId, recordedSessionId);
+    await observeCurrentTurn(workspaceId, recordedSessionId, suppliedDeadline);
     actualTurnId = mappedTurnId(recordedSessionId, recordedTurnId);
     if (!actualTurnId) {
       throw new Error(
@@ -302,24 +343,34 @@ export function createReplayTurnIdentityTracker(plan, runtime) {
     return actualTurnId;
   };
 
-  const readSessionGraph = async (workspaceId, rootSessionId) => {
-    const response = await fetch(
+  const readSessionGraph = async (
+    workspaceId,
+    rootSessionId,
+    deadline = operationDeadline("replay Session graph")
+  ) => {
+    const response = await fetchWithReplayDeadline(
+      fetchImpl,
       `${runtime.baseURL}/v1/${ports.workspaceScopeSegment}/${encodeURIComponent(workspaceId)}/agent-sessions/${encodeURIComponent(rootSessionId)}?projection=messageHydration`,
-      { headers: runtime.headers }
+      { headers: runtime.headers },
+      deadline
     );
     if (!response.ok) {
       throw new Error(
-        `failed to read replay Session graph: ${response.status} ${await response.text()}`
+        `failed to read replay Session graph: ${response.status} ${await readReplayResponseText(response, deadline)}`
       );
     }
-    const body = await response.json();
+    const body = await readReplayResponseJson(response, deadline);
     return [
       ...(body.session ? [body.session] : []),
       ...(Array.isArray(body.childSessions) ? body.childSessions : [])
     ];
   };
 
-  const resolveSession = async (workspaceId, recordedSessionId) => {
+  const resolveSession = async (
+    workspaceId,
+    recordedSessionId,
+    suppliedDeadline = null
+  ) => {
     const identity = sessions.get(recordedSessionId);
     if (!identity) return recordedSessionId;
     if (identity.actualSessionId) return identity.actualSessionId;
@@ -333,40 +384,44 @@ export function createReplayTurnIdentityTracker(plan, runtime) {
         `replay child Session lineage is incomplete: ${recordedSessionId}`
       );
     }
+    const deadline =
+      suppliedDeadline ??
+      operationDeadline(`replay child Session ${recordedSessionId}`);
     const actualRootSessionId = await resolveSession(
       workspaceId,
-      identity.rootSessionId
+      identity.rootSessionId,
+      deadline
     );
     const actualParentSessionId = await resolveSession(
       workspaceId,
-      identity.parentSessionId
+      identity.parentSessionId,
+      deadline
     );
     const actualRootTurnId = await resolveLineageTurn(
       workspaceId,
       identity.rootSessionId,
-      identity.rootTurnId
+      identity.rootTurnId,
+      deadline
     );
     const actualParentTurnId = await resolveLineageTurn(
       workspaceId,
       identity.parentSessionId,
-      identity.parentTurnId
+      identity.parentTurnId,
+      deadline
     );
-    const deadline = Date.now() + runtime.timeoutMs;
-    while (Date.now() < deadline) {
-      const candidates = (
-        await readSessionGraph(workspaceId, actualRootSessionId)
-      ).filter(
-        (session) =>
-          session.kind === "child" &&
-          session.rootAgentSessionId === actualRootSessionId &&
-          session.parentAgentSessionId === actualParentSessionId &&
-          session.parentToolCallId === identity.parentToolCallId &&
-          (!actualRootTurnId || session.rootTurnId === actualRootTurnId) &&
-          (!actualParentTurnId || session.parentTurnId === actualParentTurnId)
-      );
+    const matchesFamily = (session) =>
+      session.kind === "child" &&
+      session.rootAgentSessionId === actualRootSessionId &&
+      session.parentAgentSessionId === actualParentSessionId;
+    const matchesLineage = (session) =>
+      matchesFamily(session) &&
+      (!actualRootTurnId || session.rootTurnId === actualRootTurnId) &&
+      (!actualParentTurnId || session.parentTurnId === actualParentTurnId);
+
+    const claimUnique = (candidates, label) => {
       if (candidates.length > 1) {
         throw new Error(
-          `replay child Session lineage is ambiguous: ${recordedSessionId}`
+          `replay child Session lineage is ambiguous (${label}): ${recordedSessionId}`
         );
       }
       if (candidates.length === 1) {
@@ -374,30 +429,80 @@ export function createReplayTurnIdentityTracker(plan, runtime) {
         observeSessionTurn(recordedSessionId, candidates[0]);
         return identity.actualSessionId;
       }
-      await wait(50);
+      return null;
+    };
+
+    let lastGraph = [];
+    while (deadline.remainingMs() > 0) {
+      const graph = await readSessionGraph(
+        workspaceId,
+        actualRootSessionId,
+        deadline
+      );
+      lastGraph = graph;
+      // Prefer sticky parentToolCallId when present. Tutti remints tool_call /
+      // approval callIds across record→replay (alpha-equivalent in compare), so
+      // fall back to unique lineage/family matches the same way remapped Turns
+      // already resolve.
+      const claimed =
+        claimUnique(
+          graph.filter(
+            (session) =>
+              matchesLineage(session) &&
+              session.parentToolCallId === identity.parentToolCallId
+          ),
+          "callId"
+        ) ||
+        claimUnique(graph.filter(matchesLineage), "lineage") ||
+        claimUnique(graph.filter(matchesFamily), "family");
+      if (claimed) return claimed;
+      await waitWithReplayDeadline(wait, 50, deadline);
     }
+    const childSummaries = lastGraph
+      .filter((session) => session?.kind === "child")
+      .map((session) => ({
+        id: session.id ?? null,
+        rootAgentSessionId: session.rootAgentSessionId ?? null,
+        parentAgentSessionId: session.parentAgentSessionId ?? null,
+        rootTurnId: session.rootTurnId ?? null,
+        parentTurnId: session.parentTurnId ?? null,
+        parentToolCallId: session.parentToolCallId ?? null
+      }));
     throw new Error(
-      `replay child Session identity is unresolved: ${recordedSessionId}`
+      `replay child Session identity is unresolved: ${recordedSessionId}` +
+        `; wanted root=${actualRootSessionId} parent=${actualParentSessionId}` +
+        ` rootTurn=${actualRootTurnId ?? "<none>"} parentTurn=${actualParentTurnId ?? "<none>"}` +
+        ` parentToolCallId=${identity.parentToolCallId}` +
+        `; graphChildren=${JSON.stringify(childSummaries)}`
     );
   };
 
   return {
     captureActivityBaseline,
     observeCurrentTurn,
-    async rebasePendingInteraction(event) {
+    async rebasePendingInteraction(event, suppliedDeadline = null) {
       if (!lean) {
         throw new Error(
           "rebasePendingInteraction requires sessionObservation=lean-activity"
         );
       }
+      const deadline =
+        suppliedDeadline ??
+        operationDeadline(
+          `replay Interaction identity ${event.payload?.requestId ?? ""}`
+        );
       const actualSessionId = await resolveSession(
         event.workspaceId,
-        event.agentSessionId
+        event.agentSessionId,
+        deadline
       );
-      const deadline = Date.now() + runtime.timeoutMs;
       let latest = null;
-      while (Date.now() < deadline) {
-        const session = await readSession(event.workspaceId, actualSessionId);
+      while (deadline.remainingMs() > 0) {
+        const session = await readSession(
+          event.workspaceId,
+          actualSessionId,
+          deadline
+        );
         latest = session;
         const recordedTurnId = String(event.payload?.turnId ?? "").trim();
         const rendererTurnId = String(
@@ -438,13 +543,13 @@ export function createReplayTurnIdentityTracker(plan, runtime) {
           interactionIdentities.set(interactionIdentityKey(event), identity);
           return rebaseMappedInteraction(event, identity);
         }
-        await wait(50);
+        await waitWithReplayDeadline(wait, 50, deadline);
       }
       throw new Error(
         `timed out resolving replay Interaction identity ${event.agentSessionId}/${event.payload?.requestId}: ${JSON.stringify(latest)}`
       );
     },
-    async rebase(event) {
+    async rebase(event, suppliedDeadline = null) {
       if (lean) {
         const interactionIdentity = interactionIdentities.get(
           interactionIdentityKey(event)
@@ -454,9 +559,13 @@ export function createReplayTurnIdentityTracker(plan, runtime) {
         }
       }
       const recordedSessionId = event.agentSessionId;
+      const deadline =
+        suppliedDeadline ??
+        operationDeadline(`replay Turn identity ${recordedSessionId}`);
       const actualSessionId = await resolveSession(
         event.workspaceId,
-        recordedSessionId
+        recordedSessionId,
+        deadline
       );
       const recordedTurnId = event.payload?.turnId;
       if (typeof recordedTurnId !== "string") {
@@ -474,7 +583,11 @@ export function createReplayTurnIdentityTracker(plan, runtime) {
       let actualTurnId = identity.mappedTurnIds.get(recordedTurnId);
       if (lean && actualTurnId === recordedTurnId) actualTurnId = null;
       if (!actualTurnId) {
-        await observeCurrentTurn(event.workspaceId, recordedSessionId);
+        await observeCurrentTurn(
+          event.workspaceId,
+          recordedSessionId,
+          deadline
+        );
         actualTurnId = identity.mappedTurnIds.get(recordedTurnId);
         if (lean && actualTurnId === recordedTurnId) actualTurnId = null;
       }

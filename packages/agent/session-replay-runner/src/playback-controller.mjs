@@ -13,6 +13,14 @@ import {
   normalizeIdleSession,
   replayAgentSessionUrl
 } from "./product-ports.mjs";
+import {
+  createReplayDeadline,
+  fetchWithReplayDeadline,
+  raceReplayAbort,
+  readReplayResponseJson,
+  readReplayResponseText,
+  waitWithReplayDeadline
+} from "./replay-http.mjs";
 import { compactReplayWaitValue } from "./wait-diagnostics.mjs";
 
 export class ReplayReplacementRequested extends Error {
@@ -31,6 +39,21 @@ export class ReplayReplacementRequested extends Error {
 export function createReplayPlaybackController(input) {
   const ports = createReplayProductPorts(input.ports);
   const wait = input.wait ?? defaultDelay;
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const requestDeadline = (label, timeoutMs = input.timeoutMs) =>
+    createReplayDeadline(timeoutMs, {
+      signal: input.signal,
+      label
+    });
+  const waitForSignal = (durationMs) =>
+    raceReplayAbort(
+      Promise.resolve().then(() =>
+        wait(durationMs, undefined, {
+          signal: input.signal
+        })
+      ),
+      input.signal
+    );
   const cassetteId = requiredReplayCassetteId(input.cassetteId);
   const bySequence = new Map(
     input.checkpoints
@@ -69,26 +92,36 @@ export function createReplayPlaybackController(input) {
       targetCheckpoint
     });
 
-  const setTransport = async (command) => {
-    const response = await fetch(`${input.baseURL}${transportPlaybackPath}`, {
-      method: "POST",
-      headers: input.headers,
-      body: JSON.stringify(command),
-      signal: AbortSignal.timeout(input.timeoutMs)
-    });
+  const setTransport = async (command, deadline = null) => {
+    const operationDeadline =
+      deadline ?? requestDeadline("replay playback command");
+    const response = await fetchWithReplayDeadline(
+      fetchImpl,
+      `${input.baseURL}${transportPlaybackPath}`,
+      {
+        method: "POST",
+        headers: input.headers,
+        body: JSON.stringify(command)
+      },
+      operationDeadline
+    );
     if (!response.ok) {
       throw new Error(
-        `replay playback command failed with ${response.status}: ${await response.text()}`
+        `replay playback command failed with ${response.status}: ${await readReplayResponseText(response, operationDeadline)}`
       );
     }
   };
 
-  const readTransportPlayback = async () => {
-    const response = await fetch(`${input.baseURL}${transportPlaybackPath}`, {
-      headers: input.headers,
-      signal: AbortSignal.timeout(input.timeoutMs)
-    });
-    const body = await response.text();
+  const readTransportPlayback = async (deadline = null) => {
+    const operationDeadline =
+      deadline ?? requestDeadline("replay playback state");
+    const response = await fetchWithReplayDeadline(
+      fetchImpl,
+      `${input.baseURL}${transportPlaybackPath}`,
+      { headers: input.headers },
+      operationDeadline
+    );
+    const body = await readReplayResponseText(response, operationDeadline);
     if (!response.ok) {
       throw new Error(
         `replay playback state failed with ${response.status}: ${body}`
@@ -145,16 +178,19 @@ export function createReplayPlaybackController(input) {
 
   const providerTargetState = providerConnectionsReached;
 
-  const verifySemanticCheckpoint = async (checkpointIndex) => {
-    const response = await fetch(
+  const verifySemanticCheckpoint = async (checkpointIndex, deadline = null) => {
+    const operationDeadline =
+      deadline ?? requestDeadline("replay checkpoint verification");
+    const response = await fetchWithReplayDeadline(
+      fetchImpl,
       `${input.baseURL}${checkpointVerificationPath(checkpointIndex)}`,
       {
         method: "POST",
-        headers: input.headers,
-        signal: AbortSignal.timeout(input.timeoutMs)
-      }
+        headers: input.headers
+      },
+      operationDeadline
     );
-    const body = await response.text();
+    const body = await readReplayResponseText(response, operationDeadline);
     if (!response.ok) {
       throw new Error(
         `replay checkpoint verification failed with ${response.status}: ${body}`
@@ -184,20 +220,28 @@ export function createReplayPlaybackController(input) {
     if (!options.force && now - lastHealthyCheckAt < 250) return;
     lastHealthyCheckAt = now;
     for (const ref of refs) {
+      const healthDeadline =
+        options.deadline ??
+        requestDeadline(
+          `replay session health while waiting for ${checkpointId}`,
+          Math.min(5_000, input.timeoutMs)
+        );
       let response;
       try {
-        response = await fetch(
+        response = await fetchWithReplayDeadline(
+          fetchImpl,
           `${input.baseURL}${replayAgentSessionUrl(ports, ref.workspaceId, ref.agentSessionId)}`,
           {
-            headers: input.headers,
-            signal: AbortSignal.timeout(Math.min(5_000, input.timeoutMs))
-          }
+            headers: input.headers
+          },
+          healthDeadline
         );
-      } catch {
+      } catch (error) {
+        if (input.signal?.aborted) throw error;
         continue;
       }
       if (!response.ok) continue;
-      const raw = await response.json();
+      const raw = await readReplayResponseJson(response, healthDeadline);
       const session = normalizeIdleSession(ports, raw);
       const reason = replaySessionTerminalFailure(session);
       if (!reason) continue;
@@ -205,7 +249,8 @@ export function createReplayPlaybackController(input) {
         input.baseURL,
         input.headers,
         cassetteId,
-        Math.min(5_000, input.timeoutMs)
+        Math.min(5_000, input.timeoutMs),
+        { fetchImpl, signal: input.signal }
       );
       throw new Error(
         `replay session failed while waiting for ${checkpointId}: ${reason}` +
@@ -231,20 +276,34 @@ export function createReplayPlaybackController(input) {
       throw new Error(`checkpoint_activity_overshot: ${checkpoint.id}`);
     }
     if (activityEventSequence < checkpoint.cursor.activityEventSequence) return;
-    const state = await readTransportPlayback();
+    const readinessDeadline =
+      targetDeadline === null
+        ? null
+        : requestDeadline(
+            `checkpoint readiness: ${checkpoint.id}`,
+            Math.max(0, targetDeadline - Date.now())
+          );
+    const state = await readTransportPlayback(readinessDeadline);
     if (!providerTargetState(checkpoint, state)) {
       if (ports.watchSessionsDuringPlayback) {
-        await assertWatchedSessionsHealthy(checkpoint.id);
+        await assertWatchedSessionsHealthy(checkpoint.id, {
+          deadline: readinessDeadline
+        });
         await throwIfReadinessTimedOut(checkpoint.id);
       } else if (targetDeadline !== null && Date.now() >= targetDeadline) {
         throw new Error(`checkpoint_readiness_timeout: ${checkpoint.id}`);
       }
       return;
     }
-    const semantic = await verifySemanticCheckpoint(targetCheckpoint);
+    const semantic = await verifySemanticCheckpoint(
+      targetCheckpoint,
+      readinessDeadline
+    );
     if (!semantic.triggerMatched || !semantic.readinessSatisfied) {
       if (ports.watchSessionsDuringPlayback) {
-        await assertWatchedSessionsHealthy(checkpoint.id);
+        await assertWatchedSessionsHealthy(checkpoint.id, {
+          deadline: readinessDeadline
+        });
         await throwIfReadinessTimedOut(checkpoint.id);
       } else if (targetDeadline !== null && Date.now() >= targetDeadline) {
         throw new Error(`checkpoint_readiness_timeout: ${checkpoint.id}`);
@@ -277,24 +336,27 @@ export function createReplayPlaybackController(input) {
   };
 
   const reachBootstrap = async () => {
-    const deadline = Date.now() + input.timeoutMs;
+    const deadline = requestDeadline("replay bootstrap readiness");
     while (true) {
-      const semantic = await verifySemanticCheckpoint(0);
+      const semantic = await verifySemanticCheckpoint(0, deadline);
       if (semantic.triggerMatched && semantic.readinessSatisfied) {
         await input.waitForInspectable?.(input.checkpoints[0], semantic);
         await input.onCheckpoint?.(0);
         return;
       }
-      await assertWatchedSessionsHealthy(input.checkpoints[0].id);
-      if (Date.now() >= deadline) {
+      await assertWatchedSessionsHealthy(input.checkpoints[0].id, {
+        deadline
+      });
+      if (deadline.isExpired()) {
         await assertWatchedSessionsHealthy(input.checkpoints[0].id, {
-          force: true
+          force: true,
+          deadline
         });
         throw new Error(
           `checkpoint_readiness_timeout: ${input.checkpoints[0].id}`
         );
       }
-      await wait(25);
+      await waitWithReplayDeadline(wait, 25, deadline);
     }
   };
 
@@ -386,7 +448,7 @@ export function createReplayPlaybackController(input) {
       await applyControl();
       return readTransportPlayback();
     },
-    wait
+    wait: waitForSignal
   });
 
   return {
@@ -434,7 +496,7 @@ export function createReplayPlaybackController(input) {
           sequence >
             input.checkpoints[targetCheckpoint].cursor.activityEventSequence;
         if (!paused && !blockedByTarget) return;
-        await wait(25);
+        await waitForSignal(25);
       }
     },
     async waitUntilRunnable() {
@@ -442,7 +504,7 @@ export function createReplayPlaybackController(input) {
         await reconcileTarget();
         await activityClock.synchronize();
         if (!paused) return;
-        await wait(50);
+        await waitForSignal(50);
       }
     },
     async activityAdvanced(sequence) {
@@ -452,7 +514,7 @@ export function createReplayPlaybackController(input) {
     async waitForAllCheckpoints() {
       while (currentCheckpoint < input.checkpoints.length - 1) {
         await reconcileTarget();
-        await wait(25);
+        await waitForSignal(25);
       }
     },
     waitForRecordedEvent(occurredAtUnixMs) {
@@ -466,7 +528,7 @@ export function createReplayPlaybackController(input) {
           settled = true;
         });
       while (!settled) {
-        await Promise.race([result.catch(() => undefined), wait(50)]);
+        await Promise.race([result.catch(() => undefined), waitForSignal(50)]);
         if (!settled) {
           await applyControl();
           if (ports.watchSessionsDuringPlayback) {
@@ -483,7 +545,7 @@ export function createReplayPlaybackController(input) {
     async waitForReplacement(isSurfaceOpen) {
       while (isSurfaceOpen()) {
         await applyControl();
-        await wait(50);
+        await waitForSignal(50);
       }
     }
   };

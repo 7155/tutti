@@ -1393,6 +1393,28 @@ test("renderer activity driver resumes an exactly-once invocation after CDP coll
   assert.match(expressions[0], /intent-exactly-once/u);
 });
 
+test("renderer activity driver hard-times out when CDP evaluate never resolves", async () => {
+  const driver = createRendererActivityDriver(
+    {
+      async send() {
+        return new Promise(() => {
+          // Simulate a wedged renderer: CDP never settles.
+        });
+      }
+    },
+    50,
+    replayCassetteAID
+  );
+  await assert.rejects(
+    () =>
+      driver.verifyEffect({
+        type: "session/activate",
+        eventId: "effect-wedged"
+      }),
+    /renderer replay invocation timed out after 1s/u
+  );
+});
+
 test("rejects a direct session.send correlated with a renderer intent", () => {
   assert.throws(
     () =>

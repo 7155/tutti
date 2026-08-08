@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { setTimeout as defaultDelay } from "node:timers/promises";
+import {
+  createReplayDeadline,
+  fetchWithReplayDeadline,
+  readReplayResponseText,
+  runWithReplayDeadline,
+  waitWithReplayDeadline
+} from "./replay-http.mjs";
 
 /**
  * Compare provider tape cursors (chunkSeq, then unitIndex).
@@ -379,7 +386,7 @@ export function replaySessionWatchRefs(activityEvents, options = {}) {
  */
 export async function assertReplayTransportHealthy(
   cassetteId,
-  { baseURL, headers = {}, timeoutMs, fetchImpl = fetch } = {}
+  { baseURL, headers = {}, timeoutMs, fetchImpl = fetch, signal } = {}
 ) {
   const normalizedBaseURL = String(baseURL ?? "")
     .trim()
@@ -390,15 +397,20 @@ export async function assertReplayTransportHealthy(
   const path = `/v1/agent-session-replay/cassettes/${encodeURIComponent(
     cassetteId
   )}/transport/health`;
+  const deadline = createReplayDeadline(timeoutMs, {
+    signal,
+    label: "replay transport health"
+  });
   let response;
   try {
-    response = await fetchImpl(`${normalizedBaseURL}${path}`, {
-      headers,
-      ...(Number.isFinite(timeoutMs) && timeoutMs > 0
-        ? { signal: AbortSignal.timeout(timeoutMs) }
-        : {})
-    });
+    response = await fetchWithReplayDeadline(
+      fetchImpl,
+      `${normalizedBaseURL}${path}`,
+      { headers },
+      deadline
+    );
   } catch (error) {
+    if (signal?.aborted) throw signal.reason ?? error;
     throw new Error(
       `replay transport failed: ${
         error instanceof Error ? error.message : String(error)
@@ -407,7 +419,7 @@ export async function assertReplayTransportHealthy(
     );
   }
   if (!response.ok) {
-    const body = await response.text();
+    const body = await readReplayResponseText(response, deadline);
     throw new Error(`replay transport failed with ${response.status}: ${body}`);
   }
 }
@@ -421,20 +433,26 @@ export async function replayTransportFailure(
   headers,
   cassetteId,
   timeoutMs,
-  { fetchImpl = fetch } = {}
+  { fetchImpl = fetch, signal } = {}
 ) {
+  const deadline = createReplayDeadline(timeoutMs, {
+    signal,
+    label: "replay transport verification"
+  });
   try {
-    const response = await fetchImpl(
+    const response = await fetchWithReplayDeadline(
+      fetchImpl,
       `${baseURL}/v1/agent-session-replay/cassettes/${encodeURIComponent(cassetteId)}/transport/verify`,
       {
         method: "POST",
-        headers,
-        signal: AbortSignal.timeout(timeoutMs)
-      }
+        headers
+      },
+      deadline
     );
     if (response.ok) return "";
-    return `replay transport mismatch: ${await response.text()}`;
+    return `replay transport mismatch: ${await readReplayResponseText(response, deadline)}`;
   } catch (error) {
+    if (signal?.aborted) throw signal.reason ?? error;
     return `replay transport verification failed: ${
       error instanceof Error ? error.message : String(error)
     }`;
@@ -453,20 +471,28 @@ export async function verifyDrainedReplayTransport({
   timeoutMs,
   delay,
   fetchImpl = fetch,
-  onStillDraining = null
+  onStillDraining = null,
+  signal
 }) {
-  const deadline = Date.now() + timeoutMs;
+  const deadline = createReplayDeadline(timeoutMs, {
+    signal,
+    label: "replay transport drain"
+  });
   const transportPath = `/v1/agent-session-replay/cassettes/${encodeURIComponent(cassetteId)}/transport`;
   let latestPlayback = null;
-  while (Date.now() < deadline) {
-    const playbackResponse = await fetchImpl(
+  while (deadline.remainingMs() > 0) {
+    const playbackResponse = await fetchWithReplayDeadline(
+      fetchImpl,
       `${baseURL}${transportPath}/playback`,
       {
-        headers,
-        signal: AbortSignal.timeout(timeoutMs)
-      }
+        headers
+      },
+      deadline
     );
-    const playbackBody = await playbackResponse.text();
+    const playbackBody = await readReplayResponseText(
+      playbackResponse,
+      deadline
+    );
     if (!playbackResponse.ok) {
       throw new Error(
         `replay transport playback failed with ${playbackResponse.status}: ${playbackBody}`
@@ -477,29 +503,38 @@ export async function verifyDrainedReplayTransport({
       break;
     }
     if (typeof onStillDraining === "function") {
-      await onStillDraining({
-        baseURL,
-        headers,
-        cassetteId,
-        timeoutMs,
-        latestPlayback
-      });
+      await runWithReplayDeadline(
+        () =>
+          onStillDraining({
+            baseURL,
+            headers,
+            cassetteId,
+            timeoutMs,
+            latestPlayback,
+            signal
+          }),
+        deadline
+      );
     }
-    await delay(50);
+    await waitWithReplayDeadline(delay, 50, deadline);
   }
   if (latestPlayback?.drained !== true) {
     throw new Error(
       `replay transport did not drain before verification: ${JSON.stringify(latestPlayback)}`
     );
   }
-  const response = await fetchImpl(`${baseURL}${transportPath}/verify`, {
-    method: "POST",
-    headers,
-    signal: AbortSignal.timeout(timeoutMs)
-  });
+  const response = await fetchWithReplayDeadline(
+    fetchImpl,
+    `${baseURL}${transportPath}/verify`,
+    {
+      method: "POST",
+      headers
+    },
+    deadline
+  );
   if (!response.ok) {
     throw new Error(
-      `replay transport verification failed with ${response.status}: ${await response.text()}`
+      `replay transport verification failed with ${response.status}: ${await readReplayResponseText(response, deadline)}`
     );
   }
 }

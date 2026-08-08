@@ -25,6 +25,15 @@ import {
   replayStimulusRequest
 } from "./stimulus.mjs";
 import { createReplayTurnIdentityTracker } from "./turn-identity-tracker.mjs";
+import {
+  ReplayDeadlineExceeded,
+  createReplayDeadline,
+  fetchWithReplayDeadline,
+  readReplayResponseJson,
+  readReplayResponseText,
+  runWithReplayDeadline,
+  waitWithReplayDeadline
+} from "./replay-http.mjs";
 
 export { ReplayReplacementRequested };
 
@@ -51,6 +60,7 @@ export async function replayStimuli(
     ((message) => {
       process.stderr.write(`[agent-session-replay] ${message}\n`);
     });
+  const fetchImpl = input.fetchImpl ?? fetch;
   if (!Array.isArray(input.checkpoints) || input.checkpoints.length === 0) {
     throw new Error("replay checkpoints are required");
   }
@@ -89,7 +99,9 @@ export async function replayStimuli(
     verifyBootstrap: action.type === "continue-session",
     waitForInspectable: input.waitForInspectable,
     timeoutMs,
-    wait
+    wait,
+    fetchImpl,
+    signal: input.signal
   });
   const turnIdentities = createReplayTurnIdentityTracker(
     action.turnIdentityPlan ?? {},
@@ -99,6 +111,8 @@ export async function replayStimuli(
       timeoutMs,
       ports,
       wait,
+      fetchImpl,
+      signal: input.signal,
       readRendererActivitySnapshot:
         input.rendererDriver?.readRendererActivitySnapshot
     }
@@ -122,7 +136,7 @@ export async function replayStimuli(
         event.agentSessionId,
         timeoutMs,
         playback,
-        { ports, wait }
+        { ports, wait, fetchImpl, signal: input.signal }
       );
     }
     if (event.kind === "intent" && event.type === "plan/feedbackRequested") {
@@ -133,7 +147,7 @@ export async function replayStimuli(
         event.agentSessionId,
         timeoutMs,
         playback,
-        { ports, wait }
+        { ports, wait, fetchImpl, signal: input.signal }
       );
     }
     if (ports.captureActivityBaselinesInStimuli) {
@@ -197,7 +211,9 @@ export async function replayStimuli(
             ports,
             turnIdentities,
             timeoutMs,
-            wait
+            wait,
+            fetchImpl,
+            signal: input.signal
           })
         );
         await input.onStimulusAccepted?.(event);
@@ -228,7 +244,7 @@ export async function replayStimuli(
     action.agentSessionId,
     timeoutMs,
     playback,
-    { ports, wait }
+    { ports, wait, fetchImpl, signal: input.signal }
   );
   await playback.waitForAllCheckpoints();
   await playback.waitUntilRunnable();
@@ -244,8 +260,14 @@ async function replayDirectStimulus({
   ports,
   turnIdentities,
   timeoutMs,
-  wait
+  wait,
+  fetchImpl,
+  signal
 }) {
+  const deadline = createReplayDeadline(timeoutMs, {
+    signal,
+    label: `replay stimulus ${event.type}`
+  });
   if (replayStimulusPrecondition(event) === "session-idle") {
     await waitForSessionIdle(
       baseURL,
@@ -254,10 +276,10 @@ async function replayDirectStimulus({
       event.agentSessionId,
       timeoutMs,
       playback,
-      { ports, wait }
+      { ports, wait, fetchImpl, signal, deadline }
     );
   }
-  const replayEvent = await turnIdentities.rebase(event);
+  const replayEvent = await turnIdentities.rebase(event, deadline);
   let readyEvent = replayEvent;
   if (event.type === "interactive.response") {
     readyEvent = await waitForPendingReplayInteraction(
@@ -266,7 +288,7 @@ async function replayDirectStimulus({
       replayEvent,
       timeoutMs,
       playback,
-      { ports, wait }
+      { ports, wait, fetchImpl, signal, deadline }
     );
   }
   const request = replayStimulusRequest(readyEvent, {
@@ -275,38 +297,51 @@ async function replayDirectStimulus({
   if (!request) {
     throw new Error(`unsupported direct replay stimulus: ${event.type}`);
   }
-  const deadline = Date.now() + timeoutMs;
   let response;
   let body = "";
-  while (Date.now() < deadline) {
-    response = await fetch(`${baseURL}${request.path}`, {
-      method: "POST",
-      headers,
-      ...(request.body === undefined
-        ? {}
-        : { body: JSON.stringify(request.body) })
-    });
-    body = await response.text();
-    if (response.ok) break;
-    if (!replayStimulusRetryableStatus(event.type, response.status)) {
-      const transportFailure =
-        response.status === 502
-          ? await replayTransportFailure(
-              baseURL,
-              headers,
-              cassetteId,
-              timeoutMs
-            )
-          : "";
-      throw new Error(
-        `stimulus ${event.type} failed with ${response.status}: ${body}${transportFailure ? `\n${transportFailure}` : ""}\nrequest: ${JSON.stringify(request.body)}`
+  let timeoutCause;
+  try {
+    while (deadline.remainingMs() > 0) {
+      response = await fetchWithReplayDeadline(
+        fetchImpl,
+        `${baseURL}${request.path}`,
+        {
+          method: "POST",
+          headers,
+          ...(request.body === undefined
+            ? {}
+            : { body: JSON.stringify(request.body) })
+        },
+        deadline
       );
+      body = await readReplayResponseText(response, deadline);
+      if (response.ok) break;
+      if (!replayStimulusRetryableStatus(event.type, response.status)) {
+        const remainingMs = deadline.remainingMs();
+        const transportFailure =
+          response.status === 502 && remainingMs > 0
+            ? await replayTransportFailure(
+                baseURL,
+                headers,
+                cassetteId,
+                remainingMs,
+                { fetchImpl, signal }
+              )
+            : "";
+        throw new Error(
+          `stimulus ${event.type} failed with ${response.status}: ${body}${transportFailure ? `\n${transportFailure}` : ""}\nrequest: ${JSON.stringify(request.body)}`
+        );
+      }
+      await waitWithReplayDeadline(wait, 100, deadline);
     }
-    await wait(100);
+  } catch (error) {
+    if (!(error instanceof ReplayDeadlineExceeded)) throw error;
+    timeoutCause = error;
   }
   if (!response?.ok) {
     throw new Error(
-      `stimulus ${event.type} did not become ready: ${response?.status} ${body}`
+      `stimulus ${event.type} did not become ready: ${response?.status ?? "timeout"} ${body}`,
+      timeoutCause ? { cause: timeoutCause } : undefined
     );
   }
 }
@@ -327,42 +362,58 @@ export async function waitForSessionIdle(
   agentSessionId,
   timeoutMs,
   playback,
-  options
+  options = {}
 ) {
   const ports = createReplayProductPorts(options.ports);
   const wait = options.wait ?? defaultDelay;
-  let remainingMs = timeoutMs;
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const deadline =
+    options.deadline ??
+    createReplayDeadline(timeoutMs, {
+      signal: options.signal,
+      label: `waiting for replay Session ${agentSessionId} to become idle`
+    });
   let latest = null;
-  while (remainingMs > 0) {
-    await playback?.waitUntilRunnable();
-    const pollStartedAt = Date.now();
-    const response = await fetch(
-      `${baseURL}${replayAgentSessionUrl(ports, workspaceId, agentSessionId)}`,
-      { headers }
-    );
-    if (response.ok) {
-      latest = await response.json();
-      const session = normalizeIdleSession(ports, latest);
-      if (ports.failIdleWaitOnTerminalSession) {
-        const terminalFailure = replaySessionTerminalFailure(session);
-        if (terminalFailure) {
-          throw new Error(
-            `replay Session ${agentSessionId} failed while waiting for idle: ${terminalFailure}; ${JSON.stringify(latest)}`
-          );
+  let timeoutCause;
+  try {
+    while (deadline.remainingMs() > 0) {
+      await runWithReplayDeadline(
+        () => playback?.waitUntilRunnable(),
+        deadline
+      );
+      const response = await fetchWithReplayDeadline(
+        fetchImpl,
+        `${baseURL}${replayAgentSessionUrl(ports, workspaceId, agentSessionId)}`,
+        { headers },
+        deadline
+      );
+      if (response.ok) {
+        latest = await readReplayResponseJson(response, deadline);
+        const session = normalizeIdleSession(ports, latest);
+        if (ports.failIdleWaitOnTerminalSession) {
+          const terminalFailure = replaySessionTerminalFailure(session);
+          if (terminalFailure) {
+            throw new Error(
+              `replay Session ${agentSessionId} failed while waiting for idle: ${terminalFailure}; ${JSON.stringify(latest)}`
+            );
+          }
+        }
+        if (
+          !session.activeTurnId &&
+          !["working", "waiting"].includes(session.status)
+        ) {
+          return session;
         }
       }
-      if (
-        !session.activeTurnId &&
-        !["working", "waiting"].includes(session.status)
-      ) {
-        return session;
-      }
+      await waitWithReplayDeadline(wait, 100, deadline);
     }
-    await wait(100);
-    remainingMs -= Date.now() - pollStartedAt;
+  } catch (error) {
+    if (!(error instanceof ReplayDeadlineExceeded)) throw error;
+    timeoutCause = error;
   }
   throw new Error(
-    `timed out waiting for replay Session ${agentSessionId} to become idle: ${JSON.stringify(latest)}`
+    `timed out waiting for replay Session ${agentSessionId} to become idle: ${JSON.stringify(latest)}`,
+    timeoutCause ? { cause: timeoutCause } : undefined
   );
 }
 
@@ -380,44 +431,60 @@ export async function waitForPendingReplayInteraction(
   event,
   timeoutMs,
   playback,
-  options
+  options = {}
 ) {
   const ports = createReplayProductPorts(options.ports);
   const wait = options.wait ?? defaultDelay;
-  let remainingMs = timeoutMs;
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const deadline =
+    options.deadline ??
+    createReplayDeadline(timeoutMs, {
+      signal: options.signal,
+      label: `waiting for replay Interaction ${event.payload.requestId}`
+    });
   let latest = null;
-  while (remainingMs > 0) {
-    await playback?.waitUntilRunnable();
-    const pollStartedAt = Date.now();
-    const response = await fetch(
-      `${baseURL}${replayAgentSessionUrl(
-        ports,
-        event.workspaceId,
-        event.agentSessionId
-      )}`,
-      { headers }
-    );
-    if (response.ok) {
-      latest = await response.json();
-      const session = normalizeIdleSession(ports, latest);
-      const interaction = replayPendingInteraction(
-        session,
-        event.payload.requestId
+  let timeoutCause;
+  try {
+    while (deadline.remainingMs() > 0) {
+      await runWithReplayDeadline(
+        () => playback?.waitUntilRunnable(),
+        deadline
       );
-      if (interaction) {
-        return {
-          ...event,
-          payload: {
-            ...event.payload,
-            turnId: interaction.turnId
-          }
-        };
+      const response = await fetchWithReplayDeadline(
+        fetchImpl,
+        `${baseURL}${replayAgentSessionUrl(
+          ports,
+          event.workspaceId,
+          event.agentSessionId
+        )}`,
+        { headers },
+        deadline
+      );
+      if (response.ok) {
+        latest = await readReplayResponseJson(response, deadline);
+        const session = normalizeIdleSession(ports, latest);
+        const interaction = replayPendingInteraction(
+          session,
+          event.payload.requestId
+        );
+        if (interaction) {
+          return {
+            ...event,
+            payload: {
+              ...event.payload,
+              turnId: interaction.turnId
+            }
+          };
+        }
       }
+      await waitWithReplayDeadline(wait, 100, deadline);
     }
-    await wait(100);
-    remainingMs -= Date.now() - pollStartedAt;
+  } catch (error) {
+    if (!(error instanceof ReplayDeadlineExceeded)) throw error;
+    timeoutCause = error;
   }
   throw new Error(
-    `timed out waiting for replay Interaction ${event.payload.requestId}: ${JSON.stringify(latest)}`
+    `timed out waiting for replay Interaction ${event.payload.requestId}: ${JSON.stringify(latest)}`,
+    timeoutCause ? { cause: timeoutCause } : undefined
   );
 }

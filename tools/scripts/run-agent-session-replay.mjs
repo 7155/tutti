@@ -22,7 +22,8 @@ import {
   selectProvider,
   selectSession,
   waitForActiveSession,
-  waitForEvaluation
+  waitForEvaluation,
+  withTimeout
 } from "./agent-gui-performance-helpers.mjs";
 import {
   reservePort,
@@ -1905,13 +1906,23 @@ export function createRendererActivityDriver(client, timeoutMs, cassetteId) {
     const deadline = Date.now() + timeoutMs;
     let evaluation;
     while (true) {
+      const remainingMs = Math.max(1, deadline - Date.now());
       try {
-        evaluation = await client.send("Runtime.evaluate", {
-          expression,
-          awaitPromise: true,
-          returnByValue: true,
-          timeout: Math.max(1, deadline - Date.now())
-        });
+        // Node withTimeout is required: CDP `timeout` alone will not abort when
+        // the renderer event loop is wedged (busy-spin / infinite sync work).
+        evaluation = await withTimeout(
+          client.send("Runtime.evaluate", {
+            expression,
+            awaitPromise: true,
+            returnByValue: true,
+            timeout: remainingMs
+          }),
+          remainingMs,
+          `renderer replay invocation timed out after ${Math.max(
+            1,
+            Math.round(timeoutMs / 1000)
+          )}s`
+        );
         break;
       } catch (error) {
         if (

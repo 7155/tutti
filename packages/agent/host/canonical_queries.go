@@ -21,6 +21,33 @@ func (h *Host) GetTurn(ctx context.Context, ref SessionRef, turnID string) (stor
 	return h.store.GetTurn(ctx, ref.WorkspaceID, ref.AgentSessionID, turnID)
 }
 
+// GetCanonicalSessionAndTurn reads the canonical Session and Turn from one
+// storage snapshot. Cross-entity live projections use this boundary so a
+// terminal Turn cannot be paired with the preceding Session active-turn
+// pointer (or vice versa).
+func (h *Host) GetCanonicalSessionAndTurn(
+	ctx context.Context,
+	ref SessionRef,
+	turnID string,
+) (storesqlite.Session, storesqlite.Turn, bool, error) {
+	ref = normalizedSessionRef(ref)
+	turnID = strings.TrimSpace(turnID)
+	if h == nil || h.store == nil || ref.WorkspaceID == "" || ref.AgentSessionID == "" || turnID == "" {
+		return storesqlite.Session{}, storesqlite.Turn{}, false, ErrInvalidArgument
+	}
+	if reader, ok := h.store.(interface {
+		GetSessionAndTurn(context.Context, string, string, string) (storesqlite.Session, storesqlite.Turn, bool, error)
+	}); ok {
+		return reader.GetSessionAndTurn(ctx, ref.WorkspaceID, ref.AgentSessionID, turnID)
+	}
+	session, found, err := h.store.GetSession(ctx, ref.WorkspaceID, ref.AgentSessionID)
+	if err != nil || !found {
+		return session, storesqlite.Turn{}, false, err
+	}
+	turn, found, err := h.store.GetTurn(ctx, ref.WorkspaceID, ref.AgentSessionID, turnID)
+	return session, turn, found, err
+}
+
 // FindTurnByClientSubmitID exposes the canonical idempotency lookup without
 // requiring callers to depend on a concrete SQLite store.
 func (h *Host) FindTurnByClientSubmitID(ctx context.Context, ref SessionRef, clientSubmitID string) (string, bool, error) {

@@ -104,26 +104,171 @@ func listDeletedSessionPurgeCandidatesTx(
 	limit int,
 	maxPayloadBytes int64,
 ) ([]PurgedSession, bool, error) {
-	type treeCandidate struct {
-		workspaceID     string
-		rootSessionID   string
-		deletedAtUnixMS int64
-		sessionCount    int
-		payloadBytes    int64
+	candidates := make([]PurgedSession, 0, limit)
+	selectedSessions := 0
+	var payloadBytes int64
+	// Keep recursive tree expansion and payload aggregation bounded to one root
+	// page. Keyset paging lets blocked trees be skipped without starving later
+	// roots behind an old retention backlog.
+	var cursor *purgeRootCursor
+	pageSize := limit + 1
+	for {
+		roots, hasMoreRoots, err := listDeletedSessionPurgeRootPageTx(
+			ctx, tx, cutoffUnixMS, cursor, pageSize,
+		)
+		if err != nil {
+			return nil, false, err
+		}
+		if len(roots) == 0 {
+			return candidates, false, nil
+		}
+
+		trees, err := listDeletedSessionPurgeTreeCandidatesTx(ctx, tx, cutoffUnixMS, roots)
+		if err != nil {
+			return nil, false, err
+		}
+		for _, tree := range trees {
+			if len(candidates) > 0 && (selectedSessions+tree.sessionCount > limit || payloadBytes+tree.payloadBytes > maxPayloadBytes) {
+				return candidates, true, nil
+			}
+			members, err := listDeletedSessionPurgeTreeMembersTx(
+				ctx, tx, tree.workspaceID, tree.rootSessionID, cutoffUnixMS,
+			)
+			if err != nil {
+				return nil, false, err
+			}
+			if len(members) != tree.sessionCount {
+				return nil, false, fmt.Errorf("deleted agent session purge tree changed while planning")
+			}
+			candidates = append(candidates, members...)
+			selectedSessions += len(members)
+			payloadBytes += tree.payloadBytes
+		}
+		if !hasMoreRoots {
+			return candidates, false, nil
+		}
+		lastRoot := roots[len(roots)-1]
+		cursor = &purgeRootCursor{
+			deletedAtUnixMS: lastRoot.deletedAtUnixMS,
+			workspaceID:     lastRoot.workspaceID,
+			rootSessionID:   lastRoot.rootSessionID,
+		}
 	}
-	rows, err := tx.QueryContext(ctx, `
+}
+
+type purgeRootCandidate struct {
+	workspaceID     string
+	rootSessionID   string
+	deletedAtUnixMS int64
+}
+
+type purgeRootCursor struct {
+	deletedAtUnixMS int64
+	workspaceID     string
+	rootSessionID   string
+}
+
+type purgeTreeCandidate struct {
+	workspaceID     string
+	rootSessionID   string
+	deletedAtUnixMS int64
+	sessionCount    int
+	payloadBytes    int64
+}
+
+func listDeletedSessionPurgeRootPageTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	cutoffUnixMS int64,
+	cursor *purgeRootCursor,
+	limit int,
+) ([]purgeRootCandidate, bool, error) {
+	args := []any{cutoffUnixMS}
+	query := `
+SELECT s.workspace_id, s.agent_session_id, s.deleted_at_unix_ms
+FROM workspace_agent_sessions s
+WHERE s.deleted_at_unix_ms > 0 AND s.deleted_at_unix_ms <= ?
+  AND NOT EXISTS (
+    SELECT 1
+    FROM workspace_agent_sessions parent
+    WHERE parent.workspace_id = s.workspace_id
+      AND parent.agent_session_id = s.parent_agent_session_id
+      AND parent.deleted_at_unix_ms > 0
+  )`
+	if cursor != nil {
+		query += `
+  AND (
+    s.deleted_at_unix_ms > ?
+    OR (
+      s.deleted_at_unix_ms = ?
+      AND (
+        s.workspace_id > ?
+        OR (s.workspace_id = ? AND s.agent_session_id > ?)
+      )
+    )
+  )`
+		args = append(args,
+			cursor.deletedAtUnixMS,
+			cursor.deletedAtUnixMS,
+			cursor.workspaceID,
+			cursor.workspaceID,
+			cursor.rootSessionID,
+		)
+	}
+	query += `
+ORDER BY s.deleted_at_unix_ms ASC, s.workspace_id ASC, s.agent_session_id ASC
+LIMIT ?`
+	args = append(args, limit+1)
+
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, false, fmt.Errorf("list deleted agent session purge roots: %w", err)
+	}
+	defer rows.Close()
+
+	roots := make([]purgeRootCandidate, 0, limit)
+	for rows.Next() {
+		var root purgeRootCandidate
+		if err := rows.Scan(&root.workspaceID, &root.rootSessionID, &root.deletedAtUnixMS); err != nil {
+			return nil, false, fmt.Errorf("scan deleted agent session purge root: %w", err)
+		}
+		root.workspaceID = strings.TrimSpace(root.workspaceID)
+		root.rootSessionID = strings.TrimSpace(root.rootSessionID)
+		roots = append(roots, root)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, fmt.Errorf("iterate deleted agent session purge roots: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, false, fmt.Errorf("close deleted agent session purge roots: %w", err)
+	}
+	hasMore := len(roots) > limit
+	if hasMore {
+		roots = roots[:limit]
+	}
+	return roots, hasMore, nil
+}
+
+func listDeletedSessionPurgeTreeCandidatesTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	cutoffUnixMS int64,
+	roots []purgeRootCandidate,
+) ([]purgeTreeCandidate, error) {
+	if len(roots) == 0 {
+		return nil, nil
+	}
+	valueRows := make([]string, len(roots))
+	args := make([]any, 0, len(roots)*3+1)
+	for index, root := range roots {
+		valueRows[index] = "(?, ?, ?)"
+		args = append(args, root.workspaceID, root.rootSessionID, root.deletedAtUnixMS)
+	}
+	args = append(args, cutoffUnixMS)
+	query := fmt.Sprintf(`
 WITH RECURSIVE
 candidate_roots(workspace_id, root_session_id, root_deleted_at_unix_ms) AS (
-  SELECT s.workspace_id, s.agent_session_id, s.deleted_at_unix_ms
-  FROM workspace_agent_sessions s
-  WHERE s.deleted_at_unix_ms > 0 AND s.deleted_at_unix_ms <= ?
-    AND NOT EXISTS (
-      SELECT 1
-      FROM workspace_agent_sessions parent
-      WHERE parent.workspace_id = s.workspace_id
-        AND parent.agent_session_id = s.parent_agent_session_id
-        AND parent.deleted_at_unix_ms > 0
-    )
+  VALUES %s
 ),
 candidate_tree(workspace_id, root_session_id, agent_session_id, deleted_at_unix_ms, depth) AS (
   SELECT roots.workspace_id, roots.root_session_id, roots.root_session_id,
@@ -155,16 +300,16 @@ JOIN candidate_tree tree
 GROUP BY roots.workspace_id, roots.root_session_id, roots.root_deleted_at_unix_ms
 HAVING SUM(CASE WHEN tree.deleted_at_unix_ms <= 0 OR tree.deleted_at_unix_ms > ? THEN 1 ELSE 0 END) = 0
 ORDER BY roots.root_deleted_at_unix_ms ASC, roots.workspace_id ASC, roots.root_session_id ASC
-LIMIT ?
-`, cutoffUnixMS, cutoffUnixMS, limit+1)
+`, strings.Join(valueRows, ",\n  "))
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, false, fmt.Errorf("list deleted agent session purge candidates: %w", err)
+		return nil, fmt.Errorf("list deleted agent session purge candidates: %w", err)
 	}
 	defer rows.Close()
 
-	trees := make([]treeCandidate, 0, limit+1)
+	trees := make([]purgeTreeCandidate, 0, len(roots))
 	for rows.Next() {
-		var candidate treeCandidate
+		var candidate purgeTreeCandidate
 		if err := rows.Scan(
 			&candidate.workspaceID,
 			&candidate.rootSessionID,
@@ -172,54 +317,19 @@ LIMIT ?
 			&candidate.sessionCount,
 			&candidate.payloadBytes,
 		); err != nil {
-			return nil, false, fmt.Errorf("scan deleted agent session purge tree: %w", err)
+			return nil, fmt.Errorf("scan deleted agent session purge tree: %w", err)
 		}
 		candidate.workspaceID = strings.TrimSpace(candidate.workspaceID)
 		candidate.rootSessionID = strings.TrimSpace(candidate.rootSessionID)
 		trees = append(trees, candidate)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, false, fmt.Errorf("iterate deleted agent session purge trees: %w", err)
+		return nil, fmt.Errorf("iterate deleted agent session purge trees: %w", err)
 	}
 	if err := rows.Close(); err != nil {
-		return nil, false, fmt.Errorf("close deleted agent session purge trees: %w", err)
+		return nil, fmt.Errorf("close deleted agent session purge trees: %w", err)
 	}
-
-	candidates := make([]PurgedSession, 0, limit)
-	selectedSessions := 0
-	var payloadBytes int64
-	hasMore := false
-	for _, tree := range trees {
-		if len(candidates) > 0 && (selectedSessions+tree.sessionCount > limit || payloadBytes+tree.payloadBytes > maxPayloadBytes) {
-			hasMore = true
-			break
-		}
-		members, err := listDeletedSessionPurgeTreeMembersTx(
-			ctx, tx, tree.workspaceID, tree.rootSessionID, cutoffUnixMS,
-		)
-		if err != nil {
-			return nil, false, err
-		}
-		if len(members) != tree.sessionCount {
-			return nil, false, fmt.Errorf("deleted agent session purge tree changed while planning")
-		}
-		candidates = append(candidates, members...)
-		selectedSessions += len(members)
-		payloadBytes += tree.payloadBytes
-	}
-	if !hasMore && len(trees) > 0 && len(candidates) > 0 {
-		selectedRoots := 0
-		for _, candidate := range candidates {
-			for _, tree := range trees {
-				if candidate.WorkspaceID == tree.workspaceID && candidate.AgentSessionID == tree.rootSessionID {
-					selectedRoots++
-					break
-				}
-			}
-		}
-		hasMore = selectedRoots < len(trees)
-	}
-	return candidates, hasMore, nil
+	return trees, nil
 }
 
 func listDeletedSessionPurgeTreeMembersTx(

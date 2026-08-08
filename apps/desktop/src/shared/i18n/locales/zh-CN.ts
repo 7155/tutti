@@ -911,7 +911,7 @@ export const zhCN = {
         appearance: "外观",
         agent: "Agent",
         connection: "连接",
-        deletedConversations: "已删除会话",
+        deletedConversations: "回收站",
         developer: "开发者",
         general: "通用",
         lab: "实验室",

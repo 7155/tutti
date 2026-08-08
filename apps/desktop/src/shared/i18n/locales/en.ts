@@ -971,7 +971,7 @@ export const en = {
         appearance: "Appearance",
         agent: "Agent",
         connection: "Connection",
-        deletedConversations: "Deleted conversations",
+        deletedConversations: "Trash",
         developer: "Developer",
         general: "General",
         lab: "Lab",

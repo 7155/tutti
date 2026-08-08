@@ -27,6 +27,7 @@ export interface AgentInteractivePromptSurfaceProps {
   edgeGlow?: boolean;
   keyboardShortcuts?: boolean;
   isSubmitting: boolean;
+  isInteractionDisabled?: boolean;
   onSubmit: (input: AgentInteractionResponseInput) => boolean | void;
   labels: {
     approvalLead: string;
@@ -56,6 +57,7 @@ export function AgentInteractivePromptSurface({
   embedded = false,
   keyboardShortcuts = true,
   isSubmitting,
+  isInteractionDisabled = false,
   onSubmit,
   labels
 }: AgentInteractivePromptSurfaceProps & {
@@ -84,6 +86,7 @@ export function AgentInteractivePromptSurface({
         edgeGlow={edgeGlow}
         keyboardShortcuts={keyboardShortcuts}
         isSubmitting={isSubmitting}
+        isInteractionDisabled={isInteractionDisabled}
         onSubmit={submitPrompt}
         labels={labels}
       />
@@ -97,6 +100,7 @@ export function AgentInteractivePromptSurface({
         embedded={embedded}
         edgeGlow={edgeGlow}
         isSubmitting={isSubmitting}
+        isInteractionDisabled={isInteractionDisabled}
         onSubmit={submitPrompt}
         labels={labels}
       />
@@ -110,6 +114,7 @@ export function AgentInteractivePromptSurface({
         embedded={embedded}
         edgeGlow={edgeGlow}
         isSubmitting={isSubmitting}
+        isInteractionDisabled={isInteractionDisabled}
         onSubmit={submitPrompt}
         labels={labels}
       />
@@ -123,6 +128,7 @@ export function AgentInteractivePromptSurface({
       embedded={embedded}
       edgeGlow={edgeGlow}
       isSubmitting={isSubmitting}
+      isInteractionDisabled={isInteractionDisabled}
       onSubmit={submitPrompt}
       labels={labels}
     />

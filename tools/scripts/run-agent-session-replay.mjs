@@ -103,6 +103,7 @@ import {
   replayStimulusRetryableStatus,
   replayStimuli as replayStimuliCore,
   requiredReplayRegistrations,
+  runReplayCassetteBatch,
   scenarioPreparesToolEvidence,
   screenshotEvidenceLabel,
   submitRequestedRequiresSessionIdle,
@@ -653,12 +654,16 @@ async function replayWorkspace(options) {
     JSON.parse(await readFile(options.replayWorkspaceManifestPath, "utf8"))
   );
   let bootstrap = null;
+  const terminalCassetteIds = new Set();
   try {
     bootstrap = await bootstrapReplayWorkspace(manifest);
-    await runReplayWorkspaceOrchestration(bootstrap, options);
+    await runReplayWorkspaceOrchestration(bootstrap, options, {
+      terminalCassetteIds
+    });
   } catch (error) {
     if (options.managed) {
-      for (const cassette of manifest.cassettes) {
+      for (const cassette of bootstrap?.cassettes ?? manifest.cassettes) {
+        if (terminalCassetteIds.has(cassette.cassetteId)) continue;
         process.stdout.write(
           `${managedReplayFailedPrefix}${JSON.stringify(
             managedReplayFailure(cassette.cassetteId, error)
@@ -676,7 +681,11 @@ async function replayWorkspace(options) {
   }
 }
 
-async function runReplayWorkspaceOrchestration(bootstrap, options) {
+async function runReplayWorkspaceOrchestration(
+  bootstrap,
+  options,
+  { terminalCassetteIds = new Set() } = {}
+) {
   const statusPath = join(bootstrap.runtime.directory, "replay-status.json");
   const controlPath = join(bootstrap.runtime.directory, "replay-control.json");
   const logPath = join(bootstrap.runtime.directory, "logs", "desktop.log");
@@ -753,13 +762,16 @@ async function runReplayWorkspaceOrchestration(bootstrap, options) {
       options.timeoutMs
     );
     const runDesktopUi = createSerialAsyncQueue();
-    const reportSurfaceReady = (cassette) =>
+    const failedTerminalMarkers = [];
+    const reportSurfaceReady = (cassette, signal) =>
       runDesktopUi(async () => {
+        if (signal.aborted) return;
         await activateRendererReplayWorkspaceCassette(
           client,
           cassette.cassetteId,
           options.timeoutMs
         );
+        if (signal.aborted) return;
         process.stdout.write(
           `${managedReplayReadyPrefix}${JSON.stringify({
             cassetteId: cassette.cassetteId,
@@ -771,135 +783,157 @@ async function runReplayWorkspaceOrchestration(bootstrap, options) {
       bootstrap.runtime.directory,
       "artifacts"
     );
-    const results = await Promise.all(
-      bootstrap.cassettes.map(async (cassette) => {
+    const { firstFailure, results } = await runReplayCassetteBatch(
+      bootstrap.cassettes,
+      async (cassette, signal) => {
         const initialTargetCheckpoint = initialTargetCheckpoints.get(
           cassette.cassetteId
         );
         let surfaceReadyReported = false;
         const reportSurfaceReadyOnce = async () => {
+          if (signal.aborted) return;
           if (surfaceReadyReported) return;
           surfaceReadyReported = true;
-          await reportSurfaceReady(cassette);
+          await reportSurfaceReady(cassette, signal);
         };
         const settleAgentSessionId =
           cassette.rootAgentSessionId ||
           cassette.action?.agentSessionId ||
           null;
-        try {
-          await replayStimuli(
-            bootstrap.runtime.stateDirectory,
-            cassette.action,
-            options.timeoutMs,
-            {
-              checkpoints: cassette.checkpoints,
-              controlPath,
-              initialTargetCheckpoint:
-                initialTargetCheckpoint === null
-                  ? undefined
-                  : initialTargetCheckpoint,
-              async onCheckpoint(checkpoint) {
-                if (options.screenshotCheckpoints) {
-                  const checkpointPlan = cassette.checkpoints[checkpoint];
-                  await runDesktopUi(async () => {
-                    await activateRendererReplayWorkspaceCassette(
-                      client,
-                      cassette.cassetteId,
-                      options.timeoutMs
-                    );
-                    await maybeSettleForScreenshot(
-                      cassette.settleScenario,
-                      client,
-                      options.timeoutMs,
-                      checkpointPlan,
-                      settleAgentSessionId
-                    );
-                    await captureCheckpointScreenshot({
-                      agentSessionId: settleAgentSessionId,
-                      artifactDirectory: workspaceArtifactDirectory,
-                      cassetteId: cassette.cassetteId,
-                      checkpointIndex: checkpoint,
-                      checkpoints: cassette.checkpoints,
-                      client,
-                      label: screenshotEvidenceLabel(cassette),
-                      prepareToolEvidence:
-                        scenarioPreparesToolEvidence(cassette.settleScenario) &&
-                        checkpointNeedsToolSettle(checkpointPlan)
-                    });
-                  });
-                }
-                process.stdout.write(
-                  `${managedReplayCheckpointPrefix}${JSON.stringify({
-                    checkpoint,
-                    cassetteId: cassette.cassetteId,
-                    totalDurationMs: cassette.totalDurationMs,
-                    totalCheckpoints: cassette.checkpoints.length
-                  })}\n`
-                );
-                if (checkpoint === initialTargetCheckpoint) {
-                  await reportSurfaceReadyOnce();
-                }
-              },
-              async waitForInspectable(_checkpoint, semantic) {
-                await reportSurfaceReadyOnce();
-                await waitForRendererReplayWorkspaceCheckpoint(
-                  client,
-                  cassette.cassetteId,
-                  semantic,
-                  options.timeoutMs
-                );
-              },
-              rendererDriver: createRendererActivityDriver(
-                client,
-                options.timeoutMs,
-                cassette.cassetteId
-              ),
-              cassetteId: cassette.cassetteId,
-              async onStimulusAccepted(stimulus) {
-                if (
-                  cassette.action.type !== "create-session" ||
-                  !["session.create", "session/activate"].includes(
-                    stimulus.type
-                  )
-                ) {
-                  return;
-                }
-                await runDesktopUi(() =>
-                  activateRendererReplayWorkspaceCassette(
+        await replayStimuli(
+          bootstrap.runtime.stateDirectory,
+          cassette.action,
+          options.timeoutMs,
+          {
+            checkpoints: cassette.checkpoints,
+            controlPath,
+            initialTargetCheckpoint:
+              initialTargetCheckpoint === null
+                ? undefined
+                : initialTargetCheckpoint,
+            async onCheckpoint(checkpoint) {
+              if (signal.aborted) return;
+              if (options.screenshotCheckpoints) {
+                const checkpointPlan = cassette.checkpoints[checkpoint];
+                await runDesktopUi(async () => {
+                  if (signal.aborted) return;
+                  await activateRendererReplayWorkspaceCassette(
                     client,
                     cassette.cassetteId,
                     options.timeoutMs
-                  )
-                );
+                  );
+                  if (signal.aborted) return;
+                  await maybeSettleForScreenshot(
+                    cassette.settleScenario,
+                    client,
+                    options.timeoutMs,
+                    checkpointPlan,
+                    settleAgentSessionId
+                  );
+                  if (signal.aborted) return;
+                  await captureCheckpointScreenshot({
+                    agentSessionId: settleAgentSessionId,
+                    artifactDirectory: workspaceArtifactDirectory,
+                    cassetteId: cassette.cassetteId,
+                    checkpointIndex: checkpoint,
+                    checkpoints: cassette.checkpoints,
+                    client,
+                    label: screenshotEvidenceLabel(cassette),
+                    prepareToolEvidence:
+                      scenarioPreparesToolEvidence(cassette.settleScenario) &&
+                      checkpointNeedsToolSettle(checkpointPlan)
+                  });
+                });
               }
+              if (signal.aborted) return;
+              process.stdout.write(
+                `${managedReplayCheckpointPrefix}${JSON.stringify({
+                  checkpoint,
+                  cassetteId: cassette.cassetteId,
+                  totalDurationMs: cassette.totalDurationMs,
+                  totalCheckpoints: cassette.checkpoints.length
+                })}\n`
+              );
+              if (checkpoint === initialTargetCheckpoint) {
+                await reportSurfaceReadyOnce();
+              }
+            },
+            async waitForInspectable(_checkpoint, semantic) {
+              if (signal.aborted) return;
+              await reportSurfaceReadyOnce();
+              if (signal.aborted) return;
+              await waitForRendererReplayWorkspaceCheckpoint(
+                client,
+                cassette.cassetteId,
+                semantic,
+                options.timeoutMs
+              );
+            },
+            rendererDriver: createRendererActivityDriver(
+              client,
+              options.timeoutMs,
+              cassette.cassetteId
+            ),
+            cassetteId: cassette.cassetteId,
+            signal,
+            async onStimulusAccepted(stimulus) {
+              if (
+                signal.aborted ||
+                cassette.action.type !== "create-session" ||
+                !["session.create", "session/activate"].includes(stimulus.type)
+              ) {
+                return;
+              }
+              await runDesktopUi(async () => {
+                if (signal.aborted) return;
+                await activateRendererReplayWorkspaceCassette(
+                  client,
+                  cassette.cassetteId,
+                  options.timeoutMs
+                );
+              });
             }
-          );
-          await reportSurfaceReadyOnce();
-          await verifyReplayTransport(
-            bootstrap.runtime.stateDirectory,
-            cassette.cassetteId,
-            options.timeoutMs
-          );
-          process.stdout.write(
-            `${managedReplayCompletePrefix}${JSON.stringify({
-              cassetteId: cassette.cassetteId
-            })}\n`
-          );
-          return { cassetteId: cassette.cassetteId, succeeded: true };
-        } catch (error) {
-          process.stdout.write(
-            `${managedReplayFailedPrefix}${JSON.stringify(
-              managedReplayFailure(cassette.cassetteId, error)
-            )}\n`
-          );
-          return { cassetteId: cassette.cassetteId, succeeded: false };
+          }
+        );
+        await reportSurfaceReadyOnce();
+        await verifyReplayTransport(
+          bootstrap.runtime.stateDirectory,
+          cassette.cassetteId,
+          options.timeoutMs,
+          signal
+        );
+        return { cassetteId: cassette.cassetteId };
+      },
+      {
+        onTerminal(cassette, outcome) {
+          if (outcome.succeeded) {
+            process.stdout.write(
+              `${managedReplayCompletePrefix}${JSON.stringify({
+                cassetteId: cassette.cassetteId
+              })}\n`
+            );
+          } else {
+            failedTerminalMarkers.push(
+              `${managedReplayFailedPrefix}${JSON.stringify(
+                managedReplayFailure(cassette.cassetteId, outcome.error)
+              )}\n`
+            );
+          }
+          terminalCassetteIds.add(cassette.cassetteId);
         }
-      })
+      }
     );
+    if (failedTerminalMarkers.length > 0) {
+      process.stdout.write(failedTerminalMarkers.join(""));
+    }
     await writeReplayStatus(statusPath, {
       phase: results.every((result) => result.succeeded) ? "complete" : "failed"
     });
-    assertReplayWorkspaceSucceeded(results, options.managed);
+    assertReplayWorkspaceSucceeded(
+      results,
+      options.managed,
+      firstFailure?.error
+    );
     if (options.managed) {
       while (desktop.exitCode === null && desktop.signalCode === null) {
         await delay(100);
@@ -917,9 +951,16 @@ export function createReplayWorkspaceSurfaceReadyQueue(activate) {
   return (cassette) => enqueue(() => activate(cassette));
 }
 
-export function assertReplayWorkspaceSucceeded(results, managed) {
+export function assertReplayWorkspaceSucceeded(
+  results,
+  managed,
+  firstFailure = null
+) {
   const failed = results.filter((result) => !result.succeeded);
   if (failed.length > 0 && !managed) {
+    if (firstFailure instanceof Error) throw firstFailure;
+    const resultFailure = failed[0]?.error;
+    if (resultFailure instanceof Error) throw resultFailure;
     throw new Error(
       `Replay Workspace failed for ${failed.map((result) => result.cassetteId).join(", ")}`
     );
@@ -1956,7 +1997,12 @@ export function createRendererActivityDriver(client, timeoutMs, cassetteId) {
   };
 }
 
-async function verifyReplayTransport(stateDirectory, cassetteId, timeoutMs) {
+async function verifyReplayTransport(
+  stateDirectory,
+  cassetteId,
+  timeoutMs,
+  signal
+) {
   const listener = JSON.parse(
     await readFile(replayListenerInfoPath(stateDirectory), "utf8")
   );
@@ -1972,6 +2018,7 @@ async function verifyReplayTransport(stateDirectory, cassetteId, timeoutMs) {
       cassetteId,
       timeoutMs,
       delay,
+      signal,
       async onStillDraining({ latestPlayback }) {
         if (Date.now() < nextHardFailureCheckAt) return;
         nextHardFailureCheckAt = Date.now() + 500;
@@ -1979,7 +2026,8 @@ async function verifyReplayTransport(stateDirectory, cassetteId, timeoutMs) {
           baseURL,
           headers,
           cassetteId,
-          timeoutMs
+          timeoutMs,
+          signal
         );
         if (earlyFailure) {
           throw new Error(
@@ -1997,7 +2045,8 @@ async function verifyReplayTransport(stateDirectory, cassetteId, timeoutMs) {
         baseURL,
         headers,
         cassetteId,
-        timeoutMs
+        timeoutMs,
+        signal
       );
       throw new Error(
         message + (lateFailure ? `; transport=${lateFailure}` : "")
@@ -2024,15 +2073,19 @@ async function readReplayTransportHardFailure(
   baseURL,
   headers,
   cassetteId,
-  timeoutMs
+  timeoutMs,
+  signal
 ) {
   try {
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
     const response = await fetch(
       `${baseURL}/v1/agent-session-replay/cassettes/${encodeURIComponent(cassetteId)}/transport/verify`,
       {
         method: "POST",
         headers,
-        signal: AbortSignal.timeout(timeoutMs)
+        signal: signal
+          ? AbortSignal.any([signal, timeoutSignal])
+          : timeoutSignal
       }
     );
     if (response.ok) return "";

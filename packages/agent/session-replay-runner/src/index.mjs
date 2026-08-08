@@ -90,6 +90,7 @@ export {
 } from "./replay-stimuli.mjs";
 export { resolveTuttiCheckoutRoot } from "./resolve-tutti-checkout.mjs";
 export { createSerialAsyncQueue } from "./serial-queue.mjs";
+export { runReplayCassetteBatch } from "./replay-orchestration.mjs";
 export {
   assertNoDuplicateEngineSends,
   replayStimulusPrecondition,

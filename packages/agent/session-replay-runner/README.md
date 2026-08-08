@@ -51,8 +51,10 @@ Extracted and wired from both runners:
 - ui-drive scenario shell (`loadUiScenario`, `runUiDriveScenario`, checkpoint
   screenshot/plan helpers) — products inject prepare/launch/surface ports
 - **`createReplayPlaybackController` / `createReplayTurnIdentityTracker` /
-  `replayStimuli` / `waitForSessionIdle`** — parameterized by
-  `ReplayProductPorts` (no product-named forks)
+  `runReplayCassetteBatch` / `replayStimuli` / `waitForSessionIdle`** —
+  parameterized by `ReplayProductPorts` (no product-named forks); a cassette
+  wave preserves the first failure as the shared abort cause and emits one
+  terminal outcome per cassette
 - cassette verify / parse / blobs / portable activity payload /
   turn-identity plan (`createCassetteHelpers`, `verifyCassette`,
   `parseActivityEvents`, `materializeReplayWorkspaceBlobs`, …) — products

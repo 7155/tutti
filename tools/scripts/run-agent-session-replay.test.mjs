@@ -3037,6 +3037,25 @@ test("non-managed Replay Workspace propagates Cassette failures", () => {
   );
 });
 
+test("non-managed Replay Workspace preserves the first Cassette root cause", () => {
+  const rootCause = new Error("first cassette failed");
+  assert.throws(
+    () =>
+      assertReplayWorkspaceSucceeded(
+        [
+          {
+            cassetteId: replayCassetteAID,
+            error: rootCause,
+            succeeded: false
+          },
+          { cassetteId: replayCassetteBID, succeeded: false }
+        ],
+        false
+      ),
+    (error) => error === rootCause
+  );
+});
+
 test("Replay Workspace bootstrap calls the renderer bridge once with all Cassettes", async () => {
   const evaluations = [];
   const snapshot = { ready: false, cassettes: [] };

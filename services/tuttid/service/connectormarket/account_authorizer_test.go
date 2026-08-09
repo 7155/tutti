@@ -12,7 +12,7 @@ func TestAccountSessionAuthorizerLoadsCurrentCookiePerRequest(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"session_id":"session-1","cookie":"sid=secret"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	authorizer, err := NewAccountSessionAuthorizer(path)
+	authorizer, err := NewAccountSessionAuthorizer(path, "  ppe-connectors  ")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,10 +23,13 @@ func TestAccountSessionAuthorizerLoadsCurrentCookiePerRequest(t *testing.T) {
 	if request.Header.Get("Cookie") != "sid=secret" {
 		t.Fatalf("cookie = %q", request.Header.Get("Cookie"))
 	}
+	if request.Header.Get("x-zk-ppe-lane") != "ppe-connectors" {
+		t.Fatalf("ppe lane = %q", request.Header.Get("x-zk-ppe-lane"))
+	}
 }
 
 func TestAccountSessionAuthorizerFailsClosedWithoutSession(t *testing.T) {
-	authorizer, err := NewAccountSessionAuthorizer(filepath.Join(t.TempDir(), "missing.json"))
+	authorizer, err := NewAccountSessionAuthorizer(filepath.Join(t.TempDir(), "missing.json"), "")
 	if err != nil {
 		t.Fatal(err)
 	}

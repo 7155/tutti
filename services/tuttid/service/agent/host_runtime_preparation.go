@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	agenthost "github.com/tutti-os/tutti/packages/agent/host"
 	runtimeprep "github.com/tutti-os/tutti/packages/agent/runtimeprep"
@@ -33,6 +34,7 @@ type serviceHostRuntimePreparationSupport interface {
 // cleanup dependencies; it has no Host or Service reference.
 type serviceRuntimePreparation struct {
 	runtimePreparer              runtimeprep.Preparer
+	connectorRuntime             ConnectorRuntime
 	modelGateway                 ModelGatewayRegistry
 	modelCatalog                 AgentModelCatalog
 	agentTargetStore             AgentTargetStore
@@ -49,6 +51,7 @@ type serviceRuntimePreparation struct {
 func newServiceRuntimePreparation(config ServiceConfig) *serviceRuntimePreparation {
 	return &serviceRuntimePreparation{
 		runtimePreparer:           config.Runtime.Preparer,
+		connectorRuntime:          config.Runtime.Connector,
 		modelGateway:              config.Runtime.ModelGateway,
 		modelCatalog:              config.Composer.ModelCatalog,
 		agentTargetStore:          config.Composer.AgentTargetStore,
@@ -72,6 +75,7 @@ func (p *serviceRuntimePreparation) facade() *Service {
 	}
 	return &Service{
 		RuntimePreparer:              p.runtimePreparer,
+		ConnectorRuntime:             p.connectorRuntime,
 		ModelGateway:                 p.modelGateway,
 		ModelCatalog:                 p.modelCatalog,
 		AgentTargetStore:             p.agentTargetStore,
@@ -170,14 +174,23 @@ func (a serviceHostPreparation) Prepare(ctx context.Context, input agenthost.Run
 	if err != nil {
 		return agenthost.PreparedRuntime{}, err
 	}
+	cleanupPreparationFailure := func(cause error) error {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		return errors.Join(cause, a.support.cleanupSessionResources(
+			cleanupCtx,
+			input.WorkspaceID,
+			input.AgentSessionID,
+		))
+	}
 	if err := a.bindCommittedSessionForkProviderState(ctx, input); err != nil {
-		return agenthost.PreparedRuntime{}, err
+		return agenthost.PreparedRuntime{}, cleanupPreparationFailure(err)
 	}
 	var targetRef map[string]any
 	if strings.TrimSpace(input.AgentTargetID) != "" {
 		resolvedRef, err := a.support.resolveProviderTargetRefForResume(ctx, persisted)
 		if err != nil {
-			return agenthost.PreparedRuntime{}, err
+			return agenthost.PreparedRuntime{}, cleanupPreparationFailure(err)
 		}
 		targetRef = resolvedRef
 	}

@@ -69,21 +69,13 @@ func (registry *MCPRegistry) activeRoutes() []*connectorRoute {
 	return routes
 }
 
-// Tools returns the stable native MCP projection for the allowed Connector
-// keys. A nil set authorizes every active Connector; a non-nil empty set
-// authorizes none.
-func (registry *MCPRegistry) Tools(allowedKeys map[string]struct{}) []MCPTool {
-	if allowedKeys != nil && len(allowedKeys) == 0 {
-		return []MCPTool{}
-	}
+// Tools returns the stable native MCP projection for every active Connector.
+// Account scoping is owned by the Connector runtime publication boundary; the
+// local MCP binding does not express Connector-level permissions.
+func (registry *MCPRegistry) Tools() []MCPTool {
 	seen := make(map[string]struct{})
 	result := make([]MCPTool, 0)
 	for _, route := range registry.activeRoutes() {
-		if allowedKeys != nil {
-			if _, allowed := allowedKeys[route.connectorKey]; !allowed {
-				continue
-			}
-		}
 		for _, tool := range route.mcpTools {
 			if _, duplicate := seen[tool.localName]; duplicate {
 				continue
@@ -100,20 +92,14 @@ func (registry *MCPRegistry) Tools(allowedKeys map[string]struct{}) []MCPTool {
 // Call resolves a native namespaced tool against an immutable current route.
 // Duplicate bindings fail closed instead of selecting an arbitrary account or
 // generation.
-func (registry *MCPRegistry) Call(ctx context.Context, allowedKeys map[string]struct{}, name string,
-	arguments map[string]any) (json.RawMessage, error) {
+func (registry *MCPRegistry) Call(ctx context.Context, name string, arguments map[string]any) (json.RawMessage, error) {
 	name = strings.TrimSpace(name)
-	if name == "" || (allowedKeys != nil && len(allowedKeys) == 0) {
+	if name == "" {
 		return nil, errors.New("connector MCP tool was not found")
 	}
 	var binding *registeredMCPTool
 	var owner *connectorRoute
 	for _, route := range registry.activeRoutes() {
-		if allowedKeys != nil {
-			if _, allowed := allowedKeys[route.connectorKey]; !allowed {
-				continue
-			}
-		}
 		tool, found := route.mcpTools[name]
 		if !found {
 			continue

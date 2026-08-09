@@ -49,7 +49,7 @@ import (
 )
 
 const connectorMarketDefaultBaseURL = "https://api.tutti.sh/api/desktop"
-const connectorMCPDefaultBaseURL = "https://api.tutti.sh"
+const connectorMCPDefaultBaseURL = "https://api.tutti.sh/api/desktop"
 const connectorArtifactBaseURL = "https://d27a59zdy4534h.cloudfront.net/tutti/connector-market/"
 
 type tuttiWiring struct {
@@ -206,9 +206,20 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 		return fmt.Errorf("start model gateway: %w", err)
 	}
 	w.modelGateway = modelGateway
+	connectorRegistry := connectormarketservice.NewConnectorRuntimeRegistry()
+	connectorBroker, err := connectormarketservice.NewConnectorBroker(connectorRegistry)
+	if err != nil {
+		return fmt.Errorf("configure connector broker: %w", err)
+	}
+	connectorMCPServer, err := connectormcpservice.Start(connectormcpservice.Config{Registry: connectorRegistry.MCPRegistry()})
+	if err != nil {
+		return fmt.Errorf("start connector MCP server: %w", err)
+	}
+	w.connectorMCPServer = connectorMCPServer
+	connectorAgent := &connectorAgentRuntime{broker: connectorBroker, server: connectorMCPServer}
 	api, appCenterService, agentRuntime, providerAuthWatcher, err := buildDaemonAPI(
 		ctx, workspaceStore, nil, w.browserService, w.computerService,
-		modelGateway, w.installTuttiModeWatchdogWorker,
+		modelGateway, connectorAgent, w.installTuttiModeWatchdogWorker,
 	)
 	if err != nil {
 		_ = modelGateway.Close()
@@ -233,7 +244,10 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	if !ok || accountService == nil {
 		return errors.New("connector market account session adapter is unavailable")
 	}
-	marketAuthorizer, err := connectormarketservice.NewAccountSessionAuthorizer(accountService.AuthJSONPath)
+	marketAuthorizer, err := connectormarketservice.NewAccountSessionAuthorizer(
+		accountService.AuthJSONPath,
+		os.Getenv("TUTTI_PPE_LANE"),
+	)
 	if err != nil {
 		return fmt.Errorf("configure connector market account authorization: %w", err)
 	}
@@ -291,11 +305,6 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("configure connector release installer: %w", err)
 	}
-	connectorRegistry := connectormarketservice.NewConnectorRuntimeRegistry()
-	connectorBroker, err := connectormarketservice.NewConnectorBroker(connectorRegistry)
-	if err != nil {
-		return fmt.Errorf("configure connector broker: %w", err)
-	}
 	userHome, err := os.UserHomeDir()
 	if err != nil || !filepath.IsAbs(userHome) {
 		return errors.New("configure connector implementation host: user home is unavailable")
@@ -346,29 +355,8 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 		providerAuthWatcher.Close()
 		return fmt.Errorf("start connector market host: %w", err)
 	}
-	connectorMCPServer, err := connectormcpservice.Start(connectormcpservice.Config{Registry: connectorRegistry.MCPRegistry()})
-	if err != nil {
-		connectorMarketHost.Close()
-		_ = connectorMarketStore.Close()
-		return fmt.Errorf("start connector MCP server: %w", err)
-	}
 	if service, ok := api.AgentSessionService.(*agentservice.Service); ok {
 		service.ConnectorMarketSnapshots = connectorMarketHost.Application
-		service.ConnectorRoutingHints = func() []runtimeprep.ConnectorRoutingHint {
-			routes := connectorBroker.RoutingHints()
-			hints := make([]runtimeprep.ConnectorRoutingHint, 0, len(routes))
-			for _, route := range routes {
-				hints = append(hints, runtimeprep.ConnectorRoutingHint{ConnectorKey: route.Key,
-					DisplayName: route.DisplayName, Aliases: append([]string(nil), route.Aliases...), SkillRoot: route.SkillRoot})
-			}
-			return hints
-		}
-		service.ConnectorMCPBinding = func(workspaceID, agentSessionID string, connectorKeys []string) (runtimeprep.MCPServerBinding, error) {
-			binding, bindingErr := connectorMCPServer.Binding(workspaceID, agentSessionID, connectorKeys)
-			return runtimeprep.MCPServerBinding{Name: binding.Name, Type: binding.Type, URL: binding.URL,
-				Headers: binding.Headers}, bindingErr
-		}
-		service.ConnectorMCPRevoke = connectorMCPServer.Revoke
 	}
 	api.ConnectorMarketService = connectorMarketHost.Application
 	connectorMarketScope := func() connectormarkethost.OperationScope {
@@ -391,6 +379,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 		if existingAccountLogoutCompleted != nil {
 			existingAccountLogoutCompleted(logoutContext)
 		}
+		connectorAgent.RevokeAll()
 		fenceContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if fenceErr := connectorMarketHost.FenceForScope(fenceContext, connectormarkethost.OperationScope{}); fenceErr != nil {
@@ -399,7 +388,6 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	}
 	w.connectorMarketStore = connectorMarketStore
 	w.connectorMarketHost = connectorMarketHost
-	w.connectorMCPServer = connectorMCPServer
 	startExistingListenerWork := api.OnListenerReady
 	api.OnListenerReady = func() {
 		if startExistingListenerWork != nil {

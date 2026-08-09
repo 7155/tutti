@@ -152,7 +152,6 @@ func (p *DefaultPreparer) Prepare(ctx context.Context, input PrepareInput) (Prep
 	if result.Cwd == "" {
 		result.Cwd = cwd
 	}
-	result.MCPServers = cloneMCPServerBindings(input.MCPServers)
 	result.Env = append(defaultRuntimeEnv(input, p.StateDir), result.Env...)
 	logRuntimePrepareTrace("runtime_prepare.env_prepared", input, map[string]any{
 		"env_count": len(result.Env),
@@ -167,7 +166,11 @@ func (p *DefaultPreparer) Prepare(ctx context.Context, input PrepareInput) (Prep
 		p.rememberProviderCleanup(workspaceID, agentSessionID, result.Cleanup)
 	}
 	logRuntimePrepareTrace("runtime_prepare.manifest_saved", input, nil)
-	return PreparedRuntime{Cwd: result.Cwd, Env: result.Env}, nil
+	return PreparedRuntime{
+		Cwd:        result.Cwd,
+		Env:        result.Env,
+		MCPServers: cloneMCPServerBindings(input.MCPServers),
+	}, nil
 }
 
 func cloneMCPServerBindings(input []MCPServerBinding) []MCPServerBinding {

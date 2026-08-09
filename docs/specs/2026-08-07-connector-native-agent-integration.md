@@ -1,6 +1,6 @@
 # Connector 原生 MCP、CLI 与 Skill 接入方案
 
-Status: implemented
+Status: P0 implemented
 
 ## 1. 决策摘要
 
@@ -175,13 +175,23 @@ Server 即使暂时没有工具也保持运行并注入 Agent。连接器发生�
 
 ### 5.2 首期协议范围
 
-首期实现：
+本地 Server 使用 MCP `2026-07-28` 的无状态 HTTP 请求模型。每次调用都是一个
+独立的 `POST`，请求参数的 `_meta` 携带 protocol version、client info 和 client
+capabilities；HTTP header 同时携带 `MCP-Protocol-Version`、`Mcp-Method`，工具调用
+还校验 `Mcp-Name` 和 schema 声明的 `Mcp-Param-*`。
 
-- `initialize`；
-- `notifications/initialized`；
+实现的方法为：
+
+- `server/discover`；
 - `tools/list`；
 - `tools/call`；
-- `notifications/tools/list_changed`。
+- `subscriptions/listen`，并通过 SSE 发送
+  `notifications/subscriptions/acknowledged` 和
+  `notifications/tools/list_changed`。
+
+旧的 `initialize` / `notifications/initialized`、HTTP `GET` / `DELETE` 和
+`MCP-Session-Id` 不属于本地协议。Server 只接受 `POST`，不会在 daemon 内维护
+协议 Session；长连接只用于 `subscriptions/listen` 的通知流。
 
 上游 tool 的 `name`、`description`、`inputSchema` 和调用结果保持 MCP 语义，
 只在本地聚合层增加连接器命名空间。
@@ -320,6 +330,12 @@ runtimeprep.PreparedRuntime
 不使用环境变量承载非类型化 MCP JSON，也不要求 Agent 自己执行
 `connector available` 后再完成注册。
 
+daemon 组合层在构造 Agent Service 和 Host 之前创建一个稳定的
+`ConnectorRuntime` 端口。端口背后的 Registry 可以随 Reconcile 动态变化，但
+Agent 恢复流程始终持有同一个可用依赖，避免启动恢复期间因晚注入而漏掉 Connector
+MCP。`DefaultPreparer` 的最终输出以其 `PreparedRuntime.MCPServers` 为唯一事实，不能
+在 Provider-specific prepare 之后丢弃或另建第二份结果字段。
+
 ### 7.2 ACP Provider
 
 在 `session/new`、`session/load` 和需要的 resume 路径传入：
@@ -342,6 +358,10 @@ runtimeprep.PreparedRuntime
 }
 ```
 
+发送 `session/new` 或 `session/load` 前，必须先检查 initialize 响应中的
+`agentCapabilities.mcpCapabilities.http == true`。Provider 未声明标准 HTTP MCP
+能力时启动失败并返回明确错误，不能静默创建一个看不到 Connector 工具的 Session。
+
 ### 7.3 Codex
 
 在 Session 隔离的 Codex 配置中注入：
@@ -357,9 +377,17 @@ http_headers = { Authorization = "Bearer <session-token>" }
 在 Session 启动和恢复参数的 `mcpServers` 中注入相同 binding，不通过 Prompt
 模拟工具可用性。
 
-### 7.5 动态列表刷新
+### 7.5 Tutti Agent
 
-已运行 Session 通过 `notifications/tools/list_changed` 刷新工具列表。
+Tutti Agent 与 Codex 一样，在 Session 隔离配置中写入
+`[mcp_servers.connector]`。所有 Provider 的投影都必须消费同一份
+`PreparedRuntime.MCPServers`；不允许 Codex 正常、ACP/Claude/Tutti Agent 因各自
+旁路而出现行为不一致。
+
+### 7.6 动态列表刷新
+
+已运行 Session 通过一个 `subscriptions/listen` SSE 连接订阅
+`notifications/tools/list_changed`，收到 acknowledge 后才认为订阅建立。
 Provider 兼容顺序为：
 
 1. 标准 MCP list-changed 通知；
@@ -376,14 +404,16 @@ Provider 的兼容降级只能影响刷新时机，不能重新引入 `connector
 - 只监听 loopback；
 - 校验 Host 和 Origin；
 - 使用每个 Agent Session 独立的随机 bearer token；
-- token 绑定 workspace ID、Agent Session ID、允许访问的 connector keys 和有效期；
-- 将 MCP Session ID 与授权 token 分离；
+- token 绑定 workspace ID 和 Agent Session ID；
+- 相同 Session 重新签发时立即撤销旧 token；Session 清理、账户退出和 daemon 关闭时
+  分别执行 `RevokeSession` 或 `RevokeAll`；
 - 不在日志、Prompt、CLI 输出或 `connector available` 中泄露 token。
 
-Server 内可以维护所有当前有效的 Connector route，但每次 `tools/list` 和
-`tools/call` 必须应用 Session allowlist。显式配置了 Connector 范围的 Workspace
-Agent 只看到被选择的连接器；未配置显式限制时按当前 Workspace 的既有 Connector
-策略生成 allowlist。
+这里的 bearer token 是 daemon 签发的本地连接能力和生命周期隔离手段，不是
+Connector 级权限模型。Server 向当前账户的 Agent Session 投影所有已发布且运行有效的
+Connector route，不存在 `allowedKeys`、`selectedConnectorKeys` 或每连接器授权 Grant。
+token 不依赖固定 TTL；失效由 Session、账户和 daemon 生命周期显式驱动，避免运行时间
+超过固定时长后 MCP 无故消失。
 
 ## 9. 唯一公开命令：`connector available`
 
@@ -559,7 +589,8 @@ Registry debug snapshot 或内部 daemon 调试接口实现，不重新暴露为
 ### 13.2 实现本地 MCP Server
 
 新增 daemon-owned `connectormcp` service，接入 `tuttid` wiring 和生命周期。
-实现 MCP 初始化、工具列表、调用路由、列表通知、Session token 和 allowlist。
+实现现代无状态 HTTP discovery、工具列表、调用路由、订阅通知和 Session token；
+不实现 Connector allowlist 或协议 Session。
 
 ### 13.3 注入 Agent Runtime
 
@@ -619,19 +650,25 @@ Provider 注入或动态刷新问题。
 
 ### 15.2 MCP Server 测试
 
-- `initialize -> tools/list -> tools/call` 完整链路；
+- `server/discover -> tools/list -> tools/call` 完整链路；
+- 每次请求的 `_meta` 和 MCP header 一致性校验；
 - 本地工具名正确映射回上游原始名称和 arguments；
 - 上游 content、structured result、`isError` 和 transport error 保持正确语义；
-- invalid token、过期 token、错误 Session、错误 allowlist 被拒绝；
+- invalid token 被拒绝，相同 Session 重签、Session 清理和 `RevokeAll` 立即使旧 token
+  失效；
 - 非 loopback Host、非法 Origin 被拒绝；
-- 不同 Session 只能看到各自允许的 connector keys；
-- Connector 更新后所有相关 Session 收到 list-changed。
+- HTTP `GET` / `DELETE` 和旧协议方法被拒绝；
+- `subscriptions/listen` 先发送 acknowledged，Connector 更新后发送 list-changed，
+  binding 撤销后结束订阅。
 
 ### 15.3 Provider 测试
 
 - ACP `session/new` 和 `session/load` 收到非空 `mcpServers`；
+- ACP 未声明 HTTP MCP capability 时明确拒绝启动；
 - Codex Session 配置包含 `[mcp_servers.connector]`；
 - Claude SDK Session options 包含 `connector` binding；
+- Tutti Agent Session 配置包含 `[mcp_servers.connector]`；
+- DefaultPreparer 的最终返回保留 authoritative `MCPServers`；
 - Connector 在 Agent 已运行后接入，工具无需新建 Session 即可出现；
 - Provider 不支持标准通知时按定义的兼容层刷新。
 
@@ -690,7 +727,8 @@ JSON stdin typed commands 不能自动视为正常 CLI。每个受影响连接�
 ### 16.5 已物化 Skill 内容
 
 Provider 已经读取到当前上下文的 Skill 无法被动态撤回。运行时 MCP/CLI route 和
-Session allowlist 必须作为最终授权边界，不能仅依赖 Prompt。
+当前账户的 Connector 发布状态必须作为最终可用性边界，不能仅依赖 Prompt。本地
+Session token 只隔离连接和生命周期，不承担 Connector 级权限。
 
 ### 16.6 旧文档和测试形成错误事实
 

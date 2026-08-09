@@ -1,6 +1,7 @@
 package connectormcp
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -12,9 +13,8 @@ import (
 	implementationhost "github.com/tutti-os/tutti/packages/connector/runtime/implementationhost"
 )
 
-func TestServerIssuesSessionScopedBindingAndServesEmptyNativeToolList(t *testing.T) {
-	registry := implementationhost.NewMCPRegistry()
-	server, err := Start(Config{Registry: registry, TokenTTL: time.Minute})
+func TestServerIssuesSessionScopedBindingAndServesModernMCP(t *testing.T) {
+	server, err := Start(Config{Registry: implementationhost.NewMCPRegistry()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,87 +23,199 @@ func TestServerIssuesSessionScopedBindingAndServesEmptyNativeToolList(t *testing
 		defer cancel()
 		_ = server.Close(ctx)
 	})
-	binding, err := server.Binding("workspace-1", "session-1", nil)
+	binding, err := server.Binding("workspace-1", "session-1")
 	if err != nil || binding.Name != "connector" || binding.Type != "http" || !strings.HasPrefix(binding.URL, "http://127.0.0.1:") {
 		t.Fatalf("binding = %#v, err = %v", binding, err)
 	}
-	if response := postRPC(t, binding.URL, "", "", map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize"}); response.StatusCode != http.StatusUnauthorized {
+	if response := postModernRPC(t, binding.URL, "", 1, "server/discover", map[string]any{}); response.StatusCode != http.StatusUnauthorized {
 		response.Body.Close()
 		t.Fatalf("unauthorized status = %d", response.StatusCode)
 	}
-	initialize := postRPC(t, binding.URL, binding.Headers["Authorization"], "", map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{},
-	})
-	defer initialize.Body.Close()
-	if initialize.StatusCode != http.StatusOK || initialize.Header.Get("Mcp-Session-Id") == "" {
-		t.Fatalf("initialize status=%d session=%q", initialize.StatusCode, initialize.Header.Get("Mcp-Session-Id"))
+	discover := postModernRPC(t, binding.URL, binding.Headers["Authorization"], 2, "server/discover", map[string]any{})
+	defer discover.Body.Close()
+	var discovered struct {
+		Result struct {
+			ResultType        string   `json:"resultType"`
+			SupportedVersions []string `json:"supportedVersions"`
+		} `json:"result"`
 	}
-	var initialized map[string]any
-	if err := json.NewDecoder(initialize.Body).Decode(&initialized); err != nil {
-		t.Fatal(err)
+	if discover.StatusCode != http.StatusOK || json.NewDecoder(discover.Body).Decode(&discovered) != nil ||
+		discovered.Result.ResultType != "complete" || len(discovered.Result.SupportedVersions) != 1 || discovered.Result.SupportedVersions[0] != protocolVersion {
+		t.Fatalf("server/discover status=%d payload=%#v", discover.StatusCode, discovered)
 	}
-	sessionID := initialize.Header.Get("Mcp-Session-Id")
-	initializedNotification := postRPC(t, binding.URL, binding.Headers["Authorization"], sessionID, map[string]any{
-		"jsonrpc": "2.0", "method": "notifications/initialized",
-	})
-	initializedNotification.Body.Close()
-	if initializedNotification.StatusCode != http.StatusAccepted {
-		t.Fatalf("initialized notification status=%d", initializedNotification.StatusCode)
-	}
-	listing := postRPC(t, binding.URL, binding.Headers["Authorization"], sessionID, map[string]any{
-		"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": map[string]any{},
-	})
+	listing := postModernRPC(t, binding.URL, binding.Headers["Authorization"], 3, "tools/list", map[string]any{})
 	defer listing.Body.Close()
 	var payload struct {
 		Result struct {
-			Tools []implementationhost.MCPTool `json:"tools"`
+			ResultType string                       `json:"resultType"`
+			Tools      []implementationhost.MCPTool `json:"tools"`
 		} `json:"result"`
 	}
-	if listing.StatusCode != http.StatusOK || json.NewDecoder(listing.Body).Decode(&payload) != nil || len(payload.Result.Tools) != 0 {
+	if listing.StatusCode != http.StatusOK || json.NewDecoder(listing.Body).Decode(&payload) != nil ||
+		payload.Result.ResultType != "complete" || len(payload.Result.Tools) != 0 {
 		t.Fatalf("tools/list status=%d payload=%#v", listing.StatusCode, payload)
 	}
 	server.Revoke("workspace-1", "session-1")
-	if response := postRPC(t, binding.URL, binding.Headers["Authorization"], sessionID, map[string]any{
-		"jsonrpc": "2.0", "id": 3, "method": "tools/list",
-	}); response.StatusCode != http.StatusUnauthorized {
+	if response := postModernRPC(t, binding.URL, binding.Headers["Authorization"], 4, "tools/list", map[string]any{}); response.StatusCode != http.StatusUnauthorized {
 		response.Body.Close()
 		t.Fatalf("revoked status = %d", response.StatusCode)
 	}
 }
 
-func TestBindingReplacementRevokesPreviousSessionToken(t *testing.T) {
-	server, err := Start(Config{Registry: implementationhost.NewMCPRegistry(), TokenTTL: time.Minute})
+func TestBindingReplacementAndRevokeAllInvalidateTokens(t *testing.T) {
+	server, err := Start(Config{Registry: implementationhost.NewMCPRegistry()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = server.Close(context.Background()) })
-	first, err := server.Binding("workspace-1", "session-1", nil)
+	first, err := server.Binding("workspace-1", "session-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := server.Binding("workspace-1", "session-1", []string{})
+	second, err := server.Binding("workspace-1", "session-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	response := postRPC(t, first.URL, first.Headers["Authorization"], "", map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "initialize",
-	})
+	response := postModernRPC(t, first.URL, first.Headers["Authorization"], 1, "tools/list", map[string]any{})
 	response.Body.Close()
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("replaced token status=%d", response.StatusCode)
 	}
-	response = postRPC(t, second.URL, second.Headers["Authorization"], "", map[string]any{
-		"jsonrpc": "2.0", "id": 2, "method": "initialize",
-	})
+	response = postModernRPC(t, second.URL, second.Headers["Authorization"], 2, "tools/list", map[string]any{})
 	response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("replacement token status=%d", response.StatusCode)
 	}
+	server.RevokeAll()
+	response = postModernRPC(t, second.URL, second.Headers["Authorization"], 3, "tools/list", map[string]any{})
+	response.Body.Close()
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("revoke-all token status=%d", response.StatusCode)
+	}
 }
 
-func postRPC(t *testing.T, endpoint, authorization, sessionID string, payload map[string]any) *http.Response {
+func TestServerRejectsLegacyMethodsInvalidOriginAndHeaderMismatch(t *testing.T) {
+	server, err := Start(Config{Registry: implementationhost.NewMCPRegistry()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Close(context.Background()) })
+	binding, err := server.Binding("workspace-1", "session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, _ := http.NewRequest(http.MethodGet, binding.URL, nil)
+	request.Header.Set("Authorization", binding.Headers["Authorization"])
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("GET status=%d", response.StatusCode)
+	}
+
+	request = modernRPCRequest(t, binding.URL, binding.Headers["Authorization"], 1, "tools/list", map[string]any{})
+	request.Header.Set("Origin", "https://attacker.example")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("invalid-origin status=%d", response.StatusCode)
+	}
+
+	request = modernRPCRequest(t, binding.URL, binding.Headers["Authorization"], 2, "tools/list", map[string]any{})
+	request.Header.Set("Mcp-Method", "tools/call")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("header-mismatch status=%d", response.StatusCode)
+	}
+}
+
+func TestSubscriptionIsAcknowledgedAndCompletesOnBindingRevocation(t *testing.T) {
+	server, err := Start(Config{Registry: implementationhost.NewMCPRegistry()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Close(context.Background()) })
+	binding, err := server.Binding("workspace-1", "session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := modernRPCRequest(t, binding.URL, binding.Headers["Authorization"], 7, "subscriptions/listen", map[string]any{
+		"notifications": map[string]any{"toolsListChanged": true},
+	})
+	requestContext, cancel := context.WithTimeout(request.Context(), 3*time.Second)
+	defer cancel()
+	response, err := http.DefaultClient.Do(request.WithContext(requestContext))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK || response.Header.Get("Content-Type") != "text/event-stream" {
+		t.Fatalf("subscription response status=%d content-type=%q", response.StatusCode, response.Header.Get("Content-Type"))
+	}
+	reader := bufio.NewReader(response.Body)
+	acknowledged := readSSEPayload(t, reader)
+	if acknowledged["method"] != "notifications/subscriptions/acknowledged" {
+		t.Fatalf("subscription acknowledgement = %#v", acknowledged)
+	}
+
+	server.Revoke("workspace-1", "session-1")
+	completed := readSSEPayload(t, reader)
+	result, _ := completed["result"].(map[string]any)
+	if completed["id"] != float64(7) || result["resultType"] != "complete" {
+		t.Fatalf("subscription completion = %#v", completed)
+	}
+}
+
+func readSSEPayload(t *testing.T, reader *bufio.Reader) map[string]any {
 	t.Helper()
-	raw, err := json.Marshal(payload)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			t.Fatalf("read SSE payload: %v", err)
+		}
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(strings.TrimSpace(strings.TrimPrefix(line, "data: "))), &payload); err != nil {
+			t.Fatalf("decode SSE payload: %v", err)
+		}
+		return payload
+	}
+}
+
+func postModernRPC(t *testing.T, endpoint, authorization string, id int, method string, params map[string]any) *http.Response {
+	t.Helper()
+	request := modernRPCRequest(t, endpoint, authorization, id, method, params)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return response
+}
+
+func modernRPCRequest(t *testing.T, endpoint, authorization string, id int, method string, params map[string]any) *http.Request {
+	t.Helper()
+	if params == nil {
+		params = map[string]any{}
+	}
+	params["_meta"] = map[string]any{
+		"io.modelcontextprotocol/protocolVersion": protocolVersion,
+		"io.modelcontextprotocol/clientInfo": map[string]any{
+			"name": "connector-mcp-test", "version": "1",
+		},
+		"io.modelcontextprotocol/clientCapabilities": map[string]any{},
+	}
+	raw, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,15 +224,14 @@ func postRPC(t *testing.T, endpoint, authorization, sessionID string, payload ma
 		t.Fatal(err)
 	}
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json, text/event-stream")
+	request.Header.Set("MCP-Protocol-Version", protocolVersion)
+	request.Header.Set("Mcp-Method", method)
+	if name, _ := params["name"].(string); name != "" {
+		request.Header.Set("Mcp-Name", name)
+	}
 	if authorization != "" {
 		request.Header.Set("Authorization", authorization)
 	}
-	if sessionID != "" {
-		request.Header.Set("Mcp-Session-Id", sessionID)
-	}
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return response
+	return request
 }

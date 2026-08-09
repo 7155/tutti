@@ -176,8 +176,8 @@ func (s *Service) cleanupRuntimeWithOptions(
 	if s.ModelGateway != nil {
 		s.ModelGateway.Unregister(ctx, workspaceID, agentSessionID)
 	}
-	if s.ConnectorMCPRevoke != nil {
-		s.ConnectorMCPRevoke(workspaceID, agentSessionID)
+	if s.ConnectorRuntime != nil {
+		s.ConnectorRuntime.RevokeSession(workspaceID, agentSessionID)
 	}
 	return runtimeErr
 }
@@ -200,10 +200,7 @@ func (s *Service) cleanupSessionResourcesWithOptions(
 	agentSessionID string,
 	preserveRuntimeRoot bool,
 ) error {
-	var runtimeErr error
-	if s.RuntimePreparer != nil {
-		runtimeErr = s.cleanupRuntimeWithOptions(ctx, workspaceID, agentSessionID, preserveRuntimeRoot)
-	}
+	runtimeErr := s.cleanupRuntimeWithOptions(ctx, workspaceID, agentSessionID, preserveRuntimeRoot)
 	var agentResourceErr error
 	if s.AgentSessionResourceReleaser != nil {
 		releaseGlobalResources := true

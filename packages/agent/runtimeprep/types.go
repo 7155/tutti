@@ -205,8 +205,7 @@ type ProviderPrepareInput struct {
 }
 
 type ProviderPrepareResult struct {
-	Cwd        string
-	Env        []string
-	MCPServers []MCPServerBinding
-	Cleanup    func(context.Context) error
+	Cwd     string
+	Env     []string
+	Cleanup func(context.Context) error
 }

@@ -5,7 +5,7 @@
 ## 当前落地范围
 
 Tutti 侧已经采用独立的 MCP `2026-07-28` 无状态 HTTP Client，不复用旧 Stdio / Legacy
-Streamable HTTP Client。Gateway Base URL 默认是 `https://api.tutti.sh`，可通过
+Streamable HTTP Client。Gateway Base URL 默认是 `https://api.tutti.sh/api/desktop`，可通过
 `TUTTI_CONNECTOR_MCP_BASE_URL` 按环境覆盖；实际地址固定派生为
 `POST {baseUrl}/mcp/connectors/{connectorId}`，Connector 无法覆盖该地址。
 

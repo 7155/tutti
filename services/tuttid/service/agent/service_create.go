@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -588,8 +587,9 @@ func (s *Service) prepareRuntimeWithModelEndpoint(
 	effectiveComputerUse := s.clampComposerComputerUseForLaunch(ctx, provider, input.ProviderTargetRef, input.ComputerUse)
 	connectorHints := s.activeConnectorRoutingHints()
 	var connectorMCPServers []runtimeprep.MCPServerBinding
-	if s.ConnectorMCPBinding != nil {
-		binding, bindingErr := s.ConnectorMCPBinding(workspaceID, strings.TrimSpace(input.AgentSessionID), selectedConnectorKeys(input.AgentTools, input.AgentCapabilitiesExplicit))
+	connectorBound := false
+	if s.ConnectorRuntime != nil {
+		binding, bindingErr := s.ConnectorRuntime.BindSession(workspaceID, strings.TrimSpace(input.AgentSessionID))
 		if bindingErr != nil {
 			if gatewayRegistered {
 				s.ModelGateway.Unregister(context.WithoutCancel(ctx), workspaceID, input.AgentSessionID)
@@ -597,6 +597,7 @@ func (s *Service) prepareRuntimeWithModelEndpoint(
 			return preparedRuntime{}, bindingErr
 		}
 		connectorMCPServers = []runtimeprep.MCPServerBinding{binding}
+		connectorBound = true
 	}
 	prepared, err := s.RuntimePreparer.Prepare(ctx, runtimeprep.PrepareInput{
 		WorkspaceID:               workspaceID,
@@ -633,6 +634,9 @@ func (s *Service) prepareRuntimeWithModelEndpoint(
 		ExternalRolloutSourcePath: input.ExternalRolloutSourcePath,
 	})
 	if err != nil {
+		if connectorBound {
+			s.ConnectorRuntime.RevokeSession(workspaceID, strings.TrimSpace(input.AgentSessionID))
+		}
 		if gatewayRegistered {
 			s.ModelGateway.Unregister(context.WithoutCancel(ctx), workspaceID, input.AgentSessionID)
 		}
@@ -648,34 +652,6 @@ func (s *Service) prepareRuntimeWithModelEndpoint(
 		BrowserUse:  effectiveCapabilitySetting(input.BrowserUse, effectiveBrowserUse),
 		ComputerUse: effectiveCapabilitySetting(input.ComputerUse, effectiveComputerUse),
 	}, nil
-}
-
-func selectedConnectorKeys(agentTools []string, capabilitiesExplicit bool) []string {
-	var result []string
-	seen := make(map[string]struct{})
-	for _, tool := range agentTools {
-		value := strings.TrimSpace(tool)
-		if !strings.HasPrefix(value, "connector:") {
-			continue
-		}
-		key := strings.TrimSpace(strings.TrimPrefix(value, "connector:"))
-		if key == "" {
-			continue
-		}
-		if _, duplicate := seen[key]; duplicate {
-			continue
-		}
-		seen[key] = struct{}{}
-		result = append(result, key)
-	}
-	if len(result) == 0 {
-		if capabilitiesExplicit {
-			return []string{}
-		}
-		return nil
-	}
-	sort.Strings(result)
-	return result
 }
 
 func cloneRuntimeMCPServerBindings(input []runtimeprep.MCPServerBinding) []runtimeprep.MCPServerBinding {

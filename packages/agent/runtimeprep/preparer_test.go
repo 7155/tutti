@@ -391,6 +391,32 @@ func TestDefaultPreparerCodexWritesInstructionsSkillManifestAndEnv(t *testing.T)
 	}
 }
 
+func TestDefaultPreparerReturnsAuthoritativeMCPBindings(t *testing.T) {
+	setTestHome(t, t.TempDir())
+	input := PrepareInput{
+		WorkspaceID:    "workspace-1",
+		AgentSessionID: "session-1",
+		Provider:       "unknown-provider",
+		Cwd:            t.TempDir(),
+		MCPServers: []MCPServerBinding{{
+			Name: "connector", Type: "http", URL: "http://127.0.0.1:1234/mcp/connector",
+			Headers: map[string]string{"Authorization": "Bearer test-token"},
+		}},
+	}
+	prepared, err := newTestPreparer(t.TempDir()).Prepare(t.Context(), input)
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if len(prepared.MCPServers) != 1 || prepared.MCPServers[0].URL != input.MCPServers[0].URL ||
+		prepared.MCPServers[0].Headers["Authorization"] != "Bearer test-token" {
+		t.Fatalf("prepared MCP servers = %#v", prepared.MCPServers)
+	}
+	prepared.MCPServers[0].Headers["Authorization"] = "mutated"
+	if input.MCPServers[0].Headers["Authorization"] != "Bearer test-token" {
+		t.Fatal("prepared MCP binding shares mutable headers with input")
+	}
+}
+
 func TestDefaultPreparerCodexSaverModeInstallsLunaWorkerAndRoutingPolicy(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -1942,6 +1968,26 @@ func TestTuttiAgentManagedConfigRemovesOnlyLegacyPinnedProvider(t *testing.T) {
 		if !strings.Contains(next, want) {
 			t.Fatalf("next removed %q: %s", want, next)
 		}
+	}
+}
+
+func TestTuttiAgentManagedConfigProjectsConnectorMCP(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := ensureTuttiAgentSessionConfig(configPath, PrepareInput{MCPServers: []MCPServerBinding{{
+		Name: "connector", Type: "http", URL: "http://127.0.0.1:4321/mcp/connector",
+		Headers: map[string]string{"Authorization": "Bearer test-token"},
+	}}}); err != nil {
+		t.Fatalf("ensureTuttiAgentSessionConfig() error = %v", err)
+	}
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(raw)
+	if !strings.Contains(content, "[mcp_servers.connector]") ||
+		!strings.Contains(content, `url = "http://127.0.0.1:4321/mcp/connector"`) ||
+		!strings.Contains(content, `"Authorization" = "Bearer test-token"`) {
+		t.Fatalf("tutti-agent config = %q", content)
 	}
 }
 

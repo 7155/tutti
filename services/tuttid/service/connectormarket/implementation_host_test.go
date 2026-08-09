@@ -399,11 +399,11 @@ func TestImplementationHostDiscoversAndInvokesRemoteStreamableHTTPMCP(t *testing
 	if len(receipt.RouteIDs) != 1 || receipt.RouteIDs[0] != "connector.github.mcp.status" {
 		t.Fatalf("routes = %#v", receipt.RouteIDs)
 	}
-	tools := commands.MCPRegistry().Tools(nil)
+	tools := commands.MCPRegistry().Tools()
 	if len(tools) != 1 || tools[0].Name != "github_status" {
 		t.Fatalf("native MCP tools = %#v", tools)
 	}
-	output, err := commands.MCPRegistry().Call(context.Background(), nil, "github_status", map[string]any{})
+	output, err := commands.MCPRegistry().Call(context.Background(), "github_status", map[string]any{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,14 +456,14 @@ func TestImplementationHostPaginatesMCPToolsSeparatesCLIPathAndRemovesDeadMCPRou
 	if len(routes) != 1 || !routes[0].HasMCP || routes[0].CLICommand != "tutti-connector-github" {
 		t.Fatalf("paginated MCP/CLI route = %#v", routes)
 	}
-	tools := commands.MCPRegistry().Tools(nil)
+	tools := commands.MCPRegistry().Tools()
 	if len(tools) != 2 || tools[0].Name != "github_second" || tools[1].Name != "github_status" {
 		t.Fatalf("paginated native MCP tools = %#v", tools)
 	}
 	connection.exit()
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		if len(commands.runtime.Routes()) == 0 && len(commands.MCPRegistry().Tools(nil)) == 0 {
+		if len(commands.runtime.Routes()) == 0 && len(commands.MCPRegistry().Tools()) == 0 {
 			return
 		}
 		time.Sleep(time.Millisecond)

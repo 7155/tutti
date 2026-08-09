@@ -21,7 +21,7 @@ func (caller *registryMCPCaller) Call(_ context.Context, method string, params a
 	return json.RawMessage(`{"content":[{"type":"text","text":"ready"}]}`), nil
 }
 
-func TestMCPRegistryListsCallsFiltersAndNotifies(t *testing.T) {
+func TestMCPRegistryListsCallsAndNotifies(t *testing.T) {
 	table := connectorruntime.NewRouteTable()
 	registry := NewMCPRegistry()
 	registry.attach(table)
@@ -36,17 +36,14 @@ func TestMCPRegistryListsCallsFiltersAndNotifies(t *testing.T) {
 	if err := table.Commit(route); err != nil {
 		t.Fatal(err)
 	}
-	tools := registry.Tools(nil)
+	tools := registry.Tools()
 	if len(tools) != 1 || tools[0].Name != "github_status" || tools[0].InputSchema["type"] != "object" {
 		t.Fatalf("tools = %#v", tools)
 	}
 	if _, preserved := tools[0].InputSchema["oneOf"]; !preserved {
 		t.Fatalf("native MCP JSON Schema was narrowed: %#v", tools[0].InputSchema)
 	}
-	if filtered := registry.Tools(map[string]struct{}{"notion": {}}); len(filtered) != 0 {
-		t.Fatalf("filtered tools = %#v", filtered)
-	}
-	raw, err := registry.Call(context.Background(), map[string]struct{}{"github": {}}, "github_status", map[string]any{"verbose": true})
+	raw, err := registry.Call(context.Background(), "github_status", map[string]any{"verbose": true})
 	if err != nil || len(raw) == 0 || caller.method != "tools/call" || caller.params["name"] != "status" {
 		t.Fatalf("call raw=%s method=%q params=%#v err=%v", raw, caller.method, caller.params, err)
 	}
@@ -61,7 +58,7 @@ func TestMCPRegistryListsCallsFiltersAndNotifies(t *testing.T) {
 	if err := table.Remove(route.id, route.generation, route.releaseDigest, time.Now().Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	if tools := registry.Tools(nil); len(tools) != 0 {
+	if tools := registry.Tools(); len(tools) != 0 {
 		t.Fatalf("retired tools = %#v", tools)
 	}
 }

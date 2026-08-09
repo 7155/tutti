@@ -3,11 +3,11 @@ package connectormcp
 import (
 	"context"
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -20,13 +20,12 @@ import (
 
 const (
 	serverName      = "connector"
-	protocolVersion = "2025-06-18"
-	defaultTokenTTL = 24 * time.Hour
+	protocolVersion = "2026-07-28"
+	maxRequestBytes = 2 << 20
 )
 
 type Config struct {
 	Registry *implementationhost.MCPRegistry
-	TokenTTL time.Duration
 }
 
 type Binding struct {
@@ -39,23 +38,19 @@ type Binding struct {
 type authorization struct {
 	workspaceID string
 	sessionID   string
-	allowedKeys map[string]struct{}
-	expiresAt   time.Time
 	revoked     <-chan struct{}
 }
 
-// Server is a loopback-only Streamable HTTP MCP projection over Connector
-// routes. User-configured MCP servers never enter this service.
+// Server is a loopback-only, stateless Streamable HTTP MCP projection over
+// Connector routes. User-configured MCP servers never enter this service.
 type Server struct {
 	registry *implementationhost.MCPRegistry
-	tokenTTL time.Duration
 	listener net.Listener
 	http     *http.Server
 	baseURL  string
 
 	mu             sync.RWMutex
 	authorizations map[string]authorization
-	sessionTokens  map[string]string
 	revocations    map[string]chan struct{}
 }
 
@@ -63,22 +58,23 @@ func Start(config Config) (*Server, error) {
 	if config.Registry == nil {
 		return nil, errors.New("connector MCP registry is required")
 	}
-	if config.TokenTTL <= 0 {
-		config.TokenTTL = defaultTokenTTL
-	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, fmt.Errorf("listen for connector MCP: %w", err)
 	}
-	server := &Server{registry: config.Registry, tokenTTL: config.TokenTTL, listener: listener,
+	server := &Server{
+		registry:       config.Registry,
+		listener:       listener,
 		baseURL:        "http://" + listener.Addr().String() + "/mcp/connector",
-		authorizations: make(map[string]authorization), sessionTokens: make(map[string]string), revocations: make(map[string]chan struct{})}
+		authorizations: make(map[string]authorization),
+		revocations:    make(map[string]chan struct{}),
+	}
 	server.http = &http.Server{Handler: server, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = server.http.Serve(listener) }()
 	return server, nil
 }
 
-func (server *Server) Binding(workspaceID, agentSessionID string, connectorKeys []string) (Binding, error) {
+func (server *Server) Binding(workspaceID, agentSessionID string) (Binding, error) {
 	if server == nil || server.listener == nil {
 		return Binding{}, errors.New("connector MCP server is unavailable")
 	}
@@ -86,38 +82,43 @@ func (server *Server) Binding(workspaceID, agentSessionID string, connectorKeys 
 	if workspaceID == "" || agentSessionID == "" {
 		return Binding{}, errors.New("connector MCP binding identity is required")
 	}
-	var allowed map[string]struct{}
-	if connectorKeys != nil {
-		allowed = make(map[string]struct{}, len(connectorKeys))
-		for _, key := range connectorKeys {
-			if key = strings.TrimSpace(key); key != "" {
-				allowed[key] = struct{}{}
-			}
-		}
-	}
 	token, err := randomID(32)
 	if err != nil {
 		return Binding{}, err
 	}
 	server.mu.Lock()
-	server.pruneExpiredLocked(time.Now())
 	server.revokeLocked(workspaceID, agentSessionID)
 	revoked := make(chan struct{})
-	server.authorizations[token] = authorization{workspaceID: workspaceID, sessionID: agentSessionID,
-		allowedKeys: allowed, expiresAt: time.Now().Add(server.tokenTTL), revoked: revoked}
+	server.authorizations[token] = authorization{workspaceID: workspaceID, sessionID: agentSessionID, revoked: revoked}
 	server.revocations[token] = revoked
 	server.mu.Unlock()
-	return Binding{Name: serverName, Type: "http", URL: server.baseURL,
-		Headers: map[string]string{"Authorization": "Bearer " + token}}, nil
+	return Binding{
+		Name: serverName,
+		Type: "http",
+		URL:  server.baseURL,
+		Headers: map[string]string{
+			"Authorization": "Bearer " + token,
+		},
+	}, nil
 }
 
 func (server *Server) Revoke(workspaceID, agentSessionID string) {
 	if server == nil {
 		return
 	}
-	workspaceID, agentSessionID = strings.TrimSpace(workspaceID), strings.TrimSpace(agentSessionID)
 	server.mu.Lock()
-	server.revokeLocked(workspaceID, agentSessionID)
+	server.revokeLocked(strings.TrimSpace(workspaceID), strings.TrimSpace(agentSessionID))
+	server.mu.Unlock()
+}
+
+func (server *Server) RevokeAll() {
+	if server == nil {
+		return
+	}
+	server.mu.Lock()
+	for token := range server.authorizations {
+		server.revokeTokenLocked(token)
+	}
 	server.mu.Unlock()
 }
 
@@ -125,43 +126,44 @@ func (server *Server) Close(ctx context.Context) error {
 	if server == nil || server.http == nil {
 		return nil
 	}
+	server.RevokeAll()
 	return server.http.Shutdown(ctx)
 }
 
 func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-	if request.URL.Path != "/mcp/connector" || !validLoopbackRequest(request) {
+	if request.URL.Path != "/mcp/connector" || !validLoopbackHost(request.Host) {
 		http.NotFound(writer, request)
+		return
+	}
+	if !validLoopbackOrigin(request.Header.Get("Origin")) {
+		writeRPCError(writer, http.StatusForbidden, nil, -32020, "Origin is not allowed", nil)
+		return
+	}
+	if request.Method != http.MethodPost {
+		writer.Header().Set("Allow", http.MethodPost)
+		writeRPCError(writer, http.StatusMethodNotAllowed, nil, -32600, "Connector MCP only accepts POST", nil)
 		return
 	}
 	token, auth, ok := server.authorize(request)
 	if !ok {
 		writer.Header().Set("WWW-Authenticate", "Bearer")
-		http.Error(writer, "unauthorized", http.StatusUnauthorized)
+		writeRPCError(writer, http.StatusUnauthorized, nil, -32001, "Connector MCP authentication is required", nil)
 		return
 	}
-	switch request.Method {
-	case http.MethodPost:
-		server.handlePost(writer, request, token, auth)
-	case http.MethodGet:
-		server.handleEvents(writer, request, token, auth)
-	case http.MethodDelete:
-		server.handleDelete(writer, request, token)
-	default:
-		writer.Header().Set("Allow", "GET, POST, DELETE")
-		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
-	}
+	server.handlePost(writer, request, token, auth)
 }
 
 type rpcRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
+	ID      json.RawMessage `json:"id"`
 	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params,omitempty"`
+	Params  json.RawMessage `json:"params"`
 }
 
 type rpcError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+	Data    any    `json:"data,omitempty"`
 }
 
 type rpcResponse struct {
@@ -171,99 +173,124 @@ type rpcResponse struct {
 	Error   *rpcError       `json:"error,omitempty"`
 }
 
+type requestMetadata struct {
+	ProtocolVersion    string         `json:"io.modelcontextprotocol/protocolVersion"`
+	ClientInfo         implementation `json:"io.modelcontextprotocol/clientInfo"`
+	ClientCapabilities map[string]any `json:"io.modelcontextprotocol/clientCapabilities"`
+}
+
+type implementation struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
+
 func (server *Server) handlePost(writer http.ResponseWriter, request *http.Request, token string, auth authorization) {
-	decoder := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 2<<20))
+	writer.Header().Set("Cache-Control", "private, no-store")
+	if !mediaTypeContains(request.Header.Get("Content-Type"), "application/json") ||
+		!mediaTypeContains(request.Header.Get("Accept"), "application/json") ||
+		!mediaTypeContains(request.Header.Get("Accept"), "text/event-stream") {
+		writeRPCError(writer, http.StatusBadRequest, nil, -32600, "MCP HTTP content negotiation is invalid", nil)
+		return
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(writer, request.Body, maxRequestBytes))
 	decoder.DisallowUnknownFields()
 	var rpc rpcRequest
-	if err := decoder.Decode(&rpc); err != nil || rpc.JSONRPC != "2.0" || strings.TrimSpace(rpc.Method) == "" {
-		writeRPC(writer, rpcResponse{JSONRPC: "2.0", ID: nullID(rpc.ID), Error: &rpcError{Code: -32600, Message: "invalid request"}})
+	if err := decoder.Decode(&rpc); err != nil || decoder.Decode(&struct{}{}) != io.EOF || rpc.JSONRPC != "2.0" ||
+		len(rpc.ID) == 0 || strings.TrimSpace(rpc.Method) == "" {
+		writeRPCError(writer, http.StatusBadRequest, nullID(rpc.ID), -32600, "Invalid MCP request", nil)
 		return
 	}
-	if len(rpc.ID) == 0 {
-		if rpc.Method != "notifications/initialized" || !server.validMCPSession(request, token) {
-			http.Error(writer, "MCP session not found", http.StatusNotFound)
-			return
-		}
-		writer.WriteHeader(http.StatusAccepted)
+	params, metadata, err := decodeRequestParams(rpc.Params)
+	if err != nil {
+		writeRPCError(writer, http.StatusBadRequest, rpc.ID, -32602, "MCP request metadata is required", nil)
 		return
 	}
+	if validation := validateRequestHeaders(request, rpc.Method, params, metadata, server.registry); validation != nil {
+		writeRPCError(writer, validation.status, rpc.ID, validation.code, validation.message, validation.data)
+		return
+	}
+
 	switch rpc.Method {
-	case "initialize":
-		sessionID, err := randomID(24)
-		if err != nil {
-			writeRPC(writer, rpcResponse{JSONRPC: "2.0", ID: rpc.ID, Error: &rpcError{Code: -32603, Message: "initialize failed"}})
-			return
-		}
-		server.mu.Lock()
-		if _, active := server.authorizations[token]; !active {
-			server.mu.Unlock()
-			http.Error(writer, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		server.sessionTokens[sessionID] = token
-		server.mu.Unlock()
-		writer.Header().Set("Mcp-Session-Id", sessionID)
-		writeRPC(writer, rpcResponse{JSONRPC: "2.0", ID: rpc.ID, Result: map[string]any{
-			"protocolVersion": protocolVersion,
-			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
-			"serverInfo":      map[string]any{"name": serverName, "version": "1"},
+	case "server/discover":
+		writeRPC(writer, http.StatusOK, rpcResponse{JSONRPC: "2.0", ID: rpc.ID, Result: map[string]any{
+			"resultType":        "complete",
+			"supportedVersions": []string{protocolVersion},
+			"capabilities":      map[string]any{"tools": map[string]any{"listChanged": true}},
+			"_meta": map[string]any{"io.modelcontextprotocol/serverInfo": map[string]any{
+				"name": serverName, "version": "1",
+			}},
+			"ttlMs": 300000, "cacheScope": "private",
 		}})
 	case "tools/list":
-		if !server.validMCPSession(request, token) {
-			http.Error(writer, "MCP session not found", http.StatusNotFound)
-			return
-		}
-		writeRPC(writer, rpcResponse{JSONRPC: "2.0", ID: rpc.ID, Result: map[string]any{
-			"tools": server.registry.Tools(auth.allowedKeys),
+		writeRPC(writer, http.StatusOK, rpcResponse{JSONRPC: "2.0", ID: rpc.ID, Result: map[string]any{
+			"resultType": "complete", "tools": server.registry.Tools(), "ttlMs": 0, "cacheScope": "private",
 		}})
 	case "tools/call":
-		if !server.validMCPSession(request, token) {
-			http.Error(writer, "MCP session not found", http.StatusNotFound)
-			return
-		}
-		var params struct {
-			Name      string         `json:"name"`
-			Arguments map[string]any `json:"arguments"`
-		}
-		if json.Unmarshal(rpc.Params, &params) != nil || strings.TrimSpace(params.Name) == "" {
-			writeRPC(writer, rpcResponse{JSONRPC: "2.0", ID: rpc.ID, Error: &rpcError{Code: -32602, Message: "invalid tool arguments"}})
-			return
-		}
-		if params.Arguments == nil {
-			params.Arguments = map[string]any{}
-		}
-		raw, err := server.registry.Call(request.Context(), auth.allowedKeys, params.Name, params.Arguments)
-		if err != nil {
-			writeRPC(writer, rpcResponse{JSONRPC: "2.0", ID: rpc.ID, Error: &rpcError{Code: -32000, Message: err.Error()}})
-			return
-		}
-		var result any
-		if json.Unmarshal(raw, &result) != nil {
-			writeRPC(writer, rpcResponse{JSONRPC: "2.0", ID: rpc.ID, Error: &rpcError{Code: -32603, Message: "invalid upstream tool result"}})
-			return
-		}
-		writeRPC(writer, rpcResponse{JSONRPC: "2.0", ID: rpc.ID, Result: result})
+		server.handleToolCall(writer, request, rpc.ID, params)
+	case "subscriptions/listen":
+		server.handleSubscription(writer, request, token, auth, rpc.ID, params)
 	default:
-		writeRPC(writer, rpcResponse{JSONRPC: "2.0", ID: rpc.ID, Error: &rpcError{Code: -32601, Message: "method not found"}})
+		writeRPCError(writer, http.StatusNotFound, rpc.ID, -32601, "Method not found", nil)
 	}
 }
 
-func (server *Server) handleEvents(writer http.ResponseWriter, request *http.Request, token string, auth authorization) {
-	if !server.validMCPSession(request, token) {
-		http.Error(writer, "MCP session not found", http.StatusNotFound)
+func (server *Server) handleToolCall(writer http.ResponseWriter, request *http.Request, id json.RawMessage, params map[string]json.RawMessage) {
+	var name string
+	var arguments map[string]any
+	if json.Unmarshal(params["name"], &name) != nil || strings.TrimSpace(name) == "" ||
+		(len(params["arguments"]) != 0 && json.Unmarshal(params["arguments"], &arguments) != nil) {
+		writeRPCError(writer, http.StatusBadRequest, id, -32602, "Invalid tool arguments", nil)
+		return
+	}
+	if arguments == nil {
+		arguments = map[string]any{}
+	}
+	raw, err := server.registry.Call(request.Context(), name, arguments)
+	if err != nil {
+		writeRPCError(writer, http.StatusOK, id, -32000, err.Error(), nil)
+		return
+	}
+	var result map[string]any
+	if json.Unmarshal(raw, &result) != nil {
+		writeRPCError(writer, http.StatusInternalServerError, id, -32603, "Invalid upstream tool result", nil)
+		return
+	}
+	if _, exists := result["resultType"]; !exists {
+		result["resultType"] = "complete"
+	}
+	writeRPC(writer, http.StatusOK, rpcResponse{JSONRPC: "2.0", ID: id, Result: result})
+}
+
+func (server *Server) handleSubscription(writer http.ResponseWriter, request *http.Request, token string, auth authorization, id json.RawMessage, params map[string]json.RawMessage) {
+	var notifications struct {
+		ToolsListChanged bool `json:"toolsListChanged"`
+	}
+	if len(params["notifications"]) != 0 && json.Unmarshal(params["notifications"], &notifications) != nil {
+		writeRPCError(writer, http.StatusBadRequest, id, -32602, "Invalid subscription filter", nil)
 		return
 	}
 	flusher, ok := writer.(http.Flusher)
 	if !ok {
-		http.Error(writer, "streaming unsupported", http.StatusInternalServerError)
+		writeRPCError(writer, http.StatusInternalServerError, id, -32603, "Streaming is unavailable", nil)
 		return
 	}
 	updates, unsubscribe := server.registry.Subscribe()
 	defer unsubscribe()
 	writer.Header().Set("Content-Type", "text/event-stream")
-	writer.Header().Set("Cache-Control", "no-cache")
-	writer.Header().Set("Connection", "keep-alive")
-	_, _ = writer.Write([]byte(": connector MCP event stream\n\n"))
+	writer.Header().Set("Cache-Control", "private, no-store")
+	writer.Header().Set("X-Accel-Buffering", "no")
+	acknowledged := map[string]any{}
+	if notifications.ToolsListChanged {
+		acknowledged["toolsListChanged"] = true
+	}
+	subscriptionID := cloneRawJSON(id)
+	writeSSE(writer, map[string]any{
+		"jsonrpc": "2.0", "method": "notifications/subscriptions/acknowledged",
+		"params": map[string]any{
+			"_meta":         map[string]any{"io.modelcontextprotocol/subscriptionId": subscriptionID},
+			"notifications": acknowledged,
+		},
+	})
 	flusher.Flush()
 	for {
 		select {
@@ -271,25 +298,144 @@ func (server *Server) handleEvents(writer http.ResponseWriter, request *http.Req
 			if !open {
 				return
 			}
-			payload := `{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}`
-			_, _ = fmt.Fprintf(writer, "event: message\ndata: %s\n\n", payload)
-			flusher.Flush()
+			if notifications.ToolsListChanged {
+				writeSSE(writer, map[string]any{
+					"jsonrpc": "2.0", "method": "notifications/tools/list_changed",
+					"params": map[string]any{"_meta": map[string]any{
+						"io.modelcontextprotocol/subscriptionId": subscriptionID,
+					}},
+				})
+				flusher.Flush()
+			}
 		case <-request.Context().Done():
 			return
 		case <-auth.revoked:
+			writeSSE(writer, rpcResponse{JSONRPC: "2.0", ID: id, Result: map[string]any{
+				"resultType": "complete", "_meta": map[string]any{"io.modelcontextprotocol/subscriptionId": subscriptionID},
+			}})
+			flusher.Flush()
+			server.revokeToken(token)
 			return
 		}
 	}
 }
 
-func (server *Server) handleDelete(writer http.ResponseWriter, request *http.Request, token string) {
-	sessionID := strings.TrimSpace(request.Header.Get("Mcp-Session-Id"))
-	server.mu.Lock()
-	if current := server.sessionTokens[sessionID]; sessionID != "" && secureEqual(current, token) {
-		delete(server.sessionTokens, sessionID)
+func decodeRequestParams(raw json.RawMessage) (map[string]json.RawMessage, requestMetadata, error) {
+	var params map[string]json.RawMessage
+	if len(raw) == 0 || json.Unmarshal(raw, &params) != nil {
+		return nil, requestMetadata{}, errors.New("params are required")
 	}
-	server.mu.Unlock()
-	writer.WriteHeader(http.StatusNoContent)
+	var metadata requestMetadata
+	if json.Unmarshal(params["_meta"], &metadata) != nil || strings.TrimSpace(metadata.ProtocolVersion) == "" ||
+		strings.TrimSpace(metadata.ClientInfo.Name) == "" || strings.TrimSpace(metadata.ClientInfo.Version) == "" || metadata.ClientCapabilities == nil {
+		return nil, requestMetadata{}, errors.New("metadata is required")
+	}
+	return params, metadata, nil
+}
+
+type requestValidationError struct {
+	status  int
+	code    int
+	message string
+	data    any
+}
+
+func validateRequestHeaders(request *http.Request, method string, params map[string]json.RawMessage, metadata requestMetadata, registry *implementationhost.MCPRegistry) *requestValidationError {
+	requested := strings.TrimSpace(request.Header.Get("MCP-Protocol-Version"))
+	if requested == "" || requested != strings.TrimSpace(metadata.ProtocolVersion) {
+		return &requestValidationError{status: http.StatusBadRequest, code: -32020, message: "MCP-Protocol-Version header does not match request metadata"}
+	}
+	if requested != protocolVersion {
+		return &requestValidationError{status: http.StatusBadRequest, code: -32022, message: "Unsupported protocol version",
+			data: map[string]any{"supported": []string{protocolVersion}, "requested": requested}}
+	}
+	if strings.TrimSpace(request.Header.Get("Mcp-Method")) != method {
+		return &requestValidationError{status: http.StatusBadRequest, code: -32020, message: "Mcp-Method header does not match request method"}
+	}
+	if method != "tools/call" {
+		return nil
+	}
+	var name string
+	if json.Unmarshal(params["name"], &name) != nil {
+		return &requestValidationError{status: http.StatusBadRequest, code: -32602, message: "Tool name is required"}
+	}
+	headerName, err := decodeHeaderValue(request.Header.Get("Mcp-Name"))
+	if err != nil || headerName != name {
+		return &requestValidationError{status: http.StatusBadRequest, code: -32020, message: "Mcp-Name header does not match request tool name"}
+	}
+	if err := validateToolParameterHeaders(request.Header, registry.Tools(), name, params["arguments"]); err != nil {
+		return &requestValidationError{status: http.StatusBadRequest, code: -32020, message: err.Error()}
+	}
+	return nil
+}
+
+func validateToolParameterHeaders(headers http.Header, tools []implementationhost.MCPTool, name string, rawArguments json.RawMessage) error {
+	var schema map[string]any
+	for _, tool := range tools {
+		if tool.Name == name {
+			schema = tool.InputSchema
+			break
+		}
+	}
+	if schema == nil {
+		return nil
+	}
+	arguments := map[string]any{}
+	if len(rawArguments) != 0 && json.Unmarshal(rawArguments, &arguments) != nil {
+		return errors.New("tool arguments are invalid")
+	}
+	for _, binding := range collectHeaderBindings(schema, nil) {
+		value, present := nestedValue(arguments, binding.path)
+		header := headers.Get("Mcp-Param-" + binding.name)
+		if !present || value == nil {
+			if header != "" {
+				return fmt.Errorf("Mcp-Param-%s header has no matching tool argument", binding.name)
+			}
+			continue
+		}
+		decoded, err := decodeHeaderValue(header)
+		if err != nil || decoded != fmt.Sprint(value) {
+			return fmt.Errorf("Mcp-Param-%s header does not match tool arguments", binding.name)
+		}
+	}
+	return nil
+}
+
+type headerBinding struct {
+	name string
+	path []string
+}
+
+func collectHeaderBindings(schema map[string]any, path []string) []headerBinding {
+	properties, _ := schema["properties"].(map[string]any)
+	result := make([]headerBinding, 0)
+	for property, raw := range properties {
+		child, _ := raw.(map[string]any)
+		if child == nil {
+			continue
+		}
+		nextPath := append(append([]string(nil), path...), property)
+		if name, _ := child["x-mcp-header"].(string); strings.TrimSpace(name) != "" {
+			result = append(result, headerBinding{name: strings.TrimSpace(name), path: nextPath})
+		}
+		result = append(result, collectHeaderBindings(child, nextPath)...)
+	}
+	return result
+}
+
+func nestedValue(arguments map[string]any, path []string) (any, bool) {
+	var current any = arguments
+	for _, segment := range path {
+		object, ok := current.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		current, ok = object[segment]
+		if !ok {
+			return nil, false
+		}
+	}
+	return current, true
 }
 
 func (server *Server) authorize(request *http.Request) (string, authorization, bool) {
@@ -301,35 +447,21 @@ func (server *Server) authorize(request *http.Request) (string, authorization, b
 	server.mu.RLock()
 	auth, ok := server.authorizations[token]
 	server.mu.RUnlock()
-	if !ok || time.Now().After(auth.expiresAt) {
-		return "", authorization{}, false
-	}
-	return token, auth, true
+	return token, auth, ok
 }
 
-func (server *Server) validMCPSession(request *http.Request, token string) bool {
-	sessionID := strings.TrimSpace(request.Header.Get("Mcp-Session-Id"))
-	server.mu.RLock()
-	current, ok := server.sessionTokens[sessionID]
-	server.mu.RUnlock()
-	return sessionID != "" && ok && secureEqual(current, token)
-}
-
-func (server *Server) pruneExpiredLocked(now time.Time) {
+func (server *Server) revokeLocked(workspaceID, agentSessionID string) {
 	for token, auth := range server.authorizations {
-		if now.After(auth.expiresAt) {
+		if auth.workspaceID == workspaceID && auth.sessionID == agentSessionID {
 			server.revokeTokenLocked(token)
 		}
 	}
 }
 
-func (server *Server) revokeLocked(workspaceID, agentSessionID string) {
-	for token, auth := range server.authorizations {
-		if auth.workspaceID != workspaceID || auth.sessionID != agentSessionID {
-			continue
-		}
-		server.revokeTokenLocked(token)
-	}
+func (server *Server) revokeToken(token string) {
+	server.mu.Lock()
+	server.revokeTokenLocked(token)
+	server.mu.Unlock()
 }
 
 func (server *Server) revokeTokenLocked(token string) {
@@ -338,16 +470,23 @@ func (server *Server) revokeTokenLocked(token string) {
 		close(revoked)
 		delete(server.revocations, token)
 	}
-	for sessionID, sessionToken := range server.sessionTokens {
-		if sessionToken == token {
-			delete(server.sessionTokens, sessionID)
-		}
-	}
 }
 
-func writeRPC(writer http.ResponseWriter, response rpcResponse) {
+func writeRPC(writer http.ResponseWriter, status int, response rpcResponse) {
 	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(status)
 	_ = json.NewEncoder(writer).Encode(response)
+}
+
+func writeRPCError(writer http.ResponseWriter, status int, id json.RawMessage, code int, message string, data any) {
+	writeRPC(writer, status, rpcResponse{JSONRPC: "2.0", ID: nullID(id), Error: &rpcError{Code: code, Message: message, Data: data}})
+}
+
+func writeSSE(writer io.Writer, payload any) {
+	raw, err := json.Marshal(payload)
+	if err == nil {
+		_, _ = fmt.Fprintf(writer, "event: message\ndata: %s\n\n", raw)
+	}
 }
 
 func nullID(id json.RawMessage) json.RawMessage {
@@ -355,6 +494,14 @@ func nullID(id json.RawMessage) json.RawMessage {
 		return json.RawMessage("null")
 	}
 	return id
+}
+
+func cloneRawJSON(raw json.RawMessage) any {
+	var value any
+	if json.Unmarshal(raw, &value) != nil {
+		return nil
+	}
+	return value
 }
 
 func randomID(size int) (string, error) {
@@ -365,23 +512,38 @@ func randomID(size int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buffer), nil
 }
 
-func secureEqual(left, right string) bool {
-	if len(left) == 0 || len(left) != len(right) {
-		return false
+func mediaTypeContains(value, expected string) bool {
+	for _, candidate := range strings.Split(strings.ToLower(value), ",") {
+		if strings.TrimSpace(strings.SplitN(candidate, ";", 2)[0]) == expected {
+			return true
+		}
 	}
-	return subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
+	return false
 }
 
-func validLoopbackRequest(request *http.Request) bool {
-	host := request.Host
+func decodeHeaderValue(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "=?base64?") || !strings.HasSuffix(value, "?=") {
+		return value, nil
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSuffix(strings.TrimPrefix(value, "=?base64?"), "?="))
+	if err != nil {
+		return "", err
+	}
+	return string(decoded), nil
+}
+
+func validLoopbackHost(value string) bool {
+	host := value
 	if parsed, _, err := net.SplitHostPort(host); err == nil {
 		host = parsed
 	}
 	host = strings.Trim(strings.ToLower(strings.TrimSpace(host)), "[]")
-	if host != "localhost" && host != "127.0.0.1" && host != "::1" {
-		return false
-	}
-	origin := strings.TrimSpace(request.Header.Get("Origin"))
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
+}
+
+func validLoopbackOrigin(value string) bool {
+	origin := strings.TrimSpace(value)
 	if origin == "" || origin == "null" {
 		return true
 	}
@@ -389,6 +551,6 @@ func validLoopbackRequest(request *http.Request) bool {
 	if err != nil {
 		return false
 	}
-	originHost := strings.Trim(strings.ToLower(parsed.Hostname()), "[]")
-	return originHost == "localhost" || originHost == "127.0.0.1" || originHost == "::1"
+	host := strings.Trim(strings.ToLower(parsed.Hostname()), "[]")
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }

@@ -14,6 +14,33 @@ import (
 	agenttargetbiz "github.com/tutti-os/tutti/services/tuttid/biz/agenttarget"
 )
 
+type testConnectorRuntime struct {
+	hints      []runtimeprep.ConnectorRoutingHint
+	binding    runtimeprep.MCPServerBinding
+	bind       func(string, string)
+	revoked    []string
+	revokeAlls int
+}
+
+func (runtime *testConnectorRuntime) RoutingHints() []runtimeprep.ConnectorRoutingHint {
+	return runtime.hints
+}
+
+func (runtime *testConnectorRuntime) BindSession(workspaceID, sessionID string) (runtimeprep.MCPServerBinding, error) {
+	if runtime.bind != nil {
+		runtime.bind(workspaceID, sessionID)
+	}
+	return runtime.binding, nil
+}
+
+func (runtime *testConnectorRuntime) RevokeSession(workspaceID, sessionID string) {
+	runtime.revoked = append(runtime.revoked, workspaceID+"/"+sessionID)
+}
+
+func (runtime *testConnectorRuntime) RevokeAll() {
+	runtime.revokeAlls++
+}
+
 func TestServiceCreateUsesRuntimePreparerResult(t *testing.T) {
 	runtime := newFakeRuntime()
 	service := newTestService(runtime)
@@ -29,16 +56,16 @@ func TestServiceCreateUsesRuntimePreparerResult(t *testing.T) {
 	}
 	routingAliases := []string{"飞书", "Feishu"}
 	skillRoot := t.TempDir()
-	service.ConnectorRoutingHints = func() []runtimeprep.ConnectorRoutingHint {
-		return []runtimeprep.ConnectorRoutingHint{{ConnectorKey: "lark-cli", DisplayName: "Lark CLI", Aliases: routingAliases,
-			SkillRoot: skillRoot}}
-	}
-	service.ConnectorMCPBinding = func(workspaceID, sessionID string, connectorKeys []string) (runtimeprep.MCPServerBinding, error) {
-		if workspaceID != "ws-1" || sessionID != "11111111-1111-4111-8111-111111111111" || connectorKeys != nil {
-			t.Fatalf("connector MCP binding scope = %q %q %#v", workspaceID, sessionID, connectorKeys)
-		}
-		return runtimeprep.MCPServerBinding{Name: "connector", Type: "http", URL: "http://127.0.0.1:1234/mcp/connector",
-			Headers: map[string]string{"Authorization": "Bearer session-token"}}, nil
+	service.ConnectorRuntime = &testConnectorRuntime{
+		hints: []runtimeprep.ConnectorRoutingHint{{ConnectorKey: "lark-cli", DisplayName: "Lark CLI", Aliases: routingAliases,
+			SkillRoot: skillRoot}},
+		binding: runtimeprep.MCPServerBinding{Name: "connector", Type: "http", URL: "http://127.0.0.1:1234/mcp/connector",
+			Headers: map[string]string{"Authorization": "Bearer session-token"}},
+		bind: func(workspaceID, sessionID string) {
+			if workspaceID != "ws-1" || sessionID != "11111111-1111-4111-8111-111111111111" {
+				t.Fatalf("connector MCP binding scope = %q %q", workspaceID, sessionID)
+			}
+		},
 	}
 	cwd := "/user/workdir"
 
@@ -86,15 +113,38 @@ func TestServiceCreateUsesRuntimePreparerResult(t *testing.T) {
 	}
 }
 
-func TestSelectedConnectorKeysPreservesExplicitEmptyAllowlist(t *testing.T) {
-	if keys := selectedConnectorKeys(nil, false); keys != nil {
-		t.Fatalf("implicit connector keys = %#v, want unrestricted nil", keys)
+func TestPrepareRuntimeRevokesConnectorBindingWhenProviderPreparationFails(t *testing.T) {
+	service := newTestService(newFakeRuntime())
+	prepareErr := errors.New("prepare failed")
+	service.RuntimePreparer = fakeRuntimePreparer{err: prepareErr}
+	connector := &testConnectorRuntime{binding: runtimeprep.MCPServerBinding{
+		Name: "connector", Type: "http", URL: "http://127.0.0.1:1234/mcp/connector",
+	}}
+	service.ConnectorRuntime = connector
+
+	_, err := service.prepareRuntimeWithModelEndpoint(t.Context(), "ws-1", t.TempDir(), CreateSessionInput{
+		AgentSessionID: "11111111-1111-4111-8111-111111111111",
+		Provider:       "codex",
+	}, nil)
+	if !errors.Is(err, prepareErr) {
+		t.Fatalf("prepareRuntimeWithModelEndpoint() error = %v, want %v", err, prepareErr)
 	}
-	if keys := selectedConnectorKeys([]string{"browser-use"}, true); keys == nil || len(keys) != 0 {
-		t.Fatalf("explicit connector keys = %#v, want non-nil empty allowlist", keys)
+	if !slices.Equal(connector.revoked, []string{"ws-1/11111111-1111-4111-8111-111111111111"}) {
+		t.Fatalf("revoked bindings = %#v", connector.revoked)
 	}
-	if keys := selectedConnectorKeys([]string{"connector:slack", "connector:github", "connector:slack"}, true); !slices.Equal(keys, []string{"github", "slack"}) {
-		t.Fatalf("selected connector keys = %#v", keys)
+}
+
+func TestCleanupSessionResourcesRevokesConnectorWithoutProviderPreparer(t *testing.T) {
+	service := newTestService(newFakeRuntime())
+	service.RuntimePreparer = nil
+	connector := &testConnectorRuntime{}
+	service.ConnectorRuntime = connector
+
+	if err := service.cleanupSessionResources(t.Context(), "ws-1", "session-1"); err != nil {
+		t.Fatalf("cleanupSessionResources() error = %v", err)
+	}
+	if !slices.Equal(connector.revoked, []string{"ws-1/session-1"}) {
+		t.Fatalf("revoked bindings = %#v", connector.revoked)
 	}
 }
 

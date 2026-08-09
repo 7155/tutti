@@ -1953,6 +1953,51 @@ durable default only while that intent is unresolved. Entering the unscoped
 conversation section resolves the intent to no project, so remounting the hero
 composer or refreshing the project list cannot restore a previous project.
 
+New-Session worktree launch is a fail-closed Host capability, not Session
+lifecycle state in React. The host opts in with
+`sessionWorktreeEnabled`, projects a launch preference map for the current
+workspace keyed by the canonical project `sectionKey`, persists explicit
+changes through `onSessionLaunchModePreferenceChange`, and supplies the exact
+project-path probe through
+`AgentHostApi.workspace.resolveSessionWorktreeSupport`. AgentGUI renders the
+selector only when all four pieces exist, the selected target is explicitly
+self-owned, a real project path and section key are selected, and the probe
+succeeds. Existing Sessions and shared/remote targets never expose it.
+Tutti Desktop carries the exact `agentTargetId` and project path through the
+generated daemon support contract. Tuttid resolves that target through its
+local launch authority and fails closed for shared-Agent identities. The
+Session create boundary repeats the same target admission before allocating a
+worktree and also requires a project `railPlacement` with a non-empty logical
+project path. An unscoped `conversations` Session therefore cannot acquire
+worktree isolation even through a direct API request, so React visibility is
+presentation defense rather than the business authorization boundary.
+The adapter records the selected repository-relative cwd and remaps it under
+the isolated checkout, so a registered project below the repository root keeps
+the same working-directory scope. A retry with the same Workspace, Session,
+repository, and relative cwd reuses its exact metadata-backed checkout before
+entering Host idempotency; a mismatched identity fails closed.
+
+The stored `local | worktree` value records future launch intent; canonical
+Session `isolation` records what actually launched. Probe failure, temporary
+repository incompatibility, or a missing host capability makes the effective
+mode `local` without overwriting a saved `worktree` intent. Visiting an old
+Session also cannot write that preference. Tutti Desktop persists the nested
+`workspaceId -> project.sectionKey -> mode` map in daemon-backed desktop
+preferences and enables the capability. Each change uses the daemon-owned
+`preferences.agent.session.launch.mode.patch.requested` workspace/project patch;
+its SQLite transaction merges against the latest map, and full
+desktop-preference updates preserve that field, so concurrent windows cannot
+replace one another's choices. Renderer write failures roll back only
+the still-current optimistic value and are consumed through the Workbench
+diagnostic path. Published AgentGUI defaults the capability off so other hosts
+may opt in independently. The composer only adds `isolation: "worktree"` to the
+admitted activation input. Tutti's daemon adapter owns the filesystem checkout
+and provider-preparation cwd, while Host continues to own the idempotent Session
+create. The canonical Session projection later carries the created worktree
+path, branch, and base commit. Rail rows render the worktree glyph from that
+canonical isolation projection next to relative time in the unhovered row and
+never infer it from `cwd`.
+
 A locked Session cwd existence check is UI-local observation, not Session
 truth. AgentGUI starts it only after pending creation has resolved, scopes its
 result to the normalized selected path, and discards callbacks from a previous

@@ -59,6 +59,9 @@ func TestSQLiteStoreGetDesktopPreferencesDefaultsWhenUnset(t *testing.T) {
 	if len(preferences.AgentGUIConversationRailCollapsedByProvider) != 0 {
 		t.Fatalf("GetDesktopPreferences() rail collapsed preferences = %#v, want empty", preferences.AgentGUIConversationRailCollapsedByProvider)
 	}
+	if len(preferences.AgentSessionLaunchModesByWorkspace) != 0 {
+		t.Fatalf("GetDesktopPreferences() agent session launch modes = %#v, want empty", preferences.AgentSessionLaunchModesByWorkspace)
+	}
 	if preferences.UpdatePolicy != "prompt" {
 		t.Fatalf("GetDesktopPreferences() updatePolicy = %q, want prompt", preferences.UpdatePolicy)
 	}
@@ -85,6 +88,12 @@ func TestSQLiteStorePutDesktopPreferencesPersistsValue(t *testing.T) {
 		AgentGUIConversationRailCollapsedByProvider: map[string]bool{
 			"codex":       true,
 			"claude-code": false,
+		},
+		AgentSessionLaunchModesByWorkspace: map[string]map[string]string{
+			"workspace-1": {
+				"project-1": "worktree",
+				"project-2": "local",
+			},
 		},
 		AgentConversationDetailMode: "general",
 		AgentDockLayout:             "unified",
@@ -165,6 +174,10 @@ func TestSQLiteStorePutDesktopPreferencesPersistsValue(t *testing.T) {
 	}
 	if collapsed, ok := reloaded.AgentGUIConversationRailCollapsedByProvider["claude-code"]; !ok || collapsed {
 		t.Fatalf("GetDesktopPreferences() claude rail collapsed = %v/%v, want present false", collapsed, ok)
+	}
+	workspaceLaunchModes := reloaded.AgentSessionLaunchModesByWorkspace["workspace-1"]
+	if workspaceLaunchModes["project-1"] != "worktree" || workspaceLaunchModes["project-2"] != "local" {
+		t.Fatalf("GetDesktopPreferences() agent session launch modes = %#v, want project-1/worktree and project-2/local", reloaded.AgentSessionLaunchModesByWorkspace)
 	}
 	if reloaded.UpdatePolicy != "auto" {
 		t.Fatalf("GetDesktopPreferences() updatePolicy = %q, want auto", reloaded.UpdatePolicy)
@@ -495,6 +508,67 @@ func TestSQLiteStorePatchAgentComposerDefaultsForTargetSerializesConcurrentField
 	defaults := got.AgentComposerDefaultsByAgentTarget["local:codex"]
 	if defaults.Model != model || defaults.PermissionModeID != permission {
 		t.Fatalf("defaults = %#v", defaults)
+	}
+}
+
+func TestSQLiteStorePatchAgentSessionLaunchModeSerializesConcurrentProjectsAndRejectsStaleReplacement(t *testing.T) {
+	t.Parallel()
+
+	store := openTestSQLiteStore(t)
+	ctx := context.Background()
+	stale := preferencesbiz.DefaultDesktopPreferences()
+	stale.Locale = "en"
+	if _, err := store.PutDesktopPreferences(ctx, stale); err != nil {
+		t.Fatal(err)
+	}
+
+	patches := []struct {
+		workspaceID       string
+		projectSectionKey string
+		mode              string
+	}{
+		{workspaceID: "workspace-a", projectSectionKey: "project:/alpha", mode: "worktree"},
+		{workspaceID: "workspace-b", projectSectionKey: "project:/beta", mode: "local"},
+	}
+	var wait sync.WaitGroup
+	errorsByPatch := make([]error, len(patches))
+	for index, patch := range patches {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			_, errorsByPatch[index] = store.PatchAgentSessionLaunchMode(
+				context.Background(),
+				patch.workspaceID,
+				patch.projectSectionKey,
+				patch.mode,
+			)
+		}()
+	}
+	wait.Wait()
+	for _, err := range errorsByPatch {
+		if err != nil {
+			t.Fatalf("concurrent launch mode patch: %v", err)
+		}
+	}
+
+	stale.Locale = "zh-CN"
+	stale.AgentSessionLaunchModesByWorkspace = map[string]map[string]string{
+		"workspace-stale": {"project:/stale": "worktree"},
+	}
+	if _, err := store.PutDesktopPreferences(ctx, stale); err != nil {
+		t.Fatalf("put stale full preferences: %v", err)
+	}
+	got, err := store.GetDesktopPreferences(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentSessionLaunchModesByWorkspace["workspace-a"]["project:/alpha"] != "worktree" ||
+		got.AgentSessionLaunchModesByWorkspace["workspace-b"]["project:/beta"] != "local" ||
+		len(got.AgentSessionLaunchModesByWorkspace) != 2 {
+		t.Fatalf("launch modes = %#v", got.AgentSessionLaunchModesByWorkspace)
+	}
+	if got.Locale != "zh-CN" {
+		t.Fatalf("locale = %q, want zh-CN", got.Locale)
 	}
 }
 

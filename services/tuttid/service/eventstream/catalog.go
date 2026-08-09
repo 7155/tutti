@@ -13,23 +13,24 @@ import (
 )
 
 const (
-	TopicAnalyticsDebugReported                         = "analytics.debug.reported"
-	TopicAgentActivityUpdated                           = "agent.activity.updated"
-	TopicAgentCollaborationUpdated                      = "agent.collaboration.updated"
-	TopicAgentModelCatalogInvalidated                   = "agent.model.catalog.invalidated"
-	TopicAgentQuickPromptUpdated                        = "agent.quickprompt.updated"
-	TopicConnectorMarketChanged                         = "connector.market.changed"
-	TopicPreferencesAgentComposerDefaultsChanged        = "preferences.agent.composer.defaults.changed"
-	TopicPreferencesAgentComposerDefaultsPatchRequested = "preferences.agent.composer.defaults.patch.requested"
-	TopicPreferencesDesktopUpdateRequested              = "preferences.desktop.update.requested"
-	TopicPreferencesDesktopUpdated                      = "preferences.desktop.updated"
-	TopicUserProjectUpdated                             = "user.project.updated"
-	TopicWorkspaceIssueUpdated                          = "workspace.issue.updated"
-	TopicWorkspaceWorkflowUpdated                       = "workspace.workflow.updated"
-	TopicWorkspaceTuttiModeUpdated                      = "workspace.tuttimode.updated"
-	TopicWorkspaceAppFactoryJobUpdated                  = "workspace.appfactory.job.updated"
-	TopicWorkspaceAppUpdated                            = "workspace.app.updated"
-	TopicWorkspaceWorkbenchNodeLaunchRequested          = "workspace.workbench.node.launch.requested"
+	TopicAnalyticsDebugReported                          = "analytics.debug.reported"
+	TopicAgentActivityUpdated                            = "agent.activity.updated"
+	TopicAgentCollaborationUpdated                       = "agent.collaboration.updated"
+	TopicAgentModelCatalogInvalidated                    = "agent.model.catalog.invalidated"
+	TopicAgentQuickPromptUpdated                         = "agent.quickprompt.updated"
+	TopicConnectorMarketChanged                          = "connector.market.changed"
+	TopicPreferencesAgentComposerDefaultsChanged         = "preferences.agent.composer.defaults.changed"
+	TopicPreferencesAgentComposerDefaultsPatchRequested  = "preferences.agent.composer.defaults.patch.requested"
+	TopicPreferencesAgentSessionLaunchModePatchRequested = "preferences.agent.session.launch.mode.patch.requested"
+	TopicPreferencesDesktopUpdateRequested               = "preferences.desktop.update.requested"
+	TopicPreferencesDesktopUpdated                       = "preferences.desktop.updated"
+	TopicUserProjectUpdated                              = "user.project.updated"
+	TopicWorkspaceIssueUpdated                           = "workspace.issue.updated"
+	TopicWorkspaceWorkflowUpdated                        = "workspace.workflow.updated"
+	TopicWorkspaceTuttiModeUpdated                       = "workspace.tuttimode.updated"
+	TopicWorkspaceAppFactoryJobUpdated                   = "workspace.appfactory.job.updated"
+	TopicWorkspaceAppUpdated                             = "workspace.app.updated"
+	TopicWorkspaceWorkbenchNodeLaunchRequested           = "workspace.workbench.node.launch.requested"
 )
 
 // Direction, ValidationCode and ValidationError now live in stream-go and are
@@ -365,6 +366,11 @@ func validateDesktopPreferencesUpdateRequestedPayload(payload []byte) error {
 	if err != nil {
 		return err
 	}
+	if decoded.AgentSessionLaunchModesByWorkspace != nil {
+		if err := validateDesktopAgentSessionLaunchModesByWorkspace(*decoded.AgentSessionLaunchModesByWorkspace); err != nil {
+			return err
+		}
+	}
 	if decoded.DockPlacement == "" {
 		return fmt.Errorf("preferences.dockPlacement is required")
 	}
@@ -453,6 +459,9 @@ func validateDesktopPreferencesUpdatedPayload(payload []byte) error {
 	var decoded desktopPreferencesUpdatedPayload
 	if err := json.Unmarshal(payload, &decoded); err != nil {
 		return fmt.Errorf("decode payload: %w", err)
+	}
+	if err := validateDesktopAgentSessionLaunchModesByWorkspace(decoded.Preferences.AgentSessionLaunchModesByWorkspace); err != nil {
+		return err
 	}
 	if decoded.Preferences.DockPlacement == "" {
 		return fmt.Errorf("preferences.dockPlacement is required")

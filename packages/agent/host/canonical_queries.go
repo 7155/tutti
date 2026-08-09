@@ -9,6 +9,15 @@ import (
 	storesqlite "github.com/tutti-os/tutti/packages/agent/store-sqlite"
 )
 
+// PlanDecisionContinuation is the canonical parent-to-child relation created
+// by a completed plan implementation decision. The Host owns the proof that
+// the child was durably submitted; consumers only receive the already paired
+// Session and Turn snapshot for projection.
+type PlanDecisionContinuation struct {
+	Session storesqlite.Session
+	Turn    storesqlite.Turn
+}
+
 // GetTurn exposes canonical turn truth without requiring Host consumers to
 // retain or type-assert the concrete store used by the Host adapter.
 func (h *Host) GetTurn(ctx context.Context, ref SessionRef, turnID string) (storesqlite.Turn, bool, error) {
@@ -46,6 +55,109 @@ func (h *Host) GetCanonicalSessionAndTurn(
 	}
 	turn, found, err := h.store.GetTurn(ctx, ref.WorkspaceID, ref.AgentSessionID, turnID)
 	return session, turn, found, err
+}
+
+// GetRuntimeOperation exposes one durable coordinator record to read-only
+// projection consumers. The operation store remains the owner of lifecycle
+// transitions; this boundary only lets a consumer prove an explicit
+// continuation identity instead of inferring it from session recency.
+func (h *Host) GetRuntimeOperation(
+	ctx context.Context,
+	workspaceID string,
+	operationID string,
+) (storesqlite.RuntimeOperation, bool, error) {
+	workspaceID = strings.TrimSpace(workspaceID)
+	operationID = strings.TrimSpace(operationID)
+	if h == nil || h.operations == nil || workspaceID == "" || operationID == "" {
+		return storesqlite.RuntimeOperation{}, false, ErrInvalidArgument
+	}
+	return h.operations.GetRuntimeOperation(ctx, workspaceID, operationID)
+}
+
+// GetPlanDecisionContinuation returns the exact child Turn created by the
+// plan-implementation operation for parentTurnID. The operation identity,
+// checkpoint, and durable submit evidence are all validated here so callers
+// do not infer ownership from message markers or session recency.
+func (h *Host) GetPlanDecisionContinuation(
+	ctx context.Context,
+	ref SessionRef,
+	parentTurnID string,
+) (PlanDecisionContinuation, bool, error) {
+	ref = normalizedSessionRef(ref)
+	parentTurnID = strings.TrimSpace(parentTurnID)
+	if h == nil || h.store == nil || h.operations == nil ||
+		ref.WorkspaceID == "" || ref.AgentSessionID == "" || parentTurnID == "" {
+		return PlanDecisionContinuation{}, false, ErrInvalidArgument
+	}
+	operationID := runtimeOperationID(
+		ref.WorkspaceID,
+		ref.AgentSessionID,
+		storesqlite.RuntimeOperationKindPlanDecision,
+		parentTurnID,
+	)
+	operation, found, err := h.operations.GetRuntimeOperation(
+		ctx, ref.WorkspaceID, operationID,
+	)
+	if err != nil || !found {
+		return PlanDecisionContinuation{}, found, err
+	}
+	if operation.WorkspaceID != ref.WorkspaceID ||
+		operation.AgentSessionID != ref.AgentSessionID ||
+		operation.OperationID != operationID ||
+		operation.Kind != storesqlite.RuntimeOperationKindPlanDecision ||
+		operation.TurnID != parentTurnID {
+		return PlanDecisionContinuation{}, false, ErrRuntimeOperationIdentityMismatch
+	}
+	if operation.Status == storesqlite.RuntimeOperationStatusFailed {
+		return PlanDecisionContinuation{}, false, nil
+	}
+	if runtimeOperationPayloadText(operation.Payload, "step") != "send_confirmed" {
+		return PlanDecisionContinuation{}, false, nil
+	}
+	if runtimeOperationPayloadText(operation.Payload, "promptKind") != "plan-implementation" ||
+		runtimeOperationPayloadText(operation.Payload, "action") != "implement" {
+		return PlanDecisionContinuation{}, false, ErrRuntimeOperationIdentityMismatch
+	}
+	confirmedTurnID := runtimeOperationPayloadText(operation.Payload, "confirmedTurnId")
+	clientSubmitID := runtimeOperationPayloadText(operation.Payload, "clientSubmitId")
+	if confirmedTurnID == "" || confirmedTurnID == parentTurnID || clientSubmitID == "" {
+		return PlanDecisionContinuation{}, false, ErrRuntimeOperationIdentityMismatch
+	}
+	confirmedByMessage, messageFound, err := h.FindTurnByClientSubmitID(
+		ctx, ref, clientSubmitID,
+	)
+	if err != nil {
+		return PlanDecisionContinuation{}, false, err
+	}
+	if !messageFound || confirmedByMessage != confirmedTurnID {
+		return PlanDecisionContinuation{}, false, ErrRuntimeOperationIdentityMismatch
+	}
+	session, turn, turnFound, err := h.GetCanonicalSessionAndTurn(
+		ctx, ref, confirmedTurnID,
+	)
+	if err != nil {
+		return PlanDecisionContinuation{}, false, err
+	}
+	if !turnFound || turn.TurnID != confirmedTurnID ||
+		turn.AgentSessionID != ref.AgentSessionID {
+		return PlanDecisionContinuation{}, false, ErrTurnNotFound
+	}
+	latest, err := h.store.ListSessionTurnSummaries(ctx, storesqlite.ListSessionTurnSummariesInput{
+		WorkspaceID: ref.WorkspaceID, AgentSessionID: ref.AgentSessionID, Limit: 1,
+	})
+	if err != nil {
+		return PlanDecisionContinuation{}, false, err
+	}
+	if len(latest.Turns) != 1 || strings.TrimSpace(latest.Turns[0].TurnID) != confirmedTurnID {
+		// A durable relation is not enough to project an old child after an
+		// unrelated newer Turn has become canonical. The caller must observe the
+		// current session frontier and only project the latest proven Turn.
+		return PlanDecisionContinuation{}, false, nil
+	}
+	return PlanDecisionContinuation{
+		Session: session,
+		Turn:    turn,
+	}, true, nil
 }
 
 // FindTurnByClientSubmitID exposes the canonical idempotency lookup without

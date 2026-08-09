@@ -319,6 +319,7 @@ func validateDelivery(delivery Delivery) error {
 			delivery.AttachmentChanged.WorkspaceID,
 			delivery.AttachmentChanged.AgentSessionID,
 			delivery.AttachmentChanged.CanonicalTurnID,
+			delivery.AttachmentChanged.CanonicalTurnIDs,
 			delivery.AttachmentChanged.CallerTurnID,
 			delivery.AttachmentChanged.AttachmentRevision,
 		) {
@@ -331,6 +332,7 @@ func validateDelivery(delivery Delivery) error {
 			delivery.AttachmentCaughtUp.WorkspaceID,
 			delivery.AttachmentCaughtUp.AgentSessionID,
 			delivery.AttachmentCaughtUp.CanonicalTurnID,
+			delivery.AttachmentCaughtUp.CanonicalTurnIDs,
 			delivery.AttachmentCaughtUp.CallerTurnID,
 			delivery.AttachmentCaughtUp.AttachmentRevision,
 		) {
@@ -371,7 +373,7 @@ func validateDelivery(delivery Delivery) error {
 }
 
 func validAttachmentControl(
-	bindingID, workspaceID, agentSessionID, canonicalTurnID, callerTurnID string,
+	bindingID, workspaceID, agentSessionID, canonicalTurnID string, canonicalTurnIDs []string, callerTurnID string,
 	revision uint64,
 ) bool {
 	if strings.TrimSpace(bindingID) == "" ||
@@ -383,8 +385,32 @@ func validAttachmentControl(
 	// Goal-only attachments are turnless; invocation attachments always carry
 	// both sides of the Turn identity mapping. A half-populated pair cannot be
 	// projected safely by a recipient.
-	return (strings.TrimSpace(canonicalTurnID) == "") ==
-		(strings.TrimSpace(callerTurnID) == "")
+	canonicalTurnID = strings.TrimSpace(canonicalTurnID)
+	callerTurnID = strings.TrimSpace(callerTurnID)
+	if (canonicalTurnID == "") != (callerTurnID == "") {
+		return false
+	}
+	if canonicalTurnID == "" {
+		return len(canonicalTurnIDs) == 0
+	}
+	if len(canonicalTurnIDs) == 0 {
+		// Older producers omit the optional continuation set. The singular
+		// anchor is the complete identity set in that wire shape.
+		return true
+	}
+	seen := make(map[string]struct{}, len(canonicalTurnIDs))
+	for _, candidate := range canonicalTurnIDs {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			return false
+		}
+		if _, ok := seen[candidate]; ok {
+			return false
+		}
+		seen[candidate] = struct{}{}
+	}
+	_, anchored := seen[canonicalTurnID]
+	return anchored
 }
 
 func strictControlDecode(raw []byte, target any) error {

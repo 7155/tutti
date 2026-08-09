@@ -63,7 +63,8 @@ func TestFrameRoundTripCarriesAttachmentRecoveryFence(t *testing.T) {
 				Kind: DeliveryKindAttachmentChanged,
 				AttachmentChanged: &AttachmentChanged{
 					BindingID: "binding-1", WorkspaceID: "workspace-1", AgentSessionID: "session-1",
-					CanonicalTurnID: "canonical-turn-1", CallerTurnID: "caller-turn-1", AttachmentRevision: 3,
+					CanonicalTurnID: "canonical-turn-1", CanonicalTurnIDs: []string{"canonical-turn-1", "child-turn-1"},
+					CallerTurnID: "caller-turn-1", AttachmentRevision: 3,
 				},
 			},
 			{
@@ -71,7 +72,8 @@ func TestFrameRoundTripCarriesAttachmentRecoveryFence(t *testing.T) {
 				Kind: DeliveryKindAttachmentCaughtUp,
 				AttachmentCaughtUp: &AttachmentCaughtUp{
 					BindingID: "binding-1", WorkspaceID: "workspace-1", AgentSessionID: "session-1",
-					CanonicalTurnID: "canonical-turn-1", CallerTurnID: "caller-turn-1", AttachmentRevision: 3,
+					CanonicalTurnID: "canonical-turn-1", CanonicalTurnIDs: []string{"canonical-turn-1", "child-turn-1"},
+					CallerTurnID: "caller-turn-1", AttachmentRevision: 3,
 				},
 			},
 		},
@@ -85,7 +87,8 @@ func TestFrameRoundTripCarriesAttachmentRecoveryFence(t *testing.T) {
 		t.Fatal(err)
 	}
 	if changed := decoded.Deliveries[0].AttachmentChanged; changed == nil ||
-		changed.AttachmentRevision != 3 || changed.CallerTurnID != "caller-turn-1" {
+		changed.AttachmentRevision != 3 || changed.CallerTurnID != "caller-turn-1" ||
+		len(changed.CanonicalTurnIDs) != 2 || changed.CanonicalTurnIDs[1] != "child-turn-1" {
 		t.Fatalf("decoded attachment changed = %#v", changed)
 	}
 	if caughtUp := decoded.Deliveries[1].AttachmentCaughtUp; caughtUp == nil ||

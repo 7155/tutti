@@ -35,6 +35,7 @@ import type {
 import type { AgentQuickPromptLabels } from "./quickPrompts/agentQuickPromptLabels";
 import type { AgentMentionFilterId } from "../AgentMentionSearchContracts";
 import type { AgentComposerInputHistoryEntry } from "../model/agentComposerInputHistory";
+import type { AgentGUISessionLaunchMode } from "../model/agentSessionLaunchMode";
 
 export interface AgentComposerReferenceProvenanceFilter {
   snapshot: ReferenceProvenanceFilterSnapshot;
@@ -52,6 +53,7 @@ export interface AgentComposerReferenceProvenanceFilters {
 }
 
 export interface AgentComposerSubmitOptions {
+  isolation?: "worktree";
   requiredSettingsPatch?: AgentActivitySubmitSettingsPatch;
   capabilityRefs?: readonly AgentComposerCapabilityReference[];
   /** Exact canonical active Turn captured for native guidance. */
@@ -115,6 +117,11 @@ export interface AgentComposerProps {
   drainingQueuedPromptId: string | null;
   workspaceAppIcons?: readonly AgentMessageMarkdownWorkspaceAppIcon[];
   selectedAgentTarget?: AgentGUIAgentTarget | null;
+  sessionWorktreeEnabled?: boolean;
+  sessionLaunchMode?: AgentGUISessionLaunchMode;
+  onSessionLaunchModeChange?: (
+    mode: AgentGUISessionLaunchMode
+  ) => void | Promise<void>;
   /** Content rendered immediately before the primary non-hero action. */
   composerActionAccessory?: ReactNode;
   /** Places the primary action cluster in the prompt row or Composer footer. */
@@ -138,6 +145,8 @@ export interface AgentComposerProps {
   draftOverridesStopButton?: boolean;
   stopDisabled: boolean;
   activePrompt: AgentConversationPromptVM | null;
+  /** Host readiness reason for the active prompt's disabled controls. */
+  activePromptDisabledReason?: string | null;
   activePromptKeyboardShortcutsEnabled?: boolean;
   promptTips?: readonly AgentComposerPromptTip[];
   isInterrupting: boolean;
@@ -180,6 +189,9 @@ export interface AgentComposerProps {
     modelTooltipVersionLabel: string;
     defaultModel: string;
     loadingOptions: string;
+    composerOptionsLoadFailed?: string;
+    retry?: string;
+    composerOptionsRetryTooltip?: string;
     inheritedUnavailable: string;
     loadingConversation: string;
     reasoningLabel: string;
@@ -363,6 +375,9 @@ export interface AgentComposerProps {
     handoffTargetShared: string;
     providerSwitchLabel: string;
     projectLocked: string;
+    sessionLaunchModeLabel?: string;
+    sessionLaunchModeLocal?: string;
+    sessionLaunchModeWorktree?: string;
     projectMissingDescription: string;
     promptTipsPrefix: string;
     reviewPicker: {
@@ -404,6 +419,8 @@ export interface AgentComposerProps {
     computerUse?: boolean;
     permissionModeId?: string | null;
   }) => void;
+  /** Retries the target-scoped composer options request after a terminal failure. */
+  onRetryComposerOptions?: () => void;
   onTuttiModeChange?: (active: boolean) => void;
   onTuttiModeEffectChange?: (value: number) => void;
   onTuttiModeSpeedChange?: (value: number) => void;

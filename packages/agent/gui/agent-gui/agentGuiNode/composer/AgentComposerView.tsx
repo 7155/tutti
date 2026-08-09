@@ -55,6 +55,8 @@ import type { useComposerPresentation } from "./useComposerPresentation";
 import type { useComposerProviderTargets } from "./useComposerProviderTargets";
 import type { useComposerSlashActions } from "./useComposerSlashActions";
 import type { useMentionPaletteFrame } from "./useMentionPaletteFrame";
+import { AgentSessionLaunchModeSelect } from "./AgentSessionLaunchModeSelect";
+import type { SessionWorktreeLaunchState } from "./useSessionWorktreeLaunch";
 import { AgentQuickPromptPopover } from "./quickPrompts/AgentQuickPromptPopover";
 import type { useAgentQuickPromptLibrary } from "./quickPrompts/useAgentQuickPromptLibrary";
 import {
@@ -111,6 +113,7 @@ interface Props {
   onTuttiModeSpeedChange: (value: number) => void;
   isPromptTipOverflowing: boolean;
   onHistoryNavigation: (direction: "older" | "newer") => boolean;
+  sessionWorktreeLaunch: SessionWorktreeLaunchState;
 }
 
 export function AgentComposerView(input: Props): React.JSX.Element {
@@ -127,6 +130,7 @@ export function AgentComposerView(input: Props): React.JSX.Element {
     queuedPrompts,
     drainingQueuedPromptId,
     workspaceAppIcons = EMPTY_WORKSPACE_APP_ICONS,
+    activePromptDisabledReason = null,
     activePromptKeyboardShortcutsEnabled = true,
     promptImagesSupported = true,
     layoutMode = "dock",
@@ -262,6 +266,28 @@ export function AgentComposerView(input: Props): React.JSX.Element {
         onProjectPathChange={onProjectPathChange}
       />
     ) : null;
+  const sessionLaunchModeNode =
+    input.sessionWorktreeLaunch.visible &&
+    input.props.labels.sessionLaunchModeLabel &&
+    input.props.labels.sessionLaunchModeLocal &&
+    input.props.labels.sessionLaunchModeWorktree ? (
+      <AgentSessionLaunchModeSelect
+        labels={{
+          launchMode: input.props.labels.sessionLaunchModeLabel,
+          local: input.props.labels.sessionLaunchModeLocal,
+          worktree: input.props.labels.sessionLaunchModeWorktree
+        }}
+        mode={input.sessionWorktreeLaunch.mode}
+        onModeChange={input.sessionWorktreeLaunch.onModeChange}
+      />
+    ) : null;
+  const projectControlsNode =
+    projectSelectorNode || sessionLaunchModeNode ? (
+      <div className={styles.composerProjectControls}>
+        {projectSelectorNode}
+        {sessionLaunchModeNode}
+      </div>
+    ) : null;
 
   return (
     <form
@@ -292,6 +318,8 @@ export function AgentComposerView(input: Props): React.JSX.Element {
             edgeGlow={true}
             keyboardShortcuts={activePromptKeyboardShortcutsEnabled}
             isSubmitting={isSubmittingPrompt}
+            isInteractionDisabled={Boolean(activePromptDisabledReason)}
+            interactionDisabledReason={activePromptDisabledReason}
             onSubmit={submitInteractivePromptAndDismiss}
             labels={{
               approvalLead: labels.approvalLead,
@@ -685,7 +713,7 @@ export function AgentComposerView(input: Props): React.JSX.Element {
             onClearPlanMode={input.onClearPlanMode}
             composerAction={composerActionNode}
             projectControl={
-              showProjectSelectorInFooter ? projectSelectorNode : null
+              showProjectSelectorInFooter ? projectControlsNode : null
             }
             quickPromptControl={
               <AgentQuickPromptPopover
@@ -720,6 +748,7 @@ export function AgentComposerView(input: Props): React.JSX.Element {
             onWorkspaceReferencePicker={handleWorkspaceReferencePicker}
             onMentionPaletteButton={handleMentionPaletteButton}
             onSettingsChange={onSettingsChange}
+            onRetryComposerOptions={input.props.onRetryComposerOptions}
             onSubmit={onSubmit}
             onClearGoalMode={clearGoalModeBadge}
             draftPrompt={draftPrompt}
@@ -732,7 +761,7 @@ export function AgentComposerView(input: Props): React.JSX.Element {
               input.isSelectedProjectMissing ? "true" : undefined
             }
           >
-            {showHeroProjectSelector ? projectSelectorNode : null}
+            {showHeroProjectSelector ? projectControlsNode : null}
             {activePromptTip ? (
               <div
                 className={styles.composerPromptTips}

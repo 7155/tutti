@@ -258,6 +258,12 @@ and early write admission for the pending card. An observation gap may still
 govern the active Turn before or after that Interaction, but it cannot override
 the exact ready or blocked readiness result while the card is presented.
 
+When an exact Interaction is blocked, AgentGUI keeps the pending action visible
+but disables its controls. The disabled action group remains focusable and
+hoverable so the same readiness reason is discoverable in the conversation
+chrome and Message Center; this is presentation only and does not change the
+Host-owned admission decision.
+
 Message Center and attention-card consumers preserve this separation in their
 presentation contract: `isSubmitting` describes an in-flight response, while
 an independently supplied interaction-disabled state blocks the nested prompt
@@ -896,6 +902,14 @@ while canonical Turn state remains authoritative once it exists.
   Mobile retain transport execution in their `EngineExtensionCommand`
   adapters and delegate pure generated-DTO projection to
   `@tutti-os/agent-activity-tuttid-adapter`
+- A composer-option failure with no signature-matching cached value remains an
+  explicit Engine `error` state. AgentGUI renders a compact failure and retry
+  action in the existing options slot instead of presenting an empty list or a
+  stale/default selection; a last valid cached value remains renderable while
+  its load status is reconciled. The retry is the same semantic
+  `engine.loadComposerOptions` operation with `force` left false, so request
+  identity, cache reuse, and identical in-flight joining remain Engine-owned;
+  a view must not call the transport adapter directly.
 - an acknowledged home Composer default remains an optimistic draft until a
   later authoritative Composer-options response reports the same effective
   field value. A successful read alone must not retire the draft because a
@@ -1339,6 +1353,14 @@ update only an already-resolved matching scope. A subordinate result must not
 cancel the full query, publish partial membership for an unresolved scope, or
 unlock Rail interactions.
 
+When Activity View has a non-null in-memory projection, that projection remains
+visible while the unrelated initial Rail membership query is pending; Rail
+loading, empty, or failure placeholders must not replace it. A refresh or page
+failure after Rail rows already exist preserves those rows and reports a
+non-blocking error through the host toast capability, falling back to the UI
+System toast when that optional capability is absent. An unresolved empty Rail
+scope retains the centered error state and its retry action.
+
 Presentation-invisible Sessions remain canonical engine entities and stay
 available through exact Session selectors for trusted open, reconcile, and
 command flows. Plural consumer selectors exclude them before Rail and Message
@@ -1750,10 +1772,25 @@ by the full Composer; it does not maintain a second menu implementation or
 fetch options itself. `computerUse` and gated `codexSaverMode` remain hidden
 until an embedding activation seam preserves and authorizes them end to end. A
 settings change returns a typed patch to the host, which refreshes authority
-and forwards the settled draft through its existing activation command. While
-authority refreshes, only settings controls and submit are locked. Rich-text
-entry, references, target selection, and project selection remain usable
-unless the host independently disables the whole draft.
+and forwards the settled draft through its existing activation command. Only
+the very first options load for a target locks settings controls and submit;
+once a good options snapshot exists, background refreshes keep every control
+interactive and a failed refresh keeps the last good snapshot instead of
+blanking the menus.
+
+`@tutti-os/agent-gui/composer-settings-core` is the host-agnostic policy for
+that settings capability. `ComposerSettingsCore` is a headless controller
+(`subscribe`/`getSnapshot`, no React, no Engine dependency) that owns the
+sparse settings draft, a revision-fenced options lifecycle with last-good
+retention, defaults seeding via the daemon's defaults-merged
+`effectiveSettings`, and trailing-edge write-back of explicit picks into the
+canonical per-target composer-defaults ledger through injected ports
+(`fetchOptions`, `rememberDefaults`). `resolveSubmitSettings()` returns the
+exact values the composer displays; hosts must submit them verbatim so the
+daemon never re-interprets empty fields against another surface's memory. A
+Quick Composer host embeds this core instead of hand-rolling fencing,
+failure semantics, or a parallel settings store; the desktop capture window
+is the first adopter.
 
 The Quick Composer uses the Composer's `embedded` layout contract. Unlike
 `dock`, which intentionally grows attachments and long drafts upward over a
@@ -1915,6 +1952,51 @@ explicit selection whose path may be null. The project selector may apply the
 durable default only while that intent is unresolved. Entering the unscoped
 conversation section resolves the intent to no project, so remounting the hero
 composer or refreshing the project list cannot restore a previous project.
+
+New-Session worktree launch is a fail-closed Host capability, not Session
+lifecycle state in React. The host opts in with
+`sessionWorktreeEnabled`, projects a launch preference map for the current
+workspace keyed by the canonical project `sectionKey`, persists explicit
+changes through `onSessionLaunchModePreferenceChange`, and supplies the exact
+project-path probe through
+`AgentHostApi.workspace.resolveSessionWorktreeSupport`. AgentGUI renders the
+selector only when all four pieces exist, the selected target is explicitly
+self-owned, a real project path and section key are selected, and the probe
+succeeds. Existing Sessions and shared/remote targets never expose it.
+Tutti Desktop carries the exact `agentTargetId` and project path through the
+generated daemon support contract. Tuttid resolves that target through its
+local launch authority and fails closed for shared-Agent identities. The
+Session create boundary repeats the same target admission before allocating a
+worktree and also requires a project `railPlacement` with a non-empty logical
+project path. An unscoped `conversations` Session therefore cannot acquire
+worktree isolation even through a direct API request, so React visibility is
+presentation defense rather than the business authorization boundary.
+The adapter records the selected repository-relative cwd and remaps it under
+the isolated checkout, so a registered project below the repository root keeps
+the same working-directory scope. A retry with the same Workspace, Session,
+repository, and relative cwd reuses its exact metadata-backed checkout before
+entering Host idempotency; a mismatched identity fails closed.
+
+The stored `local | worktree` value records future launch intent; canonical
+Session `isolation` records what actually launched. Probe failure, temporary
+repository incompatibility, or a missing host capability makes the effective
+mode `local` without overwriting a saved `worktree` intent. Visiting an old
+Session also cannot write that preference. Tutti Desktop persists the nested
+`workspaceId -> project.sectionKey -> mode` map in daemon-backed desktop
+preferences and enables the capability. Each change uses the daemon-owned
+`preferences.agent.session.launch.mode.patch.requested` workspace/project patch;
+its SQLite transaction merges against the latest map, and full
+desktop-preference updates preserve that field, so concurrent windows cannot
+replace one another's choices. Renderer write failures roll back only
+the still-current optimistic value and are consumed through the Workbench
+diagnostic path. Published AgentGUI defaults the capability off so other hosts
+may opt in independently. The composer only adds `isolation: "worktree"` to the
+admitted activation input. Tutti's daemon adapter owns the filesystem checkout
+and provider-preparation cwd, while Host continues to own the idempotent Session
+create. The canonical Session projection later carries the created worktree
+path, branch, and base commit. Rail rows render the worktree glyph from that
+canonical isolation projection next to relative time in the unhovered row and
+never infer it from `cwd`.
 
 A locked Session cwd existence check is UI-local observation, not Session
 truth. AgentGUI starts it only after pending creation has resolved, scopes its

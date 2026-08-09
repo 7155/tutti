@@ -9,6 +9,8 @@ import { enAgentGuiSlashPalette } from "./en.agentGuiSlashPalette.ts";
 import { enAgentGuiSessionActions } from "./en.agentGuiSessionActions.ts";
 import { enAgentGuiCollaboration } from "./en.agentGuiCollaboration.ts";
 import { enAgentGuiUsageStatus } from "./en.agentGuiUsageStatus.ts";
+import { enAgentGuiComposer } from "./en.agentGuiComposer.ts";
+import { enAgentGuiProjectLaunch } from "./en.agentGuiProjectLaunch.ts";
 
 export const enAgentGui = {
   imageDownloaded: "Image downloaded",
@@ -102,8 +104,7 @@ export const enAgentGui = {
   modelLabel: "Model",
   modelSelectionLabel: "Model selection",
   defaultModel: "Default model",
-  loadingOptions: "Loading…",
-  inheritedUnavailable: "Inherited / unavailable",
+  ...enAgentGuiComposer,
   reasoningLabel: "Reasoning",
   reasoningDegreeLabel: "Reasoning level",
   reasoningOptionDefault: "Default",
@@ -439,6 +440,7 @@ export const enAgentGui = {
   startConversation: "Start session",
   selectConversation: "Select a session",
   loadingConversations: "Loading sessions...",
+  conversationsLoadFailed: "Could not load sessions",
   loadingConversation: "Loading session...",
   scrollToBottom: "Scroll to bottom",
   searchNoConversations: "No related sessions",
@@ -723,9 +725,7 @@ export const enAgentGui = {
   quickPrompts: enAgentGuiQuickPrompts,
   referenceWorkspaceFiles: "Reference workspace files",
   ...enAgentGuiReferencePicker,
-  projectLocked: "Project cannot be changed after the session starts",
-  projectMissingDescription:
-    "This conversation's working directory no longer exists",
+  ...enAgentGuiProjectLaunch,
   fileMentionEnterFolder: "Enter folder",
   fileMentionSwitchCategory: "Switch category",
   fileMentionNavigateHierarchy: "Enter/leave folder",

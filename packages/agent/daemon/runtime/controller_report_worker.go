@@ -15,6 +15,24 @@ import (
 
 func (c *Controller) enqueueSessionReport(ctx context.Context, session Session, events []activityshared.Event) {
 	c.observeGoalControlLifecycle(ctx, session, events)
+	report := c.prepareSessionReport(session, events)
+	c.observeProviderObservations(ctx, session, report.ProviderObservations)
+	if len(report.GoalReconcileRequests) > 0 {
+		control := report
+		control.TimelineItems = nil
+		control.StatePatches = nil
+		control.MessageUpdates = nil
+		control.SessionAudits = nil
+		report.GoalReconcileRequests = nil
+		_ = c.reportGoalReconcileControl(ctx, control)
+	}
+	c.enqueueReport(ctx, report)
+}
+
+func (c *Controller) prepareSessionReport(
+	session Session,
+	events []activityshared.Event,
+) agentsessionstore.ReportActivityInput {
 	c.mu.Lock()
 	provisional := c.provisionalSessions[sessionKey(session.RoomID, session.AgentSessionID)]
 	c.mu.Unlock()
@@ -33,17 +51,55 @@ func (c *Controller) enqueueSessionReport(ctx context.Context, session Session, 
 		report.MessageUpdates = nil
 		report.SessionAudits = nil
 	}
-	c.observeProviderObservations(ctx, session, report.ProviderObservations)
-	if len(report.GoalReconcileRequests) > 0 {
-		control := report
-		control.TimelineItems = nil
-		control.StatePatches = nil
-		control.MessageUpdates = nil
-		control.SessionAudits = nil
-		report.GoalReconcileRequests = nil
-		_ = c.reportGoalReconcileControl(ctx, control)
+	return report
+}
+
+// reportSessionBeforePublish establishes the commit-before-publish barrier
+// for terminal facts. Live projections read the canonical Store while
+// handling the published event, so publishing a settled event before its
+// active-turn pointer is cleared creates an invalid snapshot and forces every
+// caller to reconnect. The bounded wait keeps a broken reporter fail-fast and
+// deliberately withholds the uncommitted event rather than advertising state
+// that the canonical store does not contain.
+func (c *Controller) reportSessionBeforePublish(
+	ctx context.Context,
+	session Session,
+	events []activityshared.Event,
+) error {
+	if c == nil || c.reporter == nil {
+		return nil
 	}
-	c.enqueueReport(ctx, report)
+	c.observeGoalControlLifecycle(ctx, session, events)
+	report := c.prepareSessionReport(session, events)
+	if len(report.StatePatches) == 0 && len(report.MessageUpdates) == 0 &&
+		len(report.SessionAudits) == 0 && len(report.GoalReconcileRequests) == 0 {
+		return nil
+	}
+	c.observeProviderObservations(ctx, session, report.ProviderObservations)
+	reportCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	request := reportRequest{
+		ctx:    reportCtx,
+		report: report,
+		done:   make(chan error, 1),
+	}
+	if c.reportQueue == nil {
+		return c.report(request.ctx, request)
+	}
+	c.reportQueue.enqueue(request)
+	select {
+	case err := <-request.done:
+		return err
+	case <-reportCtx.Done():
+		slog.Warn(
+			"agent session terminal activity report barrier timed out",
+			"event", "agent_session.activity_report.terminal_barrier_timeout",
+			"room_id", session.RoomID,
+			"agent_session_id", session.AgentSessionID,
+			"error", reportCtx.Err(),
+		)
+		return reportCtx.Err()
+	}
 }
 
 func (c *Controller) SetGoalControlLifecycleObserver(observer GoalControlLifecycleObserver) {
@@ -189,8 +245,7 @@ func (c *Controller) reportProviderAcceptanceDurable(
 	if c == nil || c.reporter == nil || !containsDurableProviderAcceptance(events) {
 		return false, nil
 	}
-	report := reportActivityInput(session, events)
-	c.enrichReportStatePatchesWithSessionMetadata(session, &report)
+	report := c.prepareSessionReport(session, events)
 	// Mirror enqueueSessionReport: observe batches before the durable commit so
 	// checkpoint candidates exist when ObserveReplayCommitted runs.
 	c.observeProviderObservations(ctx, session, report.ProviderObservations)

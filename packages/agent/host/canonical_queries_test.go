@@ -29,6 +29,54 @@ type canonicalQueryStore struct {
 	interactionTreeFound bool
 }
 
+type planContinuationCanonicalStore struct {
+	CanonicalStore
+	session      storesqlite.Session
+	turn         storesqlite.Turn
+	submitTurnID string
+	submitFound  bool
+	turnPage     storesqlite.SessionTurnSummaryPage
+}
+
+func (s planContinuationCanonicalStore) GetSessionAndTurn(
+	_ context.Context,
+	workspaceID, sessionID, turnID string,
+) (storesqlite.Session, storesqlite.Turn, bool, error) {
+	if workspaceID != s.session.WorkspaceID || sessionID != s.session.ID || turnID != s.turn.TurnID {
+		return storesqlite.Session{}, storesqlite.Turn{}, false, errors.New("unexpected continuation identity")
+	}
+	return s.session, s.turn, true, nil
+}
+
+func (s planContinuationCanonicalStore) FindTurnByClientSubmitID(
+	_ context.Context,
+	workspaceID, sessionID, clientSubmitID string,
+) (string, bool, error) {
+	if workspaceID != s.session.WorkspaceID || sessionID != s.session.ID || clientSubmitID == "" {
+		return "", false, errors.New("unexpected submit evidence identity")
+	}
+	return s.submitTurnID, s.submitFound, nil
+}
+
+func (s planContinuationCanonicalStore) ListSessionTurnSummaries(
+	context.Context,
+	storesqlite.ListSessionTurnSummariesInput,
+) (storesqlite.SessionTurnSummaryPage, error) {
+	return s.turnPage, nil
+}
+
+type planContinuationOperationStore struct {
+	RuntimeOperationStore
+	operation storesqlite.RuntimeOperation
+	found     bool
+}
+
+func (s planContinuationOperationStore) GetRuntimeOperation(
+	context.Context, string, string,
+) (storesqlite.RuntimeOperation, bool, error) {
+	return s.operation, s.found, nil
+}
+
 func (s canonicalQueryStore) GetSessionInteractionTreeSnapshot(
 	_ context.Context,
 	query storesqlite.SessionInteractionTreeQuery,
@@ -124,6 +172,105 @@ func TestGetTurnRejectsIncompleteIdentity(t *testing.T) {
 				t.Fatalf("GetTurn() error = %v, want %v", err, ErrInvalidArgument)
 			}
 		})
+	}
+}
+
+func TestGetPlanDecisionContinuationOwnsDurableParentChildProof(t *testing.T) {
+	ref := SessionRef{WorkspaceID: "workspace-1", AgentSessionID: "session-1"}
+	parentTurnID := "parent-turn"
+	childTurnID := "child-turn"
+	operationID := runtimeOperationID(
+		ref.WorkspaceID, ref.AgentSessionID,
+		storesqlite.RuntimeOperationKindPlanDecision, parentTurnID,
+	)
+	operation := storesqlite.RuntimeOperation{
+		OperationID: operationID, WorkspaceID: ref.WorkspaceID,
+		AgentSessionID: ref.AgentSessionID, Kind: storesqlite.RuntimeOperationKindPlanDecision,
+		Status: storesqlite.RuntimeOperationStatusCompleted, TurnID: parentTurnID,
+		Payload: map[string]any{
+			"promptKind": "plan-implementation", "action": "implement",
+			"step": "send_confirmed", "confirmedTurnId": childTurnID,
+			"clientSubmitId": "plan-decision:" + operationID,
+		},
+	}
+	child := storesqlite.Turn{
+		WorkspaceID: ref.WorkspaceID, AgentSessionID: ref.AgentSessionID,
+		TurnID: childTurnID, Phase: storesqlite.TurnPhaseRunning,
+	}
+	host := New(Config{
+		CanonicalStore: planContinuationCanonicalStore{
+			session: storesqlite.Session{
+				WorkspaceID: ref.WorkspaceID, ID: ref.AgentSessionID,
+				ActiveTurnID: childTurnID,
+			},
+			turn: child, submitTurnID: childTurnID, submitFound: true,
+			turnPage: storesqlite.SessionTurnSummaryPage{Turns: []storesqlite.SessionTurnSummary{{TurnID: childTurnID}}},
+		},
+		RuntimeOperations: planContinuationOperationStore{operation: operation, found: true},
+	})
+
+	got, found, err := host.GetPlanDecisionContinuation(t.Context(), ref, parentTurnID)
+	if err != nil || !found || !reflect.DeepEqual(got.Turn, child) || got.Session.ActiveTurnID != childTurnID {
+		t.Fatalf("GetPlanDecisionContinuation() = (%#v, %v, %v), want authorized child", got, found, err)
+	}
+}
+
+func TestGetPlanDecisionContinuationRejectsStaleChildBehindNewerTurn(t *testing.T) {
+	ref := SessionRef{WorkspaceID: "workspace-1", AgentSessionID: "session-1"}
+	parentTurnID := "parent-turn"
+	childTurnID := "child-turn"
+	operationID := runtimeOperationID(
+		ref.WorkspaceID, ref.AgentSessionID,
+		storesqlite.RuntimeOperationKindPlanDecision, parentTurnID,
+	)
+	operation := storesqlite.RuntimeOperation{
+		OperationID: operationID, WorkspaceID: ref.WorkspaceID,
+		AgentSessionID: ref.AgentSessionID, Kind: storesqlite.RuntimeOperationKindPlanDecision,
+		Status: storesqlite.RuntimeOperationStatusCompleted, TurnID: parentTurnID,
+		Payload: map[string]any{
+			"promptKind": "plan-implementation", "action": "implement",
+			"step": "send_confirmed", "confirmedTurnId": childTurnID,
+			"clientSubmitId": "plan-decision:" + operationID,
+		},
+	}
+	store := planContinuationCanonicalStore{
+		session:      storesqlite.Session{WorkspaceID: ref.WorkspaceID, ID: ref.AgentSessionID, ActiveTurnID: "newer-turn"},
+		turn:         storesqlite.Turn{WorkspaceID: ref.WorkspaceID, AgentSessionID: ref.AgentSessionID, TurnID: childTurnID},
+		submitTurnID: childTurnID, submitFound: true,
+		turnPage: storesqlite.SessionTurnSummaryPage{Turns: []storesqlite.SessionTurnSummary{{TurnID: "newer-turn"}}},
+	}
+	host := New(Config{
+		CanonicalStore:    store,
+		RuntimeOperations: planContinuationOperationStore{operation: operation, found: true},
+	})
+	if _, found, err := host.GetPlanDecisionContinuation(t.Context(), ref, parentTurnID); err != nil || found {
+		t.Fatalf("GetPlanDecisionContinuation() = (found=%v, err=%v), want stale child rejected", found, err)
+	}
+}
+
+func TestGetPlanDecisionContinuationDoesNotAuthorizeBeforeSubmitConfirmation(t *testing.T) {
+	ref := SessionRef{WorkspaceID: "workspace-1", AgentSessionID: "session-1"}
+	parentTurnID := "parent-turn"
+	operationID := runtimeOperationID(
+		ref.WorkspaceID, ref.AgentSessionID,
+		storesqlite.RuntimeOperationKindPlanDecision, parentTurnID,
+	)
+	operation := storesqlite.RuntimeOperation{
+		OperationID: operationID, WorkspaceID: ref.WorkspaceID,
+		AgentSessionID: ref.AgentSessionID, Kind: storesqlite.RuntimeOperationKindPlanDecision,
+		Status: storesqlite.RuntimeOperationStatusLeased, TurnID: parentTurnID,
+		Payload: map[string]any{
+			"promptKind": "plan-implementation", "action": "implement",
+			"step": "send_dispatched", "clientSubmitId": "plan-decision:" + operationID,
+		},
+	}
+	host := New(Config{
+		CanonicalStore:    planContinuationCanonicalStore{},
+		RuntimeOperations: planContinuationOperationStore{operation: operation, found: true},
+	})
+	_, found, err := host.GetPlanDecisionContinuation(t.Context(), ref, parentTurnID)
+	if err != nil || found {
+		t.Fatalf("GetPlanDecisionContinuation() = (found=%v, err=%v), want not-ready operation", found, err)
 	}
 }
 

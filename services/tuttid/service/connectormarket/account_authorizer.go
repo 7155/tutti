@@ -25,6 +25,33 @@ func NewAccountSessionAuthorizer(authJSONPath string, ppeLane string) (*AccountS
 }
 
 func (authorizer *AccountSessionAuthorizer) Authorize(request *http.Request) error {
+	return authorizer.authorize(request, "")
+}
+
+func (authorizer *AccountSessionAuthorizer) AuthorizeForAccount(request *http.Request, expectedAccountID string) error {
+	return authorizer.authorize(request, strings.TrimSpace(expectedAccountID))
+}
+
+func (authorizer *AccountSessionAuthorizer) CookieForAccount(accountID string) (string, error) {
+	headers, err := authorizer.HeadersForAccount(accountID)
+	if err != nil {
+		return "", err
+	}
+	return headers.Get("Cookie"), nil
+}
+
+func (authorizer *AccountSessionAuthorizer) HeadersForAccount(accountID string) (http.Header, error) {
+	request, err := http.NewRequest(http.MethodGet, "https://connector-authorization.invalid/", nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := authorizer.AuthorizeForAccount(request, accountID); err != nil {
+		return nil, err
+	}
+	return request.Header.Clone(), nil
+}
+
+func (authorizer *AccountSessionAuthorizer) authorize(request *http.Request, expectedAccountID string) error {
 	if authorizer == nil || request == nil {
 		return errors.New("connector market account authorizer is unavailable")
 	}
@@ -35,9 +62,13 @@ func (authorizer *AccountSessionAuthorizer) Authorize(request *http.Request) err
 	var session struct {
 		SessionID string `json:"session_id"`
 		Cookie    string `json:"cookie"`
+		UserID    string `json:"user_id"`
 	}
 	if err := json.Unmarshal(raw, &session); err != nil || strings.TrimSpace(session.SessionID) == "" || strings.TrimSpace(session.Cookie) == "" {
 		return errors.New("connector market Tutti account session is invalid")
+	}
+	if expectedAccountID != "" && strings.TrimSpace(session.UserID) != expectedAccountID {
+		return errors.New("connector market Tutti account changed during authorization sync")
 	}
 	request.Header.Set("Cookie", strings.TrimSpace(session.Cookie))
 	if authorizer.ppeLane != "" {

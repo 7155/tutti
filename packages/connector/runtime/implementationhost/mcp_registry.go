@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
 
 	connectorruntime "github.com/tutti-os/tutti/packages/connector/runtime"
+	connectormcp "github.com/tutti-os/tutti/packages/connector/runtime/mcp"
 )
 
 // MCPTool is the connector-scoped projection exposed by the local connector
@@ -33,10 +36,11 @@ type registeredMCPTool struct {
 // shares the implementation host's generation-fenced RouteTable so MCP and
 // CLI publication observe the same lifecycle boundary.
 type MCPRegistry struct {
-	mu          sync.RWMutex
-	routes      *connectorruntime.RouteTable
-	subscribers map[uint64]chan struct{}
-	nextID      uint64
+	mu                         sync.RWMutex
+	routes                     *connectorruntime.RouteTable
+	subscribers                map[uint64]chan struct{}
+	nextID                     uint64
+	authorizationErrorObserver func()
 }
 
 func NewMCPRegistry() *MCPRegistry {
@@ -69,56 +73,202 @@ func (registry *MCPRegistry) activeRoutes() []*connectorRoute {
 	return routes
 }
 
-// Tools returns the stable native MCP projection for every active Connector.
-// Account scoping is owned by the Connector runtime publication boundary; the
-// local MCP binding does not express Connector-level permissions.
-func (registry *MCPRegistry) Tools() []MCPTool {
+// Tools reads each active downstream MCP directly. Route activation keeps only
+// bootstrap evidence; it is not an Agent-visible tool-list cache.
+func (registry *MCPRegistry) Tools(ctx context.Context) ([]MCPTool, error) {
+	routes := registry.activeRoutes()
+	type routeToolsResult struct {
+		route *connectorRoute
+		tools []mcpTool
+		err   error
+	}
+	results := make(chan routeToolsResult, len(routes))
+	for _, route := range routes {
+		go func(route *connectorRoute) {
+			tools, err := registry.listRouteTools(ctx, route)
+			results <- routeToolsResult{route: route, tools: tools, err: err}
+		}(route)
+	}
 	seen := make(map[string]struct{})
 	result := make([]MCPTool, 0)
-	for _, route := range registry.activeRoutes() {
-		for _, tool := range route.mcpTools {
-			if _, duplicate := seen[tool.localName]; duplicate {
+	var listErr error
+	succeeded := 0
+	for range routes {
+		listed := <-results
+		if listed.err != nil {
+			listErr = errors.Join(listErr, fmt.Errorf("%s: %w", listed.route.connectorKey, listed.err))
+			slog.Warn("connector MCP tools/list omitted unavailable route", "connectorKey", listed.route.connectorKey, "error", listed.err)
+			continue
+		}
+		succeeded++
+		for _, tool := range listed.tools {
+			localName := listed.route.connectorKey + "_" + tool.Name
+			if _, duplicate := seen[localName]; duplicate {
 				continue
 			}
-			seen[tool.localName] = struct{}{}
-			result = append(result, MCPTool{Name: tool.localName, Description: tool.description,
-				InputSchema: cloneJSONMap(tool.inputSchema)})
+			seen[localName] = struct{}{}
+			result = append(result, MCPTool{Name: localName, Description: tool.Description,
+				InputSchema: cloneJSONMap(tool.InputSchema)})
 		}
 	}
+	if len(routes) > 0 && succeeded == 0 {
+		return nil, listErr
+	}
 	sort.Slice(result, func(left, right int) bool { return result[left].Name < result[right].Name })
-	return result
+	return result, nil
 }
 
 // Call resolves a native namespaced tool against an immutable current route.
 // Duplicate bindings fail closed instead of selecting an arbitrary account or
 // generation.
 func (registry *MCPRegistry) Call(ctx context.Context, name string, arguments map[string]any) (json.RawMessage, error) {
+	return registry.CallValidated(ctx, name, arguments, nil)
+}
+
+// CallValidated resolves the current downstream Tool once, lets the local
+// transport validate request-integrity headers against that exact live schema,
+// and then calls the same binding.
+func (registry *MCPRegistry) CallValidated(ctx context.Context, name string, arguments map[string]any, validate func(MCPTool) error) (json.RawMessage, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, errors.New("connector MCP tool was not found")
 	}
-	var binding *registeredMCPTool
-	var owner *connectorRoute
+	type candidateResult struct {
+		route *connectorRoute
+		tools []mcpTool
+		err   error
+	}
+	candidates := make([]*connectorRoute, 0)
 	for _, route := range registry.activeRoutes() {
-		tool, found := route.mcpTools[name]
-		if !found {
+		if strings.HasPrefix(name, route.connectorKey+"_") {
+			candidates = append(candidates, route)
+		}
+	}
+	results := make(chan candidateResult, len(candidates))
+	for _, route := range candidates {
+		go func(route *connectorRoute) {
+			tools, err := registry.listRouteTools(ctx, route)
+			results <- candidateResult{route: route, tools: tools, err: err}
+		}(route)
+	}
+	type resolvedBinding struct {
+		binding registeredMCPTool
+		owner   *connectorRoute
+		tool    MCPTool
+	}
+	bindings := make([]resolvedBinding, 0, 1)
+	var resolveErr error
+	for range candidates {
+		listed := <-results
+		if listed.err != nil {
+			resolveErr = errors.Join(resolveErr, fmt.Errorf("%s: %w", listed.route.connectorKey, listed.err))
 			continue
 		}
-		if binding != nil {
-			return nil, errors.New("connector MCP tool binding is ambiguous")
+		for _, tool := range listed.tools {
+			localName := listed.route.connectorKey + "_" + tool.Name
+			if localName != name {
+				continue
+			}
+			bindings = append(bindings, resolvedBinding{
+				binding: registeredMCPTool{localName: localName, upstreamName: tool.Name, client: routeMCPCaller(listed.route)}, owner: listed.route,
+				tool: MCPTool{Name: localName, Description: tool.Description, InputSchema: cloneJSONMap(tool.InputSchema)},
+			})
 		}
-		copy := tool
-		binding, owner = &copy, route
 	}
-	if binding == nil || owner == nil {
+	if len(bindings) == 0 {
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
 		return nil, errors.New("connector MCP tool was not found")
 	}
-	if !registry.routeCurrent(owner) {
+	if len(bindings) != 1 {
+		return nil, errors.New("connector MCP tool binding is ambiguous")
+	}
+	resolved := bindings[0]
+	if validate != nil {
+		if err := validate(resolved.tool); err != nil {
+			return nil, err
+		}
+	}
+	if !registry.routeCurrent(resolved.owner) {
 		return nil, errors.New("connector MCP route is no longer active")
 	}
-	return binding.client.Call(ctx, "tools/call", map[string]any{
-		"name": binding.upstreamName, "arguments": arguments,
+	result, err := resolved.binding.client.Call(ctx, "tools/call", map[string]any{
+		"name": resolved.binding.upstreamName, "arguments": arguments,
 	})
+	if err != nil {
+		registry.observeAuthorizationError(err)
+	}
+	return result, err
+}
+
+func (registry *MCPRegistry) listRouteTools(ctx context.Context, route *connectorRoute) ([]mcpTool, error) {
+	client := routeMCPCaller(route)
+	if client == nil {
+		return nil, errors.New("connector MCP route is unavailable")
+	}
+	var tools []mcpTool
+	var err error
+	if route.remoteMCP != nil {
+		tools, err = listModernMCPTools(ctx, client)
+	} else {
+		tools, err = listMCPTools(ctx, client)
+	}
+	if err != nil {
+		registry.observeAuthorizationError(err)
+		return nil, err
+	}
+	if err := validateMCPToolContracts(route.connectorKey, tools); err != nil {
+		return nil, err
+	}
+	if route.remoteMCP != nil {
+		schemas := make(map[string]map[string]any, len(tools))
+		for _, tool := range tools {
+			schemas[tool.Name] = tool.InputSchema
+		}
+		if err := route.remoteMCP.ReplaceTools(schemas); err != nil {
+			return nil, err
+		}
+	}
+	return tools, nil
+}
+
+func routeMCPCaller(route *connectorRoute) mcpCaller {
+	if route == nil {
+		return nil
+	}
+	if route.remoteMCP != nil {
+		return route.remoteMCP
+	}
+	if route.mcpClient != nil {
+		return route.mcpClient
+	}
+	for _, tool := range route.mcpTools {
+		return tool.client
+	}
+	return nil
+}
+
+func (registry *MCPRegistry) observeAuthorizationError(err error) {
+	var rpcErr *connectormcp.RPCError
+	if !errors.As(err, &rpcErr) || (rpcErr.Code != -33001 && rpcErr.Code != -33002) {
+		return
+	}
+	registry.mu.RLock()
+	observer := registry.authorizationErrorObserver
+	registry.mu.RUnlock()
+	if observer != nil {
+		observer()
+	}
+}
+
+func (registry *MCPRegistry) SetAuthorizationErrorObserver(observer func()) {
+	if registry == nil {
+		return
+	}
+	registry.mu.Lock()
+	registry.authorizationErrorObserver = observer
+	registry.mu.Unlock()
 }
 
 func (registry *MCPRegistry) routeCurrent(route *connectorRoute) bool {

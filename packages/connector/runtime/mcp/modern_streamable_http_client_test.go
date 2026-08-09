@@ -112,6 +112,27 @@ func TestModernStreamableHTTPClientRejectsInvalidToolHeaderAnnotation(t *testing
 	}
 }
 
+func TestModernStreamableHTTPClientReplacesDynamicToolMetadata(t *testing.T) {
+	server := httptest.NewTLSServer(http.NotFoundHandler())
+	defer server.Close()
+	client := newModernTestClient(t, server, "1.0.0")
+	if err := client.RegisterTool("removed", map[string]any{"type": "object"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.ReplaceTools(map[string]map[string]any{"current": {
+		"type": "object", "properties": map[string]any{"region": map[string]any{"type": "string", "x-mcp-header": "Region"}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	client.mu.RLock()
+	_, removed := client.toolHeaders["removed"]
+	current := client.toolHeaders["current"]
+	client.mu.RUnlock()
+	if removed || len(current) != 1 || current[0].name != "Region" {
+		t.Fatalf("tool headers = %#v", client.toolHeaders)
+	}
+}
+
 func TestModernStreamableHTTPClientCloseDoesNotSendDelete(t *testing.T) {
 	calls := 0
 	server := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))

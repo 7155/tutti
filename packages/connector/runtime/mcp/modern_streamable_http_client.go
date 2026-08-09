@@ -156,6 +156,31 @@ func (client *ModernStreamableHTTPClient) RegisterTool(name string, schema map[s
 	return nil
 }
 
+// ReplaceTools atomically replaces all tool-derived header bindings. A live
+// tools/list can therefore remove tools or change x-mcp-header annotations
+// without retaining stale metadata from route bootstrap.
+func (client *ModernStreamableHTTPClient) ReplaceTools(schemas map[string]map[string]any) error {
+	replacement := make(map[string][]modernToolHeader, len(schemas))
+	for name, schema := range schemas {
+		name = strings.TrimSpace(name)
+		if name == "" || schema == nil {
+			return errors.New("modern MCP Tool schema is invalid")
+		}
+		headers, err := collectModernToolHeaders(schema)
+		if err != nil {
+			return err
+		}
+		replacement[name] = headers
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.closed {
+		return errors.New("modern MCP Streamable HTTP client is closed")
+	}
+	client.toolHeaders = replacement
+	return nil
+}
+
 func (client *ModernStreamableHTTPClient) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	method = strings.TrimSpace(method)
 	if method == "" {

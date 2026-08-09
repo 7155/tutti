@@ -10,6 +10,37 @@ import (
 	market "github.com/tutti-os/tutti/packages/connector/host"
 )
 
+func TestConnectorAuthorizationClientFetchesAccountSnapshot(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/desktop/v1/connector-authorizations/snapshot" {
+			http.NotFound(response, request)
+			return
+		}
+		_, _ = response.Write([]byte(`{"revision":"12","connectors":[{"connectorId":"tencent-docs","connectorVersion":"0.2.0","state":"reauth_required","connectionId":"connection-1","connectionVersion":"4"}]}`))
+	}))
+	defer server.Close()
+	client, err := NewConnectorAuthorizationClient(ConnectorAuthorizationClientConfig{
+		BaseURL: server.URL + "/api/desktop", HTTPClient: server.Client(),
+		AuthorizeAccountRequest: func(_ *http.Request, accountID string) error {
+			if accountID != "account-1" {
+				t.Fatalf("accountID = %q", accountID)
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := client.AuthorizationSnapshot(context.Background(), "account-1")
+	if err != nil || snapshot.Revision != 12 || len(snapshot.Connectors) != 1 {
+		t.Fatalf("snapshot = %#v, error = %v", snapshot, err)
+	}
+	projection := snapshot.Connectors[0]
+	if projection.State != market.AuthorizationStateExpired || projection.ConnectionVersion != 4 || projection.ServerRevision != 12 || !projection.ServerSynchronized {
+		t.Fatalf("projection = %#v", projection)
+	}
+}
+
 func TestConnectorAuthorizationClientStartsAccountScopedSession(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if request.Header.Get("Cookie") != "sid=user-session" {
@@ -39,13 +70,20 @@ func TestConnectorAuthorizationClientStartsAccountScopedSession(t *testing.T) {
 	defer server.Close()
 	client, err := NewConnectorAuthorizationClient(ConnectorAuthorizationClientConfig{
 		BaseURL: server.URL + "/api/desktop", HTTPClient: server.Client(),
-		AuthorizeRequest: func(request *http.Request) error { request.Header.Set("Cookie", "sid=user-session"); return nil },
+		AuthorizeAccountRequest: func(request *http.Request, accountID string) error {
+			if accountID != "account-1" {
+				t.Fatalf("accountID = %q", accountID)
+			}
+			request.Header.Set("Cookie", "sid=user-session")
+			return nil
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	result, err := client.Begin(context.Background(), market.AuthorizationStartRequest{
 		OperationID: "operation-1", ClientRequestID: "request-1",
+		Scope:     market.OperationScope{AccountID: "account-1"},
 		Connector: market.Connector{Key: "gmail"},
 		Release:   market.Release{Version: "1.0.0", Manifest: market.Manifest{AuthorizationKind: "oauth2"}},
 	})
@@ -55,7 +93,7 @@ func TestConnectorAuthorizationClientStartsAccountScopedSession(t *testing.T) {
 	if result.SessionID != "auth-1" || result.ActionType != "redirect" || result.AuthorizationURL != "https://auth.example/connect" || result.OperationID != "operation-1" {
 		t.Fatalf("result = %#v", result)
 	}
-	observation, err := client.Observe(context.Background(), market.AuthorizationObserveRequest{Session: result})
+	observation, err := client.Observe(context.Background(), market.AuthorizationObserveRequest{Scope: market.OperationScope{AccountID: "account-1"}, Session: result})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +126,8 @@ func TestConnectorAuthorizationClientSubmitsNativeSecretWithoutPersistingItInSes
 	}))
 	defer server.Close()
 	client, err := NewConnectorAuthorizationClient(ConnectorAuthorizationClientConfig{
-		BaseURL: server.URL, HTTPClient: server.Client(), AuthorizeRequest: func(*http.Request) error { return nil },
+		BaseURL: server.URL, HTTPClient: server.Client(),
+		AuthorizeAccountRequest: func(*http.Request, string) error { return nil },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -96,6 +135,7 @@ func TestConnectorAuthorizationClientSubmitsNativeSecretWithoutPersistingItInSes
 	secret := []byte(token)
 	result, err := client.Begin(context.Background(), market.AuthorizationStartRequest{
 		OperationID: "operation-secret-1", ClientRequestID: "request-secret-1", Secret: secret,
+		Scope:     market.OperationScope{AccountID: "account-1"},
 		Connector: market.Connector{Key: "mail"},
 		Release:   market.Release{Version: "2.0.0", Manifest: market.Manifest{AuthorizationKind: "api_key"}},
 	})

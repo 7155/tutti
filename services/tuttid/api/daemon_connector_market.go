@@ -20,6 +20,9 @@ func (api DaemonAPI) GetConnectorMarket(
 	if err != nil {
 		return connectorMarketGetSnapshotError(err), nil
 	}
+	if err := api.overlayConnectorAuthorizationProjections(ctx, snapshot.Connectors); err != nil {
+		return connectorMarketGetSnapshotError(err), nil
+	}
 	projected, err := projectConnectorMarket[tuttigenerated.ConnectorMarketSnapshot](snapshot)
 	if err != nil {
 		return nil, err
@@ -73,6 +76,17 @@ func (api DaemonAPI) ListConnectorMarketCatalog(
 		}
 		return tuttigenerated.ListConnectorMarketCatalog503JSONResponse{ConnectorMarketUnavailableErrorJSONResponse: unavailableConnectorMarketResponse(payload)}, nil
 	}
+	pageConnectors := make([]market.Connector, len(page.Items))
+	for index := range page.Items {
+		pageConnectors[index] = page.Items[index].Connector
+	}
+	if err := api.overlayConnectorAuthorizationProjections(ctx, pageConnectors); err != nil {
+		payload, _ := connectorMarketError(err)
+		return tuttigenerated.ListConnectorMarketCatalog503JSONResponse{ConnectorMarketUnavailableErrorJSONResponse: unavailableConnectorMarketResponse(payload)}, nil
+	}
+	for index := range page.Items {
+		page.Items[index].Connector = pageConnectors[index]
+	}
 	projected, err := projectConnectorMarket[tuttigenerated.ConnectorMarketCatalogPage](page)
 	if err != nil {
 		return nil, err
@@ -99,6 +113,12 @@ func (api DaemonAPI) GetConnectorMarketConnector(
 			return tuttigenerated.GetConnectorMarketConnector503JSONResponse{ConnectorMarketUnavailableErrorJSONResponse: unavailableConnectorMarketResponse(payload)}, nil
 		}
 	}
+	projectedConnectors := []market.Connector{connector}
+	if err := api.overlayConnectorAuthorizationProjections(ctx, projectedConnectors); err != nil {
+		payload, _ := connectorMarketError(err)
+		return tuttigenerated.GetConnectorMarketConnector503JSONResponse{ConnectorMarketUnavailableErrorJSONResponse: unavailableConnectorMarketResponse(payload)}, nil
+	}
+	connector = projectedConnectors[0]
 	projected, err := projectConnectorMarket[tuttigenerated.ConnectorMarketConnector](connector)
 	if err != nil {
 		return nil, err
@@ -344,6 +364,35 @@ func (api DaemonAPI) connectorMarketAccountID() string {
 		return ""
 	}
 	return api.ConnectorMarketScope().AccountID
+}
+
+func (api DaemonAPI) overlayConnectorAuthorizationProjections(ctx context.Context, connectors []market.Connector) error {
+	accountID := api.connectorMarketAccountID()
+	if accountID == "" || api.ConnectorMarketService == nil {
+		return nil
+	}
+	for index := range connectors {
+		connector := &connectors[index]
+		if connector.Release.Manifest.AuthorizationKind == "none" {
+			connector.Authorization = market.Authorization{State: market.AuthorizationStateNotRequired}
+			continue
+		}
+		projection, err := api.ConnectorMarketService.GetAuthorizationProjection(ctx, accountID, connector.Key)
+		if errors.Is(err, market.ErrNotFound) {
+			connector.Authorization = market.Authorization{State: market.AuthorizationStateDisconnected}
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if connector.Release.Manifest.Implementation.RemoteStreamableHTTP != nil &&
+			(!projection.ServerSynchronized || api.ConnectorAuthorizationReady != nil && !api.ConnectorAuthorizationReady(accountID)) {
+			connector.Authorization = market.Authorization{State: market.AuthorizationStateDisconnected}
+			continue
+		}
+		connector.Authorization = market.Authorization{State: projection.State, FailureCode: projection.FailureCode}
+	}
+	return nil
 }
 
 func projectConnectorMarket[T any](value any) (T, error) {

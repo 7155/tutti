@@ -16,6 +16,7 @@ import (
 	"time"
 
 	implementationhost "github.com/tutti-os/tutti/packages/connector/runtime/implementationhost"
+	connectorruntimemcp "github.com/tutti-os/tutti/packages/connector/runtime/mcp"
 )
 
 const (
@@ -205,7 +206,7 @@ func (server *Server) handlePost(writer http.ResponseWriter, request *http.Reque
 		writeRPCError(writer, http.StatusBadRequest, rpc.ID, -32602, "MCP request metadata is required", nil)
 		return
 	}
-	if validation := validateRequestHeaders(request, rpc.Method, params, metadata, server.registry); validation != nil {
+	if validation := validateRequestHeaders(request, rpc.Method, params, metadata); validation != nil {
 		writeRPCError(writer, validation.status, rpc.ID, validation.code, validation.message, validation.data)
 		return
 	}
@@ -222,8 +223,13 @@ func (server *Server) handlePost(writer http.ResponseWriter, request *http.Reque
 			"ttlMs": 300000, "cacheScope": "private",
 		}})
 	case "tools/list":
+		tools, err := server.registry.Tools(request.Context())
+		if err != nil {
+			writeRegistryError(writer, rpc.ID, err)
+			return
+		}
 		writeRPC(writer, http.StatusOK, rpcResponse{JSONRPC: "2.0", ID: rpc.ID, Result: map[string]any{
-			"resultType": "complete", "tools": server.registry.Tools(), "ttlMs": 0, "cacheScope": "private",
+			"resultType": "complete", "tools": tools, "ttlMs": 0, "cacheScope": "private",
 		}})
 	case "tools/call":
 		server.handleToolCall(writer, request, rpc.ID, params)
@@ -245,9 +251,17 @@ func (server *Server) handleToolCall(writer http.ResponseWriter, request *http.R
 	if arguments == nil {
 		arguments = map[string]any{}
 	}
-	raw, err := server.registry.Call(request.Context(), name, arguments)
+	var parameterValidation error
+	raw, err := server.registry.CallValidated(request.Context(), name, arguments, func(tool implementationhost.MCPTool) error {
+		parameterValidation = validateToolParameterHeaders(request.Header, []implementationhost.MCPTool{tool}, name, params["arguments"])
+		return parameterValidation
+	})
 	if err != nil {
-		writeRPCError(writer, http.StatusOK, id, -32000, err.Error(), nil)
+		if parameterValidation != nil {
+			writeRPCError(writer, http.StatusBadRequest, id, -32020, parameterValidation.Error(), nil)
+			return
+		}
+		writeRegistryError(writer, id, err)
 		return
 	}
 	var result map[string]any
@@ -259,6 +273,15 @@ func (server *Server) handleToolCall(writer http.ResponseWriter, request *http.R
 		result["resultType"] = "complete"
 	}
 	writeRPC(writer, http.StatusOK, rpcResponse{JSONRPC: "2.0", ID: id, Result: result})
+}
+
+func writeRegistryError(writer http.ResponseWriter, id json.RawMessage, err error) {
+	var rpcErr *connectorruntimemcp.RPCError
+	if errors.As(err, &rpcErr) && (rpcErr.Code == -33001 || rpcErr.Code == -33002) {
+		writeRPCError(writer, http.StatusOK, id, rpcErr.Code, rpcErr.Message, nil)
+		return
+	}
+	writeRPCError(writer, http.StatusOK, id, -32000, err.Error(), nil)
 }
 
 func (server *Server) handleSubscription(writer http.ResponseWriter, request *http.Request, token string, auth authorization, id json.RawMessage, params map[string]json.RawMessage) {
@@ -340,7 +363,7 @@ type requestValidationError struct {
 	data    any
 }
 
-func validateRequestHeaders(request *http.Request, method string, params map[string]json.RawMessage, metadata requestMetadata, registry *implementationhost.MCPRegistry) *requestValidationError {
+func validateRequestHeaders(request *http.Request, method string, params map[string]json.RawMessage, metadata requestMetadata) *requestValidationError {
 	requested := strings.TrimSpace(request.Header.Get("MCP-Protocol-Version"))
 	if requested == "" || requested != strings.TrimSpace(metadata.ProtocolVersion) {
 		return &requestValidationError{status: http.StatusBadRequest, code: -32020, message: "MCP-Protocol-Version header does not match request metadata"}
@@ -362,9 +385,6 @@ func validateRequestHeaders(request *http.Request, method string, params map[str
 	headerName, err := decodeHeaderValue(request.Header.Get("Mcp-Name"))
 	if err != nil || headerName != name {
 		return &requestValidationError{status: http.StatusBadRequest, code: -32020, message: "Mcp-Name header does not match request tool name"}
-	}
-	if err := validateToolParameterHeaders(request.Header, registry.Tools(), name, params["arguments"]); err != nil {
-		return &requestValidationError{status: http.StatusBadRequest, code: -32020, message: err.Error()}
 	}
 	return nil
 }

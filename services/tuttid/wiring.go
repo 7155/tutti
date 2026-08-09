@@ -319,19 +319,34 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 		RemoteHTTPClient: agenthttpx.NewClient(2 * time.Minute),
 		RemoteMCPBaseURL: connectorMCPBaseURL,
 		RemoteMCPTimeout: 30 * time.Second, RemoteMCPMaxResponse: 4 * 1024 * 1024,
-		AuthorizeRemoteRequest: marketAuthorizer.Authorize,
-		StateRoot:              filepath.Join(connectorStateRoot, "user-state"),
-		BinDir:                 filepath.Join(tuttitypes.DefaultStateDir(), "bin"),
-		UserHome:               userHome,
+		AuthorizeRemoteAccountRequest: marketAuthorizer.AuthorizeForAccount,
+		StateRoot:                     filepath.Join(connectorStateRoot, "user-state"),
+		BinDir:                        filepath.Join(tuttitypes.DefaultStateDir(), "bin"),
+		UserHome:                      userHome,
 	})
 	if err != nil {
 		return fmt.Errorf("configure connector implementation host: %w", err)
 	}
 	connectorAuthorizationClient, err := connectormarketservice.NewConnectorAuthorizationClient(connectormarketservice.ConnectorAuthorizationClientConfig{
-		BaseURL: connectorMarketBaseURL, HTTPClient: agenthttpx.NewClient(30 * time.Second), AuthorizeRequest: marketAuthorizer.Authorize,
+		BaseURL: connectorMarketBaseURL, HTTPClient: agenthttpx.NewClient(30 * time.Second),
+		AuthorizeAccountRequest: marketAuthorizer.AuthorizeForAccount,
 	})
 	if err != nil {
 		return fmt.Errorf("configure connector authorization: %w", err)
+	}
+	connectorDeviceID, err := tuttitypes.LoadOrCreateDeviceID(tuttitypes.DefaultStateDir())
+	if err != nil {
+		return fmt.Errorf("configure connector authorization realtime identity: %w", err)
+	}
+	connectorRealtimeURL := strings.TrimSpace(os.Getenv("TUTTI_CONNECTOR_REALTIME_URL"))
+	if connectorRealtimeURL == "" {
+		connectorRealtimeURL = strings.TrimSpace(os.Getenv("TUTTI_MOBILE_REALTIME_URL"))
+	}
+	connectorAuthorizationEvents, err := connectormarketservice.NewAuthorizationEventSource(connectormarketservice.AuthorizationEventSourceConfig{
+		URL: connectorRealtimeURL, DeviceID: connectorDeviceID, HeadersForAccount: marketAuthorizer.HeadersForAccount,
+	})
+	if err != nil {
+		return fmt.Errorf("configure connector authorization realtime: %w", err)
 	}
 	connectorRuntime, connectorAuthorization, compatibility, implementations := connectormarketservice.ProductionPorts(implementationHost, connectorAuthorizationClient)
 	if api.CLIRegistry == nil {
@@ -340,12 +355,16 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	api.CLIRegistry.AppCommands = cliservice.CompositeDynamicCommandRegistry{Registries: []cliservice.DynamicCommandRegistry{
 		api.CLIRegistry.AppCommands, connectorBroker,
 	}}
+	connectorAuthorizationReadiness := connectormarkethost.NewAuthorizationReadinessGate()
 	connectorMarketHost, err := connectormarketdaemon.NewHost(ctx, connectormarketdaemon.HostConfig{
 		Repository: connectorMarketStore, CatalogSource: connectorCatalog,
 		ReleaseInstallations: releaseInstaller, ImplementationHost: connectorRuntime,
 		Authorization: connectorAuthorization, Compatibility: compatibility,
 		AuthorizationProjections: connectorMarketStore,
-		RuntimeBindings:          connectormarkethost.AccountRuntimeBindingResolver{Projections: connectorMarketStore},
+		AuthorizationSnapshots:   connectorAuthorizationClient,
+		AuthorizationEvents:      connectorAuthorizationEvents,
+		AuthorizationReadiness:   connectorAuthorizationReadiness,
+		RuntimeBindings:          connectormarkethost.AccountRuntimeBindingResolver{Projections: connectorMarketStore, Readiness: connectorAuthorizationReadiness},
 		ImplementationRegistry:   implementations, Outbox: connectorMarketStore, Lifecycle: connectorMarketStore,
 		Publisher: eventstreamservice.ConnectorMarketPublisher{Service: events},
 	})
@@ -367,6 +386,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 		return connectormarkethost.OperationScope{AccountID: strings.TrimSpace(session.UserID)}
 	}
 	api.ConnectorMarketScope = connectorMarketScope
+	api.ConnectorAuthorizationReady = connectorAuthorizationReadiness.Ready
 	existingAccountLoginCompleted := accountService.OnLoginCompleted
 	accountService.OnLoginCompleted = func(loginContext context.Context) {
 		if existingAccountLoginCompleted != nil {
@@ -388,6 +408,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	}
 	w.connectorMarketStore = connectorMarketStore
 	w.connectorMarketHost = connectorMarketHost
+	connectorRegistry.MCPRegistry().SetAuthorizationErrorObserver(connectorMarketHost.NotifyAuthorizationChanged)
 	startExistingListenerWork := api.OnListenerReady
 	api.OnListenerReady = func() {
 		if startExistingListenerWork != nil {

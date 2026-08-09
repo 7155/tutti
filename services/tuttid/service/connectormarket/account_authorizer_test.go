@@ -38,3 +38,18 @@ func TestAccountSessionAuthorizerFailsClosedWithoutSession(t *testing.T) {
 		t.Fatal("expected missing account session to fail")
 	}
 }
+
+func TestAccountSessionAuthorizerFencesAccountSwitch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.json")
+	if err := os.WriteFile(path, []byte(`{"session_id":"session-1","cookie":"sid=secret","user_id":"account-2"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	authorizer, err := NewAccountSessionAuthorizer(path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, _ := http.NewRequest(http.MethodGet, "https://example.test", nil)
+	if err := authorizer.AuthorizeForAccount(request, "account-1"); err == nil || request.Header.Get("Cookie") != "" {
+		t.Fatalf("account switch authorization error=%v cookie=%q", err, request.Header.Get("Cookie"))
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -17,7 +18,8 @@ func (host *Host) buildRemoteRoute(ctx context.Context, request market.RuntimeRe
 	if remote == nil {
 		return nil, errors.New("remote_streamable_http connector config is unavailable")
 	}
-	if host.authorizeRemoteRequest == nil {
+	accountID := strings.TrimSpace(request.Scope.AccountID)
+	if accountID == "" || host.authorizeRemoteAccountRequest == nil {
 		return nil, errors.New("remote MCP host-session authentication is unavailable")
 	}
 	base, err := url.Parse(host.remoteMCPBaseURL)
@@ -31,7 +33,9 @@ func (host *Host) buildRemoteRoute(ctx context.Context, request market.RuntimeRe
 	connectorVersion := strings.TrimSpace(request.Connector.Release.Version)
 	client, err := mcp.NewModernStreamableHTTPClient(mcp.ModernStreamableHTTPClientConfig{
 		Endpoint: endpoint, AllowedHosts: []string{base.Hostname()}, ConnectorVersion: connectorVersion,
-		HTTPClient: host.remoteHTTPClient, AuthorizeRequest: host.authorizeRemoteRequest,
+		HTTPClient: host.remoteHTTPClient, AuthorizeRequest: func(httpRequest *http.Request) error {
+			return host.authorizeRemoteAccountRequest(httpRequest, accountID)
+		},
 		Timeout: host.remoteMCPTimeout, MaxResponseBytes: host.remoteMCPMaxResponse,
 	})
 	if err != nil {
@@ -70,19 +74,31 @@ func (*Host) registerMCPTools(route *connectorRoute, client mcpCaller, tools []m
 	if len(tools) == 0 {
 		return errors.New("connector MCP tools/list response is invalid")
 	}
+	if err := validateMCPToolContracts(route.connectorKey, tools); err != nil {
+		return err
+	}
 	for _, tool := range tools {
 		localName := route.connectorKey + "_" + tool.Name
 		// Keep the upstream JSON Schema intact. MCP schemas are not constrained
 		// by Tutti's legacy command-input schema subset.
-		if tool.InputSchema == nil || len(localName) > 255 || !mcpLocalToolNamePattern.MatchString(localName) {
-			return errors.New("connector MCP tool contract is invalid")
-		}
-		if _, duplicate := route.mcpTools[localName]; duplicate {
-			return errors.New("connector MCP tool capability id is duplicated")
-		}
 		routeID := "connector." + route.connectorKey + ".mcp." + tool.Name
 		route.mcpTools[localName] = registeredMCPTool{routeID: routeID, localName: localName,
 			upstreamName: tool.Name, description: tool.Description, inputSchema: cloneJSONMap(tool.InputSchema), client: client}
+	}
+	return nil
+}
+
+func validateMCPToolContracts(connectorKey string, tools []mcpTool) error {
+	seen := make(map[string]struct{}, len(tools))
+	for _, tool := range tools {
+		localName := connectorKey + "_" + tool.Name
+		if strings.TrimSpace(tool.Name) == "" || tool.InputSchema == nil || len(localName) > 255 || !mcpLocalToolNamePattern.MatchString(localName) {
+			return errors.New("connector MCP tool contract is invalid")
+		}
+		if _, duplicate := seen[localName]; duplicate {
+			return errors.New("connector MCP tool capability id is duplicated")
+		}
+		seen[localName] = struct{}{}
 	}
 	return nil
 }

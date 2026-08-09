@@ -360,6 +360,41 @@ func TestApplicationStartupReconcileAdvancesPastFence(t *testing.T) {
 	}
 }
 
+func TestApplicationCrossDeviceRemoteReconcileUsesAccountProjectionAuthorization(t *testing.T) {
+	connector := testConnector("tencent-docs")
+	connector.Release.Manifest.AuthorizationKind = "api_key"
+	connector.Release.Manifest.RequiredCapabilities = []string{"tools"}
+	connector.Release.Manifest.Implementation = Implementation{Kind: ImplementationKindRemoteStreamableHTTP, RemoteStreamableHTTP: &RemoteStreamableHTTPImplementation{
+		ProtocolVersion: "2026-07-28", BindingRef: "tencent-docs.primary", ContractVersion: 1,
+		BindingContractHash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	}}
+	connector.Authorization = Authorization{State: AuthorizationStateDisconnected}
+	connector.Installation = Installation{State: InstallationStateInstalled, InstalledVersion: connector.Release.Version,
+		InstalledReleaseID: connector.Release.ReleaseID, InstalledReleaseDigest: connector.Release.ReleaseDigest}
+	repository := newMemoryRepository(connector)
+	runtime := &memoryInstallRuntime{}
+	projectionStore := &authorizationProjectionStoreStub{projection: AuthorizationProjection{
+		AccountID: "account-1", ConnectorKey: connector.Key, ConnectionID: "server-connection", State: AuthorizationStateConnected,
+		ServerSynchronized: true,
+	}}
+	readiness := NewAuthorizationReadinessGate()
+	readiness.SetReady("account-1", true)
+	application := newTestApplication(t, repository, &memoryScheduler{}, runtime, CatalogSnapshot{})
+	application.config.AuthorizationProjections = projectionStore
+	application.config.RuntimeBindings = AccountRuntimeBindingResolver{Projections: projectionStore, Readiness: readiness}
+
+	if err := application.ReconcileInstalledRuntimesForScope(context.Background(), OperationScope{AccountID: "account-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if !runtime.lastReconcile.Enabled || runtime.lastReconcile.Connector.Authorization.State != AuthorizationStateConnected ||
+		runtime.lastReconcile.ConnectionID != AccountRuntimeConnectionID("account-1", connector.Key) {
+		t.Fatalf("remote reconcile = %#v", runtime.lastReconcile)
+	}
+	if repository.connectors[connector.Key].Authorization.State != AuthorizationStateDisconnected {
+		t.Fatalf("device installation authorization was mutated: %#v", repository.connectors[connector.Key].Authorization)
+	}
+}
+
 func TestInstalledReleaseRemainsRunnableAfterCatalogAdvances(t *testing.T) {
 	installedRelease := testReleaseWithImplementation("github", "1.0.0", ImplementationKindManagedStdio)
 	currentRelease := testReleaseWithImplementation("github", "2.0.0", ImplementationKindManagedStdio)

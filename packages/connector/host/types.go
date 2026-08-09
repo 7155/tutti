@@ -434,12 +434,23 @@ type ConnectorMutation struct {
 // still device-scoped on Connector; switching accounts changes only this
 // projection and the runtime binding derived from it.
 type AuthorizationProjection struct {
-	AccountID    string             `json:"accountId"`
-	ConnectorKey string             `json:"connectorKey"`
-	ConnectionID string             `json:"connectionId,omitempty"`
-	State        AuthorizationState `json:"state"`
-	FailureCode  string             `json:"failureCode,omitempty"`
-	UpdatedAt    time.Time          `json:"updatedAt"`
+	AccountID         string `json:"accountId"`
+	ConnectorKey      string `json:"connectorKey"`
+	ConnectorVersion  string `json:"connectorVersion,omitempty"`
+	ConnectionID      string `json:"connectionId,omitempty"`
+	ConnectionVersion uint64 `json:"connectionVersion,omitempty"`
+	ServerRevision    uint64 `json:"serverRevision,omitempty"`
+	// ServerSynchronized distinguishes an authoritative revision 0 snapshot
+	// from device-local authorization state that has never been synchronized.
+	ServerSynchronized bool               `json:"serverSynchronized,omitempty"`
+	State              AuthorizationState `json:"state"`
+	FailureCode        string             `json:"failureCode,omitempty"`
+	UpdatedAt          time.Time          `json:"updatedAt"`
+}
+
+type AuthorizationSnapshot struct {
+	Revision   uint64
+	Connectors []AuthorizationProjection
 }
 
 type MutationResult struct {

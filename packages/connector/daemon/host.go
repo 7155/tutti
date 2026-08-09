@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +21,9 @@ type HostConfig struct {
 	ImplementationHost       market.ImplementationHost
 	Authorization            market.AuthorizationProvider
 	AuthorizationProjections market.AuthorizationProjectionStore
+	AuthorizationSnapshots   market.AuthorizationSnapshotSource
+	AuthorizationEvents      market.AuthorizationEventSource
+	AuthorizationReadiness   *market.AuthorizationReadinessGate
 	RuntimeBindings          market.RuntimeBindingResolver
 	Compatibility            market.CompatibilityEvaluator
 	ImplementationRegistry   market.ImplementationRegistry
@@ -39,20 +43,29 @@ type CapabilityPublicationController interface {
 type Host struct {
 	Application *market.Application
 
-	cancel               context.CancelFunc
-	scheduler            *OperationScheduler
-	outboxDone           chan struct{}
-	lifecycleDone        chan struct{}
-	closeOnce            sync.Once
-	bootstrapMu          sync.Mutex
-	bootstrapped         bool
-	bootstrapScope       market.OperationScope
-	refreshWorkerStarted bool
-	repository           market.Repository
-	implementationHost   market.ImplementationHost
-	activationGate       *activationGateHost
-	publicationGate      capabilityPublicationGate
-	publication          CapabilityPublicationController
+	cancel                     context.CancelFunc
+	scheduler                  *OperationScheduler
+	outboxDone                 chan struct{}
+	lifecycleDone              chan struct{}
+	authorizationSyncDone      chan struct{}
+	authorizationSyncWake      chan struct{}
+	authorizationEventsDone    chan struct{}
+	authorizationScopeWake     chan struct{}
+	closeOnce                  sync.Once
+	bootstrapMu                sync.Mutex
+	bootstrapped               bool
+	bootstrapScope             market.OperationScope
+	refreshWorkerStarted       bool
+	repository                 market.Repository
+	implementationHost         market.ImplementationHost
+	activationGate             *activationGateHost
+	publicationGate            capabilityPublicationGate
+	publication                CapabilityPublicationController
+	authorizationSnapshots     market.AuthorizationSnapshotSource
+	authorizationSnapshotStore market.AuthorizationSnapshotStore
+	authorizationEvents        market.AuthorizationEventSource
+	authorizationReadiness     *market.AuthorizationReadinessGate
+	authorizationDirty         map[string]map[string]struct{}
 }
 
 type capabilityPublicationGate interface {
@@ -150,6 +163,8 @@ func NewHost(parent context.Context, config HostConfig) (*Host, error) {
 		Host:                     activationGate,
 		Authorization:            config.Authorization,
 		AuthorizationProjections: config.AuthorizationProjections,
+		AuthorizationSnapshots:   config.AuthorizationSnapshots,
+		AuthorizationReadiness:   config.AuthorizationReadiness,
 		RuntimeBindings:          config.RuntimeBindings,
 		Compatibility:            config.Compatibility,
 		Scheduler:                scheduler,
@@ -164,15 +179,26 @@ func NewHost(parent context.Context, config HostConfig) (*Host, error) {
 		return nil, err
 	}
 	host := &Host{
-		Application:        application,
-		cancel:             cancel,
-		scheduler:          scheduler,
-		outboxDone:         make(chan struct{}),
-		lifecycleDone:      make(chan struct{}),
-		repository:         config.Repository,
-		implementationHost: config.ImplementationHost,
-		activationGate:     activationGate,
-		publication:        config.Publication,
+		Application:             application,
+		cancel:                  cancel,
+		scheduler:               scheduler,
+		outboxDone:              make(chan struct{}),
+		lifecycleDone:           make(chan struct{}),
+		authorizationSyncDone:   make(chan struct{}),
+		authorizationSyncWake:   make(chan struct{}, 1),
+		authorizationEventsDone: make(chan struct{}),
+		authorizationScopeWake:  make(chan struct{}, 1),
+		repository:              config.Repository,
+		implementationHost:      config.ImplementationHost,
+		activationGate:          activationGate,
+		publication:             config.Publication,
+		authorizationSnapshots:  config.AuthorizationSnapshots,
+		authorizationEvents:     config.AuthorizationEvents,
+		authorizationReadiness:  config.AuthorizationReadiness,
+		authorizationDirty:      make(map[string]map[string]struct{}),
+	}
+	if snapshotStore, ok := config.AuthorizationProjections.(market.AuthorizationSnapshotStore); ok {
+		host.authorizationSnapshotStore = snapshotStore
 	}
 	if publicationGate, ok := config.ImplementationHost.(capabilityPublicationGate); ok {
 		host.publicationGate = publicationGate
@@ -185,6 +211,16 @@ func NewHost(parent context.Context, config HostConfig) (*Host, error) {
 		defer close(host.outboxDone)
 		dispatcher.Run(hostContext)
 	}()
+	if host.authorizationSnapshots != nil && host.authorizationSnapshotStore != nil {
+		go host.runAuthorizationSnapshotWorker(hostContext)
+	} else {
+		close(host.authorizationSyncDone)
+	}
+	if host.authorizationEvents != nil {
+		go host.runAuthorizationEventWorker(hostContext)
+	} else {
+		close(host.authorizationEventsDone)
+	}
 	if _, ok := config.Authorization.(market.AuthorizationObserver); ok {
 		go host.runAuthorizationReconcileWorker(hostContext)
 	}
@@ -215,8 +251,8 @@ func (host *Host) runAuthorizationReconcileWorker(ctx context.Context) {
 }
 
 // Bootstrap restores durable local runtime intent without depending on the
-// remote catalog. Catalog refresh has its own retry loop: a network, auth, or
-// presentation-policy failure must never keep installed MCP/CLI routes fenced.
+// remote catalog. Account-authorized remote routes additionally require a
+// fresh server snapshot before the lifecycle gate opens.
 func (host *Host) Bootstrap(ctx context.Context) error {
 	return host.BootstrapForScope(ctx, market.OperationScope{})
 }
@@ -235,6 +271,10 @@ func (host *Host) BootstrapForScope(ctx context.Context, scope market.OperationS
 		return nil
 	}
 	host.bootstrapScope = scope
+	if host.authorizationReadiness != nil && strings.TrimSpace(scope.AccountID) != "" {
+		host.authorizationReadiness.SetReady(scope.AccountID, false)
+	}
+	host.notifyAuthorizationScopeChanged()
 	host.bootstrapped = false
 	if !host.refreshWorkerStarted {
 		host.refreshWorkerStarted = true
@@ -277,6 +317,14 @@ func (host *Host) BootstrapForScope(ctx context.Context, scope market.OperationS
 		// following runtime reconcile remains authoritative and may still recover.
 		slog.Warn("connector installation calibration was indeterminate", "error", err)
 	}
+	if strings.TrimSpace(scope.AccountID) != "" {
+		if _, err := host.syncAuthorizationSnapshot(ctx, scope); err != nil {
+			// Account authorization is fail-closed independently. Device-local
+			// authorization-free connectors can still recover while a later WS or
+			// poll retries the authoritative snapshot.
+			slog.Warn("connector authorization snapshot unavailable during bootstrap", "error", err)
+		}
+	}
 	host.activationGate.setOpen(true)
 	if err := host.Application.ReconcileInstalledRuntimesForScope(ctx, scope); err != nil {
 		return err
@@ -290,6 +338,178 @@ func (host *Host) BootstrapForScope(ctx context.Context, scope market.OperationS
 	return nil
 }
 
+// NotifyAuthorizationChanged treats realtime events and MCP authorization
+// errors as convergence hints. The account snapshot remains the only truth.
+func (host *Host) NotifyAuthorizationChanged() {
+	if host == nil {
+		return
+	}
+	select {
+	case host.authorizationSyncWake <- struct{}{}:
+	default:
+	}
+}
+
+func (host *Host) notifyAuthorizationScopeChanged() {
+	select {
+	case host.authorizationScopeWake <- struct{}{}:
+	default:
+	}
+}
+
+func (host *Host) runAuthorizationEventWorker(ctx context.Context) {
+	defer close(host.authorizationEventsDone)
+	retry := time.Second
+	for {
+		host.bootstrapMu.Lock()
+		scope := host.bootstrapScope
+		host.bootstrapMu.Unlock()
+		if strings.TrimSpace(scope.AccountID) == "" {
+			select {
+			case <-ctx.Done():
+				return
+			case <-host.authorizationScopeWake:
+				continue
+			}
+		}
+		attemptCtx, cancel := context.WithCancel(ctx)
+		result := make(chan error, 1)
+		go func(accountID string) {
+			result <- host.authorizationEvents.RunAuthorizationEvents(attemptCtx, accountID, host.NotifyAuthorizationChanged)
+		}(scope.AccountID)
+		select {
+		case <-ctx.Done():
+			cancel()
+			<-result
+			return
+		case <-host.authorizationScopeWake:
+			cancel()
+			<-result
+			retry = time.Second
+			continue
+		case err := <-result:
+			cancel()
+			if err != nil && !errors.Is(err, context.Canceled) {
+				slog.Warn("connector authorization realtime listener failed", "error", err)
+			}
+		}
+		timer := time.NewTimer(retry)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-host.authorizationScopeWake:
+			timer.Stop()
+			retry = time.Second
+		case <-timer.C:
+			if retry < time.Minute {
+				retry *= 2
+			}
+		}
+	}
+}
+
+type authorizationSyncResult struct {
+	changed     []string
+	becameReady bool
+}
+
+func (host *Host) syncAuthorizationSnapshot(ctx context.Context, scope market.OperationScope) (authorizationSyncResult, error) {
+	if host.authorizationSnapshots == nil || host.authorizationSnapshotStore == nil || strings.TrimSpace(scope.AccountID) == "" {
+		return authorizationSyncResult{}, nil
+	}
+	snapshot, err := host.authorizationSnapshots.AuthorizationSnapshot(ctx, scope.AccountID)
+	if err != nil {
+		return authorizationSyncResult{}, err
+	}
+	changed, err := host.authorizationSnapshotStore.ApplyAuthorizationSnapshot(ctx, scope.AccountID, snapshot)
+	result := authorizationSyncResult{changed: changed}
+	if err == nil && host.authorizationReadiness != nil {
+		result.becameReady = host.authorizationReadiness.SetReady(scope.AccountID, true)
+	}
+	return result, err
+}
+
+func (host *Host) runAuthorizationSnapshotWorker(ctx context.Context) {
+	defer close(host.authorizationSyncDone)
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		case <-host.authorizationSyncWake:
+		}
+		host.bootstrapMu.Lock()
+		bootstrapped, scope := host.bootstrapped, host.bootstrapScope
+		host.bootstrapMu.Unlock()
+		if !bootstrapped || strings.TrimSpace(scope.AccountID) == "" {
+			continue
+		}
+		syncContext, cancel := context.WithTimeout(ctx, 30*time.Second)
+		result, err := host.syncAuthorizationSnapshot(syncContext, scope)
+		cancel()
+		if err != nil {
+			if !errors.Is(err, context.Canceled) {
+				slog.Warn("connector authorization snapshot sync failed", "error", err)
+			}
+			continue
+		}
+		reconcileContext, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		err = host.reconcileAuthorizationChanges(reconcileContext, scope, result)
+		cancel()
+		if err != nil && !errors.Is(err, context.Canceled) {
+			slog.Warn("connector authorization runtime reconcile failed", "error", err)
+		}
+	}
+}
+
+func (host *Host) reconcileAuthorizationChanges(ctx context.Context, scope market.OperationScope, result authorizationSyncResult) error {
+	host.bootstrapMu.Lock()
+	defer host.bootstrapMu.Unlock()
+	if !host.bootstrapped || host.bootstrapScope != scope || host.activationGate.requiresRecovery() {
+		return nil
+	}
+	dirty := host.authorizationDirty[scope.AccountID]
+	if dirty == nil {
+		dirty = make(map[string]struct{})
+		host.authorizationDirty[scope.AccountID] = dirty
+	}
+	connectorKeys, err := host.Application.InstalledRemoteAuthorizedConnectorKeys(ctx)
+	if err != nil {
+		return err
+	}
+	eligible := make(map[string]struct{}, len(connectorKeys))
+	for _, connectorKey := range connectorKeys {
+		eligible[connectorKey] = struct{}{}
+	}
+	for connectorKey := range dirty {
+		if _, ok := eligible[connectorKey]; !ok {
+			delete(dirty, connectorKey)
+		}
+	}
+	for _, connectorKey := range result.changed {
+		if _, ok := eligible[connectorKey]; ok {
+			dirty[connectorKey] = struct{}{}
+		}
+	}
+	if result.becameReady {
+		for _, connectorKey := range connectorKeys {
+			dirty[connectorKey] = struct{}{}
+		}
+	}
+	var reconcileErr error
+	for connectorKey := range dirty {
+		if err := host.reconcileRuntimeForScopeLocked(ctx, scope, connectorKey); err != nil {
+			reconcileErr = errors.Join(reconcileErr, fmt.Errorf("%s: %w", connectorKey, err))
+			continue
+		}
+		delete(dirty, connectorKey)
+	}
+	return reconcileErr
+}
+
 // FenceForScope closes publication and runtime authority for an account
 // boundary without deleting device installation truth. A later bootstrap,
 // including one for the same account, must perform full recovery before routes
@@ -301,8 +521,12 @@ func (host *Host) FenceForScope(ctx context.Context, scope market.OperationScope
 	host.bootstrapMu.Lock()
 	defer host.bootstrapMu.Unlock()
 	host.activationGate.setOpen(false)
+	if host.authorizationReadiness != nil && strings.TrimSpace(scope.AccountID) != "" {
+		host.authorizationReadiness.SetReady(scope.AccountID, false)
+	}
 	host.bootstrapped = false
 	host.bootstrapScope = scope
+	host.notifyAuthorizationScopeChanged()
 	publicationErr := host.applyCapabilityPublication(ctx, scope, false)
 	fenceErr := host.activationGate.FailClosed(ctx, time.Now().Add(10*time.Second))
 	return errors.Join(publicationErr, fenceErr)
@@ -326,6 +550,17 @@ func (host *Host) ReconcileRuntimeForScope(ctx context.Context, scope market.Ope
 		// Bootstrap owns convergence while the lifecycle gate is closed. Enqueuing
 		// a second per-Connector operation here would race its generation fence.
 		return nil
+	}
+	return host.reconcileRuntimeForScopeLocked(ctx, scope, connectorKey)
+}
+
+func (host *Host) reconcileRuntimeForScopeLocked(ctx context.Context, scope market.OperationScope, connectorKey string) error {
+	connector, err := host.Application.GetConnector(ctx, connectorKey)
+	if errors.Is(err, market.ErrNotFound) || err == nil && connector.Installation.State != market.InstallationStateInstalled {
+		return nil
+	}
+	if err != nil {
+		return err
 	}
 	snapshot, err := host.Application.Snapshot(ctx)
 	if err != nil {
@@ -537,6 +772,8 @@ func (host *Host) Close() {
 		}
 		<-host.outboxDone
 		<-host.lifecycleDone
+		<-host.authorizationSyncDone
+		<-host.authorizationEventsDone
 		host.scheduler.Wait()
 	})
 }

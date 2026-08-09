@@ -33,44 +33,44 @@ type ReconcileRequest struct {
 }
 
 type Config struct {
-	Artifacts              PreparedArtifactResolver
-	CLIInstallations       market.CLIInstallationManager
-	Runtimes               connectorruntime.ConnectorRuntimeResolver
-	Processes              agentruntime.ProcessTransport
-	Routes                 RouteObserver
-	Authorization          AuthorizationObserver
-	Registry               *RouteRegistry
-	MCP                    *MCPRegistry
-	StateRoot              string
-	BinDir                 string
-	UserHome               string
-	MCPStartupTimeout      time.Duration
-	RemoteHTTPClient       *http.Client
-	RemoteMCPBaseURL       string
-	RemoteMCPTimeout       time.Duration
-	RemoteMCPMaxResponse   int
-	AuthorizeRemoteRequest mcp.RequestAuthorizer
+	Artifacts                     PreparedArtifactResolver
+	CLIInstallations              market.CLIInstallationManager
+	Runtimes                      connectorruntime.ConnectorRuntimeResolver
+	Processes                     agentruntime.ProcessTransport
+	Routes                        RouteObserver
+	Authorization                 AuthorizationObserver
+	Registry                      *RouteRegistry
+	MCP                           *MCPRegistry
+	StateRoot                     string
+	BinDir                        string
+	UserHome                      string
+	MCPStartupTimeout             time.Duration
+	RemoteHTTPClient              *http.Client
+	RemoteMCPBaseURL              string
+	RemoteMCPTimeout              time.Duration
+	RemoteMCPMaxResponse          int
+	AuthorizeRemoteAccountRequest func(*http.Request, string) error
 }
 
 type Host struct {
-	artifacts              PreparedArtifactResolver
-	planner                *connectorruntime.ManagedRoutePlanner
-	processes              agentruntime.ProcessTransport
-	routeObserver          RouteObserver
-	authorizationObserver  AuthorizationObserver
-	mcpStartupTimeout      time.Duration
-	routes                 *connectorruntime.RouteTable
-	snapshots              *connectorruntime.ExecutionSnapshotter
-	authorizationProvider  *managedCredentialAuthorizationProvider
-	authorizationMu        sync.Mutex
-	authorizationRoutes    map[string]*connectorRoute
-	remoteHTTPClient       *http.Client
-	remoteMCPBaseURL       string
-	remoteMCPTimeout       time.Duration
-	remoteMCPMaxResponse   int
-	authorizeRemoteRequest mcp.RequestAuthorizer
-	mcpRegistry            *MCPRegistry
-	binDir                 string
+	artifacts                     PreparedArtifactResolver
+	planner                       *connectorruntime.ManagedRoutePlanner
+	processes                     agentruntime.ProcessTransport
+	routeObserver                 RouteObserver
+	authorizationObserver         AuthorizationObserver
+	mcpStartupTimeout             time.Duration
+	routes                        *connectorruntime.RouteTable
+	snapshots                     *connectorruntime.ExecutionSnapshotter
+	authorizationProvider         *managedCredentialAuthorizationProvider
+	authorizationMu               sync.Mutex
+	authorizationRoutes           map[string]*connectorRoute
+	remoteHTTPClient              *http.Client
+	remoteMCPBaseURL              string
+	remoteMCPTimeout              time.Duration
+	remoteMCPMaxResponse          int
+	authorizeRemoteAccountRequest func(*http.Request, string) error
+	mcpRegistry                   *MCPRegistry
+	binDir                        string
 }
 
 type connectorRoute struct {
@@ -137,22 +137,22 @@ func New(config Config) (*Host, error) {
 	config.Registry.attach(routes)
 	config.MCP.attach(routes)
 	host := &Host{
-		artifacts:              config.Artifacts,
-		planner:                planner,
-		processes:              config.Processes,
-		routeObserver:          config.Routes,
-		authorizationObserver:  config.Authorization,
-		mcpStartupTimeout:      config.MCPStartupTimeout,
-		routes:                 routes,
-		snapshots:              snapshots,
-		authorizationRoutes:    make(map[string]*connectorRoute),
-		remoteHTTPClient:       config.RemoteHTTPClient,
-		remoteMCPBaseURL:       strings.TrimRight(strings.TrimSpace(config.RemoteMCPBaseURL), "/"),
-		remoteMCPTimeout:       config.RemoteMCPTimeout,
-		remoteMCPMaxResponse:   config.RemoteMCPMaxResponse,
-		authorizeRemoteRequest: config.AuthorizeRemoteRequest,
-		mcpRegistry:            config.MCP,
-		binDir:                 config.BinDir,
+		artifacts:                     config.Artifacts,
+		planner:                       planner,
+		processes:                     config.Processes,
+		routeObserver:                 config.Routes,
+		authorizationObserver:         config.Authorization,
+		mcpStartupTimeout:             config.MCPStartupTimeout,
+		routes:                        routes,
+		snapshots:                     snapshots,
+		authorizationRoutes:           make(map[string]*connectorRoute),
+		remoteHTTPClient:              config.RemoteHTTPClient,
+		remoteMCPBaseURL:              strings.TrimRight(strings.TrimSpace(config.RemoteMCPBaseURL), "/"),
+		remoteMCPTimeout:              config.RemoteMCPTimeout,
+		remoteMCPMaxResponse:          config.RemoteMCPMaxResponse,
+		authorizeRemoteAccountRequest: config.AuthorizeRemoteAccountRequest,
+		mcpRegistry:                   config.MCP,
+		binDir:                        config.BinDir,
 	}
 	host.authorizationProvider = newManagedCredentialAuthorizationProvider(host)
 	return host, nil
@@ -572,7 +572,6 @@ func (route *connectorRoute) Close(deadline time.Time) error {
 		closeCtx, cancel := context.WithDeadline(context.Background(), deadline)
 		remoteErr = route.remoteMCP.Close(closeCtx)
 		cancel()
-		route.remoteMCP = nil
 	}
 	closeErr := route.processes.Close(deadline)
 	if closeErr == nil {

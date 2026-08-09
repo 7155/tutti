@@ -12,7 +12,6 @@ import (
 	market "github.com/tutti-os/tutti/packages/connector/host"
 	connectorruntime "github.com/tutti-os/tutti/packages/connector/runtime"
 	implementationhost "github.com/tutti-os/tutti/packages/connector/runtime/implementationhost"
-	runtimemcp "github.com/tutti-os/tutti/packages/connector/runtime/mcp"
 )
 
 type PreparedArtifactResolver = implementationhost.PreparedArtifactResolver
@@ -24,20 +23,20 @@ type ConnectorRuntimeRegistry struct {
 }
 
 type ImplementationHostConfig struct {
-	Artifacts              PreparedArtifactResolver
-	CLIInstallations       market.CLIInstallationManager
-	Runtimes               ConnectorRuntimeResolver
-	Processes              agentruntime.ProcessTransport
-	Registry               *ConnectorRuntimeRegistry
-	StateRoot              string
-	BinDir                 string
-	UserHome               string
-	MCPStartupTimeout      time.Duration
-	RemoteHTTPClient       *http.Client
-	RemoteMCPBaseURL       string
-	RemoteMCPTimeout       time.Duration
-	RemoteMCPMaxResponse   int
-	AuthorizeRemoteRequest runtimemcp.RequestAuthorizer
+	Artifacts                     PreparedArtifactResolver
+	CLIInstallations              market.CLIInstallationManager
+	Runtimes                      ConnectorRuntimeResolver
+	Processes                     agentruntime.ProcessTransport
+	Registry                      *ConnectorRuntimeRegistry
+	StateRoot                     string
+	BinDir                        string
+	UserHome                      string
+	MCPStartupTimeout             time.Duration
+	RemoteHTTPClient              *http.Client
+	RemoteMCPBaseURL              string
+	RemoteMCPTimeout              time.Duration
+	RemoteMCPMaxResponse          int
+	AuthorizeRemoteAccountRequest func(*http.Request, string) error
 }
 
 // ImplementationHost adapts the host-neutral Connector runtime to tuttId.
@@ -74,7 +73,7 @@ func NewImplementationHost(config ImplementationHostConfig) (*ImplementationHost
 		UserHome: config.UserHome, MCPStartupTimeout: config.MCPStartupTimeout,
 		RemoteHTTPClient: config.RemoteHTTPClient, RemoteMCPBaseURL: config.RemoteMCPBaseURL,
 		RemoteMCPTimeout: config.RemoteMCPTimeout, RemoteMCPMaxResponse: config.RemoteMCPMaxResponse,
-		AuthorizeRemoteRequest: config.AuthorizeRemoteRequest,
+		AuthorizeRemoteAccountRequest: config.AuthorizeRemoteAccountRequest,
 	})
 	if err != nil {
 		return nil, err

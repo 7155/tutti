@@ -22,6 +22,8 @@ type ApplicationConfig struct {
 	Host                     ImplementationHost
 	Authorization            AuthorizationProvider
 	AuthorizationProjections AuthorizationProjectionStore
+	AuthorizationSnapshots   AuthorizationSnapshotSource
+	AuthorizationReadiness   *AuthorizationReadinessGate
 	RuntimeBindings          RuntimeBindingResolver
 	Compatibility            CompatibilityEvaluator
 	Scheduler                OperationScheduler
@@ -397,7 +399,7 @@ func (application *Application) ReconcileAuthorizations(ctx context.Context) err
 		if !exists {
 			continue
 		}
-		observation, observeErr := observer.Observe(ctx, AuthorizationObserveRequest{Connector: connector, Session: candidate.session})
+		observation, observeErr := observer.Observe(ctx, AuthorizationObserveRequest{Scope: candidate.scope, Connector: connector, Session: candidate.session})
 		if observeErr != nil {
 			reconcileErr = errors.Join(reconcileErr, observeErr)
 			continue

@@ -277,6 +277,7 @@ const (
 type RuntimeBinding struct {
 	ConnectionID          string
 	Enabled               bool
+	AuthorizationState    AuthorizationState
 	CredentialBrokerGrant []byte
 }
 
@@ -285,6 +286,19 @@ type RuntimeBinding struct {
 type AuthorizationProjectionStore interface {
 	AuthorizationProjection(ctx context.Context, accountID, connectorKey string) (AuthorizationProjection, error)
 	SaveAuthorizationProjection(ctx context.Context, projection AuthorizationProjection) error
+}
+
+type AuthorizationSnapshotStore interface {
+	AuthorizationProjectionStore
+	ApplyAuthorizationSnapshot(ctx context.Context, accountID string, snapshot AuthorizationSnapshot) ([]string, error)
+}
+
+type AuthorizationSnapshotSource interface {
+	AuthorizationSnapshot(ctx context.Context, accountID string) (AuthorizationSnapshot, error)
+}
+
+type AuthorizationEventSource interface {
+	RunAuthorizationEvents(ctx context.Context, accountID string, notify func()) error
 }
 
 type CredentialBrokerGrantIssuer interface {
@@ -318,6 +332,7 @@ type AuthorizationDisconnectRequest struct {
 }
 
 type AuthorizationObserveRequest struct {
+	Scope     OperationScope
 	Connector Connector
 	Session   AuthorizationSession
 }

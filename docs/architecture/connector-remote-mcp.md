@@ -158,8 +158,8 @@ LegacyMCPClient
 - 在非 2xx 响应中保留 JSON-RPC Error Body；
 - 忽略服务端返回的 `Mcp-Session-Id`，且不发送 `DELETE`；
 - 将 Cursor 视为不透明的可空值，区分字段不存在和空字符串；
-- 遵循 `ttlMs` 和 `cacheScope`，不得延长服务端返回的有效期；
-- 保留生成 `Mcp-Param-*` Header 所需的 Tool Schema。
+- 不持久化或按 TTL 缓存 Tool 列表；每次 `tools/list` 和 `tools/call` 都以当前下游列表为准；
+- 原子替换生成 `Mcp-Param-*` Header 所需的 Tool Schema，已删除 Tool 不得残留。
 
 远程 Route Builder 调用 `server/discover` 和 `tools/list`，然后通过现有本地 Connector MCP Surface 发布带 Connector Namespace 的 Tool。调用 Gateway 时不得发送 `initialize` 或 `notifications/initialized`。
 
@@ -176,16 +176,21 @@ sequenceDiagram
     participant A as Agent
 
     U->>T: 提交 Token 或完成 OAuth
-    T->>G: 完成授权
-    G-->>T: connected + resultConnectionId
-    T->>T: ObserveAuthorization
-    T->>T: 保存账号级授权投影
+    T->>G: 以冻结的 account scope 完成授权
+    G-->>T: 授权完成
+    T->>G: GET authorization snapshot
+    G-->>T: revision + connected + connectionVersion
+    T->>T: 原子保存账号级授权投影
     T->>R: 调度持久化 Reconcile
     R->>G: server/discover + tools/list
     R->>A: 发布或移除 Connector Route
 ```
 
-同步 Secret 提交和异步 OAuth 完成必须汇聚到同一个 `ObserveAuthorization` 流程。授权结果携带 `resultConnectionId`；Tutti 必须先保存账号级 Projection，再调度 Runtime Reconcile。
+同步 Secret 提交和异步 OAuth 完成必须汇聚到同一个权威快照流程。授权 mutation 成功后，Tutti 立即按冻结的 account scope 重新拉取服务端快照，原子保存 Projection，再调度 Runtime Reconcile；本地 provisional 状态不得覆盖已同步快照。
+
+`tsh-server` 是授权状态唯一真相。Tutti 在登录、Bootstrap、账号切换后通过 `GET /v1/connector-authorizations/snapshot` hydrate 本地 Projection，并以账号级单调 `revision` 与 Connector 级 `connectionVersion` 拒绝旧状态。服务端 `connector.authorization.changed` WebSocket 事件和 MCP `-33001/-33002` 只作为同步提示；5 分钟轮询负责低频校准。变化进入可重试 dirty-set，只有 Route 收敛成功才清除，避免丢失一次性事件。
+
+远端授权 Route 使用稳定的 `account + connector` 本地身份；服务端 `connectionId` 只作为诊断字段，Default Connection 切换不会留下旧 Route。Bootstrap 获取快照失败时只关闭账号授权型远端 Route，不影响无需授权的本地 Connector。所有授权控制面请求和远端 MCP 请求都绑定操作开始时的 account scope，账号切换必须 fail closed。
 
 以下变更都必须触发 Runtime Reconcile：
 
@@ -208,7 +213,42 @@ sequenceDiagram
 6. `tools/call` 携带已安装的 Connector Version 和当前 Tutti Session 转发给 Gateway。
 7. 授权失效时，通过同一个 Reconcile 流程移除或禁用 Route。
 
-第一阶段不打开 `subscriptions/listen`。Tool 刷新发生在 Runtime 激活、授权或 Release Reconcile，以及 Private Cache TTL 到期后的下一次使用时。
+Tool 不做本地业务缓存：Agent 的 `tools/list` 逐页直取下游；`tools/call` 只定位可能拥有该 Namespace 的 Connector，重新读取其当前 Tool 契约后调用，避免无关 Connector 超时阻塞。Route 安装时的 Tool 只用于启动校验，不作为 Agent 可见列表的真相。
+
+## 端到端工作流程
+
+```mermaid
+sequenceDiagram
+    participant Agent as Codex / Claude / ACP
+    participant Local as Tutti Connector MCP
+    participant Daemon as Tutti daemon
+    participant Server as tsh-server
+    participant DB as Encrypted Connection DB
+    participant Upstream as Tencent Docs MCP
+
+    Daemon->>Server: GET authorization snapshot (account cookie)
+    Server->>DB: read revision + default connections
+    DB-->>Server: account authorization state (no secret)
+    Server-->>Daemon: revision + projections
+    Daemon->>Daemon: atomic apply + readiness=true
+    Daemon->>Local: reconcile stable account+connector route
+    Daemon->>Agent: inject standard local HTTP MCP binding
+
+    Agent->>Local: tools/list
+    Local->>Server: tools/list (account-bound Tutti session)
+    Server->>DB: resolve current Binding + Connection
+    Server->>Upstream: one-shot MCP tools/list with decrypted token
+    Upstream-->>Agent: current tools via Server + Local
+
+    Agent->>Local: namespaced tools/call
+    Local->>Server: tools/list + tools/call for target Connector
+    Server->>Upstream: one-shot MCP request
+    Upstream-->>Agent: Tool result via Server + Local
+
+    Server-->>Daemon: connector.authorization.changed (hint)
+    Daemon->>Server: refresh authoritative snapshot
+    Daemon->>Local: dirty-set reconcile; publish or withdraw route
+```
 
 ## 错误处理
 

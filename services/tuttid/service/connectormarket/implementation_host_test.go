@@ -53,6 +53,8 @@ func (stub *mcpProcessStub) Start(context.Context, agentruntime.ProcessSpec) (ag
 type mcpConnectionStub struct {
 	frames    chan agentruntime.ProcessFrame
 	closeOnce sync.Once
+	mu        sync.Mutex
+	closed    bool
 }
 
 func newMCPConnectionStub() *mcpConnectionStub {
@@ -60,6 +62,11 @@ func newMCPConnectionStub() *mcpConnectionStub {
 }
 
 func (connection *mcpConnectionStub) Send(data []byte) error {
+	connection.mu.Lock()
+	defer connection.mu.Unlock()
+	if connection.closed {
+		return io.ErrClosedPipe
+	}
 	var request struct {
 		ID     int64          `json:"id"`
 		Method string         `json:"method"`
@@ -93,10 +100,20 @@ func (connection *mcpConnectionStub) Recv() (agentruntime.ProcessFrame, error) {
 	return frame, nil
 }
 func (connection *mcpConnectionStub) Close() error {
-	connection.closeOnce.Do(func() { close(connection.frames) })
+	connection.closeOnce.Do(func() {
+		connection.mu.Lock()
+		connection.closed = true
+		close(connection.frames)
+		connection.mu.Unlock()
+	})
 	return nil
 }
 func (connection *mcpConnectionStub) exit() {
+	connection.mu.Lock()
+	defer connection.mu.Unlock()
+	if connection.closed {
+		return
+	}
 	exitCode := 1
 	connection.frames <- agentruntime.ProcessFrame{ExitCode: &exitCode}
 }
@@ -368,7 +385,10 @@ func TestImplementationHostDiscoversAndInvokesRemoteStreamableHTTPMCP(t *testing
 			Path: runtimePath, SHA256: strings.Repeat("a", 64), SizeBytes: 7,
 		}}, Processes: &connectorProcessStub{}, Registry: commands, StateRoot: t.TempDir(),
 		RemoteHTTPClient: &http.Client{Transport: transport}, RemoteMCPBaseURL: endpoint,
-		AuthorizeRemoteRequest: func(request *http.Request) error {
+		AuthorizeRemoteAccountRequest: func(request *http.Request, accountID string) error {
+			if accountID != "account-1" {
+				t.Fatalf("accountID = %q", accountID)
+			}
 			request.Header.Set("Cookie", "session_id=user-session")
 			return nil
 		},
@@ -391,7 +411,7 @@ func TestImplementationHostDiscoversAndInvokesRemoteStreamableHTTPMCP(t *testing
 	}})
 	generation := market.HostGeneration{BootEpoch: "boot-1", Generation: 2}
 	receipt, err := host.Reconcile(context.Background(), market.RuntimeReconcileRequest{
-		OperationID: "op-remote", ConnectionID: "default", Connector: connector, Enabled: true, Generation: generation,
+		OperationID: "op-remote", Scope: market.OperationScope{AccountID: "account-1"}, ConnectionID: "default", Connector: connector, Enabled: true, Generation: generation,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -399,7 +419,10 @@ func TestImplementationHostDiscoversAndInvokesRemoteStreamableHTTPMCP(t *testing
 	if len(receipt.RouteIDs) != 1 || receipt.RouteIDs[0] != "connector.github.mcp.status" {
 		t.Fatalf("routes = %#v", receipt.RouteIDs)
 	}
-	tools := commands.MCPRegistry().Tools()
+	tools, err := commands.MCPRegistry().Tools(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(tools) != 1 || tools[0].Name != "github_status" {
 		t.Fatalf("native MCP tools = %#v", tools)
 	}
@@ -410,7 +433,7 @@ func TestImplementationHostDiscoversAndInvokesRemoteStreamableHTTPMCP(t *testing
 	if len(output) == 0 {
 		t.Fatalf("output = %#v", output)
 	}
-	if len(calls) != 3 || calls[0] != "server/discover" || calls[1] != "tools/list" || calls[2] != "tools/call" {
+	if len(calls) != 5 || calls[0] != "server/discover" || calls[1] != "tools/list" || calls[2] != "tools/list" || calls[3] != "tools/list" || calls[4] != "tools/call" {
 		t.Fatalf("calls = %#v", calls)
 	}
 	broker, err := NewConnectorBroker(commands)
@@ -456,14 +479,18 @@ func TestImplementationHostPaginatesMCPToolsSeparatesCLIPathAndRemovesDeadMCPRou
 	if len(routes) != 1 || !routes[0].HasMCP || routes[0].CLICommand != "tutti-connector-github" {
 		t.Fatalf("paginated MCP/CLI route = %#v", routes)
 	}
-	tools := commands.MCPRegistry().Tools()
+	tools, err := commands.MCPRegistry().Tools(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(tools) != 2 || tools[0].Name != "github_second" || tools[1].Name != "github_status" {
 		t.Fatalf("paginated native MCP tools = %#v", tools)
 	}
 	connection.exit()
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		if len(commands.runtime.Routes()) == 0 && len(commands.MCPRegistry().Tools()) == 0 {
+		tools, _ := commands.MCPRegistry().Tools(context.Background())
+		if len(commands.runtime.Routes()) == 0 && len(tools) == 0 {
 			return
 		}
 		time.Sleep(time.Millisecond)

@@ -206,6 +206,43 @@ func TestStorePersistsAuthorizationProjectionByAccount(t *testing.T) {
 	}
 }
 
+func TestStoreAuthorizationSnapshotIsMonotonicAndDisconnectsMissingConnectors(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, filepath.Join(t.TempDir(), "tuttid.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	changed, err := store.ApplyAuthorizationSnapshot(ctx, "account-1", market.AuthorizationSnapshot{Revision: 8, Connectors: []market.AuthorizationProjection{{
+		ConnectorKey: "tencent-docs", ConnectorVersion: "0.2.0", ConnectionID: "connection-1", ConnectionVersion: 3,
+		State: market.AuthorizationStateConnected,
+	}}})
+	if err != nil || len(changed) != 1 || changed[0] != "tencent-docs" {
+		t.Fatalf("initial snapshot changed=%#v error=%v", changed, err)
+	}
+	if err := store.SaveAuthorizationProjection(ctx, market.AuthorizationProjection{
+		AccountID: "account-1", ConnectorKey: "tencent-docs", State: market.AuthorizationStateDisconnected,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	projection, err := store.AuthorizationProjection(ctx, "account-1", "tencent-docs")
+	if err != nil || projection.State != market.AuthorizationStateConnected || projection.ServerRevision != 8 {
+		t.Fatalf("provisional write replaced server snapshot: %#v, %v", projection, err)
+	}
+	changed, err = store.ApplyAuthorizationSnapshot(ctx, "account-1", market.AuthorizationSnapshot{Revision: 7})
+	if err != nil || len(changed) != 0 {
+		t.Fatalf("stale snapshot changed=%#v error=%v", changed, err)
+	}
+	changed, err = store.ApplyAuthorizationSnapshot(ctx, "account-1", market.AuthorizationSnapshot{Revision: 9})
+	if err != nil || len(changed) != 1 || changed[0] != "tencent-docs" {
+		t.Fatalf("removal snapshot changed=%#v error=%v", changed, err)
+	}
+	projection, err = store.AuthorizationProjection(ctx, "account-1", "tencent-docs")
+	if err != nil || projection.State != market.AuthorizationStateDisconnected || projection.ConnectionID != "" || projection.ServerRevision != 9 {
+		t.Fatalf("removed projection = %#v, %v", projection, err)
+	}
+}
+
 func TestStoreOperationLeaseFencesOtherWorkersAndExpires(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(ctx, filepath.Join(t.TempDir(), "tuttid.db"))

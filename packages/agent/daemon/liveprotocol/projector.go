@@ -148,17 +148,6 @@ func projectedString(current, expected, replacement string) string {
 	return replacement
 }
 
-func projectedStringPointer(current *string, expected, replacement string) *string {
-	if current == nil {
-		return nil
-	}
-	projected := projectedString(*current, expected, replacement)
-	if projected == *current {
-		return current
-	}
-	return &projected
-}
-
 func (context ProjectionContext) canonicalTurnIDs() []string {
 	if len(context.CanonicalTurnIDs) > 0 {
 		return context.CanonicalTurnIDs

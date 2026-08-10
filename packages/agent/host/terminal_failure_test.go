@@ -17,18 +17,22 @@ func (o *recordingTerminalFailureObserver) ObserveTerminalFailure(_ context.Cont
 	o.failures = append(o.failures, failure)
 }
 
-func TestObserveStepEmitsAggregatedTerminalFailure(t *testing.T) {
+func TestCommandBoundaryEmitsOneFailureForTheFirstFailedStep(t *testing.T) {
 	observer := &recordingTerminalFailureObserver{}
 	host := New(Config{TerminalFailureObserver: observer})
 	cause := NewProviderError("provider_timeout", "provider timed out after 30s", "debug", errors.New("deadline"))
 
-	host.observeStep(context.Background(), "message_send", "runtime_exec", "workspace-1", "session-1", "claude", host.now(), cause)
+	ctx, command := host.beginCommand(context.Background(), "message_send", "workspace-1", "session-1")
+	host.observeStep(ctx, "message_send", "runtime_session_ready", "workspace-1", "session-1", "claude", host.now(), cause)
+	host.observeStep(ctx, "message_send", "runtime_exec", "workspace-1", "session-1", "claude", host.now(), errors.New("later stage"))
+	command.finish(ctx, host, cause)
 
 	if len(observer.failures) != 1 {
-		t.Fatalf("terminal failures = %d, want 1", len(observer.failures))
+		t.Fatalf("terminal failures = %#v, want 1", observer.failures)
 	}
 	got := observer.failures[0]
-	if got.Flow != "message_send" || got.FailureStage != "runtime_exec" || got.WorkspaceID != "workspace-1" || got.AgentSessionID != "session-1" {
+	if got.Flow != "message_send" || got.FailureStage != "runtime_session_ready" ||
+		got.WorkspaceID != "workspace-1" || got.AgentSessionID != "session-1" || got.Provider != "claude" {
 		t.Fatalf("failure identity = %#v", got)
 	}
 	if got.ErrorCode != "provider_timeout" || got.ErrorMessage != "provider timed out after 30s" {
@@ -36,12 +40,63 @@ func TestObserveStepEmitsAggregatedTerminalFailure(t *testing.T) {
 	}
 }
 
-func TestObserveStepSkipsTerminalFailureOnSuccess(t *testing.T) {
+func TestObserveStepDoesNotEmitTerminalFailure(t *testing.T) {
 	observer := &recordingTerminalFailureObserver{}
 	host := New(Config{TerminalFailureObserver: observer})
-	host.observeStep(context.Background(), "message_send", "runtime_exec", "workspace-1", "session-1", "claude", host.now(), nil)
+	ctx, _ := host.beginCommand(context.Background(), "message_send", "workspace-1", "session-1")
+	host.observeStep(ctx, "message_send", "runtime_exec", "workspace-1", "session-1", "claude", host.now(), errors.New("boom"))
+	if len(observer.failures) != 0 {
+		t.Fatalf("terminal failures = %#v, want none until the command boundary", observer.failures)
+	}
+}
+
+func TestCommandBoundarySkipsTerminalFailureOnSuccess(t *testing.T) {
+	observer := &recordingTerminalFailureObserver{}
+	host := New(Config{TerminalFailureObserver: observer})
+	ctx, command := host.beginCommand(context.Background(), "message_send", "workspace-1", "session-1")
+	host.observeStep(ctx, "message_send", "runtime_exec", "workspace-1", "session-1", "claude", host.now(), nil)
+	command.finish(ctx, host, nil)
 	if len(observer.failures) != 0 {
 		t.Fatalf("terminal failures = %#v, want none", observer.failures)
+	}
+}
+
+func TestCommandBoundaryIgnoresCleanupStepsAfterPrimaryFailure(t *testing.T) {
+	observer := &recordingTerminalFailureObserver{}
+	host := New(Config{TerminalFailureObserver: observer})
+	primary := errors.New("runtime start failed")
+
+	ctx, command := host.beginCommand(context.Background(), "session_create", "workspace-1", "session-1")
+	host.observeStep(ctx, "session_create", "runtime_started", "workspace-1", "session-1", "codex", host.now(), primary)
+	host.observeStep(ctx, "session_create_cleanup", "runtime_closed", "workspace-1", "session-1", "codex", host.now(), errors.New("cleanup failed"))
+	command.finish(ctx, host, primary)
+
+	if len(observer.failures) != 1 || observer.failures[0].FailureStage != "runtime_started" {
+		t.Fatalf("terminal failures = %#v, want one runtime_started failure", observer.failures)
+	}
+}
+
+func TestCommandBoundaryUsesPreconditionStageWithoutAFailedStep(t *testing.T) {
+	observer := &recordingTerminalFailureObserver{}
+	host := New(Config{TerminalFailureObserver: observer})
+	ctx, command := host.beginCommand(context.Background(), "session_create", "workspace-1", "session-1")
+	command.finish(ctx, host, ErrInvalidArgument)
+	if len(observer.failures) != 1 || observer.failures[0].FailureStage != commandPreconditionStage {
+		t.Fatalf("terminal failures = %#v, want one precondition failure", observer.failures)
+	}
+}
+
+func TestCommandBoundaryDefersToASpecificEmission(t *testing.T) {
+	observer := &recordingTerminalFailureObserver{}
+	host := New(Config{TerminalFailureObserver: observer})
+	ctx, command := host.beginCommand(context.Background(), "message_send", "workspace-1", "session-1")
+	host.observeGuidanceTargetFailure(
+		ctx, SessionRef{WorkspaceID: "workspace-1", AgentSessionID: "session-1"},
+		"codex", "turn-1", "guidance-1", host.now(), ErrActiveTurnTargetMismatch,
+	)
+	command.finish(ctx, host, ErrActiveTurnTargetMismatch)
+	if len(observer.failures) != 1 || observer.failures[0].Flow != "guidance" {
+		t.Fatalf("terminal failures = %#v, want only the guidance emission", observer.failures)
 	}
 }
 
@@ -78,6 +133,7 @@ func TestTerminalFailuresFromDeltaCoversInteractivePlanToolAndTurn(t *testing.T)
 					Kind: "tool_call", Status: "failed",
 					Payload: map[string]any{"toolName": "Bash", "errorMessage": "command exited 1"},
 				}},
+				StatusTransitionedMessageIDs: []string{"toolcall:1"},
 			},
 		},
 	}
@@ -164,6 +220,7 @@ func TestTerminalFailuresFromDeltaMarksChildSessionTurnAndTool(t *testing.T) {
 					Kind: "tool_call", Status: "failed",
 					Payload: map[string]any{"toolName": "Bash", "errorMessage": "child tool failed"},
 				}},
+				StatusTransitionedMessageIDs: []string{"toolcall:child"},
 			},
 		},
 	})
@@ -174,6 +231,119 @@ func TestTerminalFailuresFromDeltaMarksChildSessionTurnAndTool(t *testing.T) {
 		if !failure.IsChildSession {
 			t.Fatalf("expected child session marker on %#v", failure)
 		}
+	}
+}
+
+func TestTerminalFailuresFromDeltaSkipsAlreadyAppliedToolCalls(t *testing.T) {
+	observer := &recordingTerminalFailureObserver{}
+	ObserveTerminalFailuresFromDelta(context.Background(), observer, CommittedDelta{
+		SessionMessages: &SessionMessagesCommitted{
+			Input: canonical.ReportSessionMessagesInput{WorkspaceID: "ws-1", AgentSessionID: "session-1"},
+			Result: storesqlite.MessageReportResult{
+				Messages: []storesqlite.Message{
+					{
+						MessageID: "toolcall:replayed", AgentSessionID: "session-1", TurnID: "turn-1",
+						Kind: "tool_call", Status: "failed",
+						Payload: map[string]any{"toolName": "Bash", "errorMessage": "command exited 1"},
+					},
+					{
+						MessageID: "toolcall:new", AgentSessionID: "session-1", TurnID: "turn-1",
+						Kind: "tool_call", Status: "failed",
+						Payload: map[string]any{"toolName": "Bash", "errorMessage": "command exited 2"},
+					},
+				},
+				StatusTransitionedMessageIDs: []string{"toolcall:new"},
+			},
+		},
+	})
+	if len(observer.failures) != 1 || observer.failures[0].RequestID != "toolcall:new" {
+		t.Fatalf("failures = %#v, want only the newly failed tool call", observer.failures)
+	}
+}
+
+func TestTerminalFailuresFromDeltaMarksChildSessionFromCommittedMessages(t *testing.T) {
+	observer := &recordingTerminalFailureObserver{}
+	ObserveTerminalFailuresFromDelta(context.Background(), observer, CommittedDelta{
+		SessionMessages: &SessionMessagesCommitted{
+			Input:          canonical.ReportSessionMessagesInput{WorkspaceID: "ws-1", AgentSessionID: "child-1"},
+			IsChildSession: true,
+			Result: storesqlite.MessageReportResult{
+				Messages: []storesqlite.Message{{
+					MessageID: "toolcall:child", AgentSessionID: "child-1", TurnID: "turn-child",
+					Kind: "tool_call", Status: "failed",
+					Payload: map[string]any{"toolName": "Bash", "errorMessage": "child tool failed"},
+				}},
+				StatusTransitionedMessageIDs: []string{"toolcall:child"},
+			},
+		},
+	})
+	if len(observer.failures) != 1 || !observer.failures[0].IsChildSession {
+		t.Fatalf("failures = %#v, want one child-session tool failure", observer.failures)
+	}
+}
+
+func TestTerminalFailuresFromDeltaReadsNestedToolErrorText(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload map[string]any
+		want    string
+	}{
+		{
+			name:    "top level string",
+			payload: map[string]any{"toolName": "Bash", "error": "command exited 1"},
+			want:    "command exited 1",
+		},
+		{
+			name:    "nested text",
+			payload: map[string]any{"toolName": "Bash", "error": map[string]any{"text": "Exit code 137", "status": "failed"}},
+			want:    "Exit code 137",
+		},
+		{
+			name:    "nested message",
+			payload: map[string]any{"toolName": "Bash", "error": map[string]any{"message": "permission denied"}},
+			want:    "permission denied",
+		},
+		{
+			name:    "nested error message",
+			payload: map[string]any{"toolName": "Bash", "error": map[string]any{"errorMessage": "tool crashed"}},
+			want:    "tool crashed",
+		},
+		{
+			name:    "nested stderr",
+			payload: map[string]any{"toolName": "Bash", "error": map[string]any{"stderr": "no such file"}},
+			want:    "no such file",
+		},
+		{
+			// acpNormalizeToolOutput keys a scalar provider output as "output".
+			name:    "nested scalar output",
+			payload: map[string]any{"toolName": "Bash", "error": map[string]any{"output": "connection reset"}},
+			want:    "connection reset",
+		},
+		{
+			name:    "no readable text falls back to the status",
+			payload: map[string]any{"toolName": "Bash", "error": map[string]any{"exitCode": 137}},
+			want:    "tool call failed",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			observer := &recordingTerminalFailureObserver{}
+			ObserveTerminalFailuresFromDelta(context.Background(), observer, CommittedDelta{
+				SessionMessages: &SessionMessagesCommitted{
+					Input: canonical.ReportSessionMessagesInput{WorkspaceID: "ws-1", AgentSessionID: "session-1"},
+					Result: storesqlite.MessageReportResult{
+						Messages: []storesqlite.Message{{
+							MessageID: "toolcall:nested", AgentSessionID: "session-1", TurnID: "turn-1",
+							Kind: "tool_call", Status: "failed", Payload: tt.payload,
+						}},
+						StatusTransitionedMessageIDs: []string{"toolcall:nested"},
+					},
+				},
+			})
+			if len(observer.failures) != 1 || observer.failures[0].ErrorMessage != tt.want {
+				t.Fatalf("failures = %#v, want error message %q", observer.failures, tt.want)
+			}
+		})
 	}
 }
 

@@ -488,7 +488,10 @@ native interface needed to use each connector; it does not expose package
 paths, ports, bearer tokens, or upstream credentials.
 
 All active connector-owned MCP implementations are registered into the local
-loopback Streamable HTTP MCP server named `connector`. Tool names are
+loopback Streamable HTTP MCP server named `connector`. The reusable transport
+and session-binding implementation lives in
+`packages/connector/runtime/mcpserver`; product daemons own instance lifecycle.
+Tool names are
 namespaced as `<connector-key>_<upstream-tool-name>`. Each Agent session receives
 a short-lived bearer binding through its provider-native MCP configuration;
 custom user MCP servers remain in their existing configuration and are not

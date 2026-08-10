@@ -1,4 +1,4 @@
-package connectormcp
+package mcpserver_test
 
 import (
 	"bufio"
@@ -11,10 +11,13 @@ import (
 	"time"
 
 	implementationhost "github.com/tutti-os/tutti/packages/connector/runtime/implementationhost"
+	connectormcpserver "github.com/tutti-os/tutti/packages/connector/runtime/mcpserver"
 )
 
+const protocolVersion = "2026-07-28"
+
 func TestServerIssuesSessionScopedBindingAndServesModernMCP(t *testing.T) {
-	server, err := Start(Config{Registry: implementationhost.NewMCPRegistry()})
+	server, err := connectormcpserver.Start(connectormcpserver.Config{Registry: implementationhost.NewMCPRegistry()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +66,7 @@ func TestServerIssuesSessionScopedBindingAndServesModernMCP(t *testing.T) {
 }
 
 func TestBindingReplacementAndRevokeAllInvalidateTokens(t *testing.T) {
-	server, err := Start(Config{Registry: implementationhost.NewMCPRegistry()})
+	server, err := connectormcpserver.Start(connectormcpserver.Config{Registry: implementationhost.NewMCPRegistry()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +98,7 @@ func TestBindingReplacementAndRevokeAllInvalidateTokens(t *testing.T) {
 }
 
 func TestServerRejectsLegacyMethodsInvalidOriginAndHeaderMismatch(t *testing.T) {
-	server, err := Start(Config{Registry: implementationhost.NewMCPRegistry()})
+	server, err := connectormcpserver.Start(connectormcpserver.Config{Registry: implementationhost.NewMCPRegistry()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +142,7 @@ func TestServerRejectsLegacyMethodsInvalidOriginAndHeaderMismatch(t *testing.T) 
 }
 
 func TestSubscriptionIsAcknowledgedAndCompletesOnBindingRevocation(t *testing.T) {
-	server, err := Start(Config{Registry: implementationhost.NewMCPRegistry()})
+	server, err := connectormcpserver.Start(connectormcpserver.Config{Registry: implementationhost.NewMCPRegistry()})
 	if err != nil {
 		t.Fatal(err)
 	}

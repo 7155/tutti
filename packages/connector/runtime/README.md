@@ -4,14 +4,23 @@
 foundation. Tutti runs it on the desktop host; VM-backed products run it inside
 the managed guest. It owns the latest-only `current + candidate` raw artifact
 cache, a no-network importer for synchronized archives, secure artifact preparation, managed runtime
-identity, runtime ABI verification, typed Node package installation, the MCP
-stdio client, the host-neutral ImplementationHost/CommandRegistry, Connector
-Broker discovery/invocation, and verified Connector Skill reading.
+identity, runtime ABI verification, typed Node package installation, MCP
+clients, the host-neutral ImplementationHost, RouteRegistry and MCPRegistry,
+Connector discovery, stable CLI shims, verified Connector Skill discovery, and
+the session-bound loopback MCP server used by native Agent MCP clients.
 
 Hosts supply the managed runtime resolver, implementation host, process
 transport, HTTP client/proxy policy, state roots, and product-facing command
 transport. Runtime code must not import `services/tuttid` or expose host
 filesystem paths as a cross-machine protocol.
+
+`mcpserver.Start` projects one `implementationhost.MCPRegistry` through the
+stateless Connector Streamable HTTP protocol on an ephemeral loopback port.
+Hosts issue one bearer binding per Workspace/Agent Session and must revoke that
+binding when the Session ends. Bindings carry transport authority only: they
+never contain Connector credentials and must not be rendered into prompts or
+logs. The server remains running when the registry is empty and relays
+`tools/list_changed` notifications as routes are reconciled.
 
 `DownloadCache` is intended for the machine that holds Market authority. It
 keeps only the last installed archive and one replaceable candidate per

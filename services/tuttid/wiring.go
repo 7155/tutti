@@ -313,16 +313,21 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 	if connectorMCPBaseURL == "" {
 		connectorMCPBaseURL = connectorMCPDefaultBaseURL
 	}
+	remoteMCPClientFactory, err := connectormarketservice.NewDirectRemoteMCPClientFactory(connectormarketservice.DirectRemoteMCPClientFactoryConfig{
+		BaseURL: connectorMCPBaseURL, HTTPClient: agenthttpx.NewClient(2 * time.Minute),
+		Timeout: 30 * time.Second, MaxResponseBytes: 4 * 1024 * 1024,
+		AuthorizeAccountRequest: marketAuthorizer.AuthorizeForAccount,
+	})
+	if err != nil {
+		return fmt.Errorf("configure remote connector MCP client factory: %w", err)
+	}
 	implementationHost, err := connectormarketservice.NewImplementationHost(connectormarketservice.ImplementationHostConfig{
 		Artifacts: artifactPreparer, CLIInstallations: nodePackageInstaller,
 		Runtimes: runtimeResolver, Processes: processTransport, Registry: connectorRegistry,
-		RemoteHTTPClient: agenthttpx.NewClient(2 * time.Minute),
-		RemoteMCPBaseURL: connectorMCPBaseURL,
-		RemoteMCPTimeout: 30 * time.Second, RemoteMCPMaxResponse: 4 * 1024 * 1024,
-		AuthorizeRemoteAccountRequest: marketAuthorizer.AuthorizeForAccount,
-		StateRoot:                     filepath.Join(connectorStateRoot, "user-state"),
-		BinDir:                        filepath.Join(tuttitypes.DefaultStateDir(), "bin"),
-		UserHome:                      userHome,
+		RemoteMCPClientFactory: remoteMCPClientFactory,
+		StateRoot:              filepath.Join(connectorStateRoot, "user-state"),
+		BinDir:                 filepath.Join(tuttitypes.DefaultStateDir(), "bin"),
+		UserHome:               userHome,
 	})
 	if err != nil {
 		return fmt.Errorf("configure connector implementation host: %w", err)

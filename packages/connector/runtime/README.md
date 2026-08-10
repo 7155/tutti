@@ -10,9 +10,13 @@ Connector discovery, stable CLI shims, verified Connector Skill discovery, and
 the session-bound loopback MCP server used by native Agent MCP clients.
 
 Hosts supply the managed runtime resolver, implementation host, process
-transport, HTTP client/proxy policy, state roots, and product-facing command
+transport, `RemoteMCPClientFactory`, state roots, and product-facing command
 transport. Runtime code must not import `services/tuttid` or expose host
-filesystem paths as a cross-machine protocol.
+filesystem paths as a cross-machine protocol. `ImplementationHost` owns remote
+MCP bootstrap and route lifecycle, while the product factory owns the physical
+connection path and request authorization. A desktop host may connect directly
+to its Gateway; a VM-backed host may return a client for a typed desktop relay
+without hiding target rewrites inside a generic HTTP transport.
 
 `mcpserver.Start` projects one `implementationhost.MCPRegistry` through the
 stateless Connector Streamable HTTP protocol on an ephemeral loopback port.

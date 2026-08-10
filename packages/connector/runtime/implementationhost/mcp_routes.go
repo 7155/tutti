@@ -5,12 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/url"
 	"strings"
 
 	market "github.com/tutti-os/tutti/packages/connector/host"
-	"github.com/tutti-os/tutti/packages/connector/runtime/mcp"
 )
 
 func (host *Host) buildRemoteRoute(ctx context.Context, request market.RuntimeReconcileRequest) (*connectorRoute, error) {
@@ -19,27 +16,19 @@ func (host *Host) buildRemoteRoute(ctx context.Context, request market.RuntimeRe
 		return nil, errors.New("remote_streamable_http connector config is unavailable")
 	}
 	accountID := strings.TrimSpace(request.Scope.AccountID)
-	if accountID == "" || host.authorizeRemoteAccountRequest == nil {
-		return nil, errors.New("remote MCP host-session authentication is unavailable")
+	if accountID == "" || host.remoteMCPClientFactory == nil {
+		return nil, errors.New("remote MCP product client factory is unavailable")
 	}
-	base, err := url.Parse(host.remoteMCPBaseURL)
-	if err != nil || base.Scheme == "" || base.Host == "" {
-		return nil, errors.New("remote MCP Gateway base URL is unavailable")
-	}
-	endpoint, err := url.JoinPath(base.String(), "mcp", "connectors", request.Connector.Key)
-	if err != nil {
-		return nil, errors.New("build remote MCP Gateway endpoint")
-	}
-	connectorVersion := strings.TrimSpace(request.Connector.Release.Version)
-	client, err := mcp.NewModernStreamableHTTPClient(mcp.ModernStreamableHTTPClientConfig{
-		Endpoint: endpoint, AllowedHosts: []string{base.Hostname()}, ConnectorVersion: connectorVersion,
-		HTTPClient: host.remoteHTTPClient, AuthorizeRequest: func(httpRequest *http.Request) error {
-			return host.authorizeRemoteAccountRequest(httpRequest, accountID)
-		},
-		Timeout: host.remoteMCPTimeout, MaxResponseBytes: host.remoteMCPMaxResponse,
+	client, err := host.remoteMCPClientFactory.NewRemoteMCPClient(ctx, RemoteMCPClientRequest{
+		OperationID: request.OperationID, ConnectionID: request.ConnectionID,
+		ConnectorKey: request.Connector.Key, AccountID: accountID,
+		ReleaseDigest:  request.Connector.Release.ReleaseDigest,
+		Version:        request.Connector.Release.Version,
+		Generation:     request.Generation,
+		Implementation: *remote,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create remote connector MCP client: %w", err)
 	}
 	closeClient := func() { _ = client.Close(context.Background()) }
 	if _, err := client.Call(ctx, "server/discover", map[string]any{}); err != nil {

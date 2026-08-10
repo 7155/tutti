@@ -3,7 +3,6 @@ package connectormarket
 import (
 	"context"
 	"errors"
-	"net/http"
 	"os"
 	"runtime"
 	"time"
@@ -23,20 +22,16 @@ type ConnectorRuntimeRegistry struct {
 }
 
 type ImplementationHostConfig struct {
-	Artifacts                     PreparedArtifactResolver
-	CLIInstallations              market.CLIInstallationManager
-	Runtimes                      ConnectorRuntimeResolver
-	Processes                     agentruntime.ProcessTransport
-	Registry                      *ConnectorRuntimeRegistry
-	StateRoot                     string
-	BinDir                        string
-	UserHome                      string
-	MCPStartupTimeout             time.Duration
-	RemoteHTTPClient              *http.Client
-	RemoteMCPBaseURL              string
-	RemoteMCPTimeout              time.Duration
-	RemoteMCPMaxResponse          int
-	AuthorizeRemoteAccountRequest func(*http.Request, string) error
+	Artifacts              PreparedArtifactResolver
+	CLIInstallations       market.CLIInstallationManager
+	Runtimes               ConnectorRuntimeResolver
+	Processes              agentruntime.ProcessTransport
+	Registry               *ConnectorRuntimeRegistry
+	StateRoot              string
+	BinDir                 string
+	UserHome               string
+	MCPStartupTimeout      time.Duration
+	RemoteMCPClientFactory implementationhost.RemoteMCPClientFactory
 }
 
 // ImplementationHost adapts the host-neutral Connector runtime to tuttId.
@@ -71,9 +66,7 @@ func NewImplementationHost(config ImplementationHostConfig) (*ImplementationHost
 		Artifacts: config.Artifacts, CLIInstallations: config.CLIInstallations, Runtimes: config.Runtimes,
 		Processes: config.Processes, Registry: config.Registry.runtime, MCP: config.Registry.mcp, StateRoot: config.StateRoot, BinDir: config.BinDir,
 		UserHome: config.UserHome, MCPStartupTimeout: config.MCPStartupTimeout,
-		RemoteHTTPClient: config.RemoteHTTPClient, RemoteMCPBaseURL: config.RemoteMCPBaseURL,
-		RemoteMCPTimeout: config.RemoteMCPTimeout, RemoteMCPMaxResponse: config.RemoteMCPMaxResponse,
-		AuthorizeRemoteAccountRequest: config.AuthorizeRemoteAccountRequest,
+		RemoteMCPClientFactory: config.RemoteMCPClientFactory,
 	})
 	if err != nil {
 		return nil, err

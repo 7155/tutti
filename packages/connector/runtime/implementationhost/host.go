@@ -5,9 +5,9 @@ package implementationhost
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -32,45 +32,70 @@ type ReconcileRequest struct {
 	Runtime market.RuntimeReconcileRequest
 }
 
+// RemoteMCPClient is the protocol client required by one remote Connector
+// route. Products decide whether the client connects directly to their MCP
+// Gateway or through a product-owned relay.
+type RemoteMCPClient interface {
+	Call(context.Context, string, any) (json.RawMessage, error)
+	RegisterTool(string, map[string]any) error
+	ReplaceTools(map[string]map[string]any) error
+	Close(context.Context) error
+}
+
+// RemoteMCPClientRequest carries the complete non-credential identity of one
+// remote Connector route. A product adapter may use it to bind a relay request
+// to the lifecycle operation without exposing account credentials to the
+// runtime machine.
+type RemoteMCPClientRequest struct {
+	OperationID    string
+	ConnectionID   string
+	ConnectorKey   string
+	AccountID      string
+	ReleaseDigest  string
+	Version        string
+	Generation     market.HostGeneration
+	Implementation market.RemoteStreamableHTTPImplementation
+}
+
+// RemoteMCPClientFactory is the product port for remote Connector MCP
+// connectivity. ImplementationHost owns protocol bootstrap and route
+// lifecycle; the factory owns the physical connection path and request
+// authorization.
+type RemoteMCPClientFactory interface {
+	NewRemoteMCPClient(context.Context, RemoteMCPClientRequest) (RemoteMCPClient, error)
+}
+
 type Config struct {
-	Artifacts                     PreparedArtifactResolver
-	CLIInstallations              market.CLIInstallationManager
-	Runtimes                      connectorruntime.ConnectorRuntimeResolver
-	Processes                     agentruntime.ProcessTransport
-	Routes                        RouteObserver
-	Authorization                 AuthorizationObserver
-	Registry                      *RouteRegistry
-	MCP                           *MCPRegistry
-	StateRoot                     string
-	BinDir                        string
-	UserHome                      string
-	MCPStartupTimeout             time.Duration
-	RemoteHTTPClient              *http.Client
-	RemoteMCPBaseURL              string
-	RemoteMCPTimeout              time.Duration
-	RemoteMCPMaxResponse          int
-	AuthorizeRemoteAccountRequest func(*http.Request, string) error
+	Artifacts              PreparedArtifactResolver
+	CLIInstallations       market.CLIInstallationManager
+	Runtimes               connectorruntime.ConnectorRuntimeResolver
+	Processes              agentruntime.ProcessTransport
+	Routes                 RouteObserver
+	Authorization          AuthorizationObserver
+	Registry               *RouteRegistry
+	MCP                    *MCPRegistry
+	StateRoot              string
+	BinDir                 string
+	UserHome               string
+	MCPStartupTimeout      time.Duration
+	RemoteMCPClientFactory RemoteMCPClientFactory
 }
 
 type Host struct {
-	artifacts                     PreparedArtifactResolver
-	planner                       *connectorruntime.ManagedRoutePlanner
-	processes                     agentruntime.ProcessTransport
-	routeObserver                 RouteObserver
-	authorizationObserver         AuthorizationObserver
-	mcpStartupTimeout             time.Duration
-	routes                        *connectorruntime.RouteTable
-	snapshots                     *connectorruntime.ExecutionSnapshotter
-	authorizationProvider         *managedCredentialAuthorizationProvider
-	authorizationMu               sync.Mutex
-	authorizationRoutes           map[string]*connectorRoute
-	remoteHTTPClient              *http.Client
-	remoteMCPBaseURL              string
-	remoteMCPTimeout              time.Duration
-	remoteMCPMaxResponse          int
-	authorizeRemoteAccountRequest func(*http.Request, string) error
-	mcpRegistry                   *MCPRegistry
-	binDir                        string
+	artifacts              PreparedArtifactResolver
+	planner                *connectorruntime.ManagedRoutePlanner
+	processes              agentruntime.ProcessTransport
+	routeObserver          RouteObserver
+	authorizationObserver  AuthorizationObserver
+	mcpStartupTimeout      time.Duration
+	routes                 *connectorruntime.RouteTable
+	snapshots              *connectorruntime.ExecutionSnapshotter
+	authorizationProvider  *managedCredentialAuthorizationProvider
+	authorizationMu        sync.Mutex
+	authorizationRoutes    map[string]*connectorRoute
+	remoteMCPClientFactory RemoteMCPClientFactory
+	mcpRegistry            *MCPRegistry
+	binDir                 string
 }
 
 type connectorRoute struct {
@@ -82,7 +107,7 @@ type connectorRoute struct {
 	mcpTools               map[string]registeredMCPTool
 	closeMu                sync.Mutex
 	mcpClient              *mcp.StdioClient
-	remoteMCP              *mcp.ModernStreamableHTTPClient
+	remoteMCP              RemoteMCPClient
 	executionRoot          string
 	installedRoot          string
 	displayName            string
@@ -117,12 +142,6 @@ func New(config Config) (*Host, error) {
 	if config.MCPStartupTimeout <= 0 {
 		config.MCPStartupTimeout = 15 * time.Second
 	}
-	if config.RemoteMCPTimeout <= 0 {
-		config.RemoteMCPTimeout = 30 * time.Second
-	}
-	if config.RemoteMCPMaxResponse <= 0 {
-		config.RemoteMCPMaxResponse = 4 * 1024 * 1024
-	}
 	snapshots, err := connectorruntime.NewExecutionSnapshotter(config.StateRoot)
 	if err != nil {
 		return nil, err
@@ -137,22 +156,18 @@ func New(config Config) (*Host, error) {
 	config.Registry.attach(routes)
 	config.MCP.attach(routes)
 	host := &Host{
-		artifacts:                     config.Artifacts,
-		planner:                       planner,
-		processes:                     config.Processes,
-		routeObserver:                 config.Routes,
-		authorizationObserver:         config.Authorization,
-		mcpStartupTimeout:             config.MCPStartupTimeout,
-		routes:                        routes,
-		snapshots:                     snapshots,
-		authorizationRoutes:           make(map[string]*connectorRoute),
-		remoteHTTPClient:              config.RemoteHTTPClient,
-		remoteMCPBaseURL:              strings.TrimRight(strings.TrimSpace(config.RemoteMCPBaseURL), "/"),
-		remoteMCPTimeout:              config.RemoteMCPTimeout,
-		remoteMCPMaxResponse:          config.RemoteMCPMaxResponse,
-		authorizeRemoteAccountRequest: config.AuthorizeRemoteAccountRequest,
-		mcpRegistry:                   config.MCP,
-		binDir:                        config.BinDir,
+		artifacts:              config.Artifacts,
+		planner:                planner,
+		processes:              config.Processes,
+		routeObserver:          config.Routes,
+		authorizationObserver:  config.Authorization,
+		mcpStartupTimeout:      config.MCPStartupTimeout,
+		routes:                 routes,
+		snapshots:              snapshots,
+		authorizationRoutes:    make(map[string]*connectorRoute),
+		remoteMCPClientFactory: config.RemoteMCPClientFactory,
+		mcpRegistry:            config.MCP,
+		binDir:                 config.BinDir,
 	}
 	host.authorizationProvider = newManagedCredentialAuthorizationProvider(host)
 	return host, nil

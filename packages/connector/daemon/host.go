@@ -72,75 +72,6 @@ type capabilityPublicationGate interface {
 	SetCapabilityPublication(bool)
 }
 
-type activationGateHost struct {
-	delegate   market.ImplementationHost
-	mu         sync.Mutex
-	open       bool
-	failClosed bool
-	staged     map[string]market.RuntimeReconcileRequest
-}
-
-func newActivationGateHost(delegate market.ImplementationHost) *activationGateHost {
-	return &activationGateHost{delegate: delegate, staged: make(map[string]market.RuntimeReconcileRequest)}
-}
-
-func (gate *activationGateHost) Reconcile(ctx context.Context, request market.RuntimeReconcileRequest) (market.RuntimeReceipt, error) {
-	key := request.ConnectionID + "\x00" + request.Connector.Key
-	gate.mu.Lock()
-	if !request.Enabled {
-		delete(gate.staged, key)
-		gate.mu.Unlock()
-		return gate.delegate.Reconcile(ctx, request)
-	}
-	if gate.open {
-		gate.mu.Unlock()
-		return gate.delegate.Reconcile(ctx, request)
-	}
-	current, exists := gate.staged[key]
-	if !exists || current.Generation.BootEpoch != request.Generation.BootEpoch || request.Generation.Generation >= current.Generation.Generation {
-		gate.staged[key] = request
-	}
-	gate.mu.Unlock()
-	return market.RuntimeReceipt{OperationID: request.OperationID, ConnectionID: request.ConnectionID,
-		ConnectorKey: request.Connector.Key, ReleaseDigest: request.Connector.Release.ReleaseDigest, Generation: request.Generation}, nil
-}
-
-func (gate *activationGateHost) DeactivateRuntime(ctx context.Context, request market.RuntimeDeactivationRequest) error {
-	gate.mu.Lock()
-	delete(gate.staged, request.ConnectionID+"\x00"+request.ConnectorKey)
-	gate.mu.Unlock()
-	return gate.delegate.DeactivateRuntime(ctx, request)
-}
-
-func (gate *activationGateHost) FailClosed(ctx context.Context, deadline time.Time) error {
-	gate.mu.Lock()
-	gate.failClosed = true
-	gate.staged = make(map[string]market.RuntimeReconcileRequest)
-	gate.mu.Unlock()
-	return gate.delegate.FailClosed(ctx, deadline)
-}
-
-func (gate *activationGateHost) requiresRecovery() bool {
-	gate.mu.Lock()
-	defer gate.mu.Unlock()
-	return gate.failClosed
-}
-
-func (gate *activationGateHost) markRecovered() {
-	gate.mu.Lock()
-	gate.failClosed = false
-	gate.mu.Unlock()
-}
-
-func (gate *activationGateHost) setOpen(open bool) {
-	gate.mu.Lock()
-	gate.open = open
-	if !open {
-		gate.staged = make(map[string]market.RuntimeReconcileRequest)
-	}
-	gate.mu.Unlock()
-}
-
 func NewHost(parent context.Context, config HostConfig) (*Host, error) {
 	if parent == nil {
 		parent = context.Background()
@@ -241,7 +172,38 @@ func (host *Host) runAuthorizationReconcileWorker(ctx context.Context) {
 			return
 		case <-ticker.C:
 			reconcileContext, cancel := context.WithTimeout(ctx, 15*time.Second)
-			err := host.Application.ReconcileAuthorizations(reconcileContext)
+			host.bootstrapMu.Lock()
+			bootstrapped, scope := host.bootstrapped, host.bootstrapScope
+			if !bootstrapped || strings.TrimSpace(scope.AccountID) == "" {
+				host.bootstrapMu.Unlock()
+				cancel()
+				continue
+			}
+			intents, err := host.Application.ReconcileAuthorizations(reconcileContext, scope)
+			if err == nil && len(intents) > 0 {
+				// ReconcileAuthorizations persists projection intent and enqueues
+				// runtime operations. Drain a scoped operation for every affected
+				// remote Connector before releasing the lifecycle fence, so logout
+				// or account switching cannot be followed by a late old-account
+				// route publication.
+				connectorKeys := make(map[string]struct{}, len(intents))
+				for _, intent := range intents {
+					connectorKeys[intent.ConnectorKey] = struct{}{}
+				}
+				for connectorKey := range connectorKeys {
+					if reconcileErr := host.reconcileRuntimeForScopeLocked(reconcileContext, scope, connectorKey); reconcileErr != nil {
+						err = errors.Join(err, reconcileErr)
+					}
+				}
+				if err == nil {
+					for _, intent := range intents {
+						if resolveErr := host.repository.ResolveAuthorizationSession(reconcileContext, intent.OperationID, intent.Resolution); resolveErr != nil {
+							err = errors.Join(err, resolveErr)
+						}
+					}
+				}
+			}
+			host.bootstrapMu.Unlock()
 			cancel()
 			if err != nil && !errors.Is(err, context.Canceled) {
 				slog.Warn("connector authorization reconciliation failed", "error", err)
@@ -280,7 +242,7 @@ func (host *Host) BootstrapForScope(ctx context.Context, scope market.OperationS
 		host.refreshWorkerStarted = true
 		go host.runCatalogRefreshWorker()
 	}
-	host.activationGate.setOpen(false)
+	host.activationGate.setOpen(scope, false)
 	if err := host.applyCapabilityPublication(ctx, scope, false); err != nil {
 		return err
 	}
@@ -289,7 +251,7 @@ func (host *Host) BootstrapForScope(ctx context.Context, scope market.OperationS
 		if committed {
 			return
 		}
-		host.activationGate.setOpen(false)
+		host.activationGate.setOpen(scope, false)
 		_ = host.applyCapabilityPublication(context.Background(), scope, false)
 		fenceContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -323,9 +285,11 @@ func (host *Host) BootstrapForScope(ctx context.Context, scope market.OperationS
 			// authorization-free connectors can still recover while a later WS or
 			// poll retries the authoritative snapshot.
 			slog.Warn("connector authorization snapshot unavailable during bootstrap", "error", err)
+		} else if host.authorizationReadiness != nil {
+			host.authorizationReadiness.SetReady(scope.AccountID, true)
 		}
 	}
-	host.activationGate.setOpen(true)
+	host.activationGate.setOpen(scope, true)
 	if err := host.Application.ReconcileInstalledRuntimesForScope(ctx, scope); err != nil {
 		return err
 	}
@@ -410,8 +374,11 @@ func (host *Host) runAuthorizationEventWorker(ctx context.Context) {
 }
 
 type authorizationSyncResult struct {
-	changed     []string
-	becameReady bool
+	changed         []string
+	receipts        []string
+	becameReady     bool
+	calibrate       bool
+	snapshotApplied bool
 }
 
 func (host *Host) syncAuthorizationSnapshot(ctx context.Context, scope market.OperationScope) (authorizationSyncResult, error) {
@@ -422,10 +389,11 @@ func (host *Host) syncAuthorizationSnapshot(ctx context.Context, scope market.Op
 	if err != nil {
 		return authorizationSyncResult{}, err
 	}
-	changed, err := host.authorizationSnapshotStore.ApplyAuthorizationSnapshot(ctx, scope.AccountID, snapshot)
-	result := authorizationSyncResult{changed: changed}
-	if err == nil && host.authorizationReadiness != nil {
-		result.becameReady = host.authorizationReadiness.SetReady(scope.AccountID, true)
+	applied, err := host.authorizationSnapshotStore.ApplyAuthorizationSnapshot(ctx, scope.AccountID, snapshot)
+	result := authorizationSyncResult{
+		changed:         applied.ChangedConnectorKeys,
+		receipts:        applied.PendingReceiptConnectorKeys,
+		snapshotApplied: err == nil,
 	}
 	return result, err
 }
@@ -435,10 +403,12 @@ func (host *Host) runAuthorizationSnapshotWorker(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 	for {
+		calibrate := false
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			calibrate = true
 		case <-host.authorizationSyncWake:
 		}
 		host.bootstrapMu.Lock()
@@ -449,6 +419,7 @@ func (host *Host) runAuthorizationSnapshotWorker(ctx context.Context) {
 		}
 		syncContext, cancel := context.WithTimeout(ctx, 30*time.Second)
 		result, err := host.syncAuthorizationSnapshot(syncContext, scope)
+		result.calibrate = calibrate
 		cancel()
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
@@ -470,6 +441,9 @@ func (host *Host) reconcileAuthorizationChanges(ctx context.Context, scope marke
 	defer host.bootstrapMu.Unlock()
 	if !host.bootstrapped || host.bootstrapScope != scope || host.activationGate.requiresRecovery() {
 		return nil
+	}
+	if result.snapshotApplied && host.authorizationReadiness != nil {
+		result.becameReady = host.authorizationReadiness.SetReady(scope.AccountID, true)
 	}
 	dirty := host.authorizationDirty[scope.AccountID]
 	if dirty == nil {
@@ -494,7 +468,12 @@ func (host *Host) reconcileAuthorizationChanges(ctx context.Context, scope marke
 			dirty[connectorKey] = struct{}{}
 		}
 	}
-	if result.becameReady {
+	for _, connectorKey := range result.receipts {
+		if _, ok := eligible[connectorKey]; ok {
+			dirty[connectorKey] = struct{}{}
+		}
+	}
+	if result.becameReady || result.calibrate {
 		for _, connectorKey := range connectorKeys {
 			dirty[connectorKey] = struct{}{}
 		}
@@ -520,7 +499,11 @@ func (host *Host) FenceForScope(ctx context.Context, scope market.OperationScope
 	}
 	host.bootstrapMu.Lock()
 	defer host.bootstrapMu.Unlock()
-	host.activationGate.setOpen(false)
+	host.activationGate.setOpen(scope, false)
+	previousScope := host.bootstrapScope
+	if host.authorizationReadiness != nil && strings.TrimSpace(previousScope.AccountID) != "" {
+		host.authorizationReadiness.SetReady(previousScope.AccountID, false)
+	}
 	if host.authorizationReadiness != nil && strings.TrimSpace(scope.AccountID) != "" {
 		host.authorizationReadiness.SetReady(scope.AccountID, false)
 	}

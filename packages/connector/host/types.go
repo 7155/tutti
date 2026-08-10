@@ -388,13 +388,40 @@ type RuntimeReceipt struct {
 }
 
 type AuthorizationSession struct {
-	OperationID      string             `json:"operationId"`
-	ConnectorKey     string             `json:"connectorKey"`
-	ConnectionID     string             `json:"-"`
-	SessionID        string             `json:"sessionId"`
-	ActionType       string             `json:"actionType"`
-	AuthorizationURL string             `json:"-"`
-	State            AuthorizationState `json:"-"`
+	OperationID      string                         `json:"operationId"`
+	ConnectorKey     string                         `json:"connectorKey"`
+	ConnectionID     string                         `json:"-"`
+	SessionID        string                         `json:"sessionId"`
+	ActionType       string                         `json:"actionType"`
+	AuthorizationURL string                         `json:"-"`
+	State            AuthorizationState             `json:"-"`
+	Resolution       AuthorizationSessionResolution `json:"resolution"`
+}
+
+// AuthorizationSessionResolution records why a private, durable start receipt
+// no longer needs provider polling. The empty value is treated as unresolved
+// for receipts written by older daemon versions.
+type AuthorizationSessionResolution string
+
+const (
+	AuthorizationSessionResolutionUnresolved            AuthorizationSessionResolution = "unresolved"
+	AuthorizationSessionResolutionProviderConnected     AuthorizationSessionResolution = "provider_connected"
+	AuthorizationSessionResolutionProviderFailed        AuthorizationSessionResolution = "provider_failed"
+	AuthorizationSessionResolutionAccountStateConverged AuthorizationSessionResolution = "account_state_converged"
+	AuthorizationSessionResolutionSuperseded            AuthorizationSessionResolution = "superseded"
+)
+
+// AuthorizationReconcileIntent is a private receipt transition that becomes
+// terminal only after the daemon has awaited the corresponding runtime
+// reconcile under its account lifecycle fence.
+type AuthorizationReconcileIntent struct {
+	OperationID  string
+	ConnectorKey string
+	Resolution   AuthorizationSessionResolution
+}
+
+func (session AuthorizationSession) IsResolved() bool {
+	return session.Resolution != "" && session.Resolution != AuthorizationSessionResolutionUnresolved
 }
 
 type AuthorizationObservationState string
@@ -451,6 +478,11 @@ type AuthorizationProjection struct {
 type AuthorizationSnapshot struct {
 	Revision   uint64
 	Connectors []AuthorizationProjection
+}
+
+type AuthorizationSnapshotApplyResult struct {
+	ChangedConnectorKeys        []string
+	PendingReceiptConnectorKeys []string
 }
 
 type MutationResult struct {

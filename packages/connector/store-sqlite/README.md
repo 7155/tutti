@@ -10,6 +10,13 @@ stored independently in `connector_market_authorization_projections`, keyed by
 `account_id + connector_key`, so account switching cannot overwrite installed
 truth.
 
+Authorization Session receipts remain private inside completed Start operation
+records. Snapshot application uses one SQLite transaction to advance the
+account Projection and surface every matching unresolved receipt when the
+server reports the Connector connected. Older Snapshot revisions never replace
+newer Projection state; the daemon resolves a receipt only after its scoped
+Runtime Reconcile completes.
+
 Active operations and pending outbox events are durable and never age-pruned.
 The lifecycle cleanup contract removes bounded batches of expired terminal
 operations and already-published events. Installed release evidence is stored

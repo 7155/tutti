@@ -103,6 +103,17 @@ func (client *ConnectorAuthorizationClient) Begin(ctx context.Context, request m
 	if strings.TrimSpace(response.Session.SessionID) == "" || strings.TrimSpace(response.Session.ConnectorRevision) != connectorVersion {
 		return market.AuthorizationSession{}, errors.New("connector authorization start returned an invalid session")
 	}
+	if authorizationSessionSucceeded(response.Session.Status) {
+		connectionID := strings.TrimSpace(response.Session.ResultConnectionID)
+		if connectionID == "" {
+			return market.AuthorizationSession{}, errors.New("connector authorization start completed without a connection id")
+		}
+		return market.AuthorizationSession{
+			OperationID: request.OperationID, ConnectorKey: connectorID,
+			SessionID: response.Session.SessionID, ConnectionID: connectionID,
+			State: market.AuthorizationStateConnected,
+		}, nil
+	}
 	actionType := strings.TrimSpace(response.Session.NextAction.Type)
 	if actionType == "" && request.Release.Manifest.AuthorizationKind == "api_key" {
 		actionType = "submit_secret"

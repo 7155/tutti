@@ -305,7 +305,13 @@ func (application *Application) beginAuthorizationSession(
 		strings.TrimSpace(session.SessionID) == "" || !validAuthorizationSessionAction(session) {
 		return AuthorizationSession{}, invalidOperationReceipt("authorization provider returned an invalid session")
 	}
-	if err := application.completeAuthorizationStart(ctx, operation.OperationID, session); err != nil {
+	remote := release.Manifest.Implementation.RemoteStreamableHTTP != nil
+	if session.State == AuthorizationStateConnected && !remote {
+		session.Resolution = AuthorizationSessionResolutionProviderConnected
+	} else {
+		session.Resolution = AuthorizationSessionResolutionUnresolved
+	}
+	if err := application.completeAuthorizationStart(ctx, operation.OperationID, session, !remote); err != nil {
 		return AuthorizationSession{}, err
 	}
 	if session.State == AuthorizationStateConnected {
@@ -346,13 +352,37 @@ func (application *Application) executeDisconnectAuthorization(ctx context.Conte
 	}); err != nil {
 		return NewDomainError(ErrorCodeAuthorizationFailed, "connector authorization disconnect failed", true, err)
 	}
+	release, err := frozenRelease(operation)
+	if err != nil {
+		return err
+	}
+	remote := release.Manifest.Implementation.RemoteStreamableHTTP != nil
 	if err := application.completeConnectorOperation(ctx, operation.OperationID, func(connector Connector) Connector {
-		connector.Authorization = Authorization{State: AuthorizationStateDisconnected}
+		if !remote {
+			connector.Authorization = Authorization{State: AuthorizationStateDisconnected}
+		}
 		return connector
 	}); err != nil {
 		return err
 	}
-	return application.projectAuthorizationAndScheduleRuntime(ctx, operation.Scope, operation.ConnectorKey, "", AuthorizationStateDisconnected, "")
+	if err := application.projectAuthorizationAndScheduleRuntime(ctx, operation.Scope, operation.ConnectorKey, "", AuthorizationStateDisconnected, ""); err != nil {
+		return err
+	}
+	if remote {
+		receipts, err := application.config.Repository.UnresolvedAuthorizationSessionOperations(ctx, operation.Scope)
+		if err != nil {
+			return err
+		}
+		for _, receipt := range receipts {
+			if receipt.ConnectorKey != operation.ConnectorKey {
+				continue
+			}
+			if err := application.config.Repository.ResolveAuthorizationSession(ctx, receipt.OperationID, AuthorizationSessionResolutionSuperseded); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (application *Application) markOperationRunning(ctx context.Context, operationID string) (Operation, error) {
@@ -467,6 +497,7 @@ func (application *Application) completeAuthorizationStart(
 	ctx context.Context,
 	operationID string,
 	session AuthorizationSession,
+	projectDeviceState bool,
 ) error {
 	return application.config.Repository.Transaction(ctx, func(tx Transaction) error {
 		operation, err := tx.Operation(operationID)
@@ -477,7 +508,7 @@ func (application *Application) completeAuthorizationStart(
 		if err != nil {
 			return err
 		}
-		stateChanged := connector.Authorization.State != session.State
+		stateChanged := projectDeviceState && connector.Authorization.State != session.State
 		if operation.State == OperationStateCompleted && !stateChanged {
 			return nil
 		}
@@ -485,7 +516,9 @@ func (application *Application) completeAuthorizationStart(
 			return invalidTransition("authorization", string(connector.Authorization.State), string(session.State))
 		}
 		revision := tx.AdvanceRevision()
-		connector.Authorization = Authorization{State: session.State}
+		if projectDeviceState {
+			connector.Authorization = Authorization{State: session.State}
+		}
 		connector.Revision = revision
 		if operation.State != OperationStateCompleted {
 			operation.State = OperationStateCompleted

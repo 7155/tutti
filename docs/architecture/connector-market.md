@@ -338,6 +338,20 @@ does the resolver request a one-shot credential-broker grant. `expired`,
 `disconnected`, and missing projections reconcile inactive. Daemon or guest
 restart uses `BootstrapForScope` to rebuild the same projection explicitly.
 
+Remote Connector authorization uses that account projection for Start,
+observation, presentation, and route publication; the device Connector's
+authorization field is not remote authorization truth. A completed Start
+operation may retain a private authorization-session receipt while provider
+work is pending. Each receipt has a terminal resolution, and only unresolved
+receipts for the daemon's current account are polled. Applying an authoritative
+connected Snapshot atomically writes its monotonic Projection and surfaces all
+matching account-and-Connector receipts. The daemon holds the account lifecycle
+fence, awaits Runtime Reconcile, and only then resolves them as
+`account_state_converged`. A same-revision Snapshot still surfaces a receipt created
+after an earlier Snapshot does not cause permanent polling. WebSocket hints and
+the five-minute calibration both fetch Snapshot; runtime reconcile is
+level-triggered and can safely repeat after restart or an interrupted pass.
+
 ## Event Consistency
 
 Business state and its invalidation event are written to a durable outbox in

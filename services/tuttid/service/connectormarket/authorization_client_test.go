@@ -97,6 +97,36 @@ func TestConnectorAuthorizationClientStartsAccountScopedSession(t *testing.T) {
 	}
 }
 
+func TestConnectorAuthorizationClientAcceptsImmediateSuccessWithoutNextAction(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/v1/connectors/tencent-docs/authorization-sessions" {
+			http.NotFound(response, request)
+			return
+		}
+		_, _ = response.Write([]byte(`{"session":{"sessionId":"auth-existing","connectorRevision":"0.2.0","status":"CONNECTOR_AUTHORIZATION_SESSION_STATUS_SUCCEEDED","resultConnectionId":"connection-existing"}}`))
+	}))
+	defer server.Close()
+	client, err := NewConnectorAuthorizationClient(ConnectorAuthorizationClientConfig{
+		BaseURL: server.URL, HTTPClient: server.Client(),
+		AuthorizeAccountRequest: func(*http.Request, string) error { return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.Begin(context.Background(), market.AuthorizationStartRequest{
+		OperationID: "operation-existing", ClientRequestID: "request-existing",
+		Scope: market.OperationScope{AccountID: "account-1"}, Connector: market.Connector{Key: "tencent-docs"},
+		Release: market.Release{Version: "0.2.0", Manifest: market.Manifest{AuthorizationKind: "oauth2"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != market.AuthorizationStateConnected || result.ConnectionID != "connection-existing" ||
+		result.ActionType != "" || result.AuthorizationURL != "" {
+		t.Fatalf("immediate success = %#v", result)
+	}
+}
+
 func TestConnectorAuthorizationClientSubmitsNativeSecretWithoutPersistingItInSession(t *testing.T) {
 	const token = "user-provided-token"
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {

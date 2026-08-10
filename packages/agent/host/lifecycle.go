@@ -132,7 +132,7 @@ func (h *Host) CreateSession(ctx context.Context, workspaceID string, input Crea
 		return h.runtime.Start(ctx, RuntimeStartInput{
 			WorkspaceID: workspaceID, AgentSessionID: input.AgentSessionID, AgentTargetID: input.AgentTargetID,
 			Provider: input.Provider, Cwd: prepared.Cwd, Env: append([]string(nil), prepared.Env...),
-			Title: runtimeTitle, InitialTitleEstablished: initialTitleEstablished,
+			MCPServers: cloneHostMCPServerBindings(prepared.MCPServers), Title: runtimeTitle, InitialTitleEstablished: initialTitleEstablished,
 			PermissionModeID: value(input.PermissionModeID), Model: value(input.Model), PlanMode: valueBool(input.PlanMode),
 			BrowserUse: input.BrowserUse, ComputerUse: input.ComputerUse, CodexSaverMode: valueBool(input.CodexSaverMode),
 			ProviderTargetRef: cloneMap(firstMap(prepared.ProviderTargetRef, input.ProviderTargetRef)),
@@ -414,18 +414,18 @@ func (h *Host) ensureRuntimeSessionLocked(ctx context.Context, ref SessionRef) (
 	}
 	release, err := h.acquireStartup(ctx, canonicalSession.Provider)
 	if err != nil {
-		return ProviderRuntimeSession{}, err
+		return ProviderRuntimeSession{}, h.cleanupRejectedPreparedRuntime(ctx, ref, canonicalSession.Provider, err)
 	}
 	defer release()
 	goalGenerationFences, err := h.listRuntimeGoalGenerationFences(ctx, ref)
 	if err != nil {
-		return ProviderRuntimeSession{}, err
+		return ProviderRuntimeSession{}, h.cleanupRejectedPreparedRuntime(ctx, ref, canonicalSession.Provider, err)
 	}
 	result, err := h.runtime.Resume(ctx, RuntimeResumeInput{
 		WorkspaceID: ref.WorkspaceID, AgentSessionID: ref.AgentSessionID,
 		AgentTargetID: strings.TrimSpace(canonicalSession.AgentTargetID), Provider: strings.TrimSpace(canonicalSession.Provider),
 		ProviderSessionID: strings.TrimSpace(canonicalSession.ProviderSessionID), Resumable: evidence.Established, Cwd: prepared.Cwd,
-		Env: append([]string(nil), prepared.Env...), Title: strings.TrimSpace(canonicalSession.Title),
+		Env: append([]string(nil), prepared.Env...), MCPServers: cloneHostMCPServerBindings(prepared.MCPServers), Title: strings.TrimSpace(canonicalSession.Title),
 		Status: persistedRuntimeStatus(canonicalSession.ActiveTurnID), Settings: settings,
 		CreatedAtUnixMS: canonicalSession.CreatedAtUnixMS, UpdatedAtUnixMS: canonicalSession.UpdatedAtUnixMS,
 		Visible: boolPointer(canonicalSession.Metadata.Visible), RuntimeContext: cloneMap(firstMap(prepared.RuntimeContext, canonicalSession.InternalRuntimeContext)),
@@ -435,10 +435,10 @@ func (h *Host) ensureRuntimeSessionLocked(ctx context.Context, ref SessionRef) (
 		RecreateIfMissing:      policy.Mode == ResumeModeRecreate,
 	})
 	if err != nil {
-		return ProviderRuntimeSession{}, err
+		return ProviderRuntimeSession{}, h.cleanupRejectedPreparedRuntime(ctx, ref, canonicalSession.Provider, err)
 	}
 	if err := h.restoreGoalGenerationFences(ctx, ref); err != nil {
-		return ProviderRuntimeSession{}, err
+		return ProviderRuntimeSession{}, h.cleanupRejectedPreparedRuntime(ctx, ref, canonicalSession.Provider, err)
 	}
 	h.goalFencesRestored.Store(ref.WorkspaceID+"\x00"+ref.AgentSessionID, struct{}{})
 	return result, nil

@@ -67,7 +67,7 @@ type Service struct {
 	WorkspaceIDs                   func(context.Context) ([]string, error)
 	PromptAttachmentStore          PromptAttachmentStore
 	RuntimePreparer                runtimeprep.Preparer
-	ConnectorRoutingHints          func() []runtimeprep.ConnectorRoutingHint
+	ConnectorRuntime               ConnectorRuntime
 	ModelGateway                   ModelGatewayRegistry
 	BrowserUseAvailable            func() bool
 	ComputerUseAvailable           func() bool
@@ -109,6 +109,16 @@ type Service struct {
 	// modelPlanBinding wires the optional workspace model access plan
 	// integration; see ConfigureModelPlanBinding.
 	modelPlanBinding modelPlanBindingRuntime
+}
+
+// ConnectorRuntime is the tuttid-owned projection of the active Connector
+// runtime into Agent session preparation. Bindings isolate one local Agent
+// session; they do not express Connector-level permissions.
+type ConnectorRuntime interface {
+	RoutingHints() []runtimeprep.ConnectorRoutingHint
+	BindSession(string, string) (runtimeprep.MCPServerBinding, error)
+	RevokeSession(string, string)
+	RevokeAll()
 }
 
 type TuttiModeSourceActivity struct {

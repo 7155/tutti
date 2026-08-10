@@ -166,7 +166,27 @@ func (p *DefaultPreparer) Prepare(ctx context.Context, input PrepareInput) (Prep
 		p.rememberProviderCleanup(workspaceID, agentSessionID, result.Cleanup)
 	}
 	logRuntimePrepareTrace("runtime_prepare.manifest_saved", input, nil)
-	return PreparedRuntime{Cwd: result.Cwd, Env: result.Env}, nil
+	return PreparedRuntime{
+		Cwd:        result.Cwd,
+		Env:        result.Env,
+		MCPServers: cloneMCPServerBindings(input.MCPServers),
+	}, nil
+}
+
+func cloneMCPServerBindings(input []MCPServerBinding) []MCPServerBinding {
+	if len(input) == 0 {
+		return nil
+	}
+	result := make([]MCPServerBinding, 0, len(input))
+	for _, binding := range input {
+		headers := make(map[string]string, len(binding.Headers))
+		for key, value := range binding.Headers {
+			headers[key] = value
+		}
+		binding.Headers = headers
+		result = append(result, binding)
+	}
+	return result
 }
 
 func (p *DefaultPreparer) RenderSkillBundle(ctx context.Context, input PrepareInput) (SkillBundle, error) {

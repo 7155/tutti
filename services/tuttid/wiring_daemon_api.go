@@ -59,6 +59,7 @@ func buildDaemonAPI(
 	browserService *browsersvc.Service,
 	computerService *computersvc.Service,
 	modelGateway *modelgatewayservice.Gateway,
+	connectorRuntime agentservice.ConnectorRuntime,
 	installTuttiModeWatchdog func(tuttimodeexecutionservice.Worker),
 ) (tuttiapi.DaemonAPI, *workspaceservice.AppCenterService, *agentdaemon.Runtime, *agentservice.ProviderAuthWatcher, error) {
 	workspaceStore, _ := store.(workspacedata.WorkbenchStore)
@@ -359,6 +360,7 @@ func buildDaemonAPI(
 	agentSessionConfig := agentservice.ServiceConfig{
 		Runtime: agentservice.ServiceRuntimeConfig{
 			Preparer:                 agentRuntimePreparation,
+			Connector:                connectorRuntime,
 			ModelGateway:             modelGateway,
 			BrowserUseAvailable:      browserUseAvailable,
 			ComputerUseAvailable:     computerUseAvailable,

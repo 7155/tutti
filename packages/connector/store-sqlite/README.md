@@ -8,7 +8,9 @@ migration, transactions, revisions, leases, and operation persistence.
 Device installation remains on the Connector row. Account authorization is
 stored independently in `connector_market_authorization_projections`, keyed by
 `account_id + connector_key`, so account switching cannot overwrite installed
-truth.
+truth. Local uninstall deletes installed-release evidence but never deletes the
+account authorization Projection; disconnect is a separate authorization
+operation.
 
 Authorization Session receipts remain private inside completed Start operation
 records. Snapshot application uses one SQLite transaction to advance the

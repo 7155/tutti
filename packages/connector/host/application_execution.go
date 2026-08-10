@@ -235,7 +235,10 @@ func (application *Application) completeUninstall(ctx context.Context, operation
 		}
 		revision := tx.AdvanceRevision()
 		connector.Installation = Installation{State: InstallationStateNotInstalled}
-		connector.Authorization = initialAuthorization(connector.Release.Manifest.AuthorizationKind)
+		// Local uninstall changes only device installation truth. Authorization is
+		// a separate lifecycle: remote authorization is projected from the account
+		// snapshot, while local providers are disconnected only through the explicit
+		// DisconnectAuthorization operation.
 		connector.Revision = revision
 		operation.State, operation.Stage, operation.FailureCode = OperationStateCompleted, OperationStageCompleted, ""
 		operation.UpdatedAt = application.config.Now().UTC()

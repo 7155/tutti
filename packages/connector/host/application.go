@@ -268,6 +268,9 @@ func (application *Application) Install(
 	return result, err
 }
 
+// Uninstall removes the Connector runtime and release from this device. It is
+// deliberately independent from DisconnectAuthorization: account authorization
+// remains server-owned and can be reused by another device or a later reinstall.
 func (application *Application) Uninstall(
 	ctx context.Context,
 	mutation ConnectorMutation,

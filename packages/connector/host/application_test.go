@@ -146,6 +146,53 @@ func TestApplicationExecutesTypedCLIInstallationBeforeCompletion(t *testing.T) {
 	}
 }
 
+func TestApplicationLocalUninstallRemovesDeviceReleaseWithoutDisconnectingAuthorization(t *testing.T) {
+	connector := testConnector("lark")
+	connector.Release.Manifest.AuthorizationKind = "oauth2"
+	connector.Release.Manifest.Implementation.ManagedStdio.MCP = nil
+	connector.Release.Manifest.Implementation.ManagedStdio.CLI = &ManagedCLIInterface{Entrypoint: "lark-cli",
+		Install: &CLIInstallation{Kind: "node_package", NodePackage: &NodePackageInstallation{
+			Package: "@larksuite/cli", Version: "1.0.83",
+			Integrity: "sha512-qbJYoJtNch6dV8RvYBO2wpcKO9+6Io3Cuf5alYFzvLbtkSntOKqoc+xHI7p6wRq4oH4F9fydgNJbTGy79ibPdg==",
+			Launch:    NodePackageLaunch{Kind: "native", Entrypoint: "bin/lark-cli", SHA256: strings.Repeat("c", 64)},
+		}},
+	}
+	connector.Installation = Installation{State: InstallationStateInstalled, InstalledVersion: connector.Release.Version,
+		InstalledReleaseID: connector.Release.ReleaseID, InstalledReleaseDigest: connector.Release.ReleaseDigest}
+	connector.Authorization = Authorization{State: AuthorizationStateConnected}
+	repository := newMemoryRepository(connector)
+	runtime := &memoryInstallRuntime{}
+	provider := &countingAuthorizationProvider{}
+	application := newTestApplication(t, repository, &memoryScheduler{}, runtime, CatalogSnapshot{})
+	application.config.Authorization = provider
+
+	accepted, err := application.Uninstall(context.Background(), ConnectorMutation{
+		Mutation: Mutation{ClientRequestID: "uninstall-lark", ExpectedRevision: 0}, ConnectorKey: connector.Key,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := application.ExecuteOperation(context.Background(), accepted.Operation.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := repository.Connector(context.Background(), connector.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Installation.State != InstallationStateNotInstalled || stored.Installation.InstalledReleaseDigest != "" {
+		t.Fatalf("installation = %#v", stored.Installation)
+	}
+	if stored.Authorization.State != AuthorizationStateConnected {
+		t.Fatalf("local uninstall changed authorization = %#v", stored.Authorization)
+	}
+	if runtime.deactivations != 1 || runtime.removes != 1 || runtime.cliRemoves != 1 {
+		t.Fatalf("cleanup counts: deactivate=%d artifact=%d cli=%d", runtime.deactivations, runtime.removes, runtime.cliRemoves)
+	}
+	if provider.disconnects != 0 {
+		t.Fatalf("authorization disconnects = %d, want 0", provider.disconnects)
+	}
+}
+
 func TestCrossMachineReceiptsUseOpaqueReferences(t *testing.T) {
 	release := testReleaseWithImplementation("lark", "1.0.0", ImplementationKindManagedStdio)
 	release.Manifest.Implementation.ManagedStdio.MCP = nil
@@ -393,6 +440,83 @@ func TestApplicationCrossDeviceRemoteReconcileUsesAccountProjectionAuthorization
 	}
 	if repository.connectors[connector.Key].Authorization.State != AuthorizationStateDisconnected {
 		t.Fatalf("device installation authorization was mutated: %#v", repository.connectors[connector.Key].Authorization)
+	}
+}
+
+func TestApplicationLocalUninstallKeepsRemoteProjectionAndReusesItAfterReinstall(t *testing.T) {
+	connector := testConnector("tencent-docs")
+	connector.Release.Manifest.AuthorizationKind = "api_key"
+	connector.Release.Manifest.RequiredCapabilities = []string{"tools"}
+	connector.Release.Manifest.Implementation = Implementation{Kind: ImplementationKindRemoteStreamableHTTP,
+		RemoteStreamableHTTP: &RemoteStreamableHTTPImplementation{
+			ProtocolVersion: "2026-07-28", BindingRef: "tencent-docs.primary", ContractVersion: 1,
+			BindingContractHash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		}}
+	connector.Installation = Installation{State: InstallationStateInstalled, InstalledVersion: connector.Release.Version,
+		InstalledReleaseID: connector.Release.ReleaseID, InstalledReleaseDigest: connector.Release.ReleaseDigest}
+	connector.Authorization = Authorization{State: AuthorizationStateConnected}
+	repository := newMemoryRepository(connector)
+	runtime := &memoryInstallRuntime{}
+	projection := AuthorizationProjection{AccountID: "account-1", ConnectorKey: connector.Key,
+		ConnectionID: "server-connection", State: AuthorizationStateConnected, ServerSynchronized: true}
+	projectionStore := &authorizationProjectionStoreStub{projection: projection}
+	readiness := NewAuthorizationReadinessGate()
+	readiness.SetReady("account-1", true)
+	provider := &countingAuthorizationProvider{}
+	application := newTestApplication(t, repository, &memoryScheduler{}, runtime, CatalogSnapshot{})
+	application.config.Authorization = provider
+	application.config.AuthorizationProjections = projectionStore
+	application.config.RuntimeBindings = AccountRuntimeBindingResolver{Projections: projectionStore, Readiness: readiness}
+	application.config.ImplementationRegistry = NewImplementationRegistry(map[string]ImplementationValidator{
+		ImplementationKindRemoteStreamableHTTP: nil,
+	})
+
+	uninstall, err := application.Uninstall(context.Background(), ConnectorMutation{
+		Mutation:     Mutation{ClientRequestID: "uninstall-tencent-docs", ExpectedRevision: 0},
+		ConnectorKey: connector.Key, AccountID: "account-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := application.ExecuteOperation(context.Background(), uninstall.Operation.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.lastDeactivation.ConnectionID != AccountRuntimeConnectionID("account-1", connector.Key) {
+		t.Fatalf("deactivation = %#v", runtime.lastDeactivation)
+	}
+	if projectionStore.projection != projection {
+		t.Fatalf("authorization projection changed = %#v, want %#v", projectionStore.projection, projection)
+	}
+	if provider.disconnects != 0 {
+		t.Fatalf("authorization disconnects = %d, want 0", provider.disconnects)
+	}
+	if err := application.ReconcileRemoteAuthorizedRuntimesForScope(context.Background(), OperationScope{AccountID: "account-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.reconciles != 0 {
+		t.Fatalf("uninstalled connector reconciles = %d, want 0", runtime.reconciles)
+	}
+
+	snapshot, err := application.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	install, err := application.Install(context.Background(), ConnectorMutation{
+		Mutation:     Mutation{ClientRequestID: "reinstall-tencent-docs", ExpectedRevision: snapshot.Revision},
+		ConnectorKey: connector.Key, AccountID: "account-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := application.ExecuteOperation(context.Background(), install.Operation.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if err := application.ReconcileInstalledRuntimesForScope(context.Background(), OperationScope{AccountID: "account-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.reconciles != 1 || !runtime.lastReconcile.Enabled ||
+		runtime.lastReconcile.Connector.Authorization.State != AuthorizationStateConnected {
+		t.Fatalf("reinstalled runtime reconcile = %#v, count=%d", runtime.lastReconcile, runtime.reconciles)
 	}
 }
 
@@ -1322,6 +1446,16 @@ func (authorizationProviderStub) Begin(_ context.Context, request AuthorizationS
 }
 
 func (authorizationProviderStub) Disconnect(context.Context, AuthorizationDisconnectRequest) error {
+	return nil
+}
+
+type countingAuthorizationProvider struct {
+	authorizationProviderStub
+	disconnects int
+}
+
+func (provider *countingAuthorizationProvider) Disconnect(context.Context, AuthorizationDisconnectRequest) error {
+	provider.disconnects++
 	return nil
 }
 

@@ -136,7 +136,7 @@ func (client *ConnectorAuthorizationClient) Begin(ctx context.Context, request m
 		if len(request.Secret) == 0 || len(request.Secret) > 16384 {
 			return market.AuthorizationSession{}, errors.New("connector authorization requires a valid secret")
 		}
-		path := "/v1/connector-authorization-sessions/" + url.PathEscape(response.Session.SessionID) + ":complete"
+		path := "/v1/connector-authorization-sessions/" + url.PathEscape(response.Session.SessionID) + "/complete"
 		var completed connectorAuthorizationSessionReply
 		if err := client.doJSONForAccount(ctx, request.Scope.AccountID, http.MethodPost, path, nil, map[string]any{"secret": map[string]string{"secret": string(request.Secret)}}, &completed); err != nil {
 			return market.AuthorizationSession{}, err
@@ -171,7 +171,7 @@ func (client *ConnectorAuthorizationClient) Disconnect(ctx context.Context, requ
 		if strings.TrimSpace(connection.ConnectionID) == "" || strings.Contains(strings.ToUpper(connection.Status), "REVOKED") {
 			continue
 		}
-		path := "/v1/connector-connections/" + url.PathEscape(connection.ConnectionID) + ":revoke"
+		path := "/v1/connector-connections/" + url.PathEscape(connection.ConnectionID) + "/revoke"
 		if err := client.doJSONForAccount(ctx, request.Scope.AccountID, http.MethodPost, path, nil, nil, nil); err != nil {
 			return err
 		}

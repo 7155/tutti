@@ -110,7 +110,7 @@ func TestConnectorAuthorizationClientSubmitsNativeSecretWithoutPersistingItInSes
 			_, _ = response.Write([]byte(`{"options":[{"authorizationMethod":"api_key"}]}`))
 		case "/v1/connectors/mail/authorization-sessions":
 			_, _ = response.Write([]byte(`{"session":{"sessionId":"auth-secret-1","connectorRevision":"2.0.0","nextAction":{"type":"submit_secret"}}}`))
-		case "/v1/connector-authorization-sessions/auth-secret-1:complete":
+		case "/v1/connector-authorization-sessions/auth-secret-1/complete":
 			var body struct {
 				Secret struct {
 					Secret string `json:"secret"`

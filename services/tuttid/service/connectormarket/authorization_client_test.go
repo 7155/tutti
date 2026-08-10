@@ -47,17 +47,12 @@ func TestConnectorAuthorizationClientStartsAccountScopedSession(t *testing.T) {
 			t.Fatalf("cookie = %q", request.Header.Get("Cookie"))
 		}
 		switch request.URL.Path {
-		case "/api/desktop/v1/connectors/gmail/authorization-options":
-			if request.URL.Query().Get("connectorVersion") != "1.0.0" {
-				t.Fatalf("connectorVersion = %q", request.URL.Query().Get("connectorVersion"))
-			}
-			_, _ = response.Write([]byte(`{"options":[{"authorizationMethod":"oauth2"}]}`))
 		case "/api/desktop/v1/connectors/gmail/authorization-sessions":
 			var body map[string]any
 			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 				t.Fatal(err)
 			}
-			if body["authorizationMethod"] != "oauth2" || body["clientRequestId"] != "request-1" || body["connectorVersion"] != "1.0.0" {
+			if _, exists := body["authorizationMethod"]; exists || body["clientRequestId"] != "request-1" || body["connectorVersion"] != "1.0.0" {
 				t.Fatalf("body = %#v", body)
 			}
 			_, _ = response.Write([]byte(`{"session":{"sessionId":"auth-1","connectorRevision":"1.0.0","nextAction":{"type":"redirect","url":"https://auth.example/connect"}}}`))
@@ -106,8 +101,6 @@ func TestConnectorAuthorizationClientSubmitsNativeSecretWithoutPersistingItInSes
 	const token = "user-provided-token"
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
-		case "/v1/connectors/mail/authorization-options":
-			_, _ = response.Write([]byte(`{"options":[{"authorizationMethod":"api_key"}]}`))
 		case "/v1/connectors/mail/authorization-sessions":
 			_, _ = response.Write([]byte(`{"session":{"sessionId":"auth-secret-1","connectorRevision":"2.0.0","nextAction":{"type":"submit_secret"}}}`))
 		case "/v1/connector-authorization-sessions/auth-secret-1/complete":
@@ -149,5 +142,27 @@ func TestConnectorAuthorizationClientSubmitsNativeSecretWithoutPersistingItInSes
 		if value != 0 {
 			t.Fatalf("secret[%d] was not cleared", i)
 		}
+	}
+}
+
+func TestConnectorAuthorizationClientDisconnectsByConnector(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodDelete || request.URL.Path != "/v1/connectors/tencent-docs/authorization" {
+			t.Fatalf("request = %s %s", request.Method, request.URL.Path)
+		}
+		response.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	client, err := NewConnectorAuthorizationClient(ConnectorAuthorizationClientConfig{
+		BaseURL: server.URL, HTTPClient: server.Client(),
+		AuthorizeAccountRequest: func(*http.Request, string) error { return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Disconnect(context.Background(), market.AuthorizationDisconnectRequest{
+		Scope: market.OperationScope{AccountID: "account-1"}, Connector: market.Connector{Key: "tencent-docs"},
+	}); err != nil {
+		t.Fatal(err)
 	}
 }

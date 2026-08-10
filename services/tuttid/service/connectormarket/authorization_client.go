@@ -92,15 +92,10 @@ func (client *ConnectorAuthorizationClient) Begin(ctx context.Context, request m
 	defer clear(request.Secret)
 	connectorID := strings.TrimSpace(request.Connector.Key)
 	connectorVersion := strings.TrimSpace(request.Release.Version)
-	method, err := client.resolveMethod(ctx, request.Scope.AccountID, connectorID, connectorVersion, request.Release.Manifest.AuthorizationKind)
-	if err != nil {
-		return market.AuthorizationSession{}, err
-	}
 	var response connectorAuthorizationSessionReply
-	err = client.doJSONForAccount(ctx, request.Scope.AccountID, http.MethodPost, "/v1/connectors/"+url.PathEscape(connectorID)+"/authorization-sessions", nil, map[string]any{
-		"authorizationMethod": method,
-		"clientRequestId":     strings.TrimSpace(request.ClientRequestID),
-		"connectorVersion":    connectorVersion,
+	err := client.doJSONForAccount(ctx, request.Scope.AccountID, http.MethodPost, "/v1/connectors/"+url.PathEscape(connectorID)+"/authorization-sessions", nil, map[string]any{
+		"clientRequestId":  strings.TrimSpace(request.ClientRequestID),
+		"connectorVersion": connectorVersion,
 	}, &response)
 	if err != nil {
 		return market.AuthorizationSession{}, err
@@ -157,26 +152,8 @@ func (client *ConnectorAuthorizationClient) Begin(ctx context.Context, request m
 
 func (client *ConnectorAuthorizationClient) Disconnect(ctx context.Context, request market.AuthorizationDisconnectRequest) error {
 	connectorID := strings.TrimSpace(request.Connector.Key)
-	query := url.Values{"connectorId": {connectorID}}
-	var response struct {
-		Connections []struct {
-			ConnectionID string `json:"connectionId"`
-			Status       string `json:"status"`
-		} `json:"connections"`
-	}
-	if err := client.doJSONForAccount(ctx, request.Scope.AccountID, http.MethodGet, "/v1/connector-connections", query, nil, &response); err != nil {
-		return err
-	}
-	for _, connection := range response.Connections {
-		if strings.TrimSpace(connection.ConnectionID) == "" || strings.Contains(strings.ToUpper(connection.Status), "REVOKED") {
-			continue
-		}
-		path := "/v1/connector-connections/" + url.PathEscape(connection.ConnectionID) + "/revoke"
-		if err := client.doJSONForAccount(ctx, request.Scope.AccountID, http.MethodPost, path, nil, nil, nil); err != nil {
-			return err
-		}
-	}
-	return nil
+	return client.doJSONForAccount(ctx, request.Scope.AccountID, http.MethodDelete,
+		"/v1/connectors/"+url.PathEscape(connectorID)+"/authorization", nil, nil, nil)
 }
 
 func (client *ConnectorAuthorizationClient) Observe(ctx context.Context, request market.AuthorizationObserveRequest) (market.AuthorizationObservation, error) {
@@ -207,29 +184,6 @@ func (client *ConnectorAuthorizationClient) Observe(ctx context.Context, request
 	default:
 		return market.AuthorizationObservation{}, errors.New("connector authorization session returned an invalid status")
 	}
-}
-
-func (client *ConnectorAuthorizationClient) resolveMethod(ctx context.Context, accountID, connectorID, connectorVersion, authorizationKind string) (string, error) {
-	var response struct {
-		Options []struct {
-			Method string `json:"authorizationMethod"`
-		} `json:"options"`
-	}
-	path := "/v1/connectors/" + url.PathEscape(connectorID) + "/authorization-options"
-	query := url.Values{"connectorVersion": {strings.TrimSpace(connectorVersion)}}
-	if err := client.doJSONForAccount(ctx, accountID, http.MethodGet, path, query, nil, &response); err != nil {
-		return "", err
-	}
-	kind := strings.TrimSpace(authorizationKind)
-	for _, option := range response.Options {
-		if strings.TrimSpace(option.Method) == kind {
-			return kind, nil
-		}
-	}
-	if len(response.Options) == 1 && strings.TrimSpace(response.Options[0].Method) != "" {
-		return strings.TrimSpace(response.Options[0].Method), nil
-	}
-	return "", errors.New("connector authorization method is unavailable or ambiguous")
 }
 
 func (client *ConnectorAuthorizationClient) doJSONForAccount(ctx context.Context, accountID, method, requestPath string, query url.Values, input, output any) error {

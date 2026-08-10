@@ -158,7 +158,8 @@ Connector Runtime 不再把 MCP tool 投影为 CLI capability。
 
 ### 5.1 服务边界
 
-`tuttid` 启动一个 daemon 生命周期的本地 Streamable HTTP MCP Server：
+公共 `packages/connector/runtime/mcpserver` 提供本地 Streamable HTTP MCP
+Server；`tuttid` 在组合根中启动一个 daemon 生命周期实例：
 
 ```text
 server name: connector
@@ -588,7 +589,8 @@ Registry debug snapshot 或内部 daemon 调试接口实现，不重新暴露为
 
 ### 13.2 实现本地 MCP Server
 
-新增 daemon-owned `connectormcp` service，接入 `tuttid` wiring 和生命周期。
+在 `packages/connector/runtime/mcpserver` 中实现公共 Server；`tuttid` 的
+`connectormcp` service 只保留类型别名和启动转发，并在 wiring 中负责实例生命周期。
 实现现代无状态 HTTP discovery、工具列表、调用路由、订阅通知和 Session token；
 不实现 Connector allowlist 或协议 Session。
 

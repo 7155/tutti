@@ -5,9 +5,12 @@
 ## 当前落地范围
 
 Tutti 侧已经采用独立的 MCP `2026-07-28` 无状态 HTTP Client，不复用旧 Stdio / Legacy
-Streamable HTTP Client。Gateway Base URL 默认是 `https://api.tutti.sh/api/desktop`，可通过
-`TUTTI_CONNECTOR_MCP_BASE_URL` 按环境覆盖；实际地址固定派生为
-`POST {baseUrl}/mcp/connectors/{connectorId}`，Connector 无法覆盖该地址。
+Streamable HTTP Client。公共 `ImplementationHost` 通过
+`RemoteMCPClientFactory` 请求一个产品实现的远端 Client，不再持有 Gateway Base URL、
+HTTP Client 或账号授权回调。Tuttid 的 Direct Factory 使用默认
+`https://api.tutti.sh/api/desktop`（可通过 `TUTTI_CONNECTOR_MCP_BASE_URL` 覆盖），并把
+实际地址固定派生为 `POST {baseUrl}/mcp/connectors/{connectorId}`；Connector 无法覆盖
+该地址。VM-backed 产品可以提供指向 typed desktop relay 的 Factory。
 
 Remote Connector 在建立 Route 时仍会解析本地安装发布物，并把其中合法的 `skills/`
 目录投影为 Agent Skill Root；它只是不创建本地执行快照、不启动 Connector 进程。Agent
@@ -135,6 +138,25 @@ Cookie: <Tutti account session>
 `MCP-Protocol-Version`、`Mcp-Method`、`Mcp-Name` 和 Connector Version 必须与 Body 中对应字段一致。当 `Mcp-Name` 或 `Mcp-Param-*` 不是安全的纯 ASCII Header 值时，必须使用 MCP Base64 Sentinel 编码。HTTP Client 从 `tools/list` 校验 `x-mcp-header` 声明，排除不合法的 Tool，并在 `tools/call` 时将合法的基本类型参数映射到 `Mcp-Param-*` Header。
 
 ## 客户端架构
+
+公共 Host 与产品连接策略通过以下 Port 隔离：
+
+```text
+ImplementationHost
+  -> RemoteMCPClientFactory
+       -> Tuttid Direct Factory -> Tutti Gateway
+       -> VM Product Factory    -> typed desktop relay -> Tutti Gateway
+```
+
+Factory request 只携带 operation、connection、Connector、account、release、generation
+和 signed binding contract 等非凭证身份。公共 Host 继续负责 `server/discover`、
+`tools/list`、Tool Schema 注册、Route publication、generation fence 和 Close；Factory
+只负责创建实现这些协议方法的 Client。产品不得通过通用 `RoundTripper` 静默改变业务
+目标，也不得把账号 Cookie、Provider Credential 或任意上游 URL 放入 Factory request。
+
+Tuttid Direct Factory 在每次请求时通过 daemon-owned authorizer 注入当前账号 Cookie。
+VM-backed Factory 使用其产品本地 capability 到达 desktop relay，由 desktop host 校验
+生命周期身份并注入账号 Cookie；Relay 失败时不得回退为 VM 持有账号 Session 直连。
 
 远程 HTTP MCP 和本地托管 MCP 使用两个独立的协议 Client：
 

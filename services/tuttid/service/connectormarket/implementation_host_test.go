@@ -380,18 +380,24 @@ func TestImplementationHostDiscoversAndInvokesRemoteStreamableHTTPMCP(t *testing
 		return (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
 	}
 	endpoint := strings.Replace(server.URL, "127.0.0.1", "example.com", 1)
-	host, err := NewImplementationHost(ImplementationHostConfig{
-		Artifacts: preparedResolverStub{receipt: market.PreparedArtifactReceipt{PreparedPath: root}}, Runtimes: connectorRuntimeStub{executable: connectorruntime.ConnectorExecutable{
-			Path: runtimePath, SHA256: strings.Repeat("a", 64), SizeBytes: 7,
-		}}, Processes: &connectorProcessStub{}, Registry: commands, StateRoot: t.TempDir(),
-		RemoteHTTPClient: &http.Client{Transport: transport}, RemoteMCPBaseURL: endpoint,
-		AuthorizeRemoteAccountRequest: func(request *http.Request, accountID string) error {
+	remoteMCPClientFactory, err := NewDirectRemoteMCPClientFactory(DirectRemoteMCPClientFactoryConfig{
+		BaseURL: endpoint, HTTPClient: &http.Client{Transport: transport},
+		AuthorizeAccountRequest: func(request *http.Request, accountID string) error {
 			if accountID != "account-1" {
 				t.Fatalf("accountID = %q", accountID)
 			}
 			request.Header.Set("Cookie", "session_id=user-session")
 			return nil
 		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, err := NewImplementationHost(ImplementationHostConfig{
+		Artifacts: preparedResolverStub{receipt: market.PreparedArtifactReceipt{PreparedPath: root}}, Runtimes: connectorRuntimeStub{executable: connectorruntime.ConnectorExecutable{
+			Path: runtimePath, SHA256: strings.Repeat("a", 64), SizeBytes: 7,
+		}}, Processes: &connectorProcessStub{}, Registry: commands, StateRoot: t.TempDir(),
+		RemoteMCPClientFactory: remoteMCPClientFactory,
 	})
 	if err != nil {
 		t.Fatal(err)

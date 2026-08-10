@@ -291,6 +291,10 @@ func TestCodexAppServerAdapterExecAutoPermissionUsesAutoReviewer(t *testing.T) {
 	if asString(sandboxPolicy["type"]) != "workspaceWrite" {
 		t.Fatalf("turn/start sandboxPolicy = %#v", turnStart["sandboxPolicy"])
 	}
+	writableRoots, ok := sandboxPolicy["writableRoots"].([]any)
+	if !ok || len(writableRoots) != 1 || asString(writableRoots[0]) != "/sandbox-tmp" {
+		t.Fatalf("turn/start sandboxPolicy writableRoots = %#v, want [/sandbox-tmp]", sandboxPolicy["writableRoots"])
+	}
 	if asString(turnStart["approvalsReviewer"]) != "auto_review" {
 		t.Fatalf("turn/start approvalsReviewer = %q, want auto_review", turnStart["approvalsReviewer"])
 	}

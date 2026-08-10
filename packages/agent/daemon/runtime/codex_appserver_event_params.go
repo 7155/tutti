@@ -349,7 +349,10 @@ func codexAppServerSandboxPolicy(modeID string, commandNetworkAccess bool) map[s
 	case "read-only":
 		policy = map[string]any{"type": "readOnly"}
 	case "auto":
-		policy = map[string]any{"type": "workspaceWrite"}
+		policy = map[string]any{
+			"type":          "workspaceWrite",
+			"writableRoots": []string{"/sandbox-tmp"},
+		}
 	case "full-access":
 		return map[string]any{"type": "dangerFullAccess"}
 	default:

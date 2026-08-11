@@ -106,11 +106,11 @@ func resolveExtensionRuntimeSourceHome(home ExtensionRuntimeHome) string {
 	}
 
 	candidates := []string{}
-	if userHome, err := os.UserHomeDir(); err == nil && userHome != "" {
-		candidates = appendUniquePath(candidates, filepath.Join(userHome, filepath.FromSlash(rel)))
-	}
 	if platformHome := extensionRuntimePlatformSourceHome(rel); platformHome != "" {
 		candidates = appendUniquePath(candidates, platformHome)
+	}
+	if userHome, err := os.UserHomeDir(); err == nil && userHome != "" {
+		candidates = appendUniquePath(candidates, filepath.Join(userHome, filepath.FromSlash(rel)))
 	}
 	for _, candidate := range candidates {
 		info, err := os.Stat(candidate)

@@ -118,13 +118,14 @@ skill roots, and merge those session roots into a supported YAML string-list key
 such as `skills.external_dirs`.
 
 Source-home resolution is also descriptor-driven. A declared source environment
-variable has highest priority. Otherwise, `sourceDefaultRel` first resolves
-literally under the user's home so existing Unix-style locations keep working.
-On Windows, when that literal directory does not exist and its top-level name
-starts with a dot, runtimeprep also resolves the portable name under the native
-user cache root, removing the leading dot (for example `.vendor` becomes
-`%LOCALAPPDATA%\vendor`). The shared resolver remains provider-neutral and only
-copies files explicitly declared by the signed profile.
+variable has highest priority. On Windows, a `sourceDefaultRel` whose top-level
+name starts with a dot first resolves under the native user cache root with the
+leading dot removed (for example `.vendor` becomes `%LOCALAPPDATA%\vendor`). If
+that native directory does not exist, runtimeprep falls back to the literal
+user-home-relative directory so migrated Unix-style locations keep working.
+Other platforms keep the literal user-home-relative default. The shared resolver
+remains provider-neutral and only copies files explicitly declared by the signed
+profile.
 
 For Hermes, the extension profile declares the `HERMES_HOME` overlay instead of
 Tutti core knowing `acp:hermes`. The resulting session keeps per-session state,

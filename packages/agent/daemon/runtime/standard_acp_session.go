@@ -46,7 +46,8 @@ func (a *standardACPAdapter) Start(ctx context.Context, session Session) ([]acti
 			"agent_session_id": session.AgentSessionID,
 			"binding_count":    len(mcpServers),
 		})
-		mcpServers = []any{}
+		_ = client.Close()
+		return nil, ErrMCPHTTPUnsupported
 	}
 	started := false
 	keepSession := false
@@ -197,7 +198,8 @@ func (a *standardACPAdapter) Resume(ctx context.Context, session Session) error 
 			"agent_session_id": session.AgentSessionID,
 			"binding_count":    len(mcpServers),
 		})
-		mcpServers = []any{}
+		_ = client.Close()
+		return ErrMCPHTTPUnsupported
 	}
 	started := false
 	keepSession := false

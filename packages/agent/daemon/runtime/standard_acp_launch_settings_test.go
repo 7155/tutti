@@ -476,7 +476,7 @@ func TestStandardACPSessionNewAndLoadPassStandardClientMCPConfig(t *testing.T) {
 	}
 }
 
-func TestStandardACPSessionOmitsHTTPMCPWhenAgentDoesNotAdvertiseCapability(t *testing.T) {
+func TestStandardACPSessionRejectsHTTPMCPWhenAgentDoesNotAdvertiseCapability(t *testing.T) {
 	t.Parallel()
 
 	newTransport := newStandardACPTransport("MCP Unsupported ACP", "mcp-unsupported-session")
@@ -489,11 +489,11 @@ func TestStandardACPSessionOmitsHTTPMCPWhenAgentDoesNotAdvertiseCapability(t *te
 	}
 	session := standardTestSession("acp:mcp-unsupported")
 	session.MCPServers = []MCPServerBinding{{Name: "connector", Type: "http", URL: "http://127.0.0.1:1234/mcp/connector"}}
-	if _, err := newAdapter.Start(context.Background(), session); err != nil {
-		t.Fatalf("Start: %v", err)
+	if _, err := newAdapter.Start(context.Background(), session); !errors.Is(err, ErrMCPHTTPUnsupported) {
+		t.Fatalf("Start error = %v, want ErrMCPHTTPUnsupported", err)
 	}
-	if servers, ok := newTransport.conn.lastNewSessionParams["mcpServers"].([]any); !ok || len(servers) != 0 {
-		t.Fatalf("session/new mcpServers = %#v, want empty fallback", newTransport.conn.lastNewSessionParams["mcpServers"])
+	if newTransport.conn.lastNewSessionParams != nil {
+		t.Fatalf("session/new params = %#v, want no session creation", newTransport.conn.lastNewSessionParams)
 	}
 
 	loadTransport := newStandardACPTransport("MCP Unsupported ACP", "mcp-unsupported-load-session")
@@ -508,11 +508,11 @@ func TestStandardACPSessionOmitsHTTPMCPWhenAgentDoesNotAdvertiseCapability(t *te
 	loadSession := standardTestSession("acp:mcp-unsupported")
 	loadSession.ProviderSessionID = "mcp-unsupported-load-session"
 	loadSession.MCPServers = cloneMCPServerBindings(session.MCPServers)
-	if err := loadAdapter.Resume(context.Background(), loadSession); err != nil {
-		t.Fatalf("Resume: %v", err)
+	if err := loadAdapter.Resume(context.Background(), loadSession); !errors.Is(err, ErrMCPHTTPUnsupported) {
+		t.Fatalf("Resume error = %v, want ErrMCPHTTPUnsupported", err)
 	}
-	if servers, ok := loadTransport.conn.lastLoadSessionParams["mcpServers"].([]any); !ok || len(servers) != 0 {
-		t.Fatalf("session/load mcpServers = %#v, want empty fallback", loadTransport.conn.lastLoadSessionParams["mcpServers"])
+	if loadTransport.conn.lastLoadSessionParams != nil {
+		t.Fatalf("session/load params = %#v, want no session resume", loadTransport.conn.lastLoadSessionParams)
 	}
 }
 

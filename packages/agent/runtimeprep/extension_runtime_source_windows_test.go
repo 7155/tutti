@@ -27,7 +27,7 @@ func TestResolveExtensionRuntimeSourceHomeUsesWindowsUserCacheFallback(t *testin
 	}
 }
 
-func TestResolveExtensionRuntimeSourceHomePrefersLiteralUserHomeDefault(t *testing.T) {
+func TestResolveExtensionRuntimeSourceHomePrefersWindowsUserCacheDefault(t *testing.T) {
 	userHome := t.TempDir()
 	localAppData := t.TempDir()
 	t.Setenv("USERPROFILE", userHome)
@@ -40,6 +40,24 @@ func TestResolveExtensionRuntimeSourceHomePrefersLiteralUserHomeDefault(t *testi
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
+	}
+
+	got := resolveExtensionRuntimeSourceHome(*hermesRuntimePrep().Home)
+	if got != windowsHome {
+		t.Fatalf("resolve source home = %q, want %q", got, windowsHome)
+	}
+}
+
+func TestResolveExtensionRuntimeSourceHomeFallsBackToLiteralUserHomeDefault(t *testing.T) {
+	userHome := t.TempDir()
+	localAppData := t.TempDir()
+	t.Setenv("USERPROFILE", userHome)
+	t.Setenv("LOCALAPPDATA", localAppData)
+	t.Setenv("HERMES_HOME", "")
+
+	literalHome := filepath.Join(userHome, ".hermes")
+	if err := os.MkdirAll(literalHome, 0o700); err != nil {
+		t.Fatal(err)
 	}
 
 	got := resolveExtensionRuntimeSourceHome(*hermesRuntimePrep().Home)

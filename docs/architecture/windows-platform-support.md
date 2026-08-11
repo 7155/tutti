@@ -211,11 +211,11 @@ Registry changes affect new processes only, so an already-open terminal must be
 restarted before it can resolve a newly published command.
 
 Extension session-home preparation keeps its source declaration portable. An
-explicit source environment variable wins; otherwise the shared resolver
-preserves an existing user-home-relative directory and lets the Windows adapter
-map a leading-dot top-level directory to the native user cache root
-(`%LOCALAPPDATA%`). Provider IDs and Windows path literals must not leak into
-extension or Agent lifecycle policy.
+explicit source environment variable wins; otherwise the Windows adapter maps a
+leading-dot top-level directory to the native user cache root
+(`%LOCALAPPDATA%`) before the shared resolver considers a migrated literal
+user-home-relative directory. Provider IDs and Windows path literals must not
+leak into extension or Agent lifecycle policy.
 
 System proxy resolution follows the same shared precedence on macOS and
 Windows: session/process environment, then the operating-system static proxy,

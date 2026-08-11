@@ -23,15 +23,17 @@ Provider discovery, installation, authentication, models, configuration, and run
 - Fix:
   Keep an explicit `HERMES_HOME` as the highest-priority source. Otherwise,
   preserve an existing `%USERPROFILE%\.hermes`; when it is absent, resolve the
-  portable leading-dot directory through the Windows user cache root and copy
-  only the files declared by the signed runtime-preparation profile. Keep this
-  behavior in the platform adapter rather than branching on `acp:hermes`.
+  resolve the portable leading-dot directory through the Windows user cache
+  root first, then fall back to a migrated `%USERPROFILE%\.hermes` only when the
+  native directory is absent. Copy only the files declared by the signed
+  runtime-preparation profile. Keep this behavior in the platform adapter rather
+  than branching on `acp:hermes`.
 - Validation:
   With no user-level `HERMES_HOME`, place credentials in
   `%LOCALAPPDATA%\hermes`, create a new session, and verify the model picker is
   populated and the first message starts successfully. Confirm an explicit
-  source environment variable and an existing `%USERPROFILE%\.hermes` still
-  take precedence.
+  source environment variable still takes precedence, and that a migrated
+  `%USERPROFILE%\.hermes` is used only when the native directory is absent.
 - References:
   [agent-runtime-preparation.md](../../architecture/agent-runtime-preparation.md)
   [windows-platform-support.md](../../architecture/windows-platform-support.md)

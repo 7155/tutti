@@ -14,7 +14,7 @@ import (
 const (
 	connectorSkillEntryName    = "SKILL.md"
 	connectorSkillMaxDepth     = 8
-	connectorSkillMaxEntries   = 128
+	connectorSkillMaxCount     = 128
 	connectorSkillMaxEntrySize = 512 * 1024
 )
 
@@ -55,17 +55,13 @@ func InspectSkills(installedRoot string) (SkillProjection, error) {
 
 	skills := make([]SkillSummary, 0)
 	seen := make(map[string]struct{})
-	entryCount := 0
+	skillCount := 0
 	err = filepath.WalkDir(skillRoot, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 		if path == skillRoot {
 			return nil
-		}
-		entryCount++
-		if entryCount > connectorSkillMaxEntries {
-			return fmt.Errorf("connector Skill tree entry count exceeds %d", connectorSkillMaxEntries)
 		}
 		relative, err := filepath.Rel(skillRoot, path)
 		if err != nil {
@@ -80,6 +76,10 @@ func InspectSkills(installedRoot string) (SkillProjection, error) {
 		}
 		if entry.IsDir() || entry.Name() != connectorSkillEntryName {
 			return nil
+		}
+		skillCount++
+		if skillCount > connectorSkillMaxCount {
+			return fmt.Errorf("connector Skill count exceeds %d", connectorSkillMaxCount)
 		}
 		entryInfo, err := entry.Info()
 		if err != nil {

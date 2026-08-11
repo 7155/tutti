@@ -6,8 +6,15 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	activityshared "github.com/tutti-os/tutti/packages/agent/daemon/activity/events"
+)
+
+const (
+	claudeSDKCancelInterruptTimeout = 10 * time.Second
+	claudeSDKCancelDrainTimeout     = 8 * time.Second
+	claudeSDKCancelCompletionGrace  = 7 * time.Second
 )
 
 func (*ClaudeCodeSDKAdapter) ValidatePromptContent(_ Session, content []PromptContentBlock) error {
@@ -518,10 +525,15 @@ func (a *ClaudeCodeSDKAdapter) cancelClaudeSDKTurn(
 	} else {
 		_ = a.claudeSDKRootTurnID(adapterSession, turnID)
 	}
-	cancelCtx, cancel := context.WithTimeout(ctx, claudeSDKGoalCommandTimeout)
+	cancelCtx, cancel := context.WithTimeout(
+		ctx,
+		claudeSDKCancelInterruptTimeout+claudeSDKCancelDrainTimeout+claudeSDKCancelCompletionGrace,
+	)
 	defer cancel()
 	payload := map[string]any{
-		"agentSessionId": session.AgentSessionID,
+		"agentSessionId":     session.AgentSessionID,
+		"interruptTimeoutMs": claudeSDKCancelInterruptTimeout.Milliseconds(),
+		"drainTimeoutMs":     claudeSDKCancelDrainTimeout.Milliseconds(),
 	}
 	if turnID != "" {
 		payload["turnId"] = turnID

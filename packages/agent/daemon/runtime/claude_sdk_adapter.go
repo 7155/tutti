@@ -18,6 +18,7 @@ const (
 	claudeSDKSidecarAdapterName    = "claude-agent-sdk"
 	claudeSDKSidecarDefaultNodeArg = "--experimental-strip-types"
 	claudeSDKAuthRefreshLogPrefix  = "CLAUDE_CODE_AUTH_REFRESH_DEBUG"
+	claudeSDKCancelLogPrefix       = "CLAUDE_CODE_CANCEL_DIAGNOSTIC"
 )
 
 type ClaudeCodeSDKAdapter struct {

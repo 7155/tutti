@@ -268,16 +268,30 @@ func claudeSDKSidecarExitError(exitCode int, stderrTail []byte) error {
 func logClaudeSDKSidecarDebugStderr(content []byte) {
 	for _, line := range strings.Split(string(content), "\n") {
 		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, claudeSDKAuthRefreshLogPrefix) {
-			continue
+		switch {
+		case strings.HasPrefix(line, claudeSDKAuthRefreshLogPrefix):
+			logClaudeSDKStructuredDiagnostic(
+				line,
+				claudeSDKAuthRefreshLogPrefix,
+				"agent_session.claude_sdk.auth_refresh_debug",
+			)
+		case strings.HasPrefix(line, claudeSDKCancelLogPrefix):
+			logClaudeSDKStructuredDiagnostic(
+				line,
+				claudeSDKCancelLogPrefix,
+				"agent_session.claude_sdk.cancel_diagnostic",
+			)
 		}
-		payloadJSON := strings.TrimSpace(strings.TrimPrefix(line, claudeSDKAuthRefreshLogPrefix))
-		if payloadJSON == "" {
-			payloadJSON = "{}"
-		}
-		slog.Info(claudeSDKAuthRefreshLogPrefix,
-			"event", "agent_session.claude_sdk.auth_refresh_debug",
-			"payload_json", payloadJSON,
-		)
 	}
+}
+
+func logClaudeSDKStructuredDiagnostic(line string, prefix string, event string) {
+	payloadJSON := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+	if !json.Valid([]byte(payloadJSON)) {
+		payloadJSON = `{"stage":"invalid_diagnostic_payload"}`
+	}
+	slog.Info(prefix,
+		"event", event,
+		"payload_json", payloadJSON,
+	)
 }

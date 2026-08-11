@@ -64,6 +64,7 @@ func TestCodexAppServerAdapterExecStreamsTurn(t *testing.T) {
 	}
 	if bashCall == nil {
 		t.Fatalf("missing completed Bash tool call: %#v", callsCompleted)
+		return
 	}
 	output := payloadMap(bashCall.Payload.Metadata, "output")
 	if stdout, _ := output["stdout"].(string); stdout != "README.md\n" {

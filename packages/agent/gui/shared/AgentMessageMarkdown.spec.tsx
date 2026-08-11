@@ -636,12 +636,12 @@ describe("AgentMessageMarkdown", () => {
 
     render(
       <AgentMessageMarkdown
-        content={"![generated image](<C:/Users/local user/project/image.png>)"}
+        content={String.raw`![generated image](X:\screenshots\browser.png)`}
       />
     );
 
     expect(readFile).toHaveBeenCalledWith({
-      path: "C:/Users/local user/project/image.png"
+      path: "X:/screenshots/browser.png"
     });
     expect(
       await screen.findByRole("img", {

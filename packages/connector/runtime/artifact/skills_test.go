@@ -54,14 +54,31 @@ func TestInspectSkillsRejectsSymlink(t *testing.T) {
 	}
 }
 
-func TestInspectSkillsBoundsTheCompleteTree(t *testing.T) {
+func TestInspectSkillsDoesNotCountSupportingTreeEntriesAsSkills(t *testing.T) {
 	root := t.TempDir()
-	for index := 0; index <= connectorSkillMaxEntries; index++ {
-		if err := os.MkdirAll(filepath.Join(root, "skills", "empty-"+fmt.Sprint(index)), 0o700); err != nil {
+	writeSkillTestFile(t, filepath.Join(root, "skills", "calendar", "SKILL.md"), "calendar", "Calendar")
+	for index := 0; index <= connectorSkillMaxCount; index++ {
+		path := filepath.Join(root, "skills", "calendar", "references", fmt.Sprintf("reference-%d.md", index))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("supporting reference"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := InspectSkills(root); err == nil || !strings.Contains(err.Error(), "tree entry count exceeds") {
+	projection, err := InspectSkills(root)
+	if err != nil || len(projection.Skills) != 1 || projection.Skills[0].Name != "calendar" {
+		t.Fatalf("projection = %#v, error = %v", projection, err)
+	}
+}
+
+func TestInspectSkillsBoundsSkillCount(t *testing.T) {
+	root := t.TempDir()
+	for index := 0; index <= connectorSkillMaxCount; index++ {
+		name := fmt.Sprintf("skill-%d", index)
+		writeSkillTestFile(t, filepath.Join(root, "skills", name, "SKILL.md"), name, name)
+	}
+	if _, err := InspectSkills(root); err == nil || !strings.Contains(err.Error(), "Skill count exceeds") {
 		t.Fatalf("error = %v", err)
 	}
 }

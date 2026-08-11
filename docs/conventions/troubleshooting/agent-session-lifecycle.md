@@ -2,6 +2,34 @@
 
 [Agent runtime index](./agent-runtime.md) · [All troubleshooting](./README.md)
 
+### Claude cancellation reaches `context deadline exceeded`
+
+- **Symptom:** Canceling a Claude Code Turn, closing its Session, or leaving a
+  room waits until the caller deadline and reports `context deadline exceeded`.
+  Repeating the action leaves the same Turn active.
+- **Quick checks:** Filter daemon logs by `CLAUDE_CODE_CANCEL_DIAGNOSTIC`, then
+  group by `requestId`, `agentSessionId`, `turnId`, and `generationId`. Compare
+  `interrupt_started` with `interrupt_succeeded`, `interrupt_timed_out`, or
+  `interrupt_failed`; then require `query_close_succeeded` and either
+  `consumption_settled` or `consumption_timed_out`. The payload deliberately
+  excludes prompts, tool inputs, credentials, and provider output.
+- **Root cause:** The SDK interrupt is a control request whose Promise has no
+  native timeout. A wedged Claude Code process may never return its control
+  response. A caller-side Go deadline only stops the RPC waiter and cannot
+  terminate that Promise or the provider process.
+- **Fix:** Treat cancellation as a Query-lifecycle protocol. Revoke the exact
+  generation, bound cooperative interrupt, close the owned SDK transport when
+  ACK is missing or fails, and separately bound consumer drain before settling
+  canonical Turns. Do not increase only the outer RPC timeout.
+- **Validation:** Cover an interrupt Promise that never settles, immediate
+  interrupt rejection, and a consumer Promise that never drains. The first two
+  must close transport and cancel the Turn; the last must return an explicit
+  bounded failure.
+- **References:**
+  [queryGeneration.ts](../../../packages/agent/claude-sdk-sidecar/src/queryGeneration.ts),
+  [sessionRuntime.ts](../../../packages/agent/claude-sdk-sidecar/src/sessionRuntime.ts),
+  [claude_sdk_execution.go](../../../packages/agent/daemon/runtime/claude_sdk_execution.go)
+
 ### Claude Goal stays active after the model becomes idle
 
 - **Symptom:** Claude has stopped producing output and the Session becomes
@@ -2926,17 +2954,19 @@ inline data URL instead`. Claude or standard ACP may instead receive no
   exact Turn ID to the sidecar and dispatch the native cancel before consulting
   acceptance state. The sidecar returns `pre_accept`, `provider_active`,
   `absent`, or `mismatch`: locally remove only an undispatched queue item; after
-  dispatch, publish the canceled terminal only after SDK interrupt/shutdown
-  acknowledges. Wait for the exact Turn's durable provider-acceptance outcome
-  only for `provider_active`. Treat only `absent` as authoritative not-found;
-  mismatch, unknown disposition, interrupt failure, and acceptance failure stay
-  fail-closed.
+  dispatch, publish the canceled terminal only after the bounded Query shutdown
+  protocol either receives the SDK interrupt acknowledgment or closes the owned
+  transport and drains its consumer. Wait for the exact Turn's durable
+  provider-acceptance outcome only for `provider_active`. Treat only `absent` as
+  authoritative not-found; mismatch, unknown disposition, drain failure, and
+  acceptance failure stay fail-closed.
 - Validation:
   Cover follow-up resume, settings timeout/retry gating, exact targeted cancel,
-  same-tick Goal cancellation, cancel before dispatch, interrupt acknowledgment
-  and failure, durable acceptance success and failure, mismatched/absent targets,
-  and cancel followed by a new send. Native guidance must interrupt active tool
-  work before enqueueing the steering prompt.
+  same-tick Goal cancellation, cancel before dispatch, interrupt acknowledgment,
+  missing acknowledgment, interrupt failure, consumer-drain timeout, durable
+  acceptance success and failure, mismatched/absent targets, and cancel followed
+  by a new send. Native guidance must interrupt active tool work before enqueueing
+  the steering prompt.
 - References:
   [sessionRuntime.ts](../../../packages/agent/claude-sdk-sidecar/src/sessionRuntime.ts)
   [claude_sdk_execution.go](../../../packages/agent/daemon/runtime/claude_sdk_execution.go)

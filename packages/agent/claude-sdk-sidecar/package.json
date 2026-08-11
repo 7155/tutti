@@ -7,6 +7,7 @@
     "src/assistantStream.ts",
     "src/authDiagnostics.ts",
     "src/backgroundTaskLifecycle.ts",
+    "src/cancelDiagnostics.ts",
     "src/compaction.ts",
     "src/errors.ts",
     "src/eventSink.ts",

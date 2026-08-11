@@ -19,9 +19,19 @@ build step and no bundled entry point beyond the source files.
 ## Sidecar protocol
 
 The daemon and sidecar exchange newline-delimited JSON envelopes over standard
-input and output. Every request and event carries `"version": 7`; either side
+input and output. Every request and event carries `"version": 10`; either side
 rejects unsupported or missing versions instead of guessing compatibility.
 Protocol types and validation live in `src/protocol.ts`.
+
+Protocol version 10 makes cancellation deadlines part of the request contract.
+The daemon supplies separate cooperative-interrupt and consumer-drain budgets.
+If Claude Code does not acknowledge the SDK interrupt within its budget, the
+sidecar closes the owned Query transport, which terminates the Query's Claude
+Code process, then waits only for the bounded drain budget before responding.
+Every cancellation phase is emitted to stderr with the
+`CLAUDE_CODE_CANCEL_DIAGNOSTIC` prefix and one JSON payload containing request,
+Session, Turn, Query-generation, duration, and outcome fields; prompts, tool
+inputs, credentials, and raw provider output are never included.
 
 Protocol version 7 adds the stateless `recover_turn_binding` read. It resolves
 exactly one root user-message UUID from an opaque recovery token, or performs a
@@ -90,8 +100,10 @@ never fall back to the outbound correlation UUID.
 Exact cancellation returns a structured `pre_accept`, `provider_active`,
 `absent`, or `mismatch` disposition. An undispatched Turn or deferred Goal
 command can be removed locally. A dispatched Turn is fenced immediately, but
-its terminal event is emitted only after the SDK interrupt and Query shutdown
-acknowledge. `provider_active` includes the resolved provider Turn ID so the
+its terminal event is emitted only after the Query reaches an authoritative
+shutdown boundary: either the SDK acknowledges the interrupt or the sidecar
+closes the owned Query transport and its consumer drains. `provider_active`
+includes the resolved provider Turn ID so the
 daemon can wait for that exact Turn's durable acceptance result before it
 confirms cancellation; failures and unknown dispositions remain fail-closed.
 

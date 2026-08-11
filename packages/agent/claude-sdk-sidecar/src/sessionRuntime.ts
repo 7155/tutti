@@ -13,7 +13,11 @@ import {
   claudeQueryOptionOverrides,
   type SidecarClaudeOptions
 } from "./options.ts";
-import { QueryGeneration, type ClaudeQueryRuntime } from "./queryGeneration.ts";
+import {
+  QueryGeneration,
+  type ClaudeQueryRuntime,
+  type QueryShutdownOptions
+} from "./queryGeneration.ts";
 import { queryGenerationHooks } from "./queryHooks.ts";
 import {
   claudeAuthRefreshDiagnosticsEnabled,
@@ -618,7 +622,10 @@ export class SessionRuntime {
       });
   }
 
-  async cancel(expectedTurnId = ""): Promise<SessionCancelResult> {
+  async cancel(
+    expectedTurnId = "",
+    shutdownOptions: QueryShutdownOptions = {}
+  ): Promise<SessionCancelResult> {
     expectedTurnId =
       expectedTurnId.trim() || this.turns.activeTurn?.turnId.trim() || "";
     if (this.sessionClosed) {
@@ -687,7 +694,7 @@ export class SessionRuntime {
     this.canceledQueryTailPending = true;
     this.interactions.rejectAll(new Error("Tool use aborted"));
     this.queryGeneration = undefined;
-    await generation.shutdown(true);
+    await generation.shutdown(true, shutdownOptions);
     for (const turnId of generationTurnIds) {
       if (!this.turns.commitExactCancellation(turnId)) {
         throw new Error(`Claude SDK lost canceled Query turn ${turnId}`);

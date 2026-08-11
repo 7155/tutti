@@ -181,25 +181,31 @@ Raw sidecar stderr is never copied into activity, logs, or user-visible errors.
 The Go transport retains only a bounded failure classification; explicitly
 prefixed auth diagnostics are separately sanitized before structured logging.
 
-SDK Query lifetime is narrower than durable provider-session lifetime. A user
-cancel carries the exact canonical Turn and returns one structured disposition:
+SDK Query lifetime is narrower than durable provider-session lifetime. The
+sidecar owns Query termination; an RPC caller deadline alone is never treated
+as cancellation because it cannot stop an already-dispatched SDK control
+request. A user cancel carries the exact canonical Turn, a cooperative
+interrupt budget, and a consumer-drain budget, and returns one structured disposition:
 `pre_accept`, `provider_active`, `absent`, or `mismatch`. An undispatched queue
 entry can be removed locally. Once the prompt has been dispatched, cancel first
-revokes the current Query generation, awaits the SDK interrupt acknowledgment,
-then closes that Query in cleanup; the sidecar publishes `turn_canceled` only
-after that acknowledgment. Closing before the interrupt response turns a
-successful provider stop into a transport failure. Revocation fences message
-routing, hooks, and `canUseTool` before permission-mode handling, including
-`bypassPermissions`; background-task notifications from the canceled generation
-therefore cannot start a synthetic continuation or execute another tool. Every
-Turn already handed to the retired Query's prompt queue settles after that same
-acknowledgment, including a drained Goal command that can no longer execute; a
-Goal command still in the sidecar's deferred queue is independent and remains
+revokes the current Query generation and requests the SDK interrupt. If Claude
+Code acknowledges within the cooperative budget, shutdown remains graceful. If
+the acknowledgment is missing or fails, the sidecar closes the owned SDK Query
+transport; the pinned SDK then ends stdin and escalates its Claude Code child
+from `SIGTERM` to `SIGKILL`. The sidecar waits only for the separate drain budget
+for its consumer to settle. A drain timeout is an explicit bounded failure and
+never leaves the request pending. Revocation fences message routing, hooks, and
+`canUseTool` before permission-mode handling, including `bypassPermissions`;
+background-task notifications from the canceled generation therefore cannot
+start a synthetic continuation or execute another tool. Every Turn already
+handed to the retired Query's prompt queue settles after that same authoritative
+shutdown boundary, including a drained Goal command that can no longer execute;
+a Goal command still in the sidecar's deferred queue is independent and remains
 eligible for exact local removal. For a
 `provider_active` response, the Go adapter also waits for the exact Turn's
 durable provider-acceptance outcome before confirming cancellation. `absent`
 is the only authoritative not-found result; mismatches, unknown dispositions,
-interrupt failures, and acceptance failures remain fail-closed. The next real
+drain failures, and acceptance failures remain fail-closed. The next real
 user prompt creates a fresh Query with
 `resume: providerSessionId` and generation-local prompt/abort resources. If the
 SDK replays the canceled generation's terminal task notification and paired
@@ -274,7 +280,8 @@ The daemon and sidecar exchange newline-delimited JSON over standard input and
 output. Every request and event carries the current protocol version. Missing
 or unsupported versions fail explicitly. Change both
 `claude_sdk_protocol.go` and `src/protocol.ts` together and cover the change on
-both sides. Version 9 makes the cancel disposition, exact canonical Turn ID,
+both sides. Version 10 makes the cooperative-interrupt and consumer-drain
+budgets required cancel-request fields. Version 9 makes the cancel disposition, exact canonical Turn ID,
 provider Turn ID, and dispatch phase correctness-required response fields.
 
 Capability and composer contracts are intentionally stable across this runtime

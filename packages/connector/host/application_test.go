@@ -1153,13 +1153,9 @@ func newTestApplicationWithCatalogSource(
 	t.Helper()
 	nextID := 0
 	application, err := NewApplication(ApplicationConfig{
-		Repository:           repository,
-		CatalogSource:        catalogSource,
-		ReleaseInstallations: installationHost,
-		InstallationChecker: func() InstallationChecker {
-			checker, _ := any(installationHost).(InstallationChecker)
-			return checker
-		}(),
+		Repository:             repository,
+		CatalogSource:          catalogSource,
+		ReleaseInstallations:   installationHost,
 		Host:                   installationHost,
 		Authorization:          authorizationProviderStub{},
 		Compatibility:          compatibilityEvaluatorStub{},
@@ -1194,7 +1190,7 @@ func testManagedAuthorizedConnector(key string) Connector {
 	connector.Release.Manifest.Implementation.ManagedStdio.Runtime.VersionRange = ">=20.0.0 <21.0.0"
 	connector.Release.Manifest.Implementation.ManagedStdio.CLI = &ManagedCLIInterface{Entrypoint: "bin/lark-cli", TimeoutMS: 120_000}
 	connector.Release.Manifest.Implementation.ManagedStdio.CredentialBroker = &ManagedCredentialBroker{
-		Protocol: CredentialBrokerProtocolV1, Entrypoint: "authorization/broker.mjs", TimeoutMS: 30_000,
+		Protocol: CredentialBrokerProtocolV2, Entrypoint: "authorization/broker.mjs", TimeoutMS: 30_000,
 		AllowedHosts: []string{"open.larksuite.com"},
 	}
 	connector.Installation = Installation{State: InstallationStateInstalled, InstalledVersion: connector.Release.Version,
@@ -1290,23 +1286,23 @@ func (scheduler *memoryScheduler) Schedule(_ context.Context, operationID string
 }
 
 type memoryInstallRuntime struct {
-	prepares             int
-	removes              int
-	activations          int
-	deactivations        int
-	activeDigest         string
-	reconciles           int
-	lastReconcile        RuntimeReconcileRequest
-	lastDeactivation     RuntimeDeactivationRequest
-	lastPrepare          PrepareArtifactRequest
-	lastCredentialGrant  string
-	deactivationErr      error
-	failClosed           int
-	cliInstalls          int
-	cliRemoves           int
-	installationChecks   int
-	installationResult   InstallationObservation
-	installationCheckErr error
+	prepares                int
+	removes                 int
+	activations             int
+	deactivations           int
+	activeDigest            string
+	reconciles              int
+	lastReconcile           RuntimeReconcileRequest
+	lastDeactivation        RuntimeDeactivationRequest
+	lastPrepare             PrepareArtifactRequest
+	lastCredentialGrant     string
+	deactivationErr         error
+	failClosed              int
+	cliInstalls             int
+	cliRemoves              int
+	installationInspections int
+	installationResult      ReleaseInstallationObservation
+	installationInspectErr  error
 }
 
 func (host *memoryInstallRuntime) Reconcile(_ context.Context, request RuntimeReconcileRequest) (RuntimeReceipt, error) {
@@ -1314,23 +1310,25 @@ func (host *memoryInstallRuntime) Reconcile(_ context.Context, request RuntimeRe
 	host.lastReconcile = request
 	host.lastCredentialGrant = string(request.CredentialBrokerGrant)
 	return RuntimeReceipt{OperationID: request.OperationID, ConnectionID: request.ConnectionID,
-		ConnectorKey: request.Connector.Key, ReleaseDigest: request.Connector.Release.ReleaseDigest, Generation: request.Generation}, nil
+		ConnectorKey: request.Connector.Key, ReleaseDigest: request.Connector.Release.ReleaseDigest, Generation: request.Generation,
+		Readiness: RuntimeReadiness{State: RuntimeReadinessReady,
+			Interfaces: []InterfaceReadiness{{Kind: "mcp", State: RuntimeReadinessReady}}}}, nil
 }
 
-func (host *memoryInstallRuntime) CheckInstallation(_ context.Context, request InstallationCheckRequest) (InstallationObservation, error) {
-	host.installationChecks++
-	if host.installationCheckErr != nil {
-		return InstallationObservation{}, host.installationCheckErr
+func (host *memoryInstallRuntime) InspectReleaseInstallation(_ context.Context, request InspectReleaseInstallationRequest) (ReleaseInstallationObservation, error) {
+	host.installationInspections++
+	if host.installationInspectErr != nil {
+		return ReleaseInstallationObservation{}, host.installationInspectErr
 	}
 	result := host.installationResult
 	if result.State == "" {
-		result.State = InstallationObservationPresent
+		result.State = ReleaseInstallationPresent
 	}
 	if result.ConnectorKey == "" {
-		result.ConnectorKey = request.Connector.Key
+		result.ConnectorKey = request.Release.ConnectorKey
 	}
 	if result.ReleaseDigest == "" {
-		result.ReleaseDigest = request.Connector.Release.ReleaseDigest
+		result.ReleaseDigest = request.Release.ReleaseDigest
 	}
 	return result, nil
 }

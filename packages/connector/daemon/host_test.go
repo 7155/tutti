@@ -13,26 +13,36 @@ import (
 )
 
 type activationGateDelegate struct {
-	reconciles         int
-	reconcileFailures  int
-	installationChecks int
-	installationState  market.InstallationObservationState
-	deactivations      int
-	failClosed         int
-	lastReconcile      market.RuntimeReconcileRequest
+	reconciles              int
+	reconcileFailures       int
+	installationInspections int
+	installationState       market.ReleaseInstallationObservationState
+	deactivations           int
+	failClosed              int
+	lastReconcile           market.RuntimeReconcileRequest
 }
 
-func (delegate *activationGateDelegate) CheckInstallation(
+func (delegate *activationGateDelegate) InspectReleaseInstallation(
 	_ context.Context,
-	request market.InstallationCheckRequest,
-) (market.InstallationObservation, error) {
-	delegate.installationChecks++
+	request market.InspectReleaseInstallationRequest,
+) (market.ReleaseInstallationObservation, error) {
+	delegate.installationInspections++
 	state := delegate.installationState
 	if state == "" {
-		state = market.InstallationObservationPresent
+		state = market.ReleaseInstallationPresent
 	}
-	return market.InstallationObservation{State: state, ConnectorKey: request.Connector.Key,
-		ReleaseDigest: request.Connector.Release.ReleaseDigest}, nil
+	return market.ReleaseInstallationObservation{State: state, ConnectorKey: request.Release.ConnectorKey,
+		ReleaseDigest: request.Release.ReleaseDigest}, nil
+}
+
+func (*activationGateDelegate) InstallRelease(context.Context, market.InstallReleaseRequest) (market.ReleaseInstallationReceipt, error) {
+	return market.ReleaseInstallationReceipt{}, errors.New("not implemented")
+}
+func (*activationGateDelegate) CommitReleaseInstallation(context.Context, market.CommitReleaseInstallationRequest) error {
+	return nil
+}
+func (*activationGateDelegate) UninstallRelease(context.Context, market.UninstallReleaseRequest) error {
+	return nil
 }
 
 func (delegate *activationGateDelegate) Reconcile(_ context.Context, request market.RuntimeReconcileRequest) (market.RuntimeReceipt, error) {
@@ -43,7 +53,9 @@ func (delegate *activationGateDelegate) Reconcile(_ context.Context, request mar
 		return market.RuntimeReceipt{}, errors.New("simulated runtime reconcile failure")
 	}
 	return market.RuntimeReceipt{OperationID: request.OperationID, ConnectionID: request.ConnectionID,
-		ConnectorKey: request.Connector.Key, ReleaseDigest: request.Connector.Release.ReleaseDigest, Generation: request.Generation}, nil
+		ConnectorKey: request.Connector.Key, ReleaseDigest: request.Connector.Release.ReleaseDigest, Generation: request.Generation,
+		Readiness: market.RuntimeReadiness{State: market.RuntimeReadinessReady,
+			Interfaces: []market.InterfaceReadiness{{Kind: "mcp", State: market.RuntimeReadinessReady}}}}, nil
 }
 
 type runtimeBindingResolverFunc func(context.Context, market.RuntimeBindingRequest) (market.RuntimeBinding, error)
@@ -222,7 +234,7 @@ func TestBootstrapRestoresInstalledRuntimeWithoutRefreshingCatalog(t *testing.T)
 	host, err := NewHost(ctx, HostConfig{
 		Repository:             store,
 		CatalogSource:          source,
-		ReleaseInstallations:   unavailableReleaseInstaller{},
+		ReleaseInstallations:   runtime,
 		ImplementationHost:     runtime,
 		RuntimeBindings:        bindings,
 		Authorization:          unavailableAuthorization{},
@@ -296,14 +308,14 @@ func TestBootstrapRestoresInstalledRuntimeWithoutRefreshingCatalog(t *testing.T)
 	if runtime.reconciles != 5 || !publication.values[len(publication.values)-1] {
 		t.Fatalf("same-account recovery reconciles=%d publication=%#v", runtime.reconciles, publication.values)
 	}
-	if runtime.installationChecks != 4 {
-		t.Fatalf("installation checks = %d, want one per non-idempotent bootstrap", runtime.installationChecks)
+	if runtime.installationInspections != 4 {
+		t.Fatalf("installation inspections = %d, want one per non-idempotent bootstrap", runtime.installationInspections)
 	}
 
 	if err := host.FenceForScope(ctx, accountScope); err != nil {
 		t.Fatal(err)
 	}
-	runtime.installationState = market.InstallationObservationAbsent
+	runtime.installationState = market.ReleaseInstallationAbsent
 	if err := host.BootstrapForScope(ctx, accountScope); err != nil {
 		t.Fatalf("bootstrap with explicitly absent installation failed: %v", err)
 	}
@@ -312,7 +324,7 @@ func TestBootstrapRestoresInstalledRuntimeWithoutRefreshingCatalog(t *testing.T)
 		t.Fatal(err)
 	}
 	if calibrated.Installation.State != market.InstallationStateFailed ||
-		calibrated.Installation.FailureCode != market.InstallationFailureCodeProbeAbsent || runtime.reconciles != 5 {
+		calibrated.Installation.FailureCode != market.InstallationFailureCodePhysicallyAbsent || runtime.reconciles != 5 {
 		t.Fatalf("calibrated connector=%#v reconciles=%d", calibrated, runtime.reconciles)
 	}
 }
@@ -333,8 +345,7 @@ func hostTestRelease() market.Release {
 			Implementation: market.Implementation{Kind: market.ImplementationKindManagedStdio,
 				ManagedStdio: &market.ManagedStdioImplementation{
 					Runtime: market.RuntimeRequirement{Language: "node", Profile: "connector-node-static", ABI: "node22-darwin-arm64"},
-					MCP: &market.ManagedMCPInterface{Entrypoint: "bin/github.mjs",
-						InstallationProbe: &market.InstallationProbe{Arguments: []string{"--version"}, TimeoutMS: 1_000}},
+					MCP:     &market.ManagedMCPInterface{Entrypoint: "bin/github.mjs"},
 				}},
 		},
 		Artifact: market.Artifact{

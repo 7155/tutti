@@ -88,13 +88,6 @@ func (host *ImplementationHost) Reconcile(ctx context.Context, request market.Ru
 	return host.runtime.Reconcile(ctx, implementationhost.ReconcileRequest{Runtime: request})
 }
 
-func (host *ImplementationHost) CheckInstallation(ctx context.Context, request market.InstallationCheckRequest) (market.InstallationObservation, error) {
-	if host == nil || host.runtime == nil {
-		return market.InstallationObservation{}, errors.New("connector implementation host is unavailable")
-	}
-	return host.runtime.CheckInstallation(ctx, request)
-}
-
 func (host *ImplementationHost) Begin(ctx context.Context, request market.AuthorizationStartRequest) (market.AuthorizationSession, error) {
 	if host == nil || host.runtime == nil {
 		return market.AuthorizationSession{}, errors.New("connector authorization provider is unavailable")
@@ -107,6 +100,13 @@ func (host *ImplementationHost) Disconnect(ctx context.Context, request market.A
 		return errors.New("connector authorization provider is unavailable")
 	}
 	return host.runtime.DisconnectAuthorization(ctx, request)
+}
+
+func (host *ImplementationHost) InspectAuthorization(ctx context.Context, request market.AuthorizationInspectRequest) (market.AuthorizationObservation, error) {
+	if host == nil || host.runtime == nil {
+		return market.AuthorizationObservation{}, errors.New("connector authorization inspector is unavailable")
+	}
+	return host.runtime.InspectAuthorization(ctx, request)
 }
 
 func (host *ImplementationHost) DeactivateRuntime(ctx context.Context, request market.RuntimeDeactivationRequest) error {

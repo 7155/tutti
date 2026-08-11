@@ -21,6 +21,7 @@ import (
 	connectormarketdaemon "github.com/tutti-os/tutti/packages/connector/daemon"
 	connectormarkethost "github.com/tutti-os/tutti/packages/connector/host"
 	connectorruntime "github.com/tutti-os/tutti/packages/connector/runtime"
+	connectoragentgateway "github.com/tutti-os/tutti/packages/connector/runtime/agentgateway"
 	marketartifact "github.com/tutti-os/tutti/packages/connector/runtime/artifact"
 	connectormarketdata "github.com/tutti-os/tutti/packages/connector/store-sqlite"
 	tuttiapi "github.com/tutti-os/tutti/services/tuttid/api"
@@ -59,6 +60,7 @@ type tuttiWiring struct {
 	connectorMarketStore         *connectormarketdata.Store
 	connectorMarketHost          *connectormarketdaemon.Host
 	connectorMCPServer           *connectormcpservice.Server
+	connectorAgentGateway        *connectoragentgateway.Gateway
 	analyticsReporter            reporterservice.Reporter
 	browserService               *browsersvc.Service
 	computerService              *computersvc.Service
@@ -213,7 +215,17 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 		return fmt.Errorf("start connector MCP server: %w", err)
 	}
 	w.connectorMCPServer = connectorMCPServer
-	connectorAgent := &connectorAgentRuntime{routes: connectorRegistry.RouteRegistry(), server: connectorMCPServer}
+	connectorGateway, err := connectoragentgateway.Start(connectoragentgateway.Config{})
+	if err != nil {
+		return fmt.Errorf("start connector Agent gateway: %w", err)
+	}
+	if err := connectorGateway.SetBackend(fmt.Sprintf("tuttid-%d", time.Now().UnixNano()), connectorMCPServer); err != nil {
+		_ = connectorGateway.Close(context.Background())
+		return fmt.Errorf("bind connector MCP backend: %w", err)
+	}
+	w.connectorAgentGateway = connectorGateway
+	connectorAgent := &connectorAgentRuntime{routes: connectorRegistry.RouteRegistry(), server: connectorGateway,
+		cliBinDir: filepath.Join(tuttitypes.DefaultStateDir(), "connectors", "user-state", "bin")}
 	api, appCenterService, agentRuntime, providerAuthWatcher, err := buildDaemonAPI(
 		ctx, workspaceStore, nil, w.browserService, w.computerService,
 		modelGateway, connectorAgent, w.installTuttiModeWatchdogWorker,
@@ -709,6 +721,15 @@ func (w *tuttiWiring) Close() error {
 	}
 	if w.connectorMarketHost != nil {
 		w.connectorMarketHost.Close()
+	}
+	// Stop the stable Agent-facing listener before retiring its replaceable
+	// backend so no new request can race backend shutdown.
+	if w.connectorAgentGateway != nil {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		if err := w.connectorAgentGateway.Close(closeCtx); err != nil && closeErr == nil {
+			closeErr = err
+		}
+		cancel()
 	}
 	if w.connectorMCPServer != nil {
 		closeCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

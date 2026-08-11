@@ -17,7 +17,6 @@ type HostConfig struct {
 	Repository               market.Repository
 	CatalogSource            market.CatalogSource
 	ReleaseInstallations     market.ReleaseInstallationManager
-	InstallationChecker      market.InstallationChecker
 	ImplementationHost       market.ImplementationHost
 	Authorization            market.AuthorizationProvider
 	AuthorizationProjections market.AuthorizationProjectionStore
@@ -82,15 +81,10 @@ func NewHost(parent context.Context, config HostConfig) (*Host, error) {
 	hostContext, cancel := context.WithCancel(parent)
 	scheduler := NewOperationScheduler(hostContext)
 	activationGate := newActivationGateHost(config.ImplementationHost)
-	installationChecker := config.InstallationChecker
-	if installationChecker == nil {
-		installationChecker, _ = config.ImplementationHost.(market.InstallationChecker)
-	}
 	application, err := market.NewApplication(market.ApplicationConfig{
 		Repository:               config.Repository,
 		CatalogSource:            config.CatalogSource,
 		ReleaseInstallations:     config.ReleaseInstallations,
-		InstallationChecker:      installationChecker,
 		Host:                     activationGate,
 		Authorization:            config.Authorization,
 		AuthorizationProjections: config.AuthorizationProjections,
@@ -779,6 +773,12 @@ type unavailableReleaseInstaller struct{}
 
 func (unavailableReleaseInstaller) InstallRelease(context.Context, market.InstallReleaseRequest) (market.ReleaseInstallationReceipt, error) {
 	return market.ReleaseInstallationReceipt{}, errors.New("connector release installation is not registered")
+}
+
+func (unavailableReleaseInstaller) InspectReleaseInstallation(_ context.Context, request market.InspectReleaseInstallationRequest) (market.ReleaseInstallationObservation, error) {
+	return market.ReleaseInstallationObservation{State: market.ReleaseInstallationIndeterminate,
+		ConnectorKey: request.Release.ConnectorKey, ReleaseDigest: request.Release.ReleaseDigest,
+		ReasonCode: "release_installation_manager_unavailable"}, nil
 }
 
 func (unavailableReleaseInstaller) CommitReleaseInstallation(context.Context, market.CommitReleaseInstallationRequest) error {

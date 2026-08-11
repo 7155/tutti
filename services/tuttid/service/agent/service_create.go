@@ -599,18 +599,18 @@ func (s *Service) prepareRuntimeWithModelEndpoint(
 	}
 	effectiveBrowserUse := s.clampComposerBrowserUseForLaunch(ctx, provider, input.ProviderTargetRef, input.BrowserUse)
 	effectiveComputerUse := s.clampComposerComputerUseForLaunch(ctx, provider, input.ProviderTargetRef, input.ComputerUse)
-	connectorHints := s.activeConnectorRoutingHints()
-	var connectorMCPServers []runtimeprep.MCPServerBinding
+	var connectorContext *runtimeprep.ConnectorAgentContext
 	connectorBound := false
 	if s.ConnectorRuntime != nil {
-		binding, bindingErr := s.ConnectorRuntime.BindSession(workspaceID, strings.TrimSpace(input.AgentSessionID))
+		contextBinding, bindingErr := s.ConnectorRuntime.BindSession(workspaceID, strings.TrimSpace(input.AgentSessionID))
 		if bindingErr != nil {
 			if gatewayRegistered {
 				s.ModelGateway.Unregister(context.WithoutCancel(ctx), workspaceID, input.AgentSessionID)
 			}
 			return preparedRuntime{}, bindingErr
 		}
-		connectorMCPServers = []runtimeprep.MCPServerBinding{binding}
+		contextBinding = cloneConnectorAgentContext(contextBinding)
+		connectorContext = &contextBinding
 		connectorBound = true
 	}
 	prepared, err := s.RuntimePreparer.Prepare(ctx, runtimeprep.PrepareInput{
@@ -639,8 +639,7 @@ func (s *Service) prepareRuntimeWithModelEndpoint(
 		AgentSkills:               append([]string(nil), input.AgentSkills...),
 		AgentTools:                append([]string(nil), input.AgentTools...),
 		ExtraSkills:               sessionSkillBundlesToProviderSkillBundles(input.ExtraSkills),
-		ConnectorRoutingHints:     connectorHints,
-		MCPServers:                connectorMCPServers,
+		Connector:                 connectorContext,
 		Metadata:                  input.Metadata,
 		CommandCapabilityProjection: cloneCommandCapabilityProjection(
 			input.CommandCapabilityProjection,
@@ -682,6 +681,16 @@ func cloneRuntimeMCPServerBindings(input []runtimeprep.MCPServerBinding) []runti
 		result = append(result, binding)
 	}
 	return result
+}
+
+func cloneConnectorAgentContext(input runtimeprep.ConnectorAgentContext) runtimeprep.ConnectorAgentContext {
+	input.MCPServers = cloneRuntimeMCPServerBindings(input.MCPServers)
+	input.RoutingHints = append([]runtimeprep.ConnectorRoutingHint(nil), input.RoutingHints...)
+	for index := range input.RoutingHints {
+		input.RoutingHints[index].Aliases = append([]string(nil), input.RoutingHints[index].Aliases...)
+	}
+	input.SkillRoots = append([]string(nil), input.SkillRoots...)
+	return input
 }
 
 func modelEndpointUsesOpenAIProtocol(endpoint *runtimeprep.ModelEndpointConfig) bool {

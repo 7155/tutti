@@ -260,6 +260,17 @@ func validateRuntimeReceipt(receipt RuntimeReceipt, operationID, connectionID, c
 		receipt.ConnectorKey != connectorKey || receipt.ReleaseDigest != releaseDigest || receipt.Generation != generation {
 		return invalidOperationReceipt("implementation host returned a mismatched runtime receipt")
 	}
+	if receipt.Readiness.State != RuntimeReadinessReady {
+		return invalidOperationReceipt("implementation host did not return a ready runtime receipt")
+	}
+	if len(receipt.Readiness.Interfaces) == 0 {
+		return invalidOperationReceipt("implementation host returned no ready interfaces")
+	}
+	for _, readiness := range receipt.Readiness.Interfaces {
+		if (readiness.Kind != "mcp" && readiness.Kind != "cli") || readiness.State != RuntimeReadinessReady {
+			return invalidOperationReceipt("implementation host returned invalid interface readiness")
+		}
+	}
 	return nil
 }
 

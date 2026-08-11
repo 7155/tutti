@@ -38,10 +38,11 @@ func (registry *RouteRegistry) ConnectorSummaries() []ConnectorSummary {
 		interfaces := make([]ConnectorInterfaceSummary, 0, 2)
 		if route.HasMCP {
 			interfaces = append(interfaces, ConnectorInterfaceSummary{Kind: "mcp", ServerName: "connector",
-				ToolPrefix: route.ConnectorKey + "_", Status: "ready"})
+				ToolPrefix: route.ConnectorKey + "_", Status: string(route.InterfaceState("mcp"))})
 		}
 		if route.CLICommand != "" {
-			interfaces = append(interfaces, ConnectorInterfaceSummary{Kind: "cli", Command: route.CLICommand, Status: "ready"})
+			interfaces = append(interfaces, ConnectorInterfaceSummary{Kind: "cli", Command: route.CLICommand,
+				Status: string(route.InterfaceState("cli"))})
 		}
 		connectors = append(connectors, ConnectorSummary{
 			Key: route.ConnectorKey, Name: route.DisplayName, Description: route.Description,

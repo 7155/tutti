@@ -417,6 +417,40 @@ func TestDefaultPreparerReturnsAuthoritativeMCPBindings(t *testing.T) {
 	}
 }
 
+func TestDefaultPreparerExpandsConnectorAgentContext(t *testing.T) {
+	setTestHome(t, t.TempDir())
+	connectorBinDir := filepath.Join(t.TempDir(), "connector-bin")
+	input := PrepareInput{
+		WorkspaceID:    "workspace-1",
+		AgentSessionID: "session-1",
+		Provider:       "unknown-provider",
+		Cwd:            t.TempDir(),
+		Connector: &ConnectorAgentContext{
+			MCPServers: []MCPServerBinding{{
+				Name: "connector", Type: "http", URL: "http://127.0.0.1:1234/mcp/connector",
+				Headers: map[string]string{"Authorization": "Bearer gateway-token"},
+			}},
+			RoutingHints: []ConnectorRoutingHint{{ConnectorKey: "lark-cli", DisplayName: "Lark CLI"}},
+			CLIBinDir:    connectorBinDir,
+		},
+	}
+	prepared, err := newTestPreparer(t.TempDir()).Prepare(t.Context(), input)
+	if err != nil {
+		t.Fatalf("Prepare() error = %v", err)
+	}
+	if len(prepared.MCPServers) != 1 || prepared.MCPServers[0].Headers["Authorization"] != "Bearer gateway-token" {
+		t.Fatalf("prepared MCP servers = %#v", prepared.MCPServers)
+	}
+	pathEntries := filepath.SplitList(envValue(prepared.Env, "PATH"))
+	if len(pathEntries) == 0 || filepath.Clean(pathEntries[0]) != filepath.Clean(connectorBinDir) {
+		t.Fatalf("prepared PATH = %q, want Connector bin first", envValue(prepared.Env, "PATH"))
+	}
+	prepared.MCPServers[0].Headers["Authorization"] = "mutated"
+	if input.Connector.MCPServers[0].Headers["Authorization"] != "Bearer gateway-token" {
+		t.Fatal("prepared MCP binding shares mutable headers with ConnectorAgentContext")
+	}
+}
+
 func TestDefaultPreparerCodexSaverModeInstallsLunaWorkerAndRoutingPolicy(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

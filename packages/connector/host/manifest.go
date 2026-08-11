@@ -16,7 +16,7 @@ const (
 	ImplementationKindBuiltin              = "builtin"
 	ImplementationKindManagedStdio         = "managed_stdio"
 	ImplementationKindRemoteStreamableHTTP = "remote_streamable_http"
-	CredentialBrokerProtocolV1             = "tutti.connector.credentials.v1"
+	CredentialBrokerProtocolV2             = "tutti.connector.credentials.v2"
 	maxAgentRoutingAliases                 = 12
 	maxAgentRoutingAliasRunes              = 48
 )
@@ -255,9 +255,6 @@ func validateManagedStdio(managed ManagedStdioImplementation, authorizationKind 
 		if !safeRelativeEntrypoint(managed.MCP.Entrypoint) {
 			return invalidManifest("managed MCP entrypoint must be a safe relative path", nil)
 		}
-		if err := validateInstallationProbe(managed.MCP.InstallationProbe); err != nil {
-			return err
-		}
 	}
 	if managed.CLI != nil {
 		if managed.Runtime.Language != "node" || managed.Runtime.Profile != "connector-node-static" {
@@ -274,7 +271,7 @@ func validateManagedStdio(managed ManagedStdioImplementation, authorizationKind 
 				return invalidManifest("managed CLI arguments must not contain NUL", nil)
 			}
 		}
-		if err := validateInstallationProbe(managed.CLI.InstallationProbe); err != nil {
+		if err := validateCLIReadinessProbe(managed.CLI.ReadinessProbe); err != nil {
 			return err
 		}
 		if managed.CLI.Install != nil {
@@ -314,18 +311,18 @@ func validateManagedStdio(managed ManagedStdioImplementation, authorizationKind 
 	return nil
 }
 
-func validateInstallationProbe(probe *InstallationProbe) error {
+func validateCLIReadinessProbe(probe *CLIReadinessProbe) error {
 	if probe == nil {
 		return nil
 	}
 	if len(probe.Arguments) == 0 || len(probe.Arguments) > 32 || probe.TimeoutMS < 100 || probe.TimeoutMS > 30_000 {
-		return invalidManifest("installationProbe requires between 1 and 32 arguments and timeoutMs between 100 and 30000", nil)
+		return invalidManifest("readinessProbe requires between 1 and 32 arguments and timeoutMs between 100 and 30000", nil)
 	}
 	totalBytes := 0
 	for _, argument := range probe.Arguments {
 		totalBytes += len(argument)
 		if strings.ContainsRune(argument, '\x00') || totalBytes > 16*1024 {
-			return invalidManifest("installationProbe arguments are invalid", nil)
+			return invalidManifest("readinessProbe arguments are invalid", nil)
 		}
 	}
 	return nil
@@ -335,8 +332,8 @@ func validateManagedCredentialBroker(broker *ManagedCredentialBroker, hasCLI boo
 	if broker == nil || !hasCLI {
 		return invalidManifest("authorized managed_stdio connectors require a CLI credential broker", nil)
 	}
-	if broker.Protocol != CredentialBrokerProtocolV1 || !safeRelativeEntrypoint(broker.Entrypoint) {
-		return invalidManifest("credential broker requires the v1 protocol and a safe connector-relative entrypoint", nil)
+	if broker.Protocol != CredentialBrokerProtocolV2 || !safeRelativeEntrypoint(broker.Entrypoint) {
+		return invalidManifest("credential broker requires the v2 protocol and a safe connector-relative entrypoint", nil)
 	}
 	if broker.TimeoutMS < 1_000 || broker.TimeoutMS > 10*60*1_000 {
 		return invalidManifest("credential broker timeoutMs must be between 1000 and 600000", nil)

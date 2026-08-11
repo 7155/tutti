@@ -68,10 +68,7 @@ func TestCatalogSourceMapsPublishedConnectorItemsWithAdditiveFields(t *testing.T
           "extensionMetadata": {"revision": 2},
           "managedStdio": {
             "runtime": {"language": "node", "profile": "connector-node-static", "abi": "node20-darwin-arm64"},
-            "mcp": {
-              "entrypoint": "bin/github.js",
-              "installationProbe": {"arguments": ["--version"], "timeoutMs": 3000}
-            },
+            "mcp": {"entrypoint": "bin/github.js"},
             "observability": {"enabled": true}
           }
         }
@@ -110,8 +107,7 @@ func TestCatalogSourceMapsPublishedConnectorItemsWithAdditiveFields(t *testing.T
 		got.ManifestDigest != strings.Repeat("b", 64) || got.Artifact.SizeBytes != 123 || got.Artifact.MediaType != "application/zip" ||
 		got.Manifest.Implementation.ManagedStdio == nil || len(got.Manifest.Permissions) != 1 || got.Manifest.Permissions[0] != "network:*" ||
 		got.Manifest.AgentRouting == nil || len(got.Manifest.AgentRouting.Aliases) != 2 || got.Manifest.AgentRouting.Aliases[1] != "代码托管" ||
-		got.Manifest.Implementation.ManagedStdio.MCP.InstallationProbe == nil ||
-		got.Manifest.Implementation.ManagedStdio.MCP.InstallationProbe.TimeoutMS != 3_000 {
+		got.Manifest.Implementation.ManagedStdio.MCP.Entrypoint != "bin/github.js" {
 		t.Fatalf("release = %#v", got)
 	}
 	page, err := source.ListPage(context.Background(), market.CatalogSourcePageQuery{SectionID: "development", PageSize: 100})

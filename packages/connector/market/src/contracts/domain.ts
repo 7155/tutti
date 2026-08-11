@@ -72,11 +72,15 @@ export interface ConnectorManagedCliCommand {
 export interface ConnectorManagedCliInterface {
   entrypoint: string;
   arguments?: string[];
+  readinessProbe?: {
+    arguments: string[];
+    timeoutMs: number;
+  };
   commands: ConnectorManagedCliCommand[];
 }
 
 export interface ConnectorManagedCredentialBroker {
-  protocol: "tutti.connector.credentials.v1";
+  protocol: "tutti.connector.credentials.v2";
   entrypoint: string;
   timeoutMs: number;
   allowedHosts: string[];

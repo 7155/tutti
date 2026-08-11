@@ -183,8 +183,17 @@ func (installer *NodePackageInstaller) ResolveCLI(ctx context.Context, release m
 	if err != nil {
 		return market.CLIInstallationReceipt{}, err
 	}
-	return installer.readAndVerifyReceipt(release, cli.Entrypoint, resolved, node,
-		installer.installRoot(release.ConnectorKey, release.ReleaseDigest))
+	root := installer.installRoot(release.ConnectorKey, release.ReleaseDigest)
+	if _, statErr := os.Stat(root); errors.Is(statErr, os.ErrNotExist) {
+		return market.CLIInstallationReceipt{}, market.ErrReleaseInstallationAbsent
+	} else if statErr != nil {
+		return market.CLIInstallationReceipt{}, fmt.Errorf("inspect connector CLI installation: %w", statErr)
+	}
+	receipt, err := installer.readAndVerifyReceipt(release, cli.Entrypoint, resolved, node, root)
+	if err != nil {
+		return market.CLIInstallationReceipt{}, fmt.Errorf("%w: %v", market.ErrReleaseInstallationInvalid, err)
+	}
+	return receipt, nil
 }
 
 func (installer *NodePackageInstaller) RemoveCLI(ctx context.Context, request market.RemoveCLIRequest) error {

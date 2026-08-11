@@ -19,6 +19,15 @@ func (stub *releaseArtifactStub) Prepare(_ context.Context, request market.Prepa
 	return receipt, nil
 }
 
+func (stub *releaseArtifactStub) ResolvePrepared(_ context.Context, release market.Release) (market.PreparedArtifactReceipt, error) {
+	receipt := stub.prepared
+	receipt.ConnectorKey = release.ConnectorKey
+	receipt.Version = release.Version
+	receipt.ReleaseDigest = release.ReleaseDigest
+	receipt.ArtifactSHA256 = release.Artifact.SHA256
+	return receipt, nil
+}
+
 func (stub *releaseArtifactStub) Remove(context.Context, market.RemoveArtifactRequest) error {
 	stub.removes++
 	return nil

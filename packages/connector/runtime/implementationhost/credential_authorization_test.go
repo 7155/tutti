@@ -150,7 +150,7 @@ func TestManagedCredentialAuthorizationContinuesConnectorOwnedBroker(t *testing.
 	if connected.State != market.AuthorizationStateConnected {
 		t.Fatalf("connected session = %#v", connected)
 	}
-	if !reflect.DeepEqual(host.requests, []credentialBrokerRequest{{Protocol: market.CredentialBrokerProtocolV1, Operation: "begin"}}) {
+	if !reflect.DeepEqual(host.requests, []credentialBrokerRequest{{Protocol: market.CredentialBrokerProtocolV2, Operation: "begin"}}) {
 		t.Fatalf("broker requests = %#v", host.requests)
 	}
 	observed := awaitAuthorizationObservations(t, host, 3)
@@ -172,12 +172,43 @@ func TestManagedCredentialAuthorizationDisconnectUsesBrokerProtocol(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(host.requests, []credentialBrokerRequest{{Protocol: market.CredentialBrokerProtocolV1, Operation: "disconnect"}}) {
+	if !reflect.DeepEqual(host.requests, []credentialBrokerRequest{{Protocol: market.CredentialBrokerProtocolV2, Operation: "disconnect"}}) {
 		t.Fatalf("broker requests = %#v", host.requests)
 	}
 	observed := awaitAuthorizationObservations(t, host, 1)
 	if !reflect.DeepEqual(observed, []market.AuthorizationState{market.AuthorizationStateDisconnected}) {
 		t.Fatalf("authorization observations = %#v", observed)
+	}
+}
+
+func TestManagedCredentialAuthorizationInspectReturnsFencedObservation(t *testing.T) {
+	exitCode := 0
+	connection := newCredentialBrokerConnection()
+	connection.frames <- agentruntime.ProcessFrame{Stdout: []byte(`{"type":"expired","code":"token_expired","message":"login expired"}` + "\n"), ExitCode: &exitCode}
+	host := &credentialAuthorizationHostStub{
+		route: &connectorRoute{id: "account-1\x00lark-cli", connectorKey: "lark-cli", connectionID: "account-1",
+			releaseDigest: strings.Repeat("a", 64), credentialBrokerLaunch: &managedCredentialBrokerLaunch{timeout: 5 * time.Minute}},
+		connections: []agentruntime.ProcessConnection{connection},
+	}
+	provider := newManagedCredentialAuthorizationProvider(host)
+	connector := market.Connector{Key: "lark-cli", Release: market.Release{ReleaseDigest: strings.Repeat("a", 64)}}
+	observation, err := provider.Inspect(context.Background(), market.AuthorizationInspectRequest{
+		Scope: market.OperationScope{AccountID: "user-1"}, Connector: connector,
+		AccountGeneration: 3, VMAssignmentID: "vm-1", AuthorizationSessionID: "auth-1",
+		AuthorizationGeneration: 4, DesktopBootEpoch: "desktop-1", GuestBootID: "guest-1",
+		RuntimeEpoch: "runtime-1", StateRevision: 9,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observation.State != market.AuthorizationObservationExpired || observation.FailureCode != "token_expired" ||
+		observation.AccountID != "user-1" || observation.AccountGeneration != 3 || observation.VMAssignmentID != "vm-1" ||
+		observation.ConnectorKey != "lark-cli" || observation.ConnectionID != "account-1" ||
+		observation.ReleaseDigest != strings.Repeat("a", 64) || observation.StateRevision != 9 || observation.ObservedAt.IsZero() {
+		t.Fatalf("observation = %#v", observation)
+	}
+	if !reflect.DeepEqual(host.requests, []credentialBrokerRequest{{Protocol: market.CredentialBrokerProtocolV2, Operation: "inspect"}}) {
+		t.Fatalf("broker requests = %#v", host.requests)
 	}
 }
 

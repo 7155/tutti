@@ -116,7 +116,7 @@ type Service struct {
 // session; they do not express Connector-level permissions.
 type ConnectorRuntime interface {
 	RoutingHints() []runtimeprep.ConnectorRoutingHint
-	BindSession(string, string) (runtimeprep.MCPServerBinding, error)
+	BindSession(string, string) (runtimeprep.ConnectorAgentContext, error)
 	RevokeSession(string, string)
 	RevokeAll()
 }

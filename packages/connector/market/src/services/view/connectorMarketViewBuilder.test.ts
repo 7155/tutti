@@ -78,7 +78,7 @@ test("keeps connector details open through installation and advances to authoriz
   market.connectorsByKey[connector.key] = connector;
   const dialogState: ConnectorMarketUiState = {
     ...uiState,
-    dialog: { connectorKey: connector.key }
+    dialog: { connectorKey: connector.key, kind: "connector" }
   };
 
   const beforeInstall = buildConnectorMarketView(market, dialogState).dialog;
@@ -207,7 +207,7 @@ test("requires an installed connector to update before authorization when the ac
   market.connectorsByKey[connector.key] = connector;
   const dialogState: ConnectorMarketUiState = {
     ...uiState,
-    dialog: { connectorKey: connector.key },
+    dialog: { connectorKey: connector.key, kind: "connector" },
     segment: "installed"
   };
 
@@ -251,6 +251,7 @@ test("exposes disconnect directly for an authorized connector", () => {
   });
 
   assert.equal(view.cardsByKey[connector.key]?.action, "disconnect");
+  assert.equal(view.cardsByKey[connector.key]?.canUninstall, true);
   assert.equal(view.cardsByKey[connector.key]?.status, "connected");
   assert.equal(view.cardsByKey[connector.key]?.operationStage, "completed");
 });
@@ -275,6 +276,77 @@ test("keeps authorization-free connectors on the management action", () => {
   assert.equal(view.cardsByKey[connector.key]?.action, "manage");
 });
 
+test("projects an uninstall confirmation independently from authorization state", () => {
+  const market = createConnectorMarketStoreState();
+  const connector = connectorFixture();
+  connector.installation = {
+    installedReleaseDigest: connector.release.releaseDigest,
+    state: "installed"
+  };
+  connector.authorization = { state: "disconnected" };
+  market.connectorKeys = [connector.key];
+  market.connectorsByKey[connector.key] = connector;
+
+  const dialog = buildConnectorMarketView(market, {
+    ...uiState,
+    dialog: {
+      connectorKey: connector.key,
+      kind: "uninstall_confirmation"
+    },
+    segment: "installed"
+  }).dialog;
+
+  assert.equal(dialog?.kind, "uninstall_confirmation");
+  assert.equal(dialog?.displayName, "GitHub");
+});
+
+test("disables uninstall controls while one connector mutation is active", () => {
+  const market = createConnectorMarketStoreState();
+  const connector = connectorFixture();
+  connector.installation = {
+    installedReleaseDigest: connector.release.releaseDigest,
+    state: "updating"
+  };
+  connector.authorization = { state: "connected" };
+  market.connectorKeys = [connector.key];
+  market.connectorsByKey[connector.key] = connector;
+  market.operationsByConnectorKey[connector.key] = {
+    attempt: 1,
+    clientRequestId: "update-github",
+    connectorKey: connector.key,
+    createdAt: "2026-08-11T00:00:00Z",
+    kind: "install",
+    operationId: "update-operation",
+    stage: "installing",
+    state: "running",
+    updatedAt: "2026-08-11T00:00:01Z"
+  };
+
+  const view = buildConnectorMarketView(market, {
+    ...uiState,
+    dialog: {
+      connectorKey: connector.key,
+      kind: "uninstall_confirmation"
+    },
+    segment: "installed"
+  });
+
+  assert.equal(view.cardsByKey[connector.key]?.canUninstall, false);
+  assert.equal(view.dialog, null);
+
+  connector.installation.state = "installed";
+  const management = buildConnectorMarketView(market, {
+    ...uiState,
+    dialog: { connectorKey: connector.key, kind: "connector" },
+    segment: "installed"
+  }).dialog;
+  assert.equal(management?.kind, "management");
+  assert.equal(
+    management?.kind === "management" && management.canUninstall,
+    false
+  );
+});
+
 test("offers repair when calibration finds the installed implementation absent", () => {
   const market = createConnectorMarketStoreState();
   const connector = connectorFixture();
@@ -290,11 +362,12 @@ test("offers repair when calibration finds the installed implementation absent",
 
   const view = buildConnectorMarketView(market, {
     ...uiState,
-    dialog: { connectorKey: connector.key },
+    dialog: { connectorKey: connector.key, kind: "connector" },
     segment: "installed"
   });
 
   assert.equal(view.cardsByKey[connector.key]?.action, "install");
+  assert.equal(view.cardsByKey[connector.key]?.canUninstall, true);
   assert.equal(view.cardsByKey[connector.key]?.status, "not_installed");
   assert.equal(view.dialog?.kind, "installation");
   assert.equal(
@@ -318,7 +391,7 @@ test("offers repair when the installed implementation is invalid", () => {
 
   const view = buildConnectorMarketView(market, {
     ...uiState,
-    dialog: { connectorKey: connector.key },
+    dialog: { connectorKey: connector.key, kind: "connector" },
     segment: "installed"
   });
 

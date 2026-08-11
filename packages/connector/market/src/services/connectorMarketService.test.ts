@@ -11,6 +11,7 @@ import type {
 } from "../contracts/index.ts";
 import {
   ConnectorMarketBusyError,
+  ConnectorMarketRequestUnavailableError,
   ConnectorMarketService
 } from "./connectorMarketService.ts";
 
@@ -413,6 +414,137 @@ test("installs one connector with the current catalog revision", async () => {
     clientRequestId: "request-1",
     expectedRevision: 1
   });
+  service.dispose();
+});
+
+test("uninstalls one connector and tracks the durable operation to completion", async () => {
+  const uninstallInputs: Parameters<
+    ConnectorMarketBackend["uninstallConnector"]
+  >[0][] = [];
+  const installed = connector("github", 1);
+  installed.installation = {
+    installedReleaseDigest: installed.release.releaseDigest,
+    state: "installed"
+  };
+  installed.authorization = { state: "connected" };
+  const uninstalling = connector("github", 2);
+  uninstalling.installation = {
+    installedReleaseDigest: installed.release.releaseDigest,
+    state: "uninstalling"
+  };
+  uninstalling.authorization = { state: "connected" };
+  const uninstalled = connector("github", 3);
+  uninstalled.installation = { state: "not_installed" };
+  uninstalled.authorization = { state: "connected" };
+  const service = new ConnectorMarketService({
+    backend: backendWith({
+      getSnapshot: async () => snapshot(1, [installed]),
+      uninstallConnector: async (input) => {
+        uninstallInputs.push(input);
+        return {
+          connector: uninstalling,
+          operation: {
+            operationId: "operation-uninstall-terminal",
+            clientRequestId: input.clientRequestId,
+            connectorKey: "github",
+            kind: "uninstall",
+            state: "accepted",
+            stage: "accepted",
+            attempt: 0,
+            createdAt: "2026-08-11T00:00:00Z",
+            updatedAt: "2026-08-11T00:00:00Z"
+          },
+          revision: 2
+        };
+      },
+      getOperation: async () => ({
+        operationId: "operation-uninstall-terminal",
+        clientRequestId: "request-uninstall-1",
+        connectorKey: "github",
+        kind: "uninstall",
+        state: "completed",
+        stage: "completed",
+        attempt: 1,
+        createdAt: "2026-08-11T00:00:00Z",
+        updatedAt: "2026-08-11T00:00:01Z"
+      }),
+      getConnector: async () => uninstalled
+    }),
+    createRequestId: () => "request-uninstall-1",
+    waitForOperationPoll: async () => undefined
+  });
+
+  await service.ensureLoaded();
+  const accepted = await service.uninstall("github");
+  assert.equal(accepted.operationId, "operation-uninstall-terminal");
+  const pendingNotification =
+    service.dataStore.pendingUninstallNotificationsByOperationId[
+      accepted.operationId
+    ];
+  assert.equal(pendingNotification?.connectorKey, "github");
+  assert.equal(pendingNotification?.displayName, "github");
+  assert.equal(
+    pendingNotification?.operationId,
+    "operation-uninstall-terminal"
+  );
+  await waitFor(
+    () =>
+      service.dataStore.connectorsByKey.github?.installation.state ===
+      "not_installed"
+  );
+
+  assert.deepEqual(uninstallInputs, [
+    {
+      connectorKey: "github",
+      clientRequestId: "request-uninstall-1",
+      expectedRevision: 1
+    }
+  ]);
+  assert.equal(
+    service.dataStore.operationsByConnectorKey.github?.state,
+    "completed"
+  );
+  assert.equal(
+    service.dataStore.pendingUninstallNotificationsByOperationId[
+      accepted.operationId
+    ]?.state,
+    "completed"
+  );
+  assert.equal(
+    service.dataStore.connectorsByKey.github?.authorization.state,
+    "connected"
+  );
+  service.dismissUninstallNotification(accepted.operationId);
+  assert.equal(
+    service.dataStore.pendingUninstallNotificationsByOperationId[
+      accepted.operationId
+    ],
+    undefined
+  );
+  service.dispose();
+});
+
+test("rejects uninstall when host request admission is unavailable", async () => {
+  let uninstallCalls = 0;
+  const service = new ConnectorMarketService({
+    backend: backendWith({
+      uninstallConnector: async () => {
+        uninstallCalls += 1;
+        throw new Error("must not be called");
+      }
+    }),
+    canRequest: () => false
+  });
+
+  await assert.rejects(
+    service.uninstall("github"),
+    ConnectorMarketRequestUnavailableError
+  );
+  assert.equal(uninstallCalls, 0);
+  assert.deepEqual(
+    service.dataStore.pendingUninstallNotificationsByOperationId,
+    {}
+  );
   service.dispose();
 });
 

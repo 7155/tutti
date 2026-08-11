@@ -115,6 +115,30 @@ func TestApplicationExecutesAcceptedInstall(t *testing.T) {
 	}
 }
 
+func TestApplicationDoesNotProjectInstalledBeforePhysicalCommit(t *testing.T) {
+	repository := newMemoryRepository(testConnector("github"))
+	scheduler := &memoryScheduler{}
+	physicalCommitErr := errors.New("physical commit unavailable")
+	installationHost := &memoryInstallRuntime{installationCommitErr: physicalCommitErr}
+	application := newTestApplication(t, repository, scheduler, installationHost, CatalogSnapshot{})
+	accepted, err := application.Install(context.Background(), ConnectorMutation{
+		Mutation: Mutation{ClientRequestID: "request-physical-commit", ExpectedRevision: 0}, ConnectorKey: "github",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := application.ExecuteOperation(context.Background(), accepted.Operation.OperationID); err == nil {
+		t.Fatal("physical commit failure was accepted")
+	}
+	connector, err := repository.Connector(context.Background(), "github")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if connector.Installation.State == InstallationStateInstalled {
+		t.Fatalf("installation projected before physical commit: %#v", connector.Installation)
+	}
+}
+
 func TestApplicationExecutesTypedCLIInstallationBeforeCompletion(t *testing.T) {
 	connector := testConnector("lark")
 	connector.Release.Manifest.SchemaVersion = "1"
@@ -1303,6 +1327,7 @@ type memoryInstallRuntime struct {
 	installationInspections int
 	installationResult      ReleaseInstallationObservation
 	installationInspectErr  error
+	installationCommitErr   error
 }
 
 func (host *memoryInstallRuntime) Reconcile(_ context.Context, request RuntimeReconcileRequest) (RuntimeReceipt, error) {
@@ -1396,8 +1421,8 @@ func (host *memoryInstallRuntime) UninstallRelease(ctx context.Context, request 
 		ReleaseDigest: request.Release.ReleaseDigest})
 }
 
-func (*memoryInstallRuntime) CommitReleaseInstallation(context.Context, CommitReleaseInstallationRequest) error {
-	return nil
+func (host *memoryInstallRuntime) CommitReleaseInstallation(context.Context, CommitReleaseInstallationRequest) error {
+	return host.installationCommitErr
 }
 
 type runtimeBindingResolverStub struct {

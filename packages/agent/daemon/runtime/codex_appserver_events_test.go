@@ -680,6 +680,7 @@ func TestCodexAppServerAdapterRoutesChildFileChangeApprovalWithChildInput(t *tes
 	pending := adapter.getPendingRequest(child.agentSessionID, child.turnID, "child-approval-1")
 	if pending == nil {
 		t.Fatal("approval was not registered on canonical child")
+		return
 	}
 	changes, ok := pending.input["changes"].([]any)
 	if !ok || len(changes) != 1 || asString(payloadObject(changes[0])["path"]) != "/workspace/permission-probe.txt" {

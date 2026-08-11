@@ -73,15 +73,15 @@ export function resolveMarkdownWorkspaceMediaPath(src: string): string | null {
   const candidate = src.trim();
   const fileUrlPath = resolveMarkdownFileUrlPath(candidate);
   const pathCandidate = fileUrlPath ?? candidate;
-  if (
-    !isLocalAbsolutePath(pathCandidate) &&
-    !isWindowsAbsolutePath(pathCandidate)
-  ) {
-    return null;
-  }
-
   try {
     const decodedPath = fileUrlPath ?? decodeURIComponent(pathCandidate);
+    if (
+      !isLocalAbsolutePath(pathCandidate) &&
+      !isWindowsAbsolutePath(pathCandidate) &&
+      !isWindowsAbsolutePath(decodedPath)
+    ) {
+      return null;
+    }
     const isPosixAbsolutePath =
       decodedPath.length > 1 &&
       decodedPath.startsWith("/") &&

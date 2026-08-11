@@ -479,21 +479,40 @@ func TestStandardACPSessionNewAndLoadPassStandardClientMCPConfig(t *testing.T) {
 func TestStandardACPSessionRejectsHTTPMCPWhenAgentDoesNotAdvertiseCapability(t *testing.T) {
 	t.Parallel()
 
-	transport := newStandardACPTransport("MCP Unsupported ACP", "mcp-unsupported-session")
-	transport.conn.supportsHTTPMCP = false
-	adapter, err := NewStandardACPAdapter(StandardACPAdapterConfig{
+	newTransport := newStandardACPTransport("MCP Unsupported ACP", "mcp-unsupported-session")
+	newTransport.conn.supportsHTTPMCP = false
+	newAdapter, err := NewStandardACPAdapter(StandardACPAdapterConfig{
 		Provider: "acp:mcp-unsupported", Name: "mcp-unsupported-acp", DisplayName: "MCP Unsupported ACP", Command: []string{"mcp-acp", "stdio"},
-	}, transport, LegacyHostMetadata())
+	}, newTransport, LegacyHostMetadata())
 	if err != nil {
 		t.Fatalf("NewStandardACPAdapter: %v", err)
 	}
 	session := standardTestSession("acp:mcp-unsupported")
 	session.MCPServers = []MCPServerBinding{{Name: "connector", Type: "http", URL: "http://127.0.0.1:1234/mcp/connector"}}
-	if _, err := adapter.Start(context.Background(), session); !errors.Is(err, ErrMCPHTTPUnsupported) {
+	if _, err := newAdapter.Start(context.Background(), session); !errors.Is(err, ErrMCPHTTPUnsupported) {
 		t.Fatalf("Start error = %v, want ErrMCPHTTPUnsupported", err)
 	}
-	if transport.conn.lastNewSessionParams != nil {
-		t.Fatalf("session/new was sent despite unsupported HTTP MCP: %#v", transport.conn.lastNewSessionParams)
+	if newTransport.conn.lastNewSessionParams != nil {
+		t.Fatalf("session/new params = %#v, want no session creation", newTransport.conn.lastNewSessionParams)
+	}
+
+	loadTransport := newStandardACPTransport("MCP Unsupported ACP", "mcp-unsupported-load-session")
+	loadTransport.conn.supportsHTTPMCP = false
+	loadTransport.conn.supportsLoadSession = true
+	loadAdapter, err := NewStandardACPAdapter(StandardACPAdapterConfig{
+		Provider: "acp:mcp-unsupported", Name: "mcp-unsupported-acp", DisplayName: "MCP Unsupported ACP", Command: []string{"mcp-acp", "stdio"},
+	}, loadTransport, LegacyHostMetadata())
+	if err != nil {
+		t.Fatalf("NewStandardACPAdapter load: %v", err)
+	}
+	loadSession := standardTestSession("acp:mcp-unsupported")
+	loadSession.ProviderSessionID = "mcp-unsupported-load-session"
+	loadSession.MCPServers = cloneMCPServerBindings(session.MCPServers)
+	if err := loadAdapter.Resume(context.Background(), loadSession); !errors.Is(err, ErrMCPHTTPUnsupported) {
+		t.Fatalf("Resume error = %v, want ErrMCPHTTPUnsupported", err)
+	}
+	if loadTransport.conn.lastLoadSessionParams != nil {
+		t.Fatalf("session/load params = %#v, want no session resume", loadTransport.conn.lastLoadSessionParams)
 	}
 }
 

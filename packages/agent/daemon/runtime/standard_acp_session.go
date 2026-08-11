@@ -39,7 +39,13 @@ func (a *standardACPAdapter) Start(ctx context.Context, session Session) ([]acti
 		})
 		return nil, err
 	}
-	if len(acpMCPServers(session.MCPServers)) > 0 && !standardACPHTTPMCPSupported(initializeResult) {
+	mcpServers := acpMCPServers(session.MCPServers)
+	if len(mcpServers) > 0 && !standardACPHTTPMCPSupported(initializeResult) {
+		a.logStandardACPStartupDiagnostics("mcp_http.unsupported", map[string]any{
+			"room_id":          session.RoomID,
+			"agent_session_id": session.AgentSessionID,
+			"binding_count":    len(mcpServers),
+		})
 		_ = client.Close()
 		return nil, ErrMCPHTTPUnsupported
 	}
@@ -77,7 +83,7 @@ func (a *standardACPAdapter) Start(ctx context.Context, session Session) ([]acti
 
 	newSessionParams := map[string]any{
 		"cwd":        firstNonEmpty(session.CWD, "/"),
-		"mcpServers": acpMCPServers(session.MCPServers),
+		"mcpServers": mcpServers,
 	}
 	if err := a.applyProviderSessionMeta(newSessionParams, session); err != nil {
 		return nil, err
@@ -185,7 +191,13 @@ func (a *standardACPAdapter) Resume(ctx context.Context, session Session) error 
 	if err != nil {
 		return err
 	}
-	if !attachedCheckpoint && len(acpMCPServers(session.MCPServers)) > 0 && !standardACPHTTPMCPSupported(initializeResult) {
+	mcpServers := acpMCPServers(session.MCPServers)
+	if !attachedCheckpoint && len(mcpServers) > 0 && !standardACPHTTPMCPSupported(initializeResult) {
+		a.logStandardACPStartupDiagnostics("mcp_http.unsupported", map[string]any{
+			"room_id":          session.RoomID,
+			"agent_session_id": session.AgentSessionID,
+			"binding_count":    len(mcpServers),
+		})
 		_ = client.Close()
 		return ErrMCPHTTPUnsupported
 	}
@@ -256,7 +268,7 @@ func (a *standardACPAdapter) Resume(ctx context.Context, session Session) error 
 	resumeParams := map[string]any{
 		"sessionId":  session.ProviderSessionID,
 		"cwd":        firstNonEmpty(session.CWD, "/"),
-		"mcpServers": acpMCPServers(session.MCPServers),
+		"mcpServers": mcpServers,
 	}
 	if err := a.applyProviderSessionMeta(resumeParams, session); err != nil {
 		return err

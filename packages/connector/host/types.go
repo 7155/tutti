@@ -171,24 +171,24 @@ type ManagedCredentialBroker struct {
 }
 
 type ManagedMCPInterface struct {
-	Entrypoint        string             `json:"entrypoint"`
-	Arguments         []string           `json:"arguments,omitempty"`
-	InstallationProbe *InstallationProbe `json:"installationProbe,omitempty"`
+	Entrypoint string   `json:"entrypoint"`
+	Arguments  []string `json:"arguments,omitempty"`
 }
 
 type ManagedCLIInterface struct {
-	Entrypoint        string             `json:"entrypoint"`
-	Arguments         []string           `json:"arguments,omitempty"`
-	TimeoutMS         int                `json:"timeoutMs,omitempty"`
-	InstallationProbe *InstallationProbe `json:"installationProbe,omitempty"`
-	Install           *CLIInstallation   `json:"install,omitempty"`
-	Commands          []CLICommand       `json:"commands,omitempty"`
+	Entrypoint     string             `json:"entrypoint"`
+	Arguments      []string           `json:"arguments,omitempty"`
+	TimeoutMS      int                `json:"timeoutMs,omitempty"`
+	ReadinessProbe *CLIReadinessProbe `json:"readinessProbe,omitempty"`
+	Install        *CLIInstallation   `json:"install,omitempty"`
+	Commands       []CLICommand       `json:"commands,omitempty"`
 }
 
-// InstallationProbe is a bounded, direct-argv check executed through the
-// interface's already verified entrypoint. Exit code 0 reports present and
-// exit code 1 reports absent; every other outcome is indeterminate.
-type InstallationProbe struct {
+// CLIReadinessProbe is an optional bounded health check for an already
+// installed and resolved CLI interface. It is never used to decide whether a
+// release is physically installed. Exit code 0 reports ready; every other
+// outcome reports an interface-level readiness failure.
+type CLIReadinessProbe struct {
 	Arguments []string `json:"arguments"`
 	TimeoutMS int      `json:"timeoutMs"`
 }
@@ -379,12 +379,35 @@ type HostGeneration struct {
 }
 
 type RuntimeReceipt struct {
-	OperationID   string         `json:"operationId"`
-	ConnectionID  string         `json:"connectionId"`
-	ConnectorKey  string         `json:"connectorKey"`
-	ReleaseDigest string         `json:"releaseDigest"`
-	Generation    HostGeneration `json:"generation"`
-	RouteIDs      []string       `json:"routeIds,omitempty"`
+	OperationID   string           `json:"operationId"`
+	ConnectionID  string           `json:"connectionId"`
+	ConnectorKey  string           `json:"connectorKey"`
+	ReleaseDigest string           `json:"releaseDigest"`
+	Generation    HostGeneration   `json:"generation"`
+	Readiness     RuntimeReadiness `json:"readiness"`
+}
+
+type RuntimeReadinessState string
+
+const (
+	RuntimeReadinessReady   RuntimeReadinessState = "ready"
+	RuntimeReadinessBlocked RuntimeReadinessState = "blocked"
+	RuntimeReadinessFailed  RuntimeReadinessState = "failed"
+)
+
+type InterfaceReadiness struct {
+	Kind       string                `json:"kind"`
+	State      RuntimeReadinessState `json:"state"`
+	ReasonCode string                `json:"reasonCode,omitempty"`
+	RouteIDs   []string              `json:"routeIds,omitempty"`
+}
+
+// RuntimeReadiness describes the usable interfaces committed by one
+// reconcile. A CLI-only Connector can therefore be ready without MCP routes.
+type RuntimeReadiness struct {
+	State      RuntimeReadinessState `json:"state"`
+	ReasonCode string                `json:"reasonCode,omitempty"`
+	Interfaces []InterfaceReadiness  `json:"interfaces,omitempty"`
 }
 
 type AuthorizationSession struct {
@@ -427,15 +450,30 @@ func (session AuthorizationSession) IsResolved() bool {
 type AuthorizationObservationState string
 
 const (
-	AuthorizationObservationPending   AuthorizationObservationState = "pending"
-	AuthorizationObservationConnected AuthorizationObservationState = "connected"
-	AuthorizationObservationFailed    AuthorizationObservationState = "failed"
+	AuthorizationObservationPending      AuthorizationObservationState = "pending"
+	AuthorizationObservationConnected    AuthorizationObservationState = "connected"
+	AuthorizationObservationDisconnected AuthorizationObservationState = "disconnected"
+	AuthorizationObservationExpired      AuthorizationObservationState = "expired"
+	AuthorizationObservationFailed       AuthorizationObservationState = "failed"
 )
 
 type AuthorizationObservation struct {
-	State        AuthorizationObservationState
-	ConnectionID string
-	FailureCode  string
+	AccountID               string                        `json:"accountId,omitempty"`
+	AccountGeneration       uint64                        `json:"accountGeneration,omitempty"`
+	VMAssignmentID          string                        `json:"vmAssignmentId,omitempty"`
+	ConnectorKey            string                        `json:"connectorKey,omitempty"`
+	ConnectionID            string                        `json:"connectionId,omitempty"`
+	ReleaseDigest           string                        `json:"releaseDigest,omitempty"`
+	AuthorizationSessionID  string                        `json:"authorizationSessionId,omitempty"`
+	AuthorizationGeneration uint64                        `json:"authorizationGeneration,omitempty"`
+	DesktopBootEpoch        string                        `json:"desktopBootEpoch,omitempty"`
+	GuestBootID             string                        `json:"guestBootId,omitempty"`
+	RuntimeEpoch            string                        `json:"runtimeEpoch,omitempty"`
+	StateRevision           uint64                        `json:"stateRevision,omitempty"`
+	State                   AuthorizationObservationState `json:"state"`
+	Reason                  string                        `json:"reason,omitempty"`
+	FailureCode             string                        `json:"failureCode,omitempty"`
+	ObservedAt              time.Time                     `json:"observedAt,omitempty"`
 }
 
 type Snapshot struct {

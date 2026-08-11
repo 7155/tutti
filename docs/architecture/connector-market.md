@@ -188,18 +188,13 @@ the connector-specific arguments and workflow, while the Agent uses the normal
 shell execution path. The selected connector remains a separate routing and
 policy boundary.
 
-Managed MCP and CLI interfaces may declare an `installationProbe` containing
-only bounded argv and `timeoutMs`. The host reuses the interface's verified
-entrypoint and managed runtime; manifests cannot select another executable or
-provide shell text. Exit code `0` means the release-scoped implementation is
-present, exit code `1` means it is absent, and timeout, transport failure, or
-any other exit code is indeterminate. Probe output is ignored and bounded.
-
-Installation probes run only for a release with durable prior-installation
-evidence. Catalog-only entries are never executed before the user accepts an
-installation. The daemon therefore does not silently adopt an arbitrary
-user-global CLI as a signed Connector release: artifact, runtime, and release
-identity must already have crossed the normal install boundary.
+Physical installation is inspected only through verified artifact and CLI
+receipts. Connector-owned commands never decide whether a release is present.
+The installation manager reports `present`, `absent`, `invalid`, or
+`indeterminate`; only the first three may change an installation projection.
+An installed CLI may separately declare a bounded `readinessProbe`. It runs
+through the already resolved CLI entrypoint after installation and contributes
+only interface readiness to the runtime receipt.
 
 Connector releases may declare optional `agentRouting.aliases` containing only
 stable product or brand names. Connector id and display name are included by
@@ -254,9 +249,9 @@ implementation host, process, and product-command adapters. In Tutti, `managed_s
 connectors resolve an exact Node/Python runtime profile. MCP servers are
 long-lived daemon children governed by the route generation fence and process
 registry. CLI routes instead atomically publish stable shims that directly exec
-the verified release entrypoint through the Agent's normal shell; the daemon
-process adapter remains responsible for installation probes and credential
-broker operations. Both interfaces use the same verified artifact snapshot,
+the verified release entrypoint through the Agent's normal shell; the physical
+installer owns receipt-based installation inspection, while the process adapter
+handles CLI readiness and credential-broker operations. Both interfaces use the same verified artifact snapshot,
 executable identity, generation lifecycle, and connection-scoped state path.
 An installed runtime is daemon-global and is available to every Agent and the
 local Tutti CLI. TSH runs the same runtime module inside its managed VM and
@@ -310,21 +305,19 @@ Installed release evidence is durable recovery input, not operation history.
 The SQLite store records one complete release record per installed connector in
 `connector_market_installed_releases`; install completion updates it and
 uninstall completion removes it in the same transaction as the business
-transition. Probe-detected drift retains that evidence while the installation
+transition. Receipt-detected drift retains that evidence while the installation
 projection is failed so repair and uninstall still target the accepted release.
 Runtime recovery therefore remains valid after the corresponding completed
 install operation has expired, including when the accepted catalog has advanced
 to a newer release.
 
-Before bootstrap republishes installed routes, it compares each previously
-installed release that declares a probe with the actual MCP/CLI implementation.
-An explicit absent result changes the installation projection to `failed` with
-`connector_installation_probe_absent`, retains the installed release evidence
-needed for safe repair or uninstall, advances the revision, and publishes the
-normal changed event. A later present result for that same release clears the
-failure and restores `installed`. Indeterminate probes preserve SQLite truth;
-the ordinary fail-closed runtime reconcile still decides whether bootstrap can
-publish the route.
+Before bootstrap republishes installed routes, it asks the physical installation
+manager to inspect the accepted artifact and optional CLI receipts. `absent` or
+`invalid` changes the installation projection to `failed` while retaining the
+installed release evidence needed for safe repair or uninstall. A later
+`present` observation for that release restores `installed`; `indeterminate`
+preserves the projection. Runtime reconcile then performs interface readiness
+checks before any route is published.
 
 Authorization operations must follow the same recovery rule or remain fully
 synchronous without leaving a recoverable `running` operation. A provider uses
@@ -488,9 +481,11 @@ native interface needed to use each connector; it does not expose package
 paths, ports, bearer tokens, or upstream credentials.
 
 All active connector-owned MCP implementations are registered into the local
-loopback Streamable HTTP MCP server named `connector`. The reusable transport
-and session-binding implementation lives in
-`packages/connector/runtime/mcpserver`; product daemons own instance lifecycle.
+loopback Streamable HTTP MCP server named `connector`. Agent-facing bindings
+are issued by `packages/connector/runtime/agentgateway`, whose listener and
+bearer authority can outlive replacement of the bundle-owned backend.
+`packages/connector/runtime/mcpserver` remains the replaceable MCP protocol
+backend; product daemons own both lifecycles.
 Tool names are
 namespaced as `<connector-key>_<upstream-tool-name>`. Each Agent session receives
 a short-lived bearer binding through its provider-native MCP configuration;

@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -87,9 +88,6 @@ func TestResolvePreparedAllowsLegacyReleaseWithoutIcon(t *testing.T) {
 
 	legacyRelease := release
 	legacyRelease.Manifest.IconURL = ""
-	if err := os.WriteFile(filepath.Join(prepared.PreparedPath, ".DS_Store"), []byte("finder metadata"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	resolved, err := preparer.ResolvePrepared(context.Background(), legacyRelease)
 	if err != nil {
 		t.Fatalf("ResolvePrepared() rejected legacy presentation metadata: %v", err)
@@ -105,7 +103,7 @@ func TestResolvePreparedAllowsLegacyReleaseWithoutIcon(t *testing.T) {
 	}
 }
 
-func TestResolvePreparedRepairsInvalidInventoryFromLatestVerifiedArtifact(t *testing.T) {
+func TestResolvePreparedReportsInvalidInventoryWithoutRepair(t *testing.T) {
 	manifest := []byte(`{"schemaVersion":"1","connectorKey":"github"}`)
 	archive := testZIP(t, map[string][]byte{
 		packagedManifestPath: manifest,
@@ -128,29 +126,19 @@ func TestResolvePreparedRepairsInvalidInventoryFromLatestVerifiedArtifact(t *tes
 		t.Fatal(err)
 	}
 
-	resolved, err := preparer.ResolvePrepared(context.Background(), release)
-	if err != nil {
-		t.Fatalf("ResolvePrepared() failed to repair invalid inventory: %v", err)
+	_, err = preparer.ResolvePrepared(context.Background(), release)
+	if !errors.Is(err, market.ErrReleaseInstallationInvalid) {
+		t.Fatalf("ResolvePrepared() error = %v, want invalid installation", err)
 	}
 	if fetcher.calls != 1 {
 		t.Fatalf("fetch calls = %d, want 1 verified artifact download", fetcher.calls)
 	}
-	if resolved.PreparedPath != prepared.PreparedPath || resolved.InventoryDigest != prepared.InventoryDigest {
-		t.Fatalf("resolved receipt = %#v, want repaired %#v", resolved, prepared)
-	}
-	if _, err := os.Stat(filepath.Join(resolved.PreparedPath, ".DS_Store")); !os.IsNotExist(err) {
-		t.Fatalf("unexpected metadata survived repair: %v", err)
-	}
-	content, err := os.ReadFile(filepath.Join(resolved.PreparedPath, "bin", "connector"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(content) != "executable" {
-		t.Fatalf("repaired content = %q", content)
+	if _, err := os.Stat(filepath.Join(prepared.PreparedPath, ".DS_Store")); err != nil {
+		t.Fatalf("invalid tree was unexpectedly changed: %v", err)
 	}
 }
 
-func TestResolvePreparedRepairsModifiedContentFromLatestVerifiedArtifact(t *testing.T) {
+func TestResolvePreparedReportsModifiedContentWithoutRepair(t *testing.T) {
 	manifest := []byte(`{"schemaVersion":"1","connectorKey":"github"}`)
 	archive := testZIP(t, map[string][]byte{
 		packagedManifestPath: manifest,
@@ -174,15 +162,15 @@ func TestResolvePreparedRepairsModifiedContentFromLatestVerifiedArtifact(t *test
 		t.Fatal(err)
 	}
 
-	if _, err := preparer.ResolvePrepared(context.Background(), release); err != nil {
-		t.Fatalf("ResolvePrepared() failed to repair modified content: %v", err)
+	if _, err := preparer.ResolvePrepared(context.Background(), release); !errors.Is(err, market.ErrReleaseInstallationInvalid) {
+		t.Fatalf("ResolvePrepared() error = %v, want invalid installation", err)
 	}
 	content, err := os.ReadFile(connectorPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(content) != "executable" {
-		t.Fatalf("repaired content = %q", content)
+	if string(content) != "tampered" {
+		t.Fatalf("invalid content was unexpectedly repaired: %q", content)
 	}
 	if fetcher.calls != 1 {
 		t.Fatalf("fetch calls = %d, want 1 verified artifact download", fetcher.calls)

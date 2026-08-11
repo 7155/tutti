@@ -79,6 +79,75 @@ func (installer *ReleaseInstaller) InstallRelease(
 	return receipt, nil
 }
 
+func (installer *ReleaseInstaller) InspectReleaseInstallation(
+	ctx context.Context,
+	request market.InspectReleaseInstallationRequest,
+) (market.ReleaseInstallationObservation, error) {
+	observation := market.ReleaseInstallationObservation{
+		ConnectorKey:  request.Release.ConnectorKey,
+		ReleaseDigest: request.Release.ReleaseDigest,
+	}
+	if installer == nil || installer.artifacts == nil {
+		observation.State = market.ReleaseInstallationIndeterminate
+		observation.ReasonCode = "installation_manager_unavailable"
+		return observation, nil
+	}
+	if err := market.ValidateRuntimeReleaseShape(request.Release); err != nil {
+		return market.ReleaseInstallationObservation{}, err
+	}
+	prepared, err := installer.artifacts.ResolvePrepared(ctx, request.Release)
+	if err != nil {
+		return classifyReleaseInstallationError(observation, "artifact", err)
+	}
+	receipt := market.ReleaseInstallationReceipt{
+		OperationID:    prepared.OperationID,
+		ConnectorKey:   request.Release.ConnectorKey,
+		Version:        request.Release.Version,
+		ReleaseID:      request.Release.ReleaseID,
+		ReleaseDigest:  request.Release.ReleaseDigest,
+		ArtifactSHA256: request.Release.Artifact.SHA256,
+		Artifact:       prepared,
+	}
+	if releaseRequiresCLIInstallation(request.Release) {
+		if installer.cli == nil {
+			observation.State = market.ReleaseInstallationInvalid
+			observation.ReasonCode = "cli_inspector_unavailable"
+			return observation, nil
+		}
+		cliReceipt, resolveErr := installer.cli.ResolveCLI(ctx, request.Release)
+		if resolveErr != nil {
+			return classifyReleaseInstallationError(observation, "cli", resolveErr)
+		}
+		receipt.CLIInstallation = &cliReceipt
+	}
+	observation.State = market.ReleaseInstallationPresent
+	observation.Receipt = &receipt
+	return observation, nil
+}
+
+func classifyReleaseInstallationError(
+	observation market.ReleaseInstallationObservation,
+	component string,
+	err error,
+) (market.ReleaseInstallationObservation, error) {
+	switch {
+	case errors.Is(err, market.ErrReleaseInstallationAbsent):
+		observation.State = market.ReleaseInstallationAbsent
+		observation.ReasonCode = component + "_absent"
+		return observation, nil
+	case errors.Is(err, market.ErrReleaseInstallationInvalid):
+		observation.State = market.ReleaseInstallationInvalid
+		observation.ReasonCode = component + "_invalid"
+		return observation, nil
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		observation.State = market.ReleaseInstallationIndeterminate
+		observation.ReasonCode = component + "_inspection_interrupted"
+		return observation, nil
+	default:
+		return market.ReleaseInstallationObservation{}, err
+	}
+}
+
 func (installer *ReleaseInstaller) UninstallRelease(
 	ctx context.Context,
 	request market.UninstallReleaseRequest,

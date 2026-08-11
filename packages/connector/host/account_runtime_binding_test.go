@@ -73,23 +73,13 @@ func TestAccountRuntimeBindingResolverIssuesGrantOnlyForConnectedProjection(t *t
 	if !binding.Enabled || len(binding.CredentialBrokerGrant) != 0 || credentials.calls != 1 {
 		t.Fatalf("deactivation binding = %#v, credential calls = %d", binding, credentials.calls)
 	}
-	binding, err = resolver.ResolveRuntimeBinding(context.Background(), RuntimeBindingRequest{
-		Scope: OperationScope{AccountID: "account-1"}, Purpose: RuntimeBindingPurposeInstallationProbe,
-		Connector: Connector{Key: "github"}, Release: release,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !binding.Enabled || len(binding.CredentialBrokerGrant) != 0 || credentials.calls != 1 {
-		t.Fatalf("installation probe binding = %#v, credential calls = %d", binding, credentials.calls)
-	}
 }
 
 func TestAccountRuntimeBindingResolverUsesConnectorOwnedCredentialBrokerWithoutServerGrant(t *testing.T) {
 	release := testReleaseWithImplementation("lark-cli", "1.0.0", ImplementationKindManagedStdio)
 	release.Manifest.AuthorizationKind = "oauth2"
 	release.Manifest.Implementation.ManagedStdio.CredentialBroker = &ManagedCredentialBroker{
-		Protocol: CredentialBrokerProtocolV1, Entrypoint: "credential-broker.mjs", TimeoutMS: 30_000,
+		Protocol: CredentialBrokerProtocolV2, Entrypoint: "credential-broker.mjs", TimeoutMS: 30_000,
 	}
 	projections := &authorizationProjectionStoreStub{projection: AuthorizationProjection{
 		AccountID: "account-1", ConnectorKey: "lark-cli", State: AuthorizationStateConnected,

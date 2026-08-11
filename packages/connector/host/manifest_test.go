@@ -30,7 +30,7 @@ func TestImplementationRegistryValidatesSupportedManifest(t *testing.T) {
 					VersionRange: ">=20.0.0 <21.0.0"},
 				CLI: &ManagedCLIInterface{Entrypoint: "github-cli", TimeoutMS: 120_000,
 					Commands: []CLICommand{{Name: "run", InputSchema: map[string]any{"type": "object"}, TimeoutMS: 30_000}}},
-				CredentialBroker: &ManagedCredentialBroker{Protocol: CredentialBrokerProtocolV1,
+				CredentialBroker: &ManagedCredentialBroker{Protocol: CredentialBrokerProtocolV2,
 					Entrypoint: "authorization/broker.mjs", TimeoutMS: 300_000, AllowedHosts: []string{"github.com"}},
 			},
 		},
@@ -95,7 +95,7 @@ func TestManagedCredentialBrokerRequiresConnectorOwnedEntrypointAndAllowedHosts(
 				VersionRange: ">=22.0.0 <23.0.0"},
 			CLI: &ManagedCLIInterface{Entrypoint: "example", TimeoutMS: 120_000,
 				Commands: []CLICommand{{Name: "run", InputSchema: map[string]any{"type": "object"}, TimeoutMS: 30_000}}},
-			CredentialBroker: &ManagedCredentialBroker{Protocol: CredentialBrokerProtocolV1,
+			CredentialBroker: &ManagedCredentialBroker{Protocol: CredentialBrokerProtocolV2,
 				Entrypoint: "authorization/broker.mjs", TimeoutMS: 300_000, AllowedHosts: []string{"accounts.example.com"}},
 		}}}
 	if err := ValidateManifestShape(manifest); err != nil {
@@ -193,29 +193,28 @@ func TestManagedCLIAllowsTypedNodePackageWithoutActionMappings(t *testing.T) {
 	}
 }
 
-func TestManagedInterfacesValidateBoundedInstallationProbes(t *testing.T) {
+func TestManagedCLIValidatesBoundedReadinessProbe(t *testing.T) {
 	manifest := Manifest{SchemaVersion: "1", DisplayName: "Probe", IconURL: testConnectorIconURL, AuthorizationKind: "none",
 		Implementation: Implementation{Kind: ImplementationKindManagedStdio, ManagedStdio: &ManagedStdioImplementation{
 			Runtime: RuntimeRequirement{Language: "node", Profile: "connector-node-static", ABI: "node22-darwin-arm64",
 				VersionRange: ">=22.0.0 <23.0.0"},
-			MCP: &ManagedMCPInterface{Entrypoint: "bin/server.mjs",
-				InstallationProbe: &InstallationProbe{Arguments: []string{"--version"}, TimeoutMS: 3_000}},
+			MCP: &ManagedMCPInterface{Entrypoint: "bin/server.mjs"},
 			CLI: &ManagedCLIInterface{Entrypoint: "bin/cli.mjs", TimeoutMS: 30_000,
-				InstallationProbe: &InstallationProbe{Arguments: []string{"doctor", "--quiet"}, TimeoutMS: 5_000},
-				Commands:          []CLICommand{{Name: "run", InputSchema: map[string]any{"type": "object"}, TimeoutMS: 30_000}}},
+				ReadinessProbe: &CLIReadinessProbe{Arguments: []string{"doctor", "--quiet"}, TimeoutMS: 5_000},
+				Commands:       []CLICommand{{Name: "run", InputSchema: map[string]any{"type": "object"}, TimeoutMS: 30_000}}},
 		}}}
 	if err := ValidateManifestShape(manifest); err != nil {
 		t.Fatal(err)
 	}
 
-	manifest.Implementation.ManagedStdio.MCP.InstallationProbe.Arguments = nil
-	if err := ValidateManifestShape(manifest); err == nil || !strings.Contains(err.Error(), "installationProbe") {
-		t.Fatalf("empty installation probe error = %v", err)
+	manifest.Implementation.ManagedStdio.CLI.ReadinessProbe.Arguments = nil
+	if err := ValidateManifestShape(manifest); err == nil || !strings.Contains(err.Error(), "readinessProbe") {
+		t.Fatalf("empty readiness probe error = %v", err)
 	}
-	manifest.Implementation.ManagedStdio.MCP.InstallationProbe.Arguments = []string{"--version"}
-	manifest.Implementation.ManagedStdio.CLI.InstallationProbe.TimeoutMS = 30_001
-	if err := ValidateManifestShape(manifest); err == nil || !strings.Contains(err.Error(), "installationProbe") {
-		t.Fatalf("unbounded installation probe error = %v", err)
+	manifest.Implementation.ManagedStdio.CLI.ReadinessProbe.Arguments = []string{"--version"}
+	manifest.Implementation.ManagedStdio.CLI.ReadinessProbe.TimeoutMS = 30_001
+	if err := ValidateManifestShape(manifest); err == nil || !strings.Contains(err.Error(), "readinessProbe") {
+		t.Fatalf("unbounded readiness probe error = %v", err)
 	}
 }
 

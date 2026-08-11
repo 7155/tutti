@@ -225,7 +225,7 @@ test("offers repair when calibration finds the installed implementation absent",
   const market = createConnectorMarketStoreState();
   const connector = connectorFixture();
   connector.installation = {
-    failureCode: "connector_installation_probe_absent",
+    failureCode: "connector_installation_absent",
     installedReleaseDigest: connector.release.releaseDigest,
     installedReleaseId: connector.release.releaseId,
     installedVersion: connector.release.version,
@@ -247,6 +247,30 @@ test("offers repair when calibration finds the installed implementation absent",
     view.dialog?.kind === "installation" && view.dialog.updating,
     false
   );
+});
+
+test("offers repair when the installed implementation is invalid", () => {
+  const market = createConnectorMarketStoreState();
+  const connector = connectorFixture();
+  connector.installation = {
+    failureCode: "connector_installation_invalid",
+    installedReleaseDigest: connector.release.releaseDigest,
+    installedReleaseId: connector.release.releaseId,
+    installedVersion: connector.release.version,
+    state: "failed"
+  };
+  market.connectorKeys = [connector.key];
+  market.connectorsByKey[connector.key] = connector;
+
+  const view = buildConnectorMarketView(market, {
+    ...uiState,
+    dialog: { connectorKey: connector.key },
+    segment: "installed"
+  });
+
+  assert.equal(view.cardsByKey[connector.key]?.action, "install");
+  assert.equal(view.cardsByKey[connector.key]?.status, "not_installed");
+  assert.equal(view.dialog?.kind, "installation");
 });
 
 function connectorFixture(): Connector {

@@ -102,6 +102,13 @@ func (host *Host) DisconnectAuthorization(ctx context.Context, request market.Au
 	return host.authorizationProvider.Disconnect(ctx, request)
 }
 
+func (host *Host) InspectAuthorization(ctx context.Context, request market.AuthorizationInspectRequest) (market.AuthorizationObservation, error) {
+	if host == nil || host.authorizationProvider == nil {
+		return market.AuthorizationObservation{}, errors.New("connector authorization inspector is unavailable")
+	}
+	return host.authorizationProvider.Inspect(ctx, request)
+}
+
 func (provider *managedCredentialAuthorizationProvider) Begin(
 	ctx context.Context,
 	request market.AuthorizationStartRequest,
@@ -155,7 +162,7 @@ func (provider *managedCredentialAuthorizationProvider) Disconnect(
 	operationContext, cancel := context.WithTimeout(ctx, route.credentialBrokerLaunch.timeout)
 	defer cancel()
 	connection, processID, err := provider.host.startCredentialBroker(operationContext, route, credentialBrokerRequest{
-		Protocol: market.CredentialBrokerProtocolV1, Operation: "disconnect",
+		Protocol: market.CredentialBrokerProtocolV2, Operation: "disconnect",
 	})
 	if err != nil {
 		return fmt.Errorf("start connector credential broker disconnect: %w", err)
@@ -173,6 +180,51 @@ func (provider *managedCredentialAuthorizationProvider) Disconnect(
 	return nil
 }
 
+func (provider *managedCredentialAuthorizationProvider) Inspect(
+	ctx context.Context,
+	request market.AuthorizationInspectRequest,
+) (market.AuthorizationObservation, error) {
+	route, err := provider.host.authorizationRoute(ctx, request.Scope, request.Connector)
+	if err != nil {
+		return market.AuthorizationObservation{}, err
+	}
+	operationContext, cancel := context.WithTimeout(ctx, route.credentialBrokerLaunch.timeout)
+	defer cancel()
+	connection, processID, err := provider.host.startCredentialBroker(operationContext, route, credentialBrokerRequest{
+		Protocol: market.CredentialBrokerProtocolV2, Operation: "inspect",
+	})
+	if err != nil {
+		return market.AuthorizationObservation{}, fmt.Errorf("start connector credential broker inspect: %w", err)
+	}
+	defer route.releaseProcess(processID, connection)
+	event, err := readCredentialBrokerInspectionEvent(operationContext, connection)
+	if err != nil {
+		return market.AuthorizationObservation{}, fmt.Errorf("inspect connector authorization: %w", err)
+	}
+	var state market.AuthorizationObservationState
+	switch event.Type {
+	case "connected":
+		state = market.AuthorizationObservationConnected
+	case "disconnected":
+		state = market.AuthorizationObservationDisconnected
+	case "expired":
+		state = market.AuthorizationObservationExpired
+	case "error":
+		state = market.AuthorizationObservationFailed
+	default:
+		return market.AuthorizationObservation{}, fmt.Errorf("connector credential broker returned unsupported inspect event %q", event.Type)
+	}
+	connector := request.Connector
+	return market.AuthorizationObservation{
+		AccountID: request.Scope.AccountID, AccountGeneration: request.AccountGeneration,
+		VMAssignmentID: request.VMAssignmentID, ConnectorKey: connector.Key, ConnectionID: route.connectionID,
+		ReleaseDigest: connector.Release.ReleaseDigest, AuthorizationSessionID: request.AuthorizationSessionID,
+		AuthorizationGeneration: request.AuthorizationGeneration, DesktopBootEpoch: request.DesktopBootEpoch,
+		GuestBootID: request.GuestBootID, RuntimeEpoch: request.RuntimeEpoch, StateRevision: request.StateRevision,
+		State: state, Reason: strings.TrimSpace(event.Message), FailureCode: strings.TrimSpace(event.Code), ObservedAt: time.Now().UTC(),
+	}, nil
+}
+
 func (provider *managedCredentialAuthorizationProvider) authorizationSessionOrStart(route *connectorRoute) (*credentialBrokerSession, error) {
 	provider.mu.Lock()
 	if session := provider.sessions[route.id]; session != nil {
@@ -188,7 +240,7 @@ func (provider *managedCredentialAuthorizationProvider) authorizationSessionOrSt
 	}
 	processContext, cancel := context.WithTimeout(context.Background(), route.credentialBrokerLaunch.timeout)
 	connection, processID, err := provider.host.startCredentialBroker(processContext, route, credentialBrokerRequest{
-		Protocol: market.CredentialBrokerProtocolV1, Operation: "begin",
+		Protocol: market.CredentialBrokerProtocolV2, Operation: "begin",
 	})
 	if err != nil {
 		cancel()
@@ -429,8 +481,8 @@ func (host *Host) startCredentialBroker(
 	request credentialBrokerRequest,
 ) (agentruntime.ProcessConnection, uint64, error) {
 	launch := route.credentialBrokerLaunch
-	if launch == nil || request.Protocol != market.CredentialBrokerProtocolV1 ||
-		(request.Operation != "begin" && request.Operation != "disconnect") {
+	if launch == nil || request.Protocol != market.CredentialBrokerProtocolV2 ||
+		(request.Operation != "begin" && request.Operation != "inspect" && request.Operation != "disconnect") {
 		return nil, 0, errors.New("connector credential broker request is invalid")
 	}
 	spec := connectorruntime.ConnectorProcessSpec(route.connectionID, route.connectorKey, launch.language, launch.executable,
@@ -440,7 +492,7 @@ func (host *Host) startCredentialBroker(
 		return nil, 0, err
 	}
 	spec.Env = append(spec.Env,
-		"TUTTI_CONNECTOR_CREDENTIAL_BROKER_PROTOCOL="+market.CredentialBrokerProtocolV1,
+		"TUTTI_CONNECTOR_CREDENTIAL_BROKER_PROTOCOL="+market.CredentialBrokerProtocolV2,
 		"TUTTI_CONNECTOR_CLI_LAUNCH_JSON="+string(cliLaunch),
 	)
 	connection, processID, err := host.startProcess(ctx, route, spec, false)
@@ -506,6 +558,44 @@ func readCredentialBrokerTerminalEvent(ctx context.Context, connection agentrunt
 		}
 		if frame.ExitCode != nil {
 			return credentialBrokerEvent{}, errors.New("connector credential broker exited before disconnect completed")
+		}
+	}
+}
+
+func readCredentialBrokerInspectionEvent(ctx context.Context, connection agentruntime.ProcessConnection) (credentialBrokerEvent, error) {
+	var output strings.Builder
+	for {
+		frame, err := receiveCredentialBrokerFrameContext(ctx, connection)
+		if err != nil {
+			return credentialBrokerEvent{}, err
+		}
+		output.Write(frame.Stdout)
+		if output.Len() > 1<<20 {
+			return credentialBrokerEvent{}, errors.New("connector credential broker output exceeded its limit")
+		}
+		for {
+			line, remaining, ok := strings.Cut(output.String(), "\n")
+			if !ok {
+				break
+			}
+			output.Reset()
+			output.WriteString(remaining)
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+			var event credentialBrokerEvent
+			if err := decodeCredentialBrokerEvent(line, &event); err != nil {
+				return credentialBrokerEvent{}, err
+			}
+			switch event.Type {
+			case "connected", "disconnected", "expired", "error":
+				return event, nil
+			default:
+				return credentialBrokerEvent{}, fmt.Errorf("unexpected credential broker inspect event %q", event.Type)
+			}
+		}
+		if frame.ExitCode != nil {
+			return credentialBrokerEvent{}, errors.New("connector credential broker exited before inspect completed")
 		}
 	}
 }

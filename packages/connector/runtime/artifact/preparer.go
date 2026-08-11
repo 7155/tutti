@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	market "github.com/tutti-os/tutti/packages/connector/host"
 )
@@ -135,7 +134,12 @@ func (importer *Importer) ResolvePrepared(
 	if receipt, ok := readExistingReceipt(target, market.PrepareArtifactRequest{Release: release}); ok {
 		return receipt, nil
 	}
-	return market.PreparedArtifactReceipt{}, errors.New("prepared connector artifact is unavailable or invalid")
+	if _, statErr := os.Stat(target); errors.Is(statErr, os.ErrNotExist) {
+		return market.PreparedArtifactReceipt{}, market.ErrReleaseInstallationAbsent
+	} else if statErr != nil {
+		return market.PreparedArtifactReceipt{}, fmt.Errorf("inspect prepared connector artifact: %w", statErr)
+	}
+	return market.PreparedArtifactReceipt{}, market.ErrReleaseInstallationInvalid
 }
 
 func (importer *Importer) Remove(ctx context.Context, request market.RemoveArtifactRequest) error {
@@ -161,15 +165,12 @@ func (preparer *Preparer) ResolvePrepared(ctx context.Context, release market.Re
 	if ok {
 		return receipt, nil
 	}
-	// Prepared trees are verified on every restore and remain fail-closed while
-	// in use. If the durable tree was changed between runs, rebuild it from the
-	// latest verified cached artifact instead of permanently fencing an otherwise
-	// installed connector. Prepare still verifies the archive, packaged manifest,
-	// and complete extracted inventory before atomically replacing the tree.
-	return preparer.prepare(ctx, market.PrepareArtifactRequest{
-		OperationID: fmt.Sprintf("restore-%d-%d", os.Getpid(), time.Now().UnixNano()),
-		Release:     release,
-	}, validateRuntimePrepareRequest, true)
+	if _, statErr := os.Stat(target); errors.Is(statErr, os.ErrNotExist) {
+		return market.PreparedArtifactReceipt{}, market.ErrReleaseInstallationAbsent
+	} else if statErr != nil {
+		return market.PreparedArtifactReceipt{}, fmt.Errorf("inspect prepared connector artifact: %w", statErr)
+	}
+	return market.PreparedArtifactReceipt{}, market.ErrReleaseInstallationInvalid
 }
 
 func NewPreparer(config Config) (*Preparer, error) {
@@ -192,25 +193,10 @@ func (preparer *Preparer) Prepare(
 	ctx context.Context,
 	request market.PrepareArtifactRequest,
 ) (market.PreparedArtifactReceipt, error) {
-	return preparer.prepare(ctx, request, validatePrepareRequest, false)
-}
-
-func (preparer *Preparer) prepare(
-	ctx context.Context,
-	request market.PrepareArtifactRequest,
-	validate func(market.PrepareArtifactRequest) error,
-	runtimeValidation bool,
-) (market.PreparedArtifactReceipt, error) {
-	if err := validate(request); err != nil {
+	if err := validatePrepareRequest(request); err != nil {
 		return market.PreparedArtifactReceipt{}, err
 	}
-	var cached CachedArtifact
-	var err error
-	if runtimeValidation {
-		cached, err = preparer.cache.prepareRuntimeCandidate(ctx, request)
-	} else {
-		cached, err = preparer.cache.PrepareCandidate(ctx, request)
-	}
+	cached, err := preparer.cache.PrepareCandidate(ctx, request)
 	if err != nil {
 		return market.PreparedArtifactReceipt{}, err
 	}
@@ -465,13 +451,6 @@ func validatePrepareRequest(request market.PrepareArtifactRequest) error {
 		return errors.New("connector artifact operation id is invalid")
 	}
 	return market.ValidateReleaseShape(request.Release)
-}
-
-func validateRuntimePrepareRequest(request market.PrepareArtifactRequest) error {
-	if strings.TrimSpace(request.OperationID) == "" || !safeSegment(request.OperationID) {
-		return errors.New("connector artifact operation id is invalid")
-	}
-	return market.ValidateRuntimeReleaseShape(request.Release)
 }
 
 func validateLimits(limits Limits) error {

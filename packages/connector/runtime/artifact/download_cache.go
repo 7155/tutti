@@ -75,13 +75,6 @@ func (cache *DownloadCache) PrepareCandidate(
 	return cache.prepareCandidate(ctx, request, market.ValidateReleaseShape)
 }
 
-func (cache *DownloadCache) prepareRuntimeCandidate(
-	ctx context.Context,
-	request market.PrepareArtifactRequest,
-) (CachedArtifact, error) {
-	return cache.prepareCandidate(ctx, request, market.ValidateRuntimeReleaseShape)
-}
-
 func (cache *DownloadCache) prepareCandidate(
 	ctx context.Context,
 	request market.PrepareArtifactRequest,

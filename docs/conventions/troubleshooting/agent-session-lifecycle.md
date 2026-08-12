@@ -2647,10 +2647,15 @@ inline data URL instead`. Claude or standard ACP may instead receive no
   Provider display diffs can contain syntax that a viewer tolerates but
   `git apply` rejects. Treating that display payload as executable patch data
   produces corrupt hunks. A separate failure occurs when the patch is valid
-  but later edits changed its context.
+  but later edits changed its context. On Windows, leaving an absolute drive
+  path in either a synthesized patch or an existing unified-diff header also
+  violates Git's cwd-relative patch contract and can report that an untracked
+  created file does not exist in the index.
 - Fix:
   Canonicalize provider file-change metadata at the runtime adapter boundary
   before persistence, and canonicalize historical no-newline markers on read.
+  AgentGUI must make synthesized paths and existing unified-diff headers
+  relative to the patch cwd, using case-insensitive path identity for Windows.
   The daemon must preflight with `git apply --check` using the same execution
   options, return `invalid-patch` for syntax failures and
   `patch-does-not-apply` for state mismatch, and avoid mutating the worktree on
@@ -2658,7 +2663,8 @@ inline data URL instead`. Claude or standard ACP may instead receive no
 - Validation:
   Cover leading-whitespace no-newline markers, historical activity projection,
   corrupt-patch preflight without mutation, worktree divergence, reverse
-  application, and the existing untracked-created-file behavior.
+  application, cwd-relative Windows drive paths for synthesized and complete
+  diffs, and the existing untracked-created-file behavior.
 - References:
   [claude_sdk_activity.go](../../../packages/agent/daemon/runtime/claude_sdk_activity.go)
   [agentPatchMetadata.ts](../../../packages/agent/gui/shared/agentConversation/rules/agentPatchMetadata.ts)

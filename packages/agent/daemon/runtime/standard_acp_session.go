@@ -41,13 +41,12 @@ func (a *standardACPAdapter) Start(ctx context.Context, session Session) ([]acti
 	}
 	mcpServers := acpMCPServers(session.MCPServers)
 	if len(mcpServers) > 0 && !standardACPHTTPMCPSupported(initializeResult) {
-		a.logStandardACPStartupDiagnostics("mcp_http.unsupported", map[string]any{
+		a.logStandardACPStartupDiagnostics("mcp_http.unsupported_fallback", map[string]any{
 			"room_id":          session.RoomID,
 			"agent_session_id": session.AgentSessionID,
 			"binding_count":    len(mcpServers),
 		})
-		_ = client.Close()
-		return nil, ErrMCPHTTPUnsupported
+		mcpServers = nil
 	}
 	started := false
 	keepSession := false
@@ -187,19 +186,18 @@ func (a *standardACPAdapter) Resume(ctx context.Context, session Session) error 
 	}
 	unlockLifecycle := a.lockSessionLifecycle(session.AgentSessionID)
 	defer unlockLifecycle()
-	client, initializeResult, attachedCheckpoint, err := a.startClient(ctx, session, true)
+	client, initializeResult, attachedCheckpoint, err := a.startClient(ctx, session, true, true)
 	if err != nil {
 		return err
 	}
 	mcpServers := acpMCPServers(session.MCPServers)
 	if !attachedCheckpoint && len(mcpServers) > 0 && !standardACPHTTPMCPSupported(initializeResult) {
-		a.logStandardACPStartupDiagnostics("mcp_http.unsupported", map[string]any{
+		a.logStandardACPStartupDiagnostics("mcp_http.unsupported_fallback", map[string]any{
 			"room_id":          session.RoomID,
 			"agent_session_id": session.AgentSessionID,
 			"binding_count":    len(mcpServers),
 		})
-		_ = client.Close()
-		return ErrMCPHTTPUnsupported
+		mcpServers = nil
 	}
 	started := false
 	keepSession := false
@@ -442,14 +440,29 @@ func (a *standardACPAdapter) startInitializedClient(
 	ctx context.Context,
 	session Session,
 ) (*acpClient, json.RawMessage, error) {
-	client, initializeResult, _, err := a.startClient(ctx, session, false)
+	client, initializeResult, _, err := a.startClient(ctx, session, false, true)
 	return client, initializeResult, err
+}
+
+func (a *standardACPAdapter) ConnectorCapabilities(
+	ctx context.Context,
+	session Session,
+) (ConnectorCapabilities, error) {
+	client, initializeResult, _, err := a.startClient(ctx, session, false, false)
+	if err != nil {
+		return ConnectorCapabilities{}, err
+	}
+	if err := client.Close(); err != nil {
+		slog.WarnContext(ctx, "close ACP Connector capability probe", "provider", a.Provider(), "error", err)
+	}
+	return ConnectorCapabilities{HTTPMCP: standardACPHTTPMCPSupported(initializeResult)}, nil
 }
 
 func (a *standardACPAdapter) startClient(
 	ctx context.Context,
 	session Session,
 	allowAttachedCheckpoint bool,
+	runBeforeNewSession bool,
 ) (*acpClient, json.RawMessage, bool, error) {
 	if a == nil || a.transport == nil {
 		return nil, nil, false, errors.New("ACP process transport is unavailable")
@@ -589,7 +602,7 @@ func (a *standardACPAdapter) startClient(
 		"agent_info":       acpAgentInfo(initializeResult),
 	})
 
-	if a.config.beforeNewSession != nil {
+	if runBeforeNewSession && a.config.beforeNewSession != nil {
 		beforeNewSessionStartedAt := time.Now()
 		a.logStandardACPStartupDiagnostics("before_new_session.start", map[string]any{
 			"room_id":          session.RoomID,

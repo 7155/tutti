@@ -361,6 +361,7 @@ func buildDaemonAPI(
 		Runtime: agentservice.ServiceRuntimeConfig{
 			Preparer:                 agentRuntimePreparation,
 			Connector:                connectorRuntime,
+			ConnectorCapabilities:    agentRuntimeController,
 			ModelGateway:             modelGateway,
 			BrowserUseAvailable:      browserUseAvailable,
 			ComputerUseAvailable:     computerUseAvailable,

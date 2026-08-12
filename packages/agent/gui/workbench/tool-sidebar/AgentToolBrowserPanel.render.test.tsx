@@ -3,13 +3,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BrowserNodeHostApi } from "@tutti-os/browser-node";
 import type { BrowserNodeWorkbenchHeaderProps } from "@tutti-os/browser-node/react";
 import type { I18nRuntime } from "@tutti-os/ui-i18n-runtime";
-import { AgentToolBrowserPanel } from "./AgentToolBrowserPanel.tsx";
+import {
+  AgentToolBrowserPanel,
+  type AgentToolBrowserController
+} from "./AgentToolBrowserPanel.tsx";
 
 const browserNodeMocks = vi.hoisted(() => ({
   headerProps: null as BrowserNodeWorkbenchHeaderProps | null
 }));
 
 vi.mock("@tutti-os/browser-node/react", () => ({
+  BrowserNode: () => <div data-browser-node-body="true" />,
   BrowserNodeWorkbenchHeader: (props: BrowserNodeWorkbenchHeaderProps) => {
     browserNodeMocks.headerProps = props;
     return (
@@ -40,6 +44,7 @@ describe("AgentToolBrowserPanel header composition", () => {
       />
     );
 
+    await vi.dynamicImportSettled();
     expect(
       await screen.findByLabelText("Browser drag handle")
     ).toBeInTheDocument();
@@ -49,6 +54,36 @@ describe("AgentToolBrowserPanel header composition", () => {
     expect(
       document.querySelectorAll('[data-browser-node-header="true"]')
     ).toHaveLength(1);
+  });
+
+  it("activates an existing page by URL through the host controller", async () => {
+    let controller: AgentToolBrowserController | null = null;
+    render(
+      <AgentToolBrowserPanel
+        browserApi={createBrowserApi()}
+        defaultUrl="https://first.test"
+        dragHandleProps={{ "aria-label": "Browser drag handle" }}
+        hidden={false}
+        i18n={{ t: (key) => key } as I18nRuntime<string>}
+        onControllerReady={(value) => {
+          controller = value;
+        }}
+      />
+    );
+
+    await vi.dynamicImportSettled();
+    await screen.findByLabelText("Browser drag handle");
+    expect(controller).not.toBeNull();
+    const secondPageNodeId = controller!.createPage("https://second.test");
+    expect(controller!.selectPage(secondPageNodeId)).toBe(true);
+
+    const firstPageNodeId = controller!.activatePageByUrl(
+      "https://first.test/"
+    );
+
+    expect(firstPageNodeId).not.toBeNull();
+    expect(firstPageNodeId).not.toBe(secondPageNodeId);
+    expect(controller!.ownsPage(firstPageNodeId!)).toBe(true);
   });
 });
 

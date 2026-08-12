@@ -80,13 +80,19 @@ least one product driver holds a reference, accepts remote streams only after
 the product readiness barrier succeeds, and reconnects with bounded full-jitter
 backoff plus `Retry-After`.
 
+`OwnerLifecycle.Activate` returns an `OwnerActivation`: its `Readiness`
+context is a continuous product health condition for the complete connection
+generation. Cancelling it closes the generation, joins its stream handlers,
+reports its cancellation cause through `SessionEnded`, and starts a new
+generation while demand remains.
+
 The owner path has an explicit ownership split:
 
 ```text
 product demand (zero -> one)
   -> product OwnerLifecycle.Prepare
   -> relaytransport WebSocket dial + liveness
-  -> product OwnerLifecycle.Activate readiness barrier
+  -> product OwnerLifecycle.Activate continuous readiness
   -> relaytransport yamux stream acceptance
   -> product StreamHandler
   -> final product demand release
@@ -102,6 +108,35 @@ sanitized, typed `OwnerEvent` values into product logs or metrics. Retry events
 separate the backoff cap, chosen jitter, server `Retry-After`, and total delay;
 liveness events expose only ping/pong counts and timestamps, never payloads.
 
+`networkchange.Monitor` is the process-level transport signal for reconnect
+self-healing. It starts at generation `1`, publishes only later generations,
+and hashes interface status, addresses, and—where the platform exposes a
+reliable native table—default-route identity. Darwin uses a no-cgo route socket
+as a trigger with 500ms debounce and a 30s safety sample; its default-route
+summary comes from the native routing information base. Linux samples
+`/proc/net/route` and `/proc/net/ipv6_route`; Windows samples IP Helper's
+`GetIpForwardTable2`. Android 10 and newer deny ordinary applications access
+to `/proc/net`, so Android retains only the interface/address summary until a
+native `ConnectivityManager` source is provided. Android, iOS, and other
+unsupported platforms explicitly do not claim default-route coverage. Windows
+and mobile fallback to 2s polling, while Darwin watcher failure also falls back
+to 2s polling.
+
+`Monitor.Status()` is a read-only diagnostic snapshot with `stopped`,
+`starting`, `watching`, or `polling` mode plus a sanitized polling reason and
+bounded sample-health counters.
+Consumers should derive watcher health from `ModeWatching`; they must not
+invent a separate `watcherHealthy` field. An
+`OwnerHost.AdvanceNetworkGeneration` call cancels only the current attempt or
+retry wait, closes the old Relay transport, and reuses the same owner lifecycle
+for an immediate retry. It does not clear credentials; `SessionEnded` remains
+the product-owned credential policy boundary.
+
+Default-route changes are included only after successful parsing of the
+platform snapshot. A route-table read or parse failure fails that sample and
+does not advance generation, preserving the monitor's fail-closed rule rather
+than silently pretending that default-route coverage is complete.
+
 Relay endpoints, headers, query values, credentials, leases, registrations,
 room or pairing state, application protocols, and token invalidation remain in
 consumer adapters. In particular, a shared transport error is evidence for the
@@ -110,6 +145,10 @@ interpret HTTP status codes as product policy. `DialError` makes a bounded
 handshake response body available for adapter-owned wire-reason parsing, but
 does not include that body in its error string; adapters must not persist the
 raw value in ordinary logs or metrics.
+
+`OwnerHost.Wake` is a product-neutral demand-preserving interrupt for the
+current generation or retry wait. It coalesces repeated requests, does not
+release or acquire references, and does not reset reconnect backoff.
 
 ### Stream readiness probe
 

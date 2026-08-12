@@ -77,6 +77,22 @@ type ProcessConnection interface {
 	Close() error
 }
 
+// RuntimeTransportFailure carries a bounded machine-readable failure code
+// from a host-owned process transport into canonical Agent failure events.
+// Implementations must not encode raw paths, request payloads, or credentials
+// in the code.
+type RuntimeTransportFailure interface {
+	error
+	RuntimeTransportFailureCode() string
+}
+
+// RuntimeTransportGRPCFailure optionally preserves the bounded gRPC status
+// code for transport diagnostics without exposing the raw status message.
+type RuntimeTransportGRPCFailure interface {
+	RuntimeTransportFailure
+	RuntimeTransportGRPCCode() string
+}
+
 // ProcessCassetteCheckpointConnection is implemented by replay connections so
 // provider adapters can distinguish a cold process tape from capture attached
 // to an already initialized live provider connection.

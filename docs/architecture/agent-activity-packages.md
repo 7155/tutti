@@ -405,6 +405,16 @@ state. An empty pause/resume observation therefore records divergence without
 erasing the visible Goal; only a durable tombstone returns `null`. The daemon
 overlays that Host-owned result onto `session.goal`, and the Engine applies the
 same invariant when a synced typed result reaches its canonical Session state.
+Daemon Session reads apply the same authority rule: unresolved durable state
+projects `desired`; synchronized state projects `observed` progress; a durable
+tombstone clears the Goal. The Goal-state timestamp advances the Session
+envelope. Single-Session reads, batch lists, refreshes, and realtime-driven
+reloads therefore cannot overwrite a newer Goal with an older provider snapshot
+or resurrect a completed Goal as active.
+After Session creation, any later Goal Control operation retires the initial
+activation Goal as a presentation source. The operation result and canonical
+Session projection then own the banner, so the creation-time objective cannot
+shadow a replacement Goal.
 Engine-originated requests always send their caller-stable identity through to
 the existing Agent Host Goal saga.
 Every admitted mutation reaches Host; frontend Goal equality is not a no-op

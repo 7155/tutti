@@ -40,8 +40,19 @@ func (application *Application) ObserveAuthorization(
 	mutation ConnectorMutation,
 	projection AuthorizationProjection,
 ) (MutationResult, error) {
+	if err := application.saveAuthorizationProjection(ctx, mutation, projection); err != nil {
+		return MutationResult{}, err
+	}
+	return application.ReconcileRuntime(ctx, mutation)
+}
+
+func (application *Application) saveAuthorizationProjection(
+	ctx context.Context,
+	mutation ConnectorMutation,
+	projection AuthorizationProjection,
+) error {
 	if application.config.AuthorizationProjections == nil {
-		return MutationResult{}, NewDomainError(ErrorCodeUnavailable, "account authorization projections are not registered", false, nil)
+		return NewDomainError(ErrorCodeUnavailable, "account authorization projections are not registered", false, nil)
 	}
 	projection.AccountID = strings.TrimSpace(projection.AccountID)
 	projection.ConnectorKey = strings.TrimSpace(projection.ConnectorKey)
@@ -49,24 +60,21 @@ func (application *Application) ObserveAuthorization(
 	if projection.AccountID == "" || projection.ConnectorKey == "" ||
 		projection.AccountID != strings.TrimSpace(mutation.AccountID) ||
 		projection.ConnectorKey != strings.TrimSpace(mutation.ConnectorKey) {
-		return MutationResult{}, invalidRequest("authorization projection does not match the mutation scope")
+		return invalidRequest("authorization projection does not match the mutation scope")
 	}
 	if projection.ConnectionID != "" && !runtimeConnectionIDPattern.MatchString(projection.ConnectionID) {
-		return MutationResult{}, invalidRequest("authorization projection connectionId is invalid")
+		return invalidRequest("authorization projection connectionId is invalid")
 	}
 	switch projection.State {
 	case AuthorizationStateNotRequired, AuthorizationStateDisconnected, AuthorizationStatePending,
 		AuthorizationStateConnected, AuthorizationStateExpired, AuthorizationStateFailed:
 	default:
-		return MutationResult{}, invalidRequest("authorization projection state is invalid")
+		return invalidRequest("authorization projection state is invalid")
 	}
 	if projection.UpdatedAt.IsZero() {
 		projection.UpdatedAt = application.config.Now().UTC()
 	}
-	if err := application.config.AuthorizationProjections.SaveAuthorizationProjection(ctx, projection); err != nil {
-		return MutationResult{}, err
-	}
-	return application.ReconcileRuntime(ctx, mutation)
+	return application.config.AuthorizationProjections.SaveAuthorizationProjection(ctx, projection)
 }
 
 func (application *Application) projectAuthorizationAndScheduleRuntime(
@@ -107,6 +115,20 @@ func (application *Application) projectAuthorizationAndScheduleRuntime(
 			application.config.AuthorizationReadiness.SetReady(scope.AccountID, true)
 		}
 	} else {
+		mutation := ConnectorMutation{
+			ConnectorKey: strings.TrimSpace(connectorKey),
+			AccountID:    strings.TrimSpace(scope.AccountID),
+		}
+		projection := AuthorizationProjection{
+			AccountID: strings.TrimSpace(scope.AccountID), ConnectorKey: strings.TrimSpace(connectorKey),
+			ConnectionID: connectionID, State: state, FailureCode: strings.TrimSpace(failureCode), UpdatedAt: application.config.Now().UTC(),
+		}
+		// Pending authorization has no runtime effect. Persisting the projection
+		// without scheduling a reconcile also leaves the accepted authorization
+		// operation available for the provider's next continuation step.
+		if state == AuthorizationStatePending {
+			return application.saveAuthorizationProjection(ctx, mutation, projection)
+		}
 		deviceSnapshot, snapshotErr := application.Snapshot(ctx)
 		if snapshotErr != nil {
 			return snapshotErr
@@ -115,13 +137,11 @@ func (application *Application) projectAuthorizationAndScheduleRuntime(
 		if idErr != nil {
 			return idErr
 		}
-		if _, err := application.ObserveAuthorization(ctx, ConnectorMutation{
-			Mutation:     Mutation{ClientRequestID: "authorization-projection/" + requestID, ExpectedRevision: deviceSnapshot.Revision},
-			ConnectorKey: strings.TrimSpace(connectorKey), AccountID: strings.TrimSpace(scope.AccountID),
-		}, AuthorizationProjection{
-			AccountID: strings.TrimSpace(scope.AccountID), ConnectorKey: strings.TrimSpace(connectorKey),
-			ConnectionID: connectionID, State: state, FailureCode: strings.TrimSpace(failureCode), UpdatedAt: application.config.Now().UTC(),
-		}); err != nil {
+		mutation.Mutation = Mutation{
+			ClientRequestID:  "authorization-projection/" + requestID,
+			ExpectedRevision: deviceSnapshot.Revision,
+		}
+		if _, err := application.ObserveAuthorization(ctx, mutation, projection); err != nil {
 			return err
 		}
 		return nil

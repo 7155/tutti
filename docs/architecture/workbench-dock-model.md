@@ -268,8 +268,16 @@ snapshot.
 Native popup previews pass the clamped target rectangle to Electron capture;
 they must not capture the whole `webContents` and crop afterward. A native
 region capture is valid only for the foreground node represented by those
-composited pixels. When native capture and the persistent cache both miss, a
-non-minimized background node may fall back to a DOM-cloned snapshot. DOM
+composited pixels. When native capture misses, a popup first reads the Node's
+shared latest Dock preview from memory. After a memory miss, it reads the
+unrevisioned persistent latest identity and the exact-revision identity in
+parallel. The shared latest entry wins; an exact-revision entry is a
+compatibility fallback for previously captured generations and is promoted to
+the shared identity when used. When every cache source misses, a non-minimized
+background node may fall back to a DOM-cloned snapshot. Successful native and
+DOM captures update the one shared latest entry, so popup and minimize capture
+reuse the same bounded Dock PNG without duplicating persistent writes or
+sharing the full-resolution Genie animation texture. DOM
 fallbacks run serially, are deduplicated by preview identity and revision, and
 yield the renderer task queue between clones so a large popup cannot turn the
 serialized work into one microtask-bound long task. They persist only successful

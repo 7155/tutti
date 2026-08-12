@@ -68,6 +68,7 @@ type Service struct {
 	PromptAttachmentStore          PromptAttachmentStore
 	RuntimePreparer                runtimeprep.Preparer
 	ConnectorRuntime               ConnectorRuntime
+	ConnectorCapabilities          ConnectorCapabilityResolver
 	ModelGateway                   ModelGatewayRegistry
 	BrowserUseAvailable            func() bool
 	ComputerUseAvailable           func() bool
@@ -119,6 +120,22 @@ type ConnectorRuntime interface {
 	BindSession(string, string) (runtimeprep.ConnectorAgentContext, error)
 	RevokeSession(string, string)
 	RevokeAll()
+}
+
+type ConnectorCapabilityInput struct {
+	WorkspaceID       string
+	AgentSessionID    string
+	AgentTargetID     string
+	Provider          string
+	Cwd               string
+	Env               []string
+	ProviderTargetRef map[string]any
+	PermissionModeID  string
+	Settings          ComposerSettings
+}
+
+type ConnectorCapabilityResolver interface {
+	ConnectorHTTPMCPSupported(context.Context, ConnectorCapabilityInput) (bool, error)
 }
 
 type TuttiModeSourceActivity struct {

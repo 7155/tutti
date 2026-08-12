@@ -57,6 +57,49 @@ func TestFailedTurnActivityEventProjectsStableErrorDetails(t *testing.T) {
 	}
 }
 
+func TestFailedTurnActivityEventProjectsProviderStopReason(t *testing.T) {
+	t.Parallel()
+
+	session := Session{Provider: ProviderCodex, AgentSessionID: "agent-1", RoomID: "room-1"}
+	event := newTurnActivityEvent(
+		session,
+		EventTurnFailed,
+		"turn-1",
+		SessionStatusFailed,
+		"",
+		"",
+		map[string]any{"stopReason": "max_tokens"},
+	)
+	patch, ok := statePatchFromSessionEvent(
+		canonical.EventSource{Provider: ProviderCodex},
+		event,
+		"agent-1",
+		200,
+	)
+	if !ok || patch.Turn == nil {
+		t.Fatalf("failed turn patch = %#v ok=%v", patch, ok)
+	}
+	if patch.Turn.ErrorCode != "provider_max_tokens" || patch.Turn.ErrorMessage != "" {
+		t.Fatalf("failed turn error = %q/%q", patch.Turn.ErrorCode, patch.Turn.ErrorMessage)
+	}
+}
+
+func TestProviderStopFailureCodeUsesClosedVocabulary(t *testing.T) {
+	t.Parallel()
+
+	for reason, expected := range map[string]string{
+		"refusal":           "provider_refusal",
+		"max_tokens":        "provider_max_tokens",
+		"max_turn_requests": "provider_max_turn_requests",
+		"end_turn":          "",
+		"future_reason":     "",
+	} {
+		if actual := providerStopFailureCode(reason); actual != expected {
+			t.Fatalf("providerStopFailureCode(%q) = %q, want %q", reason, actual, expected)
+		}
+	}
+}
+
 func TestProviderRootTurnStartMakesSessionResumable(t *testing.T) {
 	t.Parallel()
 	controller := &Controller{}

@@ -366,16 +366,6 @@ type ReprepareRuntimeSessionAndSendInputInput struct {
 	Send      SendInput
 }
 
-// ResumeRuntimeSessionForActiveTurnInput restores a missing provider runtime
-// for one exact durable active Turn using request-scoped launch context. It
-// never creates or admits a Turn.
-type ResumeRuntimeSessionForActiveTurnInput struct {
-	WorkspaceID           string
-	AgentSessionID        string
-	TurnID                string
-	RuntimeContextOverlay map[string]any
-}
-
 type RuntimeExecInput struct {
 	WorkspaceID                     string
 	AgentSessionID                  string

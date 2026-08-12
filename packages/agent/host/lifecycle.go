@@ -358,19 +358,10 @@ func (h *Host) EnsureRuntimeSession(ctx context.Context, ref SessionRef) (Provid
 		return ProviderRuntimeSession{}, err
 	}
 	defer release()
-	return h.ensureRuntimeSessionLockedWithLaunchContext(ctx, ref, "", nil)
+	return h.ensureRuntimeSessionLocked(ctx, ref)
 }
 
 func (h *Host) ensureRuntimeSessionLocked(ctx context.Context, ref SessionRef) (ProviderRuntimeSession, error) {
-	return h.ensureRuntimeSessionLockedWithLaunchContext(ctx, ref, "", nil)
-}
-
-func (h *Host) ensureRuntimeSessionLockedWithLaunchContext(
-	ctx context.Context,
-	ref SessionRef,
-	requiredActiveTurnID string,
-	runtimeContextOverlay map[string]any,
-) (ProviderRuntimeSession, error) {
 	deleted, err := h.store.SessionDeleted(ctx, ref.WorkspaceID, ref.AgentSessionID)
 	if err != nil {
 		return ProviderRuntimeSession{}, err
@@ -384,9 +375,6 @@ func (h *Host) ensureRuntimeSessionLockedWithLaunchContext(
 	}
 	if found && ResolveResumePolicy(canonicalSession).Mode == ResumeModeReject {
 		return ProviderRuntimeSession{}, ErrSessionNotFound
-	}
-	if requiredActiveTurnID != "" && strings.TrimSpace(canonicalSession.ActiveTurnID) != requiredActiveTurnID {
-		return ProviderRuntimeSession{}, ErrRuntimeSessionActive
 	}
 	policy := ResolveResumePolicy(canonicalSession)
 	evidence := storesqlite.ProviderSessionResumeEvidence{}
@@ -403,9 +391,6 @@ func (h *Host) ensureRuntimeSessionLockedWithLaunchContext(
 		}
 	}
 	if live, ok := h.runtime.Session(ref.WorkspaceID, ref.AgentSessionID); ok {
-		if requiredActiveTurnID != "" && activeTurnID(live.TurnLifecycle) != requiredActiveTurnID {
-			return ProviderRuntimeSession{}, ErrRuntimeSessionActive
-		}
 		if !ExternalImportResumeSupported(live.RuntimeContext) {
 			return ProviderRuntimeSession{}, ErrSessionNotFound
 		}
@@ -438,13 +423,8 @@ func (h *Host) ensureRuntimeSessionLockedWithLaunchContext(
 	}
 	prepared := PreparedRuntime{Cwd: strings.TrimSpace(canonicalSession.Cwd)}
 	settings := composerSettingsFromMap(canonicalSession.Settings)
-	preparationInput := resumePreparationInput(canonicalSession, settings)
-	preparationInput.RuntimeContext = overlayRuntimeContext(
-		canonicalSession.InternalRuntimeContext,
-		runtimeContextOverlay,
-	)
 	if h.preparation != nil {
-		prepared, err = h.preparation.Prepare(ctx, preparationInput)
+		prepared, err = h.preparation.Prepare(ctx, resumePreparationInput(canonicalSession, settings))
 		if err != nil {
 			return ProviderRuntimeSession{}, err
 		}
@@ -461,10 +441,6 @@ func (h *Host) ensureRuntimeSessionLockedWithLaunchContext(
 	if err != nil {
 		return ProviderRuntimeSession{}, h.cleanupRejectedPreparedRuntime(ctx, ref, canonicalSession.Provider, err)
 	}
-	runtimeContext := firstMap(prepared.RuntimeContext, canonicalSession.InternalRuntimeContext)
-	if len(runtimeContextOverlay) > 0 {
-		runtimeContext = canonicalSession.InternalRuntimeContext
-	}
 	result, err := h.runtime.Resume(ctx, RuntimeResumeInput{
 		WorkspaceID: ref.WorkspaceID, AgentSessionID: ref.AgentSessionID,
 		AgentTargetID: strings.TrimSpace(canonicalSession.AgentTargetID), Provider: strings.TrimSpace(canonicalSession.Provider),
@@ -472,9 +448,8 @@ func (h *Host) ensureRuntimeSessionLockedWithLaunchContext(
 		Env: append([]string(nil), prepared.Env...), MCPServers: cloneHostMCPServerBindings(prepared.MCPServers), Title: strings.TrimSpace(canonicalSession.Title),
 		Status: persistedRuntimeStatus(canonicalSession.ActiveTurnID), Settings: settings,
 		CreatedAtUnixMS: canonicalSession.CreatedAtUnixMS, UpdatedAtUnixMS: canonicalSession.UpdatedAtUnixMS,
-		Visible: boolPointer(canonicalSession.Metadata.Visible), RuntimeContext: cloneMap(runtimeContext),
-		ProviderLaunchRuntimeContext: cloneMap(firstMap(prepared.RuntimeContext, preparationInput.RuntimeContext)),
-		ProviderTargetRef:            cloneMap(prepared.ProviderTargetRef), Metadata: canonicalSession.Metadata,
+		Visible: boolPointer(canonicalSession.Metadata.Visible), RuntimeContext: cloneMap(firstMap(prepared.RuntimeContext, canonicalSession.InternalRuntimeContext)),
+		ProviderTargetRef: cloneMap(prepared.ProviderTargetRef), Metadata: canonicalSession.Metadata,
 		InternalRuntimeContext: cloneMap(canonicalSession.InternalRuntimeContext),
 		GoalGenerationFences:   append([]RuntimeGoalGenerationFenceInput(nil), goalGenerationFences...),
 		RecreateIfMissing:      policy.Mode == ResumeModeRecreate,

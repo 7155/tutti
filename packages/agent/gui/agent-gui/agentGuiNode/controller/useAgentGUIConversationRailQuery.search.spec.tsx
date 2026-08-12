@@ -676,8 +676,9 @@ describe("useAgentGUIConversationRailQuery search", () => {
             workspaceUserProjectI18n={RAIL_PROJECT_I18N}
             onCancelDeleteConversation={() => {}}
             onConfirmDeleteConversation={() => {}}
-            onConfirmDeleteConversations={() => {}}
+            onConfirmDeleteConversations={async () => true}
             onConfirmDeleteProjectConversations={async () => []}
+            onConfirmRemoveProjectConversations={async () => true}
             onConversationQueryChange={() => {}}
             onCreateConversation={() => {}}
             onRemoveProject={() => {}}
@@ -796,8 +797,9 @@ describe("useAgentGUIConversationRailQuery search", () => {
           workspaceUserProjectI18n={RAIL_PROJECT_I18N}
           onCancelDeleteConversation={() => {}}
           onConfirmDeleteConversation={() => {}}
-          onConfirmDeleteConversations={() => {}}
+          onConfirmDeleteConversations={async () => true}
           onConfirmDeleteProjectConversations={async () => []}
+          onConfirmRemoveProjectConversations={async () => true}
           onConversationQueryChange={() => {}}
           onCreateConversation={() => {}}
           onRemoveProject={() => {}}
@@ -863,12 +865,28 @@ describe("useAgentGUIConversationRailQuery search", () => {
       .mockImplementation(() => {});
     const engine = createTestAgentSessionEngine("workspace-1");
     const runtime = {
+      async deleteSessionsBatch() {
+        return {
+          cleanupFailedSessionIds: [],
+          removedMessages: 0,
+          removedSessionIds: [],
+          removedSessions: 0
+        };
+      },
       getSessionEngine: () => engine,
       async listSessionSections() {
         throw new Error("section membership unavailable");
       },
       async listSessionSectionPage() {
         throw new Error("section membership unavailable");
+      },
+      async listSessionSectionDeletionCandidates() {
+        return {
+          excludePinned: false,
+          sectionKey: "project:/workspace/alpha",
+          sessionIds: [],
+          workspaceId: "workspace-1"
+        };
       }
     } as unknown as AgentGUIRuntime;
     const userProjects = ["Alpha", "Beta", "Gamma"].map((label) => ({
@@ -924,8 +942,9 @@ describe("useAgentGUIConversationRailQuery search", () => {
           workspaceUserProjectI18n={RAIL_PROJECT_I18N}
           onCancelDeleteConversation={() => {}}
           onConfirmDeleteConversation={() => {}}
-          onConfirmDeleteConversations={() => {}}
+          onConfirmDeleteConversations={async () => true}
           onConfirmDeleteProjectConversations={async () => []}
+          onConfirmRemoveProjectConversations={async () => true}
           onConversationQueryChange={() => {}}
           onCreateConversation={() => {}}
           onMarkConversationUnread={() => {}}

@@ -212,12 +212,10 @@ export function AgentGUINodeView({
   const toggleProjectPinned = useStableEventCallback(
     actions.toggleProjectPinned
   );
-  const confirmDeleteProjectConversations = useStableEventCallback(
-    actions.confirmDeleteProjectConversations
-  );
-  const confirmDeleteConversations = useStableEventCallback(
-    actions.confirmDeleteConversations
-  );
+  const projectDelete = actions.confirmDeleteProjectConversations;
+  const confirmProjectDelete = useStableEventCallback(projectDelete);
+  const conversationDelete = actions.confirmDeleteConversations;
+  const confirmConversationDelete = useStableEventCallback(conversationDelete);
   const requestDeleteConversation = useStableEventCallback(
     actions.requestDeleteConversation
   );
@@ -464,8 +462,10 @@ export function AgentGUINodeView({
       onRemoveProject: removeProject,
       onMoveProject: moveProject,
       onToggleProjectPinned: toggleProjectPinned,
-      onConfirmDeleteProjectConversations: confirmDeleteProjectConversations,
-      onConfirmDeleteConversations: confirmDeleteConversations,
+      onConfirmDeleteProjectConversations: confirmProjectDelete,
+      onConfirmRemoveProjectConversations:
+        actions.confirmRemoveProjectConversations,
+      onConfirmDeleteConversations: confirmConversationDelete,
       onRequestDeleteConversation: requestDeleteConversation,
       onRequestRenameConversation: requestRenameConversation,
       onCancelDeleteConversation: cancelDeleteConversation,
@@ -477,8 +477,9 @@ export function AgentGUINodeView({
     [
       cancelDeleteConversation,
       confirmDeleteConversation,
-      confirmDeleteConversations,
-      confirmDeleteProjectConversations,
+      confirmConversationDelete,
+      confirmProjectDelete,
+      actions.confirmRemoveProjectConversations,
       conversationRailCollapsed,
       createConversationDisabled,
       conversationRailLabels,

@@ -91,6 +91,9 @@ export function useAgentGUIControllerActions(
   const confirmDeleteProjectConversations = useStableControllerEventCallback(
     actions.confirmDeleteProjectConversations
   );
+  const confirmRemoveProjectConversations = useStableControllerEventCallback(
+    actions.confirmRemoveProjectConversations
+  );
   const confirmDeleteConversations = useStableControllerEventCallback(
     actions.confirmDeleteConversations
   );
@@ -156,6 +159,7 @@ export function useAgentGUIControllerActions(
       moveProject,
       toggleProjectPinned,
       confirmDeleteProjectConversations,
+      confirmRemoveProjectConversations,
       confirmDeleteConversations,
       toggleConversationPinned,
       markConversationUnread,
@@ -173,6 +177,7 @@ export function useAgentGUIControllerActions(
       confirmDeleteConversation,
       confirmDeleteConversations,
       confirmDeleteProjectConversations,
+      confirmRemoveProjectConversations,
       continueInNewConversation,
       createConversation,
       editQueuedPrompt,

@@ -353,7 +353,7 @@ func normalizedApprovalInput(toolCall map[string]any, options []map[string]any, 
 	displayInput := normalizedApprovalDisplayInput(toolCall, knownInput)
 	input := map[string]any{
 		"requestId": requestID,
-		"toolCall":  normalizedApprovalToolCall(toolCall),
+		"toolCall":  normalizedApprovalToolCall(toolCall, displayInput),
 		"options":   cloneOptionMaps(options),
 	}
 	for key, value := range displayInput {
@@ -364,7 +364,7 @@ func normalizedApprovalInput(toolCall map[string]any, options []map[string]any, 
 	return input
 }
 
-func normalizedApprovalToolCall(toolCall map[string]any) map[string]any {
+func normalizedApprovalToolCall(toolCall map[string]any, displayInput map[string]any) map[string]any {
 	normalized := map[string]any{}
 	for _, key := range []string{
 		"toolCallId",
@@ -380,6 +380,9 @@ func normalizedApprovalToolCall(toolCall map[string]any) map[string]any {
 		if value, exists := toolCall[key]; exists {
 			normalized[key] = clonePayloadValue(value)
 		}
+	}
+	if len(displayInput) > 0 {
+		normalized["input"] = clonePayload(displayInput)
 	}
 	return normalized
 }
@@ -423,6 +426,8 @@ func normalizedApprovalDisplayInput(toolCall map[string]any, knownInput map[stri
 		"query",
 		"search_query",
 		"searchQuery",
+		"url",
+		"uri",
 		"pattern",
 		"cwd",
 		"changes",

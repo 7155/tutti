@@ -714,7 +714,10 @@ export interface AgentGUINodeViewProps extends AgentGUIComposerExternalPromptPro
       sectionKey?: string,
       agentTargetId?: string | null
     ) => Promise<string[]>;
-    confirmDeleteConversations: (agentSessionIds: string[]) => void;
+    confirmRemoveProjectConversations: (
+      sectionKey?: string
+    ) => Promise<boolean>;
+    confirmDeleteConversations: (agentSessionIds: string[]) => Promise<boolean>;
     requestDeleteConversation: (agentSessionId: string) => void;
     cancelDeleteConversation: () => void;
     confirmDeleteConversation: () => void;

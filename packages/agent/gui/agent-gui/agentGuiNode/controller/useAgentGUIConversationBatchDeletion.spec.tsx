@@ -87,7 +87,11 @@ describe("useAgentGUIConversationBatchDeletion", () => {
       workspaceId: "workspace-1"
     });
 
-    act(() => result.current.confirmDeleteConversations(sessionIds));
+    await act(async () => {
+      expect(await result.current.confirmDeleteConversations(sessionIds)).toBe(
+        true
+      );
+    });
     await waitFor(() => expect(deleteSessionsBatch).toHaveBeenCalledTimes(1));
     expect(deleteSessionsBatch).toHaveBeenCalledWith({
       sessionIds: ["loaded-session", "unloaded-session"],
@@ -101,6 +105,73 @@ describe("useAgentGUIConversationBatchDeletion", () => {
       "loaded-session",
       "unloaded-session"
     ]);
+  });
+
+  it("includes pinned sessions and all providers when removing a project", async () => {
+    const listSessionSectionDeletionCandidates = vi.fn(async () => ({
+      excludePinned: false,
+      sectionKey: "project:/workspace/project",
+      sessionIds: ["unpinned-session", "pinned-session", "pinned-session"],
+      workspaceId: "workspace-1"
+    }));
+    const deleteSessionsBatch = vi.fn(async () => ({
+      cleanupFailedSessionIds: [],
+      removedMessages: 2,
+      removedSessionIds: ["unpinned-session", "pinned-session"],
+      removedSessions: 2
+    }));
+    const runtime = {
+      deleteSessionsBatch,
+      listSessionSectionDeletionCandidates
+    } as unknown as AgentGUIRuntime;
+    const { result } = renderHook(() =>
+      useAgentGUIConversationBatchDeletion(createInput(runtime))
+    );
+
+    await act(async () => {
+      expect(
+        await result.current.confirmRemoveProjectConversations(
+          "project:/workspace/project"
+        )
+      ).toBe(true);
+    });
+
+    expect(listSessionSectionDeletionCandidates).toHaveBeenCalledWith({
+      excludePinned: false,
+      sectionKey: "project:/workspace/project",
+      workspaceId: "workspace-1"
+    });
+    expect(deleteSessionsBatch).toHaveBeenCalledWith({
+      sessionIds: ["unpinned-session", "pinned-session"],
+      workspaceId: "workspace-1"
+    });
+  });
+
+  it("keeps project removal closed when its candidate snapshot fails", async () => {
+    const deleteSessionsBatch = vi.fn();
+    const runtime = {
+      deleteSessionsBatch,
+      listSessionSectionDeletionCandidates: vi.fn(async () => {
+        throw new Error("candidate snapshot failed");
+      })
+    } as unknown as AgentGUIRuntime;
+    const input = createInput(runtime);
+    const { result } = renderHook(() =>
+      useAgentGUIConversationBatchDeletion(input)
+    );
+
+    await act(async () => {
+      expect(
+        await result.current.confirmRemoveProjectConversations(
+          "project:/workspace/project"
+        )
+      ).toBe(false);
+    });
+
+    expect(deleteSessionsBatch).not.toHaveBeenCalled();
+    expect(input.setListError).toHaveBeenCalledWith(
+      "candidate snapshot failed"
+    );
   });
 
   it("refreshes activity and does not delete when the candidate snapshot is empty", async () => {
@@ -181,9 +252,10 @@ describe("useAgentGUIConversationBatchDeletion", () => {
       };
     });
 
-    act(() => result.current.confirmDeleteConversations(["loaded-session"]));
+    await act(async () => {
+      await result.current.confirmDeleteConversations(["loaded-session"]);
+    });
 
-    expect(result.current.activeConversationId).toBe("loaded-session");
     expect(activeConversationIdObservedByDelete).toBe("loaded-session");
     await waitFor(() =>
       expect(input.deleteAgentSessionView).toHaveBeenCalledTimes(1)
@@ -229,12 +301,14 @@ describe("useAgentGUIConversationBatchDeletion", () => {
       };
     });
 
-    act(() =>
-      result.current.confirmDeleteConversations([
-        "loaded-session",
-        "unloaded-session"
-      ])
-    );
+    await act(async () => {
+      expect(
+        await result.current.confirmDeleteConversations([
+          "loaded-session",
+          "unloaded-session"
+        ])
+      ).toBe(false);
+    });
 
     await waitFor(() =>
       expect(input.setIsDeletingProjectConversations).toHaveBeenLastCalledWith(

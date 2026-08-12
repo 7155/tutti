@@ -50,6 +50,7 @@ import type {
 } from "./agentGUIConversationRailTypes";
 import { useAgentGUIConversationRailBatchDeletion } from "./useAgentGUIConversationRailBatchDeletion";
 export type { AgentGUIProjectActionDialog } from "./agentGUIConversationRailTypes";
+type ConfirmProjectRemoval = (sectionKey?: string) => Promise<boolean>;
 export interface AgentGUIConversationRailControllerProps {
   activityContextKey?: string;
   conversations: AgentGUINodeViewModel["rail"]["conversations"];
@@ -103,7 +104,8 @@ export interface AgentGUIConversationRailControllerProps {
     sectionKey?: string,
     agentTargetId?: string | null
   ) => Promise<string[]>;
-  onConfirmDeleteConversations: (agentSessionIds: string[]) => void;
+  onConfirmRemoveProjectConversations: ConfirmProjectRemoval;
+  onConfirmDeleteConversations: (agentSessionIds: string[]) => Promise<boolean>;
   onRequestDeleteConversation: (agentSessionId: string) => void;
   onRequestRenameConversation: (
     conversation: AgentGUINodeViewModel["rail"]["conversations"][number]
@@ -162,6 +164,7 @@ export const AgentGUIConversationRailPane = memo(
     onMoveProject,
     onToggleProjectPinned,
     onConfirmDeleteProjectConversations,
+    onConfirmRemoveProjectConversations: confirmRemoveProject,
     onConfirmDeleteConversations,
     onRequestDeleteConversation,
     onRequestRenameConversation,
@@ -422,7 +425,7 @@ export const AgentGUIConversationRailPane = memo(
       conversationFilter.kind === "agentTarget"
         ? conversationFilter.agentTargetId.trim()
         : "";
-    const requestSectionBatchDeletion =
+    const { requestProjectRemoval, requestSectionBatchDeletion } =
       useAgentGUIConversationRailBatchDeletion({
         batchDeletionAvailable,
         isDeletingProjectConversations,
@@ -743,7 +746,7 @@ export const AgentGUIConversationRailPane = memo(
                           onRequestSectionBatchDeletion={
                             requestSectionBatchDeletion
                           }
-                          setPendingProjectAction={setPendingProjectAction}
+                          onRequestProjectRemoval={requestProjectRemoval}
                           onToggleConversationPinned={
                             onToggleConversationPinned
                           }
@@ -787,6 +790,7 @@ export const AgentGUIConversationRailPane = memo(
           isInteractionLocked={isInteractionLocked}
           labels={labels}
           onConfirmDeleteConversations={onConfirmDeleteConversations}
+          onConfirmRemoveProjectConversations={confirmRemoveProject}
           onRemoveProject={onRemoveProject}
           setAction={setPendingProjectAction}
         />

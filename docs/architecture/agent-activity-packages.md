@@ -680,8 +680,15 @@ backfilled from messages.
 The session service synchronously persists and reads back the initial runtime
 session before returning a successful Create response, so the response never
 races the runtime's asynchronous activity reporter. The store assigns
-`railSectionKey` on that first persistence and preserves it for the lifetime of
-the session, even if later runtime reports change `cwd` or the user-project list.
+`railSectionKey` on that first persistence and preserves it across later runtime
+reports, `cwd` changes, and user-project list refreshes. Removing a project is
+an explicit AgentGUI orchestration: it first requests the authoritative deletion
+candidate snapshot for the exact project key with pinned Sessions included and
+without an agent-target filter, then sends that complete snapshot through the
+canonical batch Session deletion path. The user-project row is removed only
+after batch deletion succeeds. A failure leaves both the project and its
+Sessions intact; project deletion never rewrites surviving Session rail
+membership to Chats.
 Section and pinned-page results include required `totalCount` for the complete
 target-filtered scope before cursor pagination. AgentGUI uses it to subtract a
 transient active-row overlay from remaining unseen rows; hosts must preserve the

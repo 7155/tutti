@@ -1300,9 +1300,16 @@ worktree or another detached execution directory. Path matching is reserved
 for resolving the user's explicit project selection before a new activation;
 it is not an existing-Session compatibility fallback.
 Native Mobile applies the same rule to Activity labels and Rail placement.
-Section `sessionIds` remain query ordering and hydration data; if their section
-disagrees with a Session's canonical `railSectionKey`, Mobile rehomes the row by
-the Session key instead of accepting the stale membership.
+Section `sessionIds` remain query membership, page-boundary, initial-order, and
+hydration data. After joining those memberships to current Engine entities,
+hosts sort loaded ordinary sections by the canonical conversation sort key:
+the latest Turn start time, falling back to Session creation time. Streaming
+freshness, status, and completion updates do not change that key, so parallel
+running Turns do not churn Rail positions. Pinned sections preserve the query's
+pinned order. If a section disagrees with a Session's canonical
+`railSectionKey`, the host rehomes the row by the Session key instead of
+accepting the stale membership; presentation reordering must not mutate cached
+memberships or pagination cursors.
 
 Cross-platform hosts may also reuse the DOM-free canonical transcript
 projection from `@tutti-os/agent-gui/conversation-projection`. It accepts the

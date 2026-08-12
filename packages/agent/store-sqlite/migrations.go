@@ -88,6 +88,7 @@ const schemaMigrationWorkspaceAgentProviderTurnBindingJSONV1 = "workspace_agent_
 const schemaMigrationWorkspaceAgentRecoverableDeletionV1 = "workspace_agent_recoverable_deletion_v1"
 const schemaMigrationWorkspaceAgentTurnIdentityAnchorV1 = "workspace_agent_turn_identity_anchor_v1"
 const schemaMigrationWorkspaceAgentCommandOutputAliasesV1 = "workspace_agent_command_output_aliases_v1"
+const schemaMigrationWorkspaceAgentToolPayloadBudgetV1 = "workspace_agent_tool_payload_budget_v1"
 
 // claimableMigrationIDs are the migration IDs that may already be recorded
 // in the legacy tuttid ledger; the claim copies exactly these.
@@ -322,6 +323,9 @@ CREATE TABLE IF NOT EXISTS `+schemaMigrationsTable+` (
 		return err
 	}
 	if err := s.applyWorkspaceAgentCommandOutputAliasesV1(ctx); err != nil {
+		return err
+	}
+	if err := s.applyWorkspaceAgentToolPayloadBudgetV1(ctx); err != nil {
 		return err
 	}
 	return s.applyWorkspaceAgentActivityRailV2(ctx)

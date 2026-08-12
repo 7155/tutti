@@ -271,6 +271,10 @@ export class WorkspaceWorkbenchHostService implements IWorkspaceWorkbenchHostSer
     return this.dependencies.hostWindowApi.approveClose();
   }
 
+  setWindowCloseGuardEnabled(enabled: boolean): Promise<void> {
+    return this.dependencies.hostWindowApi.setCloseGuardEnabled(enabled);
+  }
+
   onWindowCloseRequest(
     listener: Parameters<
       IWorkspaceWorkbenchHostService["onWindowCloseRequest"]

@@ -298,6 +298,14 @@ It owns:
   window. Stop, Interaction, and
   settings additionally own command identity plus the 30-second delivery
   timeout.
+  The admitted request identity is also projected as the required
+  `activationId` on the typed host effect. Pending activation state records the
+  command settlement outcome and timestamp separately from the first canonical
+  Session observation. Snapshot observations distinguish missing Session,
+  workspace mismatch, stale new-Session evidence, and a matching Session.
+  Consumers can therefore measure command and snapshot latency independently;
+  repeated identical observations do not churn state, and a late command result
+  cannot regress an already confirmed activation.
   Session stop owns the 30-second first-Turn waiting window and duplicate
   admission across Desktop and Mobile. Interaction submission owns canonical
   pending-target admission,

@@ -678,10 +678,9 @@ describe("useAgentGUIConversationRailQuery search", () => {
             onConfirmDeleteConversation={() => {}}
             onConfirmDeleteConversations={async () => true}
             onConfirmDeleteProjectConversations={async () => []}
-            onConfirmRemoveProjectConversations={async () => true}
             onConversationQueryChange={() => {}}
             onCreateConversation={() => {}}
-            onRemoveProject={() => {}}
+            onRemoveProject={async () => true}
             onMoveProject={async () => {}}
             onRequestDeleteConversation={() => {}}
             onRequestRenameConversation={() => {}}
@@ -799,10 +798,9 @@ describe("useAgentGUIConversationRailQuery search", () => {
           onConfirmDeleteConversation={() => {}}
           onConfirmDeleteConversations={async () => true}
           onConfirmDeleteProjectConversations={async () => []}
-          onConfirmRemoveProjectConversations={async () => true}
           onConversationQueryChange={() => {}}
           onCreateConversation={() => {}}
-          onRemoveProject={() => {}}
+          onRemoveProject={async () => true}
           onMoveProject={async () => {}}
           onRequestDeleteConversation={() => {}}
           onRequestRenameConversation={() => {}}
@@ -944,12 +942,11 @@ describe("useAgentGUIConversationRailQuery search", () => {
           onConfirmDeleteConversation={() => {}}
           onConfirmDeleteConversations={async () => true}
           onConfirmDeleteProjectConversations={async () => []}
-          onConfirmRemoveProjectConversations={async () => true}
           onConversationQueryChange={() => {}}
           onCreateConversation={() => {}}
           onMarkConversationUnread={() => {}}
           onMoveProject={moveProject}
-          onRemoveProject={() => {}}
+          onRemoveProject={async () => true}
           onRequestDeleteConversation={() => {}}
           onRequestRenameConversation={() => {}}
           onSelectConversation={() => {}}

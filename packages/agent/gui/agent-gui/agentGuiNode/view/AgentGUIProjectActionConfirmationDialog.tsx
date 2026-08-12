@@ -7,17 +7,10 @@ const DIALOG_CLASS_NAME =
   "nodrag tsh-desktop-no-drag [-webkit-app-region:no-drag]";
 
 export async function executeConfirmedProjectRemoval(input: {
-  onConfirmRemoveProjectConversations: (sectionKey: string) => Promise<boolean>;
-  onRemoveProject: (path: string) => void;
+  onRemoveProject: (path: string) => Promise<boolean>;
   path: string;
-  sectionKey: string;
 }): Promise<boolean> {
-  const deleted = await input.onConfirmRemoveProjectConversations(
-    input.sectionKey
-  );
-  if (!deleted) return false;
-  input.onRemoveProject(input.path);
-  return true;
+  return input.onRemoveProject(input.path);
 }
 
 export function AgentGUIProjectActionConfirmationDialog(props: {
@@ -26,8 +19,7 @@ export function AgentGUIProjectActionConfirmationDialog(props: {
   isInteractionLocked: () => boolean;
   labels: AgentGUIConversationRailLabels;
   onConfirmDeleteConversations: (sessionIds: string[]) => Promise<boolean>;
-  onConfirmRemoveProjectConversations: (sectionKey: string) => Promise<boolean>;
-  onRemoveProject: (path: string) => void;
+  onRemoveProject: (path: string) => Promise<boolean>;
   setAction: (action: AgentGUIProjectActionDialog | null) => void;
 }): React.JSX.Element {
   const { action, labels } = props;
@@ -83,11 +75,8 @@ export function AgentGUIProjectActionConfirmationDialog(props: {
         void (async () => {
           try {
             const removed = await executeConfirmedProjectRemoval({
-              onConfirmRemoveProjectConversations:
-                props.onConfirmRemoveProjectConversations,
               onRemoveProject: props.onRemoveProject,
-              path: action.path,
-              sectionKey: action.sectionKey
+              path: action.path
             });
             if (removed) props.setAction(null);
           } finally {

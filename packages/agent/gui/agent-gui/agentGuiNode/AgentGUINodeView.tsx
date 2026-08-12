@@ -463,8 +463,6 @@ export function AgentGUINodeView({
       onMoveProject: moveProject,
       onToggleProjectPinned: toggleProjectPinned,
       onConfirmDeleteProjectConversations: confirmProjectDelete,
-      onConfirmRemoveProjectConversations:
-        actions.confirmRemoveProjectConversations,
       onConfirmDeleteConversations: confirmConversationDelete,
       onRequestDeleteConversation: requestDeleteConversation,
       onRequestRenameConversation: requestRenameConversation,
@@ -479,7 +477,6 @@ export function AgentGUINodeView({
       confirmDeleteConversation,
       confirmConversationDelete,
       confirmProjectDelete,
-      actions.confirmRemoveProjectConversations,
       conversationRailCollapsed,
       createConversationDisabled,
       conversationRailLabels,

@@ -6,7 +6,7 @@
 
 四条现象位于同一 `tutti-os/tutti` monorepo，但属于四条独立数据链路：
 
-1. 删除项目只删除了项目记录，没有按产品文案级联删除该项目的会话；置顶会话因此残留，取消置顶后没有可展示分区。
+1. 删除项目与会话生命周期脱节：未置顶会话应删除，置顶会话应保留并把底层归属迁到 Chats，否则取消置顶后没有可展示分区。
 2. Claude WebFetch 授权事件带有 URL，但 daemon 归一化丢弃 `toolCall.input`，授权卡片读取不到 URL。
 3. Claude SDK 的“本次会话允许”只更新当前 Query；Tutti 每个 settled Turn 后创建 fresh Query，权限没有跨 Query 延续。
 4. Codex 计划完成后的会话内提示曾未进入 Message Center；当前 `origin/main` 已由 `a95fa07a1` 修复，本次只做完整链路验证。
@@ -15,33 +15,31 @@
 
 ### 调用链与根因
 
-项目删除确认文案承诺“删除项目及其全部会话”，但旧调用链仅执行
-`userProjects.remove(path)`。项目分区已有的批量删除候选接口又默认使用
-`excludePinned: true`，因此不能直接复用来完成项目删除。仍置顶的 Session 继续由
+项目删除确认后的旧调用链仅执行 `userProjects.remove(path)`。仍置顶的 Session 继续由
 Pinned 投影展示，掩盖了项目记录已不存在的事实；取消置顶后，它重新按持久化的旧
 `rail_section_key` 投影，而对应项目模板已经删除，最终无处展示。
 
-直接原因是 Remove project 没有调用 Session 删除链路，并且普通“清空分区”语义会
-排除 pinned Session。系统性原因是 UI 文案、项目元数据删除与 canonical Session
-生命周期之间没有形成一个 fail-closed 的级联删除编排。
+直接原因是 Remove project 没有调用未置顶 Session 删除链路，也没有迁移 pinned
+Session 的 canonical rail owner。系统性原因是 renderer、项目元数据与 canonical
+Session 生命周期之间没有一个带条件检查的权威事务边界。
 
 ### 修复
 
-用户确认 Remove project 后，编排器才按精确 `sectionKey` 请求权威删除候选快照，明确使用
-`excludePinned: false`，且不传 `agentTargetId`，从而覆盖该项目下所有 provider/agent
-target 的普通与 pinned Session。确认后将完整快照交给 canonical batch Session
-删除；只有删除成功才调用 `userProjects.remove(path)`。确认提交期间使用同步 in-flight
-guard 防止重复请求。候选查询或批量删除失败时均
-保留项目，供用户重试。
+GUI 只提交并等待一个权威的 `userProjects.remove(path)` 操作。服务端在 SQLite 中按
+项目 canonical key 查找所有 workspace 的未置顶 root Session，并交给 Agent Host 的
+批量删除协调器关闭运行时、展开子会话闭包、写入可恢复 tombstone 并清理资源。随后
+服务端重试一个 compare-and-finalize 事务：若期间又出现未置顶 Session 就继续删除；
+否则在同一事务里把剩余 live pinned Session（以及可恢复 tombstone）的
+`rail_section_kind/path/key` 改为 Chats，并删除项目元数据。
 
-不会把 Session 迁移到 Chats，也不会直接改写 rail 归属。会话生命周期仍由现有批量
-删除协调器负责，包括运行时关闭、子会话闭包、保护中执行拒绝、事务删除和资源清理。
+Session 首次 canonical 落库也会在事务内校验显式 project placement 是否仍注册；删除
+并发期间携带旧 placement 的晚到 Session 会归入 Chats，不会重建孤儿项目 rail。
 
 ### 影响与验证
 
-- 影响：该项目精确 canonical section 下的全部 Session，包括 pinned、未加载分页及不同 agent target 的 Session。
+- 影响：该项目精确 canonical section 下所有 workspace/provider/agent target 的 Session；未置顶 Session 删除，置顶 Session 保留并归入 Chats。
 - 不影响：其他项目和 Chats；现有 Session 删除保护、子会话闭包及资源清理语义保持不变。
-- 验证：断言候选请求为 `excludePinned: false` 且无 target filter；断言 batch 输入同时包含普通与 pinned Session；断言成功顺序为“删 Sessions → 删项目”，失败时项目不删除。
+- 验证：断言事务计划只返回未置顶 root；Agent Host 删除完成前项目不移除；finalize 后 pinned 状态、时间和内容不变但 canonical rail 为 Chats；未置顶 tombstone 恢复时也归 Chats；晚到 stale placement 不会重建项目 rail。
 
 ## 2. Claude WebFetch 授权卡片缺少 URL
 

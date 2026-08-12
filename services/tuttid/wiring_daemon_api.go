@@ -446,6 +446,12 @@ func buildDaemonAPI(
 		Components:      agentServiceComponents,
 	}
 	agentSessionService := agentservice.NewService(agentRuntimeController, agentSessionConfig)
+	userProjectService.DeleteProjectSessions = func(ctx context.Context, workspaceID string, sessionIDs []string) (int, error) {
+		result, err := agentSessionService.DeleteSessionsBatch(ctx, workspaceID, agentservice.DeleteSessionsBatchInput{
+			SessionIDs: sessionIDs,
+		})
+		return result.RemovedSessions, err
+	}
 	agentStatusService.OnProviderStatusInvalidated = agentSessionService.InvalidateProviderAvailabilityCache
 	preferences.AgentComposerDefaultsValidator = agentSessionService
 	modelPlans.NativeSubscriptionProbe = modelPlanNativeSubscriptionProbe{Agents: agentSessionService}

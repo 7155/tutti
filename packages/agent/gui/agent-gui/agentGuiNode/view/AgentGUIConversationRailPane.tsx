@@ -50,7 +50,6 @@ import type {
 } from "./agentGUIConversationRailTypes";
 import { useAgentGUIConversationRailBatchDeletion } from "./useAgentGUIConversationRailBatchDeletion";
 export type { AgentGUIProjectActionDialog } from "./agentGUIConversationRailTypes";
-type ConfirmProjectRemoval = (sectionKey?: string) => Promise<boolean>;
 export interface AgentGUIConversationRailControllerProps {
   activityContextKey?: string;
   conversations: AgentGUINodeViewModel["rail"]["conversations"];
@@ -94,7 +93,7 @@ export interface AgentGUIConversationRailControllerProps {
   onOpenProjectFiles?: ((action: WorkspaceLinkAction) => void) | null;
   onOpenConversationWindow?: (agentSessionId: string) => void;
   selectProjectDirectory?: () => Promise<{ path: string } | null>;
-  onRemoveProject: (path: string) => void;
+  onRemoveProject: (path: string) => Promise<boolean>;
   onMoveProject: (
     projectId: string,
     beforeProjectId: string | null
@@ -104,7 +103,6 @@ export interface AgentGUIConversationRailControllerProps {
     sectionKey?: string,
     agentTargetId?: string | null
   ) => Promise<string[]>;
-  onConfirmRemoveProjectConversations: ConfirmProjectRemoval;
   onConfirmDeleteConversations: (agentSessionIds: string[]) => Promise<boolean>;
   onRequestDeleteConversation: (agentSessionId: string) => void;
   onRequestRenameConversation: (
@@ -164,7 +162,6 @@ export const AgentGUIConversationRailPane = memo(
     onMoveProject,
     onToggleProjectPinned,
     onConfirmDeleteProjectConversations,
-    onConfirmRemoveProjectConversations: confirmRemoveProject,
     onConfirmDeleteConversations,
     onRequestDeleteConversation,
     onRequestRenameConversation,
@@ -790,7 +787,6 @@ export const AgentGUIConversationRailPane = memo(
           isInteractionLocked={isInteractionLocked}
           labels={labels}
           onConfirmDeleteConversations={onConfirmDeleteConversations}
-          onConfirmRemoveProjectConversations={confirmRemoveProject}
           onRemoveProject={onRemoveProject}
           setAction={setPendingProjectAction}
         />

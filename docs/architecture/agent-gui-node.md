@@ -1300,11 +1300,12 @@ path. Conversely, a recognized project key keeps its project identity when the
 runtime `cwd` is an isolated worktree or another detached execution directory.
 Path matching is reserved for resolving the user's explicit project selection
 before a new activation; it is not an existing-Session compatibility fallback.
-The Remove project action has destructive cascade semantics: AgentGUI snapshots
-all Sessions for the exact project key, including pinned Sessions and every
-agent target, deletes them through the canonical batch endpoint, and removes
-the user-project row only after that deletion succeeds. It does not rehome
-Sessions to Chats, and deletion failure keeps the project visible for retry.
+The Remove project action delegates one awaited operation to the daemon. The
+daemon deletes every unpinned root through the canonical Host batch path, keeps
+pinned Session trees, atomically rehomes retained rows to Chats, and only then
+removes the user-project row. Failure keeps the project visible for retry; the
+renderer does not compose candidate-query, Session-delete, and metadata-delete
+requests itself.
 Native Mobile applies the same rule to Activity labels and Rail placement.
 Section `sessionIds` remain query membership, page-boundary, initial-order, and
 hydration data. After joining those memberships to current Engine entities,

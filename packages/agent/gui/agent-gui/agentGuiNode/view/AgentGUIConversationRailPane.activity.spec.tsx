@@ -307,12 +307,11 @@ function renderPane({
         onConfirmDeleteConversation={() => {}}
         onConfirmDeleteConversations={async () => true}
         onConfirmDeleteProjectConversations={async () => []}
-        onConfirmRemoveProjectConversations={async () => true}
         onConversationQueryChange={setConversationQuery}
         onCreateConversation={() => {}}
         onMarkConversationUnread={() => {}}
         onMoveProject={async () => {}}
-        onRemoveProject={() => {}}
+        onRemoveProject={async () => true}
         onRequestDeleteConversation={() => {}}
         onRequestRenameConversation={() => {}}
         onSelectConversation={() => {}}

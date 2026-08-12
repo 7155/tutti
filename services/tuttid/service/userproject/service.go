@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,8 +22,9 @@ var (
 )
 
 type Service struct {
-	Store     workspacedata.UserProjectStore
-	Publisher EventPublisher
+	Store                 workspacedata.UserProjectStore
+	Publisher             EventPublisher
+	DeleteProjectSessions func(context.Context, string, []string) (int, error)
 }
 
 type EventPublisher interface {
@@ -149,7 +151,46 @@ func (s Service) Delete(ctx context.Context, input DeleteInput) error {
 	// symlink resolution behaves differently the second time around), a
 	// delete keyed on the recomputed id silently affects zero rows and the
 	// "removed" project never actually goes away.
-	if err := s.Store.DeleteUserProjectByPath(ctx, projectPath); err != nil {
+	if removalStore, ok := s.Store.(workspacedata.UserProjectRemovalStore); ok {
+		previousPlanMadeNoProgress := ""
+		for {
+			plan, err := removalStore.TryFinalizeUserProjectRemovalByPath(ctx, projectPath)
+			if err != nil {
+				return err
+			}
+			if plan.Finalized {
+				break
+			}
+			if len(plan.SessionIDsByWorkspace) == 0 || s.DeleteProjectSessions == nil {
+				return errors.New("user project session deletion is not configured")
+			}
+			workspaceIDs := make([]string, 0, len(plan.SessionIDsByWorkspace))
+			for workspaceID := range plan.SessionIDsByWorkspace {
+				workspaceIDs = append(workspaceIDs, workspaceID)
+			}
+			sort.Strings(workspaceIDs)
+			planKeyParts := make([]string, 0, len(workspaceIDs))
+			removedSessions := 0
+			for _, workspaceID := range workspaceIDs {
+				sessionIDs := plan.SessionIDsByWorkspace[workspaceID]
+				planKeyParts = append(planKeyParts, workspaceID+":"+strings.Join(sessionIDs, ","))
+				removed, err := s.DeleteProjectSessions(ctx, workspaceID, sessionIDs)
+				if err != nil {
+					return fmt.Errorf("delete unpinned sessions for user project: %w", err)
+				}
+				removedSessions += removed
+			}
+			planKey := strings.Join(planKeyParts, "|")
+			if removedSessions == 0 {
+				if planKey == previousPlanMadeNoProgress {
+					return errors.New("user project session deletion made no progress")
+				}
+				previousPlanMadeNoProgress = planKey
+			} else {
+				previousPlanMadeNoProgress = ""
+			}
+		}
+	} else if err := s.Store.DeleteUserProjectByPath(ctx, projectPath); err != nil {
 		return err
 	}
 	s.publishCurrentProjects(ctx)

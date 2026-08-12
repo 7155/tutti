@@ -281,59 +281,8 @@ export function useAgentGUIConversationBatchDeletion(
     ]
   );
 
-  const confirmRemoveProjectConversations = useCallback(
-    async (sectionKey?: string): Promise<boolean> => {
-      const normalizedSectionKey = sectionKey?.trim() ?? "";
-      const listDeletionCandidates =
-        agentActivityRuntime.listSessionSectionDeletionCandidates;
-      if (
-        !normalizedSectionKey ||
-        isDeletingProjectConversations ||
-        !listDeletionCandidates
-      ) {
-        return false;
-      }
-      setDetailError(null);
-      setListError(null);
-      try {
-        const candidates = await listDeletionCandidates({
-          excludePinned: false,
-          sectionKey: normalizedSectionKey,
-          workspaceId
-        });
-        const sessionIds = [
-          ...new Set(
-            candidates.sessionIds.map((id) => id.trim()).filter(Boolean)
-          )
-        ];
-        return await confirmDeleteConversations(sessionIds);
-      } catch (error) {
-        const message = getAgentGUIErrorMessage(error);
-        reportAgentGUIRuntimeError({
-          error,
-          phase: "delete_conversation",
-          provider: dataRef.current.provider,
-          runtime: agentActivityRuntime,
-          workspaceId,
-          context: { sectionKey: normalizedSectionKey }
-        });
-        setListError(message);
-        showAgentGUIControllerErrorToast(agentHostApi.toast, message);
-        return false;
-      }
-    },
-    [
-      agentActivityRuntime,
-      agentHostApi.toast,
-      confirmDeleteConversations,
-      isDeletingProjectConversations,
-      workspaceId
-    ]
-  );
-
   return {
     confirmDeleteProjectConversations,
-    confirmRemoveProjectConversations,
     confirmDeleteConversations
   };
 }

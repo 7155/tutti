@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	storesqlite "github.com/tutti-os/tutti/packages/agent/store-sqlite"
 )
@@ -77,6 +78,20 @@ type reprepareRuntime struct {
 	reprepareCalls int
 	reprepareInput RuntimeResumeInput
 	reprepareErr   error
+	closeCalls     int
+	closeEntered   chan struct{}
+	releaseClose   chan struct{}
+}
+
+func (r *reprepareRuntime) Close(context.Context, RuntimeCloseInput) error {
+	r.closeCalls++
+	if r.closeEntered != nil {
+		close(r.closeEntered)
+	}
+	if r.releaseClose != nil {
+		<-r.releaseClose
+	}
+	return nil
 }
 
 type disconnectedReprepareRuntime struct {
@@ -326,5 +341,58 @@ func TestReprepareRuntimeSessionRejectsRuntimeActiveTurnBeforePreparation(t *tes
 	}
 	if preparation.prepareInput.WorkspaceID != "" || runtime.reprepareCalls != 0 {
 		t.Fatalf("active reprepare reached preparation/runtime: prepare=%#v calls=%d", preparation.prepareInput, runtime.reprepareCalls)
+	}
+}
+
+func TestReprepareRuntimeSessionAndSendInputClosesBindingBeforeReturningConfirmedFailure(t *testing.T) {
+	store := liveResumeCanonicalStore{
+		session: storesqlite.Session{
+			ID: "session-1", WorkspaceID: "workspace-1", Kind: storesqlite.SessionKindRoot,
+			Provider: "codex", ProviderSessionID: "provider-session-1", Cwd: "/workspace",
+		},
+		evidence: storesqlite.ProviderSessionResumeEvidence{Established: true},
+	}
+	runtime := &reprepareRuntime{session: ProviderRuntimeSession{
+		ID: "session-1", WorkspaceID: "workspace-1", Provider: "codex",
+		ProviderSessionID: "provider-session-1",
+	}, closeEntered: make(chan struct{}), releaseClose: make(chan struct{})}
+	history := &mutableEffectiveHistory{history: storesqlite.SessionHistory{RecoveryState: storesqlite.SessionHistoryRecoveryRollbackPending}}
+	host := New(Config{
+		CanonicalStore: store, Runtime: runtime, RuntimePreparation: &trackingResumePreparation{}, EffectiveHistory: history,
+	})
+	atomicDone := make(chan error, 1)
+	go func() {
+		_, err := host.ReprepareRuntimeSessionAndSendInput(context.Background(), ReprepareRuntimeSessionAndSendInputInput{
+			Reprepare: ReprepareRuntimeSessionInput{
+				WorkspaceID: "workspace-1", AgentSessionID: "session-1",
+				RuntimeContextOverlay: map[string]any{"invocationId": "invocation-1"},
+			},
+			Send: SendInput{Content: []PromptContentBlock{{Type: "text", Text: "hello"}}},
+		})
+		atomicDone <- err
+	}()
+	<-runtime.closeEntered
+	queuedDone := make(chan error, 1)
+	go func() {
+		_, err := host.SendInput(context.Background(), SessionRef{WorkspaceID: "workspace-1", AgentSessionID: "session-1"}, SendInput{
+			Content: []PromptContentBlock{{Type: "text", Text: "queued"}},
+		})
+		queuedDone <- err
+	}()
+	select {
+	case err := <-queuedDone:
+		t.Fatalf("queued SendInput bypassed cleanup actor: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(runtime.releaseClose)
+	err := <-atomicDone
+	if !errors.Is(err, ErrEditRetryInProgress) {
+		t.Fatalf("ReprepareRuntimeSessionAndSendInput() error = %v, want ErrEditRetryInProgress", err)
+	}
+	if runtime.reprepareCalls != 1 || runtime.closeCalls != 1 {
+		t.Fatalf("runtime reprepare=%d close=%d, want 1/1", runtime.reprepareCalls, runtime.closeCalls)
+	}
+	if err := <-queuedDone; !errors.Is(err, ErrEditRetryInProgress) {
+		t.Fatalf("queued SendInput error = %v, want ErrEditRetryInProgress", err)
 	}
 }

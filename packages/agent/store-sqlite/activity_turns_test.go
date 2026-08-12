@@ -62,6 +62,25 @@ func TestSettledTurnFreezesLastPersistedAssistantTextAsFinalMessageAnchor(t *tes
 	}
 }
 
+func TestSettledTurnPersistsStructuredErrorCodeWithoutMessage(t *testing.T) {
+	t.Parallel()
+
+	store := openTestStore(t, testOptions(&staticProjectPaths{}))
+	ctx := context.Background()
+	seedTurnTestSession(t, store, "ws-1", "session-error-code")
+	turn, accepted, err := store.RecordTurnTransition(ctx, TurnTransition{
+		WorkspaceID: "ws-1", AgentSessionID: "session-error-code", TurnID: "turn-1",
+		Phase: TurnPhaseSettled, Outcome: TurnOutcomeFailed,
+		ErrorCode: "provider_max_tokens", OccurredAtUnixMS: 10,
+	})
+	if err != nil || !accepted {
+		t.Fatalf("RecordTurnTransition() accepted=%v error=%v", accepted, err)
+	}
+	if turn.ErrorCode != "provider_max_tokens" || turn.ErrorMessage != "" {
+		t.Fatalf("stored turn error = %q/%q", turn.ErrorCode, turn.ErrorMessage)
+	}
+}
+
 func TestLatestTurnsUseCompositeSessionScopeAndDurableOrdering(t *testing.T) {
 	t.Parallel()
 	store := openTestStore(t, testOptions(&staticProjectPaths{}))

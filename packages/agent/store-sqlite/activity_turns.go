@@ -312,7 +312,7 @@ func mergeTurnTransition(existing Turn, hasExisting bool, transition TurnTransit
 	))
 	merged.Backfilled = false
 	merged.UpdatedAtUnixMS = occurred
-	if transition.ErrorMessage != "" {
+	if transition.ErrorMessage != "" || transition.ErrorCode != "" {
 		merged.ErrorMessage = strings.TrimSpace(transition.ErrorMessage)
 		merged.ErrorCode = strings.TrimSpace(transition.ErrorCode)
 	}

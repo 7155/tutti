@@ -390,12 +390,22 @@ describe("WorkbenchHostDock", () => {
       ...createNode(),
       id: "agent-gui:unavailable-preview"
     };
+    const memoryPreviewNode = {
+      ...createNode(),
+      id: "agent-gui:memory-preview"
+    };
+    const sharedPersistedPreviewNode = {
+      ...createNode(),
+      id: "agent-gui:shared-persisted-preview"
+    };
     const secondUnavailableNode = {
       ...createNode(),
       id: "agent-gui:second-unavailable-preview"
     };
     const { host } = createDockProps([
       node,
+      memoryPreviewNode,
+      sharedPersistedPreviewNode,
       unavailableNode,
       secondUnavailableNode
     ]);
@@ -405,6 +415,8 @@ describe("WorkbenchHostDock", () => {
       >
     >(async () => null);
     const previewImageUrl = "data:image/png;base64,Q0FDSEU=";
+    const memoryPreviewImageUrl = "data:image/png;base64,TUVNT1JZ";
+    const sharedPersistedPreviewImageUrl = "data:image/png;base64,U0hBUkVE";
     const domPreviewImageUrl = "data:image/png;base64,RE9N";
     const secondDomPreviewImageUrl = "data:image/png;base64,RE9NLTI=";
     const pendingDomPreview = deferred<string>();
@@ -415,8 +427,26 @@ describe("WorkbenchHostDock", () => {
           ? pendingDomPreview.promise
           : Promise.resolve(secondDomPreviewImageUrl)
       );
-    const readPersistedPreview = vi.fn(async (key: { nodeId: string }) =>
-      key.nodeId === node.id ? previewImageUrl : null
+    genieAnimation.writeCachedWorkbenchNodePreviewImage(
+      memoryPreviewNode.id,
+      memoryPreviewImageUrl
+    );
+    const readPersistedPreview = vi.fn(
+      async (key: { nodeId: string; revision?: string | null }) => {
+        if (key.nodeId === node.id && key.revision === "revision-1") {
+          return previewImageUrl;
+        }
+        if (
+          key.nodeId === sharedPersistedPreviewNode.id &&
+          key.revision == null
+        ) {
+          return sharedPersistedPreviewImageUrl;
+        }
+        if (key.nodeId === sharedPersistedPreviewNode.id) {
+          return "data:image/png;base64,U1RBTEU=";
+        }
+        return null;
+      }
     );
     const writePersistedPreview = vi.fn();
     const container = document.createElement("div");
@@ -450,6 +480,26 @@ describe("WorkbenchHostDock", () => {
                 previewRevision: "revision-1",
                 subtitle: null,
                 title: "Agent"
+              },
+              {
+                host,
+                isFocused: false,
+                isMinimized: false,
+                node: memoryPreviewNode,
+                preview: null,
+                previewRevision: "revision-1",
+                subtitle: null,
+                title: "Memory Agent"
+              },
+              {
+                host,
+                isFocused: false,
+                isMinimized: false,
+                node: sharedPersistedPreviewNode,
+                preview: null,
+                previewRevision: "revision-1",
+                subtitle: null,
+                title: "Shared Persisted Agent"
               },
               {
                 host,
@@ -490,8 +540,8 @@ describe("WorkbenchHostDock", () => {
       });
 
       await vi.waitFor(() => {
-        expect(capturePreview).toHaveBeenCalledTimes(2);
-        expect(readPersistedPreview).toHaveBeenCalledTimes(2);
+        expect(capturePreview).toHaveBeenCalledTimes(4);
+        expect(readPersistedPreview).toHaveBeenCalledTimes(6);
         expect(captureDomPreview).toHaveBeenCalledOnce();
         expect(captureDomPreview).toHaveBeenCalledWith(unavailableNode.id, {
           bypassCache: true
@@ -499,6 +549,8 @@ describe("WorkbenchHostDock", () => {
       });
       expect(capturePreview.mock.calls.map(([item]) => item.node.id)).toEqual([
         node.id,
+        memoryPreviewNode.id,
+        sharedPersistedPreviewNode.id,
         unavailableNode.id
       ]);
 
@@ -507,14 +559,28 @@ describe("WorkbenchHostDock", () => {
       expect(captureDomPreview).toHaveBeenCalledOnce();
 
       await vi.waitFor(() => {
-        expect(capturePreview).toHaveBeenCalledTimes(3);
-        expect(readPersistedPreview).toHaveBeenCalledTimes(3);
+        expect(capturePreview).toHaveBeenCalledTimes(5);
+        expect(readPersistedPreview).toHaveBeenCalledTimes(8);
         expect(captureDomPreview).toHaveBeenCalledTimes(2);
         expect(captureDomPreview).toHaveBeenLastCalledWith(
           secondUnavailableNode.id,
           { bypassCache: true }
         );
-        expect(writePersistedPreview).toHaveBeenCalledTimes(2);
+        expect(writePersistedPreview).toHaveBeenCalledTimes(4);
+        for (const [candidate, expectedPreview] of [
+          [node, previewImageUrl],
+          [memoryPreviewNode, memoryPreviewImageUrl],
+          [unavailableNode, domPreviewImageUrl],
+          [secondUnavailableNode, secondDomPreviewImageUrl]
+        ] as const) {
+          expect(writePersistedPreview).toHaveBeenCalledWith({
+            key: expect.objectContaining({
+              nodeId: candidate.id,
+              revision: undefined
+            }),
+            previewImageUrl: expectedPreview
+          });
+        }
         expect(
           Array.from(
             document.body.querySelectorAll<HTMLImageElement>(
@@ -524,6 +590,8 @@ describe("WorkbenchHostDock", () => {
           )
         ).toEqual([
           previewImageUrl,
+          memoryPreviewImageUrl,
+          sharedPersistedPreviewImageUrl,
           domPreviewImageUrl,
           secondDomPreviewImageUrl
         ]);

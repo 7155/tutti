@@ -21,10 +21,12 @@ var (
 	ErrNotDirectory    = errors.New("user project path is not a directory")
 )
 
+const maxProjectRemovalPasses = 32
+
 type Service struct {
 	Store                 workspacedata.UserProjectStore
 	Publisher             EventPublisher
-	DeleteProjectSessions func(context.Context, string, []string) (int, error)
+	DeleteProjectSessions func(context.Context, string, string, []string) (int, error)
 }
 
 type EventPublisher interface {
@@ -153,7 +155,14 @@ func (s Service) Delete(ctx context.Context, input DeleteInput) error {
 	// "removed" project never actually goes away.
 	if removalStore, ok := s.Store.(workspacedata.UserProjectRemovalStore); ok {
 		previousPlanMadeNoProgress := ""
-		for {
+		sectionKey := storesqlite.RailSectionKeyForProject(projectPath)
+		for pass := 1; ; pass++ {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if pass > maxProjectRemovalPasses {
+				return fmt.Errorf("user project session deletion did not converge after %d passes", maxProjectRemovalPasses)
+			}
 			plan, err := removalStore.TryFinalizeUserProjectRemovalByPath(ctx, projectPath)
 			if err != nil {
 				return err
@@ -174,7 +183,7 @@ func (s Service) Delete(ctx context.Context, input DeleteInput) error {
 			for _, workspaceID := range workspaceIDs {
 				sessionIDs := plan.SessionIDsByWorkspace[workspaceID]
 				planKeyParts = append(planKeyParts, workspaceID+":"+strings.Join(sessionIDs, ","))
-				removed, err := s.DeleteProjectSessions(ctx, workspaceID, sessionIDs)
+				removed, err := s.DeleteProjectSessions(ctx, workspaceID, sectionKey, sessionIDs)
 				if err != nil {
 					return fmt.Errorf("delete unpinned sessions for user project: %w", err)
 				}

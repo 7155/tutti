@@ -94,6 +94,23 @@ func TestNormalizedApprovalInputRecoversTopLevelURL(t *testing.T) {
 	}
 }
 
+func TestPersistedApprovalInputDoesNotDuplicateDisplayFields(t *testing.T) {
+	input := normalizedApprovalInput(map[string]any{
+		"toolCallId": "tool-web-fetch",
+		"name":       "WebFetch",
+		"input": map[string]any{
+			"url": "https://example.com/docs",
+		},
+	}, nil, "request-web-fetch", nil)
+	persisted := persistedInteractionInput("approval", input)
+	if _, duplicated := persisted["url"]; duplicated {
+		t.Fatalf("persisted approval duplicated root display input: %#v", persisted)
+	}
+	if got := payloadMap(payloadMap(persisted, "toolCall"), "input")["url"]; got != "https://example.com/docs" {
+		t.Fatalf("persisted toolCall.input.url = %#v", got)
+	}
+}
+
 func TestPendingInteractionTransitionProjectsSelfDescribingActions(t *testing.T) {
 	t.Parallel()
 	pending := &pendingInteractiveRequest{

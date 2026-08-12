@@ -446,9 +446,11 @@ func buildDaemonAPI(
 		Components:      agentServiceComponents,
 	}
 	agentSessionService := agentservice.NewService(agentRuntimeController, agentSessionConfig)
-	userProjectService.DeleteProjectSessions = func(ctx context.Context, workspaceID string, sessionIDs []string) (int, error) {
+	userProjectService.DeleteProjectSessions = func(ctx context.Context, workspaceID string, sectionKey string, sessionIDs []string) (int, error) {
 		result, err := agentSessionService.DeleteSessionsBatch(ctx, workspaceID, agentservice.DeleteSessionsBatchInput{
-			SessionIDs: sessionIDs,
+			SessionIDs:                 sessionIDs,
+			RequiredRootRailSectionKey: sectionKey,
+			ExcludePinnedRoots:         true,
 		})
 		return result.RemovedSessions, err
 	}

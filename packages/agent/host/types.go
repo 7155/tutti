@@ -858,8 +858,10 @@ type DeleteSessionResult struct {
 }
 
 type DeleteSessionsInput struct {
-	WorkspaceID string
-	SessionIDs  []string
+	WorkspaceID                string
+	SessionIDs                 []string
+	RequiredRootRailSectionKey string
+	ExcludePinnedRoots         bool
 }
 
 // DeleteSessionsPlan is the exact canonical deletion closure resolved by Host.

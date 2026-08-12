@@ -3,6 +3,7 @@ package userproject
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -225,7 +226,7 @@ func TestServiceDeleteCoordinatesSessionDeletionUntilProjectFinalizes(t *testing
 	var calls []string
 	service := Service{
 		Store: store,
-		DeleteProjectSessions: func(_ context.Context, workspaceID string, sessionIDs []string) (int, error) {
+		DeleteProjectSessions: func(_ context.Context, workspaceID string, _ string, sessionIDs []string) (int, error) {
 			calls = append(calls, workspaceID+":"+strings.Join(sessionIDs, ","))
 			return len(sessionIDs), nil
 		},
@@ -255,7 +256,7 @@ func TestServiceDeleteFailsClosedWhenSessionDeletionMakesNoProgress(t *testing.T
 	}
 	service := Service{
 		Store: store,
-		DeleteProjectSessions: func(context.Context, string, []string) (int, error) {
+		DeleteProjectSessions: func(context.Context, string, string, []string) (int, error) {
 			return 0, nil
 		},
 	}
@@ -266,6 +267,33 @@ func TestServiceDeleteFailsClosedWhenSessionDeletionMakesNoProgress(t *testing.T
 	}
 	if store.tryFinalizeCalls != 2 {
 		t.Fatalf("TryFinalize calls = %d, want 2", store.tryFinalizeCalls)
+	}
+}
+
+func TestServiceDeleteBoundsContinuouslyChangingRemovalPlans(t *testing.T) {
+	projectDir := filepath.Join(t.TempDir(), "tutti")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plans := make([]workspacedata.UserProjectRemovalPlan, maxProjectRemovalPasses+1)
+	for index := range plans {
+		plans[index] = workspacedata.UserProjectRemovalPlan{
+			SessionIDsByWorkspace: map[string][]string{"workspace-a": {fmt.Sprintf("session-%d", index)}},
+		}
+	}
+	store := &coordinatedRemovalUserProjectStore{plans: plans}
+	service := Service{
+		Store: store,
+		DeleteProjectSessions: func(context.Context, string, string, []string) (int, error) {
+			return 1, nil
+		},
+	}
+	err := service.Delete(context.Background(), DeleteInput{Path: projectDir})
+	if err == nil || !strings.Contains(err.Error(), "did not converge") {
+		t.Fatalf("Delete() error = %v, want convergence error", err)
+	}
+	if store.tryFinalizeCalls != maxProjectRemovalPasses {
+		t.Fatalf("TryFinalize calls = %d, want %d", store.tryFinalizeCalls, maxProjectRemovalPasses)
 	}
 }
 

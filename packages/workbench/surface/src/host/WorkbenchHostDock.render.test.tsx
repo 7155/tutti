@@ -307,7 +307,73 @@ describe("WorkbenchHostDock", () => {
     }
   });
 
-  it("reuses a persisted preview without capturing background DOM", async () => {
+  it("shows the node title when a popup item has no resolved title", async () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        disconnect() {}
+        observe() {}
+        unobserve() {}
+      }
+    );
+    const node = createNode();
+    const { host } = createDockProps([node]);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const previousActEnvironment = (
+      globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+    ).IS_REACT_ACT_ENVIRONMENT;
+    (
+      globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+    ).IS_REACT_ACT_ENVIRONMENT = true;
+
+    try {
+      await act(async () => {
+        root.render(
+          <WorkbenchHostDockPopup
+            anchorRect={{ height: 40, left: 20, top: 100, width: 40 }}
+            closeWindowLabel={() => "Close"}
+            items={[
+              {
+                host,
+                isFocused: false,
+                isMinimized: false,
+                node,
+                preview: null,
+                previewRevision: null,
+                subtitle: null,
+                title: null
+              }
+            ]}
+            label="Agent"
+            newWindowLabel="New"
+            onClose={() => undefined}
+            onCloseNode={() => undefined}
+            onCreateNew={() => undefined}
+            onSelectNode={() => undefined}
+            showCreateNew={false}
+          />
+        );
+      });
+
+      expect(
+        document.body.querySelector(".desktop-dock-popup__title-marquee")
+          ?.textContent
+      ).toBe("Agent");
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      container.remove();
+      (
+        globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+      ).IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("uses persisted previews before serialized background DOM fallbacks", async () => {
     vi.stubGlobal(
       "ResizeObserver",
       class {
@@ -324,15 +390,35 @@ describe("WorkbenchHostDock", () => {
       ...createNode(),
       id: "agent-gui:unavailable-preview"
     };
-    const { host } = createDockProps([node, unavailableNode]);
-    const capturePreview = vi.fn(async () => null);
+    const secondUnavailableNode = {
+      ...createNode(),
+      id: "agent-gui:second-unavailable-preview"
+    };
+    const { host } = createDockProps([
+      node,
+      unavailableNode,
+      secondUnavailableNode
+    ]);
+    const capturePreview = vi.fn<
+      NonNullable<
+        React.ComponentProps<typeof WorkbenchHostDockPopup>["capturePreview"]
+      >
+    >(async () => null);
     const previewImageUrl = "data:image/png;base64,Q0FDSEU=";
+    const domPreviewImageUrl = "data:image/png;base64,RE9N";
+    const secondDomPreviewImageUrl = "data:image/png;base64,RE9NLTI=";
+    const pendingDomPreview = deferred<string>();
     const captureDomPreview = vi
       .spyOn(genieAnimation, "captureWorkbenchNodePreviewImage")
-      .mockResolvedValue("data:image/png;base64,RE9N");
+      .mockImplementation((nodeId) =>
+        nodeId === unavailableNode.id
+          ? pendingDomPreview.promise
+          : Promise.resolve(secondDomPreviewImageUrl)
+      );
     const readPersistedPreview = vi.fn(async (key: { nodeId: string }) =>
       key.nodeId === node.id ? previewImageUrl : null
     );
+    const writePersistedPreview = vi.fn();
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
@@ -352,7 +438,7 @@ describe("WorkbenchHostDock", () => {
             closeWindowLabel={() => "Close"}
             dockPreviewCache={{
               read: readPersistedPreview,
-              write: vi.fn()
+              write: writePersistedPreview
             }}
             items={[
               {
@@ -374,6 +460,16 @@ describe("WorkbenchHostDock", () => {
                 previewRevision: "revision-1",
                 subtitle: null,
                 title: "Background Agent"
+              },
+              {
+                host,
+                isFocused: false,
+                isMinimized: false,
+                node: secondUnavailableNode,
+                preview: null,
+                previewRevision: "revision-1",
+                subtitle: null,
+                title: "Second Background Agent"
               }
             ]}
             label="Agent"
@@ -396,22 +492,47 @@ describe("WorkbenchHostDock", () => {
       await vi.waitFor(() => {
         expect(capturePreview).toHaveBeenCalledTimes(2);
         expect(readPersistedPreview).toHaveBeenCalledTimes(2);
-        expect(captureDomPreview).not.toHaveBeenCalled();
+        expect(captureDomPreview).toHaveBeenCalledOnce();
+        expect(captureDomPreview).toHaveBeenCalledWith(unavailableNode.id, {
+          bypassCache: true
+        });
+      });
+      expect(capturePreview.mock.calls.map(([item]) => item.node.id)).toEqual([
+        node.id,
+        unavailableNode.id
+      ]);
+
+      pendingDomPreview.resolve(domPreviewImageUrl);
+      await Promise.resolve();
+      expect(captureDomPreview).toHaveBeenCalledOnce();
+
+      await vi.waitFor(() => {
+        expect(capturePreview).toHaveBeenCalledTimes(3);
+        expect(readPersistedPreview).toHaveBeenCalledTimes(3);
+        expect(captureDomPreview).toHaveBeenCalledTimes(2);
+        expect(captureDomPreview).toHaveBeenLastCalledWith(
+          secondUnavailableNode.id,
+          { bypassCache: true }
+        );
+        expect(writePersistedPreview).toHaveBeenCalledTimes(2);
         expect(
-          document.body.querySelector<HTMLImageElement>(
-            `[data-preview-kind="image"] img`
-          )?.src
-        ).toBe(previewImageUrl);
-        expect(
-          document.body.querySelector<HTMLElement>(
-            `[data-preview-state="fallback"]`
-          )?.textContent
-        ).toBe("");
+          Array.from(
+            document.body.querySelectorAll<HTMLImageElement>(
+              `[data-preview-kind="image"] img`
+            ),
+            (image) => image.src
+          )
+        ).toEqual([
+          previewImageUrl,
+          domPreviewImageUrl,
+          secondDomPreviewImageUrl
+        ]);
         expect(
           document.body.querySelector(`[data-preview-state="loading"]`)
         ).toBeNull();
       });
     } finally {
+      pendingDomPreview.resolve(domPreviewImageUrl);
       captureDomPreview.mockRestore();
       await act(async () => {
         root.unmount();

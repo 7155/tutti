@@ -1,5 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { writeCachedWorkbenchNodePreviewImage } from "../react/useWorkbenchGenieAnimation.tsx";
+import {
+  captureWorkbenchNodePreviewImage,
+  writeCachedWorkbenchNodePreviewImage
+} from "../react/useWorkbenchGenieAnimation.tsx";
 import type {
   WorkbenchDockPreviewCache,
   WorkbenchDockPreviewCacheKey,
@@ -293,24 +296,48 @@ export function useWorkbenchHostDockPopupPreviewCapture(input: {
           if (!captureItemStateIsCurrent(itemStateKey)) {
             continue;
           }
-          if (fallbackPersistedPreview) {
-            writeCachedWorkbenchNodePreviewImage(
+          let fallbackDomPreview: string | null = null;
+          if (!item.isMinimized && !fallbackPersistedPreview) {
+            await yieldDockPopupPreviewCaptureTask();
+            if (!captureItemStateIsCurrent(itemStateKey)) {
+              continue;
+            }
+            fallbackDomPreview = await captureWorkbenchNodePreviewImage(
               item.node.id,
-              fallbackPersistedPreview
-            );
+              { bypassCache: true }
+            ).catch(() => null);
+          }
+          if (!captureItemStateIsCurrent(itemStateKey)) {
+            continue;
+          }
+          const fallbackPreviewImageUrl =
+            fallbackPersistedPreview ?? fallbackDomPreview;
+          if (fallbackPreviewImageUrl) {
+            if (fallbackPersistedPreview) {
+              writeCachedWorkbenchNodePreviewImage(
+                item.node.id,
+                fallbackPersistedPreview
+              );
+            }
             const fallbackPreview: WorkbenchDockPreviewContent = {
               kind: "image",
-              src: fallbackPersistedPreview
+              src: fallbackPreviewImageUrl
             };
             writeDockPopupPreviewImage(
               previewMemoryKey,
               fallbackPreview,
               revision
             );
+            if (fallbackDomPreview && cacheKey) {
+              dockPreviewCacheRef.current?.write({
+                key: cacheKey,
+                previewImageUrl: fallbackDomPreview
+              });
+            }
           }
           const fallbackPreview: WorkbenchDockPreviewContent | null =
-            fallbackPersistedPreview
-              ? { kind: "image", src: fallbackPersistedPreview }
+            fallbackPreviewImageUrl
+              ? { kind: "image", src: fallbackPreviewImageUrl }
               : null;
           setCapturedPreviewByMemoryKey((current) => ({
             ...current,
@@ -444,6 +471,10 @@ function readPersistedDockPreview(
   return (
     dockPreviewCache?.read(cacheKey).catch(() => null) ?? Promise.resolve(null)
   );
+}
+
+function yieldDockPopupPreviewCaptureTask(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 function resolveDockPopupPreviewCacheKey(

@@ -176,12 +176,18 @@ Server 即使暂时没有工具也保持运行并注入 Agent。连接器发生�
 
 ### 5.2 首期协议范围
 
-本地 Server 使用 MCP `2026-07-28` 的无状态 HTTP 请求模型。每次调用都是一个
-独立的 `POST`，请求参数的 `_meta` 携带 protocol version、client info 和 client
-capabilities；HTTP header 同时携带 `MCP-Protocol-Version`、`Mcp-Method`，工具调用
-还校验 `Mcp-Name` 和 schema 声明的 `Mcp-Param-*`。
+本地 Server 同时提供两种 Agent-facing HTTP MCP 表面，并共享同一个
+`ConnectorMCPRegistry`：
 
-实现的方法为：
+- Tutti modern client 使用 MCP `2026-07-28` 的无状态请求模型。每次调用都是一个
+  独立的 `POST`，请求参数的 `_meta` 携带 protocol version、client info 和 client
+  capabilities；HTTP header 同时携带 `MCP-Protocol-Version`、`Mcp-Method`，工具调用
+  还校验 `Mcp-Name` 和 schema 声明的 `Mcp-Param-*`。
+- Codex、Claude 和其他 Provider 原生 client 使用 MCP `2025-06-18` 的标准
+  `initialize -> notifications/initialized -> tools/list -> tools/call` 链路。该表面还
+  返回空的 `resources/list` 和 `resources/templates/list`，因为首期只投影 tools。
+
+modern 表面实现：
 
 - `server/discover`；
 - `tools/list`；
@@ -190,9 +196,18 @@ capabilities；HTTP header 同时携带 `MCP-Protocol-Version`、`Mcp-Method`，
   `notifications/subscriptions/acknowledged` 和
   `notifications/tools/list_changed`。
 
-旧的 `initialize` / `notifications/initialized`、HTTP `GET` / `DELETE` 和
-`MCP-Session-Id` 不属于本地协议。Server 只接受 `POST`，不会在 daemon 内维护
-协议 Session；长连接只用于 `subscriptions/listen` 的通知流。
+Provider 原生表面实现：
+
+- `initialize`；
+- `notifications/initialized`、`notifications/cancelled`；
+- `ping`；
+- `tools/list`、`tools/call`；
+- `resources/list`、`resources/templates/list`，首期固定返回空列表。
+
+两种表面都只接受 `POST`，不会在 daemon 内维护协议 Session。HTTP `GET` / `DELETE`
+和 `MCP-Session-Id` 不属于首期范围；长连接只用于 modern
+`subscriptions/listen` 的通知流。Provider 原生表面声明 `tools.listChanged=false`，
+因此不会承诺尚未实现的原生 list-changed 通知。
 
 上游 tool 的 `name`、`description`、`inputSchema` 和调用结果保持 MCP 语义，
 只在本地聚合层增加连接器命名空间。
@@ -653,13 +668,15 @@ Provider 注入或动态刷新问题。
 ### 15.2 MCP Server 测试
 
 - `server/discover -> tools/list -> tools/call` 完整链路；
+- Provider 原生 `initialize -> tools/list -> tools/call` 完整链路；
+- Provider 原生 `resources/list`、`resources/templates/list` 返回空列表；
 - 每次请求的 `_meta` 和 MCP header 一致性校验；
 - 本地工具名正确映射回上游原始名称和 arguments；
 - 上游 content、structured result、`isError` 和 transport error 保持正确语义；
 - invalid token 被拒绝，相同 Session 重签、Session 清理和 `RevokeAll` 立即使旧 token
   失效；
 - 非 loopback Host、非法 Origin 被拒绝；
-- HTTP `GET` / `DELETE` 和旧协议方法被拒绝；
+- HTTP `GET` / `DELETE` 和未声明的方法被拒绝；
 - `subscriptions/listen` 先发送 acknowledged，Connector 更新后发送 list-changed，
   binding 撤销后结束订阅。
 

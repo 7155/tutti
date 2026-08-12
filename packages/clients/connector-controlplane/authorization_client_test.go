@@ -129,6 +129,7 @@ func TestAuthorizationClientAcceptsImmediateSuccessWithoutNextAction(t *testing.
 
 func TestAuthorizationClientSubmitsNativeSecretWithoutPersistingItInSession(t *testing.T) {
 	const token = "user-provided-token"
+	notifications := 0
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
 		case "/v1/connectors/mail/authorization-sessions":
@@ -150,7 +151,8 @@ func TestAuthorizationClientSubmitsNativeSecretWithoutPersistingItInSession(t *t
 	defer server.Close()
 	client, err := NewAuthorizationClient(AuthorizationClientConfig{
 		BaseURL: server.URL, APIPrefix: "/v1", HTTPClient: server.Client(),
-		AuthorizeAccountRequest: func(*http.Request, string) error { return nil },
+		AuthorizeAccountRequest:    func(*http.Request, string) error { return nil },
+		NotifyAuthorizationChanged: func() { notifications++ },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -167,6 +169,9 @@ func TestAuthorizationClientSubmitsNativeSecretWithoutPersistingItInSession(t *t
 	}
 	if result.SessionID != "auth-secret-1" || result.ActionType != "submit_secret" || result.AuthorizationURL != "" || result.ConnectionID != "connection-secret-1" {
 		t.Fatalf("result = %#v", result)
+	}
+	if notifications != 2 {
+		t.Fatalf("authorization change notifications = %d, want 2", notifications)
 	}
 	for i, value := range secret {
 		if value != 0 {

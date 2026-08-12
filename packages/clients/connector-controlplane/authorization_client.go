@@ -18,19 +18,21 @@ import (
 const connectorAuthorizationResponseLimit = 4 << 20
 
 type AuthorizationClientConfig struct {
-	BaseURL                 string
-	APIPrefix               string
-	HTTPClient              *http.Client
-	AuthorizeAccountRequest func(*http.Request, string) error
+	BaseURL                    string
+	APIPrefix                  string
+	HTTPClient                 *http.Client
+	AuthorizeAccountRequest    func(*http.Request, string) error
+	NotifyAuthorizationChanged func()
 }
 
 // AuthorizationClient adapts the Tutti account-scoped Connector
 // authorization control plane to the provider-neutral market host contract.
 type AuthorizationClient struct {
-	baseURL                 *url.URL
-	apiPrefix               string
-	httpClient              *http.Client
-	authorizeAccountRequest func(*http.Request, string) error
+	baseURL                    *url.URL
+	apiPrefix                  string
+	httpClient                 *http.Client
+	authorizeAccountRequest    func(*http.Request, string) error
+	notifyAuthorizationChanged func()
 }
 
 func NewAuthorizationClient(config AuthorizationClientConfig) (*AuthorizationClient, error) {
@@ -51,7 +53,8 @@ func NewAuthorizationClient(config AuthorizationClientConfig) (*AuthorizationCli
 	apiPrefix = "/" + strings.Trim(apiPrefix, "/")
 	return &AuthorizationClient{
 		baseURL: baseURL, apiPrefix: apiPrefix, httpClient: &httpClient,
-		authorizeAccountRequest: config.AuthorizeAccountRequest,
+		authorizeAccountRequest:    config.AuthorizeAccountRequest,
+		notifyAuthorizationChanged: config.NotifyAuthorizationChanged,
 	}, nil
 }
 
@@ -111,6 +114,7 @@ func (client *AuthorizationClient) Begin(ctx context.Context, request market.Aut
 	if err != nil {
 		return market.AuthorizationSession{}, err
 	}
+	client.notifyChanged()
 	if strings.TrimSpace(response.Session.SessionID) == "" || strings.TrimSpace(response.Session.ConnectorRevision) != connectorVersion {
 		return market.AuthorizationSession{}, errors.New("connector authorization start returned an invalid session")
 	}
@@ -158,6 +162,7 @@ func (client *AuthorizationClient) Begin(ctx context.Context, request market.Aut
 		if err := client.doJSONForAccount(ctx, request.Scope.AccountID, http.MethodPost, path, nil, map[string]any{"secret": map[string]string{"secret": string(request.Secret)}}, &completed); err != nil {
 			return market.AuthorizationSession{}, err
 		}
+		client.notifyChanged()
 		if completed.Session.SessionID != response.Session.SessionID || strings.TrimSpace(completed.Session.ConnectorRevision) != connectorVersion || !authorizationSessionSucceeded(completed.Session.Status) {
 			return market.AuthorizationSession{}, errors.New("connector secret authorization did not complete")
 		}
@@ -174,8 +179,18 @@ func (client *AuthorizationClient) Begin(ctx context.Context, request market.Aut
 
 func (client *AuthorizationClient) Disconnect(ctx context.Context, request market.AuthorizationDisconnectRequest) error {
 	connectorID := strings.TrimSpace(request.Connector.Key)
-	return client.doJSONForAccount(ctx, request.Scope.AccountID, http.MethodDelete,
-		"/connectors/"+url.PathEscape(connectorID)+"/authorization", nil, nil, nil)
+	if err := client.doJSONForAccount(ctx, request.Scope.AccountID, http.MethodDelete,
+		"/connectors/"+url.PathEscape(connectorID)+"/authorization", nil, nil, nil); err != nil {
+		return err
+	}
+	client.notifyChanged()
+	return nil
+}
+
+func (client *AuthorizationClient) notifyChanged() {
+	if client != nil && client.notifyAuthorizationChanged != nil {
+		client.notifyAuthorizationChanged()
+	}
 }
 
 func (client *AuthorizationClient) Observe(ctx context.Context, request market.AuthorizationObserveRequest) (market.AuthorizationObservation, error) {

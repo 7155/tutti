@@ -559,6 +559,13 @@ changes the command result. Work that must survive observer failure must first
 be represented by the transaction participant's durable marker; legacy
 workspace-only change notifiers are optional latency optimizations.
 
+`TerminalFailureObserver` is the aggregated failure-only seam. A failed command
+or a Turn whose canonical outcome is `failed` may produce one observation;
+`completed`, `canceled`, and startup-reconciled `interrupted` Turns do not.
+Consumers that need the exhaustive terminal population must read
+`CommittedDelta.RootTurnsSettled` from `CommitObserver` and classify the
+canonical outcome instead of inferring cancellation from a failure callback.
+
 Re-derivable adapter projections are deliberately outside the participant
 contract. Adapters repair those while consuming canonical state rather than
 coupling their schema to every Host transaction.

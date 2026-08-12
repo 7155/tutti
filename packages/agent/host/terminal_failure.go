@@ -154,7 +154,7 @@ func terminalFailureFromGoalOperation(committed GoalOperationCommitted) (Termina
 func terminalFailureFromRootTurn(settled RootTurnSettled) (TerminalFailure, bool) {
 	outcome := strings.TrimSpace(settled.Turn.Outcome)
 	switch outcome {
-	case storesqlite.TurnOutcomeFailed, storesqlite.TurnOutcomeInterrupted:
+	case storesqlite.TurnOutcomeFailed:
 	default:
 		return TerminalFailure{}, false
 	}

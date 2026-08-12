@@ -396,3 +396,53 @@ func TestReprepareRuntimeSessionAndSendInputClosesBindingBeforeReturningConfirme
 		t.Fatalf("queued SendInput error = %v, want ErrEditRetryInProgress", err)
 	}
 }
+
+func TestResumeRuntimeSessionForActiveTurnUsesEphemeralInvocationBinding(t *testing.T) {
+	store := liveResumeCanonicalStore{
+		session: storesqlite.Session{
+			ID: "session-1", WorkspaceID: "workspace-1", Kind: storesqlite.SessionKindRoot,
+			Provider: "codex", ProviderSessionID: "provider-session-1", Cwd: "/workspace",
+			ActiveTurnID: "turn-2", InternalRuntimeContext: map[string]any{"canonical": true, "sharedAgent": map[string]any{"bindingId": "binding-1"}},
+		},
+		evidence: storesqlite.ProviderSessionResumeEvidence{Established: true, HasTurns: true},
+	}
+	runtime := &disconnectedReprepareRuntime{}
+	host := New(Config{CanonicalStore: store, Runtime: runtime, RuntimePreparation: &trackingResumePreparation{}})
+	result, err := host.ResumeRuntimeSessionForActiveTurn(t.Context(), ResumeRuntimeSessionForActiveTurnInput{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-1", TurnID: "turn-2",
+		RuntimeContextOverlay: map[string]any{"sharedAgent": map[string]any{
+			"invocationId": "invocation-2", "invocationGeneration": uint64(3), "connectorGrantActive": true,
+		}},
+	})
+	if err != nil || result.ID != "session-1" || runtime.resumeCalls != 1 {
+		t.Fatalf("resume result=%#v calls=%d err=%v", result, runtime.resumeCalls, err)
+	}
+	if runtime.resumeInput.RuntimeContext["sharedAgent"].(map[string]any)["invocationId"] != nil {
+		t.Fatalf("ephemeral invocation leaked into runtime context: %#v", runtime.resumeInput.RuntimeContext)
+	}
+	shared := runtime.resumeInput.ProviderLaunchRuntimeContext["sharedAgent"].(map[string]any)
+	if shared["bindingId"] != "binding-1" || shared["invocationId"] != "invocation-2" || shared["invocationGeneration"] != uint64(3) {
+		t.Fatalf("provider launch shared Agent context = %#v", shared)
+	}
+	if runtime.resumeInput.Status != "working" {
+		t.Fatalf("resume status = %q, want working", runtime.resumeInput.Status)
+	}
+}
+
+func TestResumeRuntimeSessionForActiveTurnRejectsStaleTurn(t *testing.T) {
+	store := liveResumeCanonicalStore{
+		session: storesqlite.Session{
+			ID: "session-1", WorkspaceID: "workspace-1", Kind: storesqlite.SessionKindRoot,
+			Provider: "codex", ProviderSessionID: "provider-session-1", ActiveTurnID: "turn-current",
+		},
+		evidence: storesqlite.ProviderSessionResumeEvidence{Established: true, HasTurns: true},
+	}
+	runtime := &disconnectedReprepareRuntime{}
+	host := New(Config{CanonicalStore: store, Runtime: runtime, RuntimePreparation: &trackingResumePreparation{}})
+	_, err := host.ResumeRuntimeSessionForActiveTurn(t.Context(), ResumeRuntimeSessionForActiveTurnInput{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-1", TurnID: "turn-stale",
+	})
+	if !errors.Is(err, ErrRuntimeSessionActive) || runtime.resumeCalls != 0 {
+		t.Fatalf("stale resume calls=%d err=%v", runtime.resumeCalls, err)
+	}
+}

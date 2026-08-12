@@ -175,6 +175,43 @@ func (h *Host) ReprepareRuntimeSessionAndSendInput(
 	return result, err
 }
 
+// ResumeRuntimeSessionForActiveTurn restores only a missing runtime whose
+// durable canonical active-Turn fence exactly matches the caller. The launch
+// overlay is ephemeral and cannot alter canonical Session state.
+func (h *Host) ResumeRuntimeSessionForActiveTurn(
+	ctx context.Context,
+	input ResumeRuntimeSessionForActiveTurnInput,
+) (ProviderRuntimeSession, error) {
+	ref := SessionRef{
+		WorkspaceID: strings.TrimSpace(input.WorkspaceID), AgentSessionID: strings.TrimSpace(input.AgentSessionID),
+	}
+	turnID := strings.TrimSpace(input.TurnID)
+	if h == nil || ref.WorkspaceID == "" || ref.AgentSessionID == "" || turnID == "" {
+		return ProviderRuntimeSession{}, ErrInvalidArgument
+	}
+	var result ProviderRuntimeSession
+	err := h.withSessionMutationActor(ctx, ref.WorkspaceID, ref.AgentSessionID, func(actorCtx context.Context) error {
+		release, acquireErr := h.acquireSession(actorCtx, ref)
+		if acquireErr != nil {
+			return acquireErr
+		}
+		defer release()
+		var resumeErr error
+		result, resumeErr = h.ensureRuntimeSessionLockedWithLaunchContext(
+			actorCtx, ref, turnID, input.RuntimeContextOverlay,
+		)
+		return resumeErr
+	})
+	return result, err
+}
+
+func activeTurnID(lifecycle *TurnLifecycle) string {
+	if lifecycle == nil || lifecycle.ActiveTurnID == nil {
+		return ""
+	}
+	return strings.TrimSpace(*lifecycle.ActiveTurnID)
+}
+
 func (h *Host) cleanupFailedReprepare(ctx context.Context, ref SessionRef, provider string, cause error) error {
 	if h == nil || h.preparation == nil {
 		return cause

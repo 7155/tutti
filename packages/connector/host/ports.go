@@ -370,11 +370,13 @@ type AuthorizationDisconnectRequest struct {
 	OperationID string
 	Scope       OperationScope
 	Connector   Connector
+	Release     Release
 }
 
 type AuthorizationObserveRequest struct {
 	Scope     OperationScope
 	Connector Connector
+	Release   Release
 	Session   AuthorizationSession
 }
 

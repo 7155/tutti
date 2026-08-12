@@ -1,4 +1,4 @@
-package connectormarket
+package connectorcontrolplane
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	market "github.com/tutti-os/tutti/packages/connector/host"
 )
 
-func TestConnectorAuthorizationClientFetchesAccountSnapshot(t *testing.T) {
+func TestAuthorizationClientFetchesAccountSnapshot(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != "/api/desktop/v1/connector-authorizations/snapshot" {
 			http.NotFound(response, request)
@@ -19,8 +19,8 @@ func TestConnectorAuthorizationClientFetchesAccountSnapshot(t *testing.T) {
 		_, _ = response.Write([]byte(`{"revision":"12","connectors":[{"connectorId":"tencent-docs","connectorVersion":"0.2.0","state":"reauth_required","connectionId":"connection-1","connectionVersion":"4"}]}`))
 	}))
 	defer server.Close()
-	client, err := NewConnectorAuthorizationClient(ConnectorAuthorizationClientConfig{
-		BaseURL: server.URL + "/api/desktop", HTTPClient: server.Client(),
+	client, err := NewAuthorizationClient(AuthorizationClientConfig{
+		BaseURL: server.URL, APIPrefix: "/api/desktop/v1", HTTPClient: server.Client(),
 		AuthorizeAccountRequest: func(_ *http.Request, accountID string) error {
 			if accountID != "account-1" {
 				t.Fatalf("accountID = %q", accountID)
@@ -41,7 +41,7 @@ func TestConnectorAuthorizationClientFetchesAccountSnapshot(t *testing.T) {
 	}
 }
 
-func TestConnectorAuthorizationClientStartsAccountScopedSession(t *testing.T) {
+func TestAuthorizationClientStartsAccountScopedSession(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if request.Header.Get("Cookie") != "sid=user-session" {
 			t.Fatalf("cookie = %q", request.Header.Get("Cookie"))
@@ -63,8 +63,8 @@ func TestConnectorAuthorizationClientStartsAccountScopedSession(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	client, err := NewConnectorAuthorizationClient(ConnectorAuthorizationClientConfig{
-		BaseURL: server.URL + "/api/desktop", HTTPClient: server.Client(),
+	client, err := NewAuthorizationClient(AuthorizationClientConfig{
+		BaseURL: server.URL, APIPrefix: "/api/desktop/v1", HTTPClient: server.Client(),
 		AuthorizeAccountRequest: func(request *http.Request, accountID string) error {
 			if accountID != "account-1" {
 				t.Fatalf("accountID = %q", accountID)
@@ -97,7 +97,7 @@ func TestConnectorAuthorizationClientStartsAccountScopedSession(t *testing.T) {
 	}
 }
 
-func TestConnectorAuthorizationClientAcceptsImmediateSuccessWithoutNextAction(t *testing.T) {
+func TestAuthorizationClientAcceptsImmediateSuccessWithoutNextAction(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != "/v1/connectors/tencent-docs/authorization-sessions" {
 			http.NotFound(response, request)
@@ -106,8 +106,8 @@ func TestConnectorAuthorizationClientAcceptsImmediateSuccessWithoutNextAction(t 
 		_, _ = response.Write([]byte(`{"session":{"sessionId":"auth-existing","connectorRevision":"0.2.0","status":"CONNECTOR_AUTHORIZATION_SESSION_STATUS_SUCCEEDED","resultConnectionId":"connection-existing"}}`))
 	}))
 	defer server.Close()
-	client, err := NewConnectorAuthorizationClient(ConnectorAuthorizationClientConfig{
-		BaseURL: server.URL, HTTPClient: server.Client(),
+	client, err := NewAuthorizationClient(AuthorizationClientConfig{
+		BaseURL: server.URL, APIPrefix: "/v1", HTTPClient: server.Client(),
 		AuthorizeAccountRequest: func(*http.Request, string) error { return nil },
 	})
 	if err != nil {
@@ -127,8 +127,9 @@ func TestConnectorAuthorizationClientAcceptsImmediateSuccessWithoutNextAction(t 
 	}
 }
 
-func TestConnectorAuthorizationClientSubmitsNativeSecretWithoutPersistingItInSession(t *testing.T) {
+func TestAuthorizationClientSubmitsNativeSecretWithoutPersistingItInSession(t *testing.T) {
 	const token = "user-provided-token"
+	notifications := 0
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
 		case "/v1/connectors/mail/authorization-sessions":
@@ -148,9 +149,10 @@ func TestConnectorAuthorizationClientSubmitsNativeSecretWithoutPersistingItInSes
 		}
 	}))
 	defer server.Close()
-	client, err := NewConnectorAuthorizationClient(ConnectorAuthorizationClientConfig{
-		BaseURL: server.URL, HTTPClient: server.Client(),
-		AuthorizeAccountRequest: func(*http.Request, string) error { return nil },
+	client, err := NewAuthorizationClient(AuthorizationClientConfig{
+		BaseURL: server.URL, APIPrefix: "/v1", HTTPClient: server.Client(),
+		AuthorizeAccountRequest:    func(*http.Request, string) error { return nil },
+		NotifyAuthorizationChanged: func() { notifications++ },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -168,6 +170,9 @@ func TestConnectorAuthorizationClientSubmitsNativeSecretWithoutPersistingItInSes
 	if result.SessionID != "auth-secret-1" || result.ActionType != "submit_secret" || result.AuthorizationURL != "" || result.ConnectionID != "connection-secret-1" {
 		t.Fatalf("result = %#v", result)
 	}
+	if notifications != 2 {
+		t.Fatalf("authorization change notifications = %d, want 2", notifications)
+	}
 	for i, value := range secret {
 		if value != 0 {
 			t.Fatalf("secret[%d] was not cleared", i)
@@ -175,7 +180,7 @@ func TestConnectorAuthorizationClientSubmitsNativeSecretWithoutPersistingItInSes
 	}
 }
 
-func TestConnectorAuthorizationClientDisconnectsByConnector(t *testing.T) {
+func TestAuthorizationClientDisconnectsByConnector(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodDelete || request.URL.Path != "/v1/connectors/tencent-docs/authorization" {
 			t.Fatalf("request = %s %s", request.Method, request.URL.Path)
@@ -183,8 +188,8 @@ func TestConnectorAuthorizationClientDisconnectsByConnector(t *testing.T) {
 		response.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
-	client, err := NewConnectorAuthorizationClient(ConnectorAuthorizationClientConfig{
-		BaseURL: server.URL, HTTPClient: server.Client(),
+	client, err := NewAuthorizationClient(AuthorizationClientConfig{
+		BaseURL: server.URL, APIPrefix: "/v1", HTTPClient: server.Client(),
 		AuthorizeAccountRequest: func(*http.Request, string) error { return nil },
 	})
 	if err != nil {
@@ -194,5 +199,22 @@ func TestConnectorAuthorizationClientDisconnectsByConnector(t *testing.T) {
 		Scope: market.OperationScope{AccountID: "account-1"}, Connector: market.Connector{Key: "tencent-docs"},
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestAuthorizationClientRejectsUnsafeEndpointConfiguration(t *testing.T) {
+	tests := []AuthorizationClientConfig{
+		{BaseURL: "https://user:secret@example.com", APIPrefix: "/v1"},
+		{BaseURL: "https://example.com?target=other", APIPrefix: "/v1"},
+		{BaseURL: "http://example.com", APIPrefix: "/v1"},
+		{BaseURL: "https://example.com", APIPrefix: ""},
+		{BaseURL: "https://example.com", APIPrefix: "/v1?target=other"},
+	}
+	for _, config := range tests {
+		config.HTTPClient = http.DefaultClient
+		config.AuthorizeAccountRequest = func(*http.Request, string) error { return nil }
+		if _, err := NewAuthorizationClient(config); err == nil {
+			t.Fatalf("expected configuration to be rejected: %#v", config)
+		}
 	}
 }

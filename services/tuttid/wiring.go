@@ -18,6 +18,7 @@ import (
 	agenthttpx "github.com/tutti-os/tutti/packages/agent/daemon/httpx"
 	agentruntime "github.com/tutti-os/tutti/packages/agent/daemon/runtime"
 	runtimeprep "github.com/tutti-os/tutti/packages/agent/runtimeprep"
+	connectorcontrolplane "github.com/tutti-os/tutti/packages/clients/connector-controlplane"
 	connectormarketdaemon "github.com/tutti-os/tutti/packages/connector/daemon"
 	connectormarkethost "github.com/tutti-os/tutti/packages/connector/host"
 	connectorruntime "github.com/tutti-os/tutti/packages/connector/runtime"
@@ -358,8 +359,8 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("configure connector implementation host: %w", err)
 		}
-		connectorAuthorizationClient, err := connectormarketservice.NewConnectorAuthorizationClient(connectormarketservice.ConnectorAuthorizationClientConfig{
-			BaseURL: connectorMarketBaseURL, HTTPClient: agenthttpx.NewClient(30 * time.Second),
+		connectorAuthorizationClient, err := connectorcontrolplane.NewAuthorizationClient(connectorcontrolplane.AuthorizationClientConfig{
+			BaseURL: connectorMarketBaseURL, APIPrefix: "/v1", HTTPClient: agenthttpx.NewClient(30 * time.Second),
 			AuthorizeAccountRequest: marketAuthorizer.AuthorizeForAccount,
 		})
 		if err != nil {
@@ -373,7 +374,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 		if connectorRealtimeURL == "" {
 			connectorRealtimeURL = strings.TrimSpace(os.Getenv("TUTTI_MOBILE_REALTIME_URL"))
 		}
-		connectorAuthorizationEvents, err := connectormarketservice.NewAuthorizationEventSource(connectormarketservice.AuthorizationEventSourceConfig{
+		connectorAuthorizationEvents, err := connectorcontrolplane.NewAuthorizationEventSource(connectorcontrolplane.AuthorizationEventSourceConfig{
 			URL: connectorRealtimeURL, DeviceID: connectorDeviceID, HeadersForAccount: marketAuthorizer.HeadersForAccount,
 		})
 		if err != nil {

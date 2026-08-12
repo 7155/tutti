@@ -391,16 +391,17 @@ func (application *Application) executeDisconnectAuthorization(ctx context.Conte
 	if err != nil {
 		return err
 	}
+	release, err := frozenRelease(operation)
+	if err != nil {
+		return err
+	}
 	if err := application.config.Authorization.Disconnect(ctx, AuthorizationDisconnectRequest{
 		OperationID: operation.OperationID,
 		Scope:       operation.Scope,
 		Connector:   connector,
+		Release:     release,
 	}); err != nil {
 		return NewDomainError(ErrorCodeAuthorizationFailed, "connector authorization disconnect failed", true, err)
-	}
-	release, err := frozenRelease(operation)
-	if err != nil {
-		return err
 	}
 	remote := release.Manifest.Implementation.RemoteStreamableHTTP != nil
 	if err := application.completeConnectorOperation(ctx, operation.OperationID, func(connector Connector) Connector {

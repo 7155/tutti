@@ -66,6 +66,21 @@ that classification. Replication and read contracts continue to accept a
 missing value from older stored messages, so compatibility stays at the read
 boundary instead of being inferred by presentation code.
 
+Canonical tool-call persistence also owns the replication-safe payload budget.
+Provider `content` is projected into the formal output fields before MCP
+`structuredContent` is normalized: exact string leaves that duplicate
+`output.text` keep their map key or array position with an explicit duplicate
+marker, while other structured string leaves are deterministically and
+UTF-8-safely shortened with the standard truncation marker. Inputs and
+non-string structured values are never shortened. The final encoded payload
+must fit the 768 KiB canonical budget; if required data alone cannot fit, the
+write returns an error and the transaction does not persist an unsynchronizable
+message. A versioned store migration applies the same projection to retained
+oversized tool calls, including MCP messages, and updates a row only after its
+encoded replacement satisfies the budget. Replication consumers derive a new
+fingerprint and mutation identity from that physical repair, which clears any
+retry schedule tied to the obsolete oversized representation.
+
 ## Responsibilities
 
 ### `packages/agent/host`

@@ -361,6 +361,15 @@ after an earlier Snapshot does not cause permanent polling. WebSocket hints and
 the five-minute calibration both fetch Snapshot; runtime reconcile is
 level-triggered and can safely repeat after restart or an interrupted pass.
 
+Authorization execution is selected from the exact release frozen into the
+durable operation. `managed_stdio` delegates to the local implementation host;
+`remote_streamable_http` delegates to the account control plane through
+`packages/clients/connector-controlplane`. The latter receives account
+authentication only through a host-supplied request authorizer. Neither an API
+key submitted by the user nor the product account session is copied into the
+runtime VM. Remote MCP execution follows the product host's authenticated
+relay, while the VM receives only the non-credential runtime route identity.
+
 ## Event Consistency
 
 Business state and its invalidation event are written to a durable outbox in

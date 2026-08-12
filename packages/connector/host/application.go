@@ -462,7 +462,9 @@ func (application *Application) ReconcileAuthorizations(ctx context.Context, sco
 			continue
 		}
 		session := *operation.Execution.AuthorizationSession
-		observation, observeErr := observer.Observe(ctx, AuthorizationObserveRequest{Scope: operation.Scope, Connector: connector, Session: session})
+		observation, observeErr := observer.Observe(ctx, AuthorizationObserveRequest{
+			Scope: operation.Scope, Connector: connector, Release: release, Session: session,
+		})
 		if observeErr != nil {
 			reconcileErr = errors.Join(reconcileErr, observeErr)
 			continue

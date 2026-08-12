@@ -143,47 +143,8 @@ func (host *ImplementationHost) Close() error {
 	return host.runtime.Close()
 }
 
-type authorizationRouter struct {
-	managed  market.AuthorizationProvider
-	external market.AuthorizationProvider
-}
-
-func (router authorizationRouter) provider(connector market.Connector) market.AuthorizationProvider {
-	if connector.Release.Manifest.Implementation.Kind == market.ImplementationKindRemoteStreamableHTTP {
-		return router.external
-	}
-	return router.managed
-}
-
-func (router authorizationRouter) Begin(ctx context.Context, request market.AuthorizationStartRequest) (market.AuthorizationSession, error) {
-	provider := router.provider(request.Connector)
-	if provider == nil {
-		return market.AuthorizationSession{}, errors.New("connector authorization provider is unavailable")
-	}
-	return provider.Begin(ctx, request)
-}
-
-func (router authorizationRouter) Disconnect(ctx context.Context, request market.AuthorizationDisconnectRequest) error {
-	provider := router.provider(request.Connector)
-	if provider == nil {
-		return errors.New("connector authorization provider is unavailable")
-	}
-	return provider.Disconnect(ctx, request)
-}
-
-func (router authorizationRouter) Observe(ctx context.Context, request market.AuthorizationObserveRequest) (market.AuthorizationObservation, error) {
-	if request.Connector.Release.Manifest.Implementation.Kind != market.ImplementationKindRemoteStreamableHTTP {
-		return market.AuthorizationObservation{State: market.AuthorizationObservationPending}, nil
-	}
-	observer, ok := router.external.(market.AuthorizationObserver)
-	if !ok {
-		return market.AuthorizationObservation{}, errors.New("connector authorization observer is unavailable")
-	}
-	return observer.Observe(ctx, request)
-}
-
 func ProductionPorts(host *ImplementationHost, external market.AuthorizationProvider) (market.ImplementationHost, market.AuthorizationProvider, market.CompatibilityEvaluator, market.ImplementationRegistry) {
-	return host, authorizationRouter{managed: host, external: external}, productionCompatibility{}, market.NewImplementationRegistry(map[string]market.ImplementationValidator{
+	return host, market.NewImplementationAuthorizationRouter(host, external), productionCompatibility{}, market.NewImplementationRegistry(map[string]market.ImplementationValidator{
 		market.ImplementationKindManagedStdio:         nil,
 		market.ImplementationKindRemoteStreamableHTTP: nil,
 	})

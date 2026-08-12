@@ -1,4 +1,4 @@
-package connectormarket
+package connectorcontrolplane
 
 import (
 	"bytes"
@@ -17,23 +17,26 @@ import (
 
 const connectorAuthorizationResponseLimit = 4 << 20
 
-type ConnectorAuthorizationClientConfig struct {
+type AuthorizationClientConfig struct {
 	BaseURL                 string
+	APIPrefix               string
 	HTTPClient              *http.Client
 	AuthorizeAccountRequest func(*http.Request, string) error
 }
 
-// ConnectorAuthorizationClient adapts the Tutti account-scoped Connector
+// AuthorizationClient adapts the Tutti account-scoped Connector
 // authorization control plane to the provider-neutral market host contract.
-type ConnectorAuthorizationClient struct {
+type AuthorizationClient struct {
 	baseURL                 *url.URL
+	apiPrefix               string
 	httpClient              *http.Client
 	authorizeAccountRequest func(*http.Request, string) error
 }
 
-func NewConnectorAuthorizationClient(config ConnectorAuthorizationClientConfig) (*ConnectorAuthorizationClient, error) {
+func NewAuthorizationClient(config AuthorizationClientConfig) (*AuthorizationClient, error) {
 	baseURL, err := url.Parse(strings.TrimSpace(config.BaseURL))
-	if err != nil || baseURL.Host == "" || (baseURL.Scheme != "https" && (baseURL.Scheme != "http" || !isLoopbackConnectorAuthorizationHost(baseURL.Hostname()))) {
+	if err != nil || baseURL.Host == "" || baseURL.User != nil || baseURL.RawQuery != "" || baseURL.Fragment != "" ||
+		(baseURL.Scheme != "https" && (baseURL.Scheme != "http" || !isLoopbackConnectorAuthorizationHost(baseURL.Hostname()))) {
 		return nil, errors.New("connector authorization base URL must use https")
 	}
 	if config.HTTPClient == nil || config.AuthorizeAccountRequest == nil {
@@ -41,10 +44,18 @@ func NewConnectorAuthorizationClient(config ConnectorAuthorizationClientConfig) 
 	}
 	httpClient := *config.HTTPClient
 	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &ConnectorAuthorizationClient{baseURL: baseURL, httpClient: &httpClient, authorizeAccountRequest: config.AuthorizeAccountRequest}, nil
+	apiPrefix := strings.TrimSpace(config.APIPrefix)
+	if apiPrefix == "" || strings.ContainsAny(apiPrefix, "?#") {
+		return nil, errors.New("connector authorization API prefix is required")
+	}
+	apiPrefix = "/" + strings.Trim(apiPrefix, "/")
+	return &AuthorizationClient{
+		baseURL: baseURL, apiPrefix: apiPrefix, httpClient: &httpClient,
+		authorizeAccountRequest: config.AuthorizeAccountRequest,
+	}, nil
 }
 
-func (client *ConnectorAuthorizationClient) AuthorizationSnapshot(ctx context.Context, accountID string) (market.AuthorizationSnapshot, error) {
+func (client *AuthorizationClient) AuthorizationSnapshot(ctx context.Context, accountID string) (market.AuthorizationSnapshot, error) {
 	accountID = strings.TrimSpace(accountID)
 	if accountID == "" || client.authorizeAccountRequest == nil {
 		return market.AuthorizationSnapshot{}, errors.New("connector authorization snapshot requires an account-bound authorizer")
@@ -59,7 +70,7 @@ func (client *ConnectorAuthorizationClient) AuthorizationSnapshot(ctx context.Co
 			ConnectionVersion jsonUint64 `json:"connectionVersion"`
 		} `json:"connectors"`
 	}
-	if err := client.doJSONWithAuthorizer(ctx, http.MethodGet, "/v1/connector-authorizations/snapshot", nil, nil, &response, func(request *http.Request) error {
+	if err := client.doJSONWithAuthorizer(ctx, http.MethodGet, "/connector-authorizations/snapshot", nil, nil, &response, func(request *http.Request) error {
 		return client.authorizeAccountRequest(request, accountID)
 	}); err != nil {
 		return market.AuthorizationSnapshot{}, err
@@ -88,12 +99,12 @@ func (client *ConnectorAuthorizationClient) AuthorizationSnapshot(ctx context.Co
 	return snapshot, nil
 }
 
-func (client *ConnectorAuthorizationClient) Begin(ctx context.Context, request market.AuthorizationStartRequest) (market.AuthorizationSession, error) {
+func (client *AuthorizationClient) Begin(ctx context.Context, request market.AuthorizationStartRequest) (market.AuthorizationSession, error) {
 	defer clear(request.Secret)
 	connectorID := strings.TrimSpace(request.Connector.Key)
 	connectorVersion := strings.TrimSpace(request.Release.Version)
 	var response connectorAuthorizationSessionReply
-	err := client.doJSONForAccount(ctx, request.Scope.AccountID, http.MethodPost, "/v1/connectors/"+url.PathEscape(connectorID)+"/authorization-sessions", nil, map[string]any{
+	err := client.doJSONForAccount(ctx, request.Scope.AccountID, http.MethodPost, "/connectors/"+url.PathEscape(connectorID)+"/authorization-sessions", nil, map[string]any{
 		"clientRequestId":  strings.TrimSpace(request.ClientRequestID),
 		"connectorVersion": connectorVersion,
 	}, &response)
@@ -142,7 +153,7 @@ func (client *ConnectorAuthorizationClient) Begin(ctx context.Context, request m
 		if len(request.Secret) == 0 || len(request.Secret) > 16384 {
 			return market.AuthorizationSession{}, errors.New("connector authorization requires a valid secret")
 		}
-		path := "/v1/connector-authorization-sessions/" + url.PathEscape(response.Session.SessionID) + "/complete"
+		path := "/connector-authorization-sessions/" + url.PathEscape(response.Session.SessionID) + "/complete"
 		var completed connectorAuthorizationSessionReply
 		if err := client.doJSONForAccount(ctx, request.Scope.AccountID, http.MethodPost, path, nil, map[string]any{"secret": map[string]string{"secret": string(request.Secret)}}, &completed); err != nil {
 			return market.AuthorizationSession{}, err
@@ -161,13 +172,13 @@ func (client *ConnectorAuthorizationClient) Begin(ctx context.Context, request m
 	return session, nil
 }
 
-func (client *ConnectorAuthorizationClient) Disconnect(ctx context.Context, request market.AuthorizationDisconnectRequest) error {
+func (client *AuthorizationClient) Disconnect(ctx context.Context, request market.AuthorizationDisconnectRequest) error {
 	connectorID := strings.TrimSpace(request.Connector.Key)
 	return client.doJSONForAccount(ctx, request.Scope.AccountID, http.MethodDelete,
-		"/v1/connectors/"+url.PathEscape(connectorID)+"/authorization", nil, nil, nil)
+		"/connectors/"+url.PathEscape(connectorID)+"/authorization", nil, nil, nil)
 }
 
-func (client *ConnectorAuthorizationClient) Observe(ctx context.Context, request market.AuthorizationObserveRequest) (market.AuthorizationObservation, error) {
+func (client *AuthorizationClient) Observe(ctx context.Context, request market.AuthorizationObserveRequest) (market.AuthorizationObservation, error) {
 	var response struct {
 		Session struct {
 			Status             string `json:"status"`
@@ -175,7 +186,7 @@ func (client *ConnectorAuthorizationClient) Observe(ctx context.Context, request
 			ResultConnectionID string `json:"resultConnectionId"`
 		} `json:"session"`
 	}
-	path := "/v1/connector-authorization-sessions/" + url.PathEscape(strings.TrimSpace(request.Session.SessionID))
+	path := "/connector-authorization-sessions/" + url.PathEscape(strings.TrimSpace(request.Session.SessionID))
 	if err := client.doJSONForAccount(ctx, request.Scope.AccountID, http.MethodGet, path, nil, nil, &response); err != nil {
 		return market.AuthorizationObservation{}, err
 	}
@@ -197,7 +208,7 @@ func (client *ConnectorAuthorizationClient) Observe(ctx context.Context, request
 	}
 }
 
-func (client *ConnectorAuthorizationClient) doJSONForAccount(ctx context.Context, accountID, method, requestPath string, query url.Values, input, output any) error {
+func (client *AuthorizationClient) doJSONForAccount(ctx context.Context, accountID, method, requestPath string, query url.Values, input, output any) error {
 	accountID = strings.TrimSpace(accountID)
 	if accountID == "" {
 		return errors.New("connector authorization request requires an account scope")
@@ -219,8 +230,8 @@ func (value *jsonUint64) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
-func (client *ConnectorAuthorizationClient) doJSONWithAuthorizer(ctx context.Context, method, requestPath string, query url.Values, input, output any, authorize func(*http.Request) error) error {
-	endpoint, err := url.JoinPath(client.baseURL.String(), requestPath)
+func (client *AuthorizationClient) doJSONWithAuthorizer(ctx context.Context, method, requestPath string, query url.Values, input, output any, authorize func(*http.Request) error) error {
+	endpoint, err := url.JoinPath(client.baseURL.String(), client.apiPrefix, requestPath)
 	if err != nil {
 		return err
 	}
@@ -302,6 +313,6 @@ func isLoopbackConnectorAuthorizationHost(host string) bool {
 	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
-var _ market.AuthorizationProvider = (*ConnectorAuthorizationClient)(nil)
-var _ market.AuthorizationObserver = (*ConnectorAuthorizationClient)(nil)
-var _ market.AuthorizationSnapshotSource = (*ConnectorAuthorizationClient)(nil)
+var _ market.AuthorizationProvider = (*AuthorizationClient)(nil)
+var _ market.AuthorizationObserver = (*AuthorizationClient)(nil)
+var _ market.AuthorizationSnapshotSource = (*AuthorizationClient)(nil)

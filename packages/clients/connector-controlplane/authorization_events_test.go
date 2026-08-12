@@ -1,4 +1,4 @@
-package connectormarket
+package connectorcontrolplane
 
 import (
 	"context"

@@ -607,6 +607,9 @@ type RailPlacement struct {
 // import paths, workspace resolution, identity, and transport state are not
 // part of this type.
 type CreateSessionInput struct {
+	// ActivationID correlates the caller's activation request across Engine,
+	// desktop transport, Host lifecycle diagnostics, and terminal failure.
+	ActivationID   string
 	AgentSessionID string
 	AgentTargetID  string
 	Provider       string

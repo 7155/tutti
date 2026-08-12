@@ -806,6 +806,57 @@ func TestApplicationManagedAuthorizationStartCanChallengeAnotherAccount(t *testi
 	}
 }
 
+func TestApplicationManagedAuthorizationContinuationReplaysBeforeProjectionTransitionValidation(t *testing.T) {
+	connector := testManagedAuthorizedConnector("lark-cli")
+	connector.Authorization = Authorization{State: AuthorizationStateDisconnected}
+	repository := newMemoryRepository(connector)
+	projections := &recordingAuthorizationProjectionStore{}
+	provider := &continuingAuthorizationProviderStub{}
+	scheduler := &memoryScheduler{}
+	application := newTestApplication(t, repository, scheduler, &memoryInstallRuntime{}, CatalogSnapshot{})
+	application.config.Authorization = provider
+	application.config.AuthorizationProjections = projections
+	mutation := ConnectorMutation{
+		Mutation:     Mutation{ClientRequestID: "one-authorization-request", ExpectedRevision: 0},
+		ConnectorKey: connector.Key,
+		AccountID:    "account-1",
+	}
+
+	first, err := application.BeginAuthorization(context.Background(), mutation, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.AuthorizationURL != "https://open.feishu.cn/page/cli" ||
+		projections.projection.State != AuthorizationStatePending {
+		t.Fatalf("first result=%#v projection=%#v", first, projections.projection)
+	}
+	continued, err := application.BeginAuthorization(context.Background(), mutation, nil)
+	if err != nil {
+		t.Fatalf("continue authorization: %v", err)
+	}
+	if continued.Operation.OperationID != first.Operation.OperationID ||
+		continued.AuthorizationURL != "https://accounts.feishu.cn/device" || provider.begins != 2 {
+		t.Fatalf("continued=%#v first=%#v provider begins=%d", continued, first, provider.begins)
+	}
+	if len(scheduler.operationIDs) != 0 {
+		t.Fatalf("pending authorization scheduled runtime operations: %v", scheduler.operationIDs)
+	}
+
+	snapshot, err := application.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = application.BeginAuthorization(context.Background(), ConnectorMutation{
+		Mutation:     Mutation{ClientRequestID: "different-authorization-request", ExpectedRevision: snapshot.Revision},
+		ConnectorKey: connector.Key,
+		AccountID:    "account-1",
+	}, nil)
+	var domainError *DomainError
+	if !errors.As(err, &domainError) || domainError.Code != ErrorCodeOperationInProgress {
+		t.Fatalf("different authorization error = %#v, want operation in progress", err)
+	}
+}
+
 func TestApplicationConnectedProjectionConvergesReceiptWithoutProviderPolling(t *testing.T) {
 	connector := testConnector("tencent-docs")
 	connector.Release.Manifest.AuthorizationKind = "oauth2"
@@ -1768,6 +1819,30 @@ func (connectedAuthorizationProviderStub) Begin(_ context.Context, request Autho
 		SessionID:    "session-connected",
 		ConnectionID: "existing-cli-login",
 		State:        AuthorizationStateConnected,
+	}, nil
+}
+
+type continuingAuthorizationProviderStub struct {
+	authorizationProviderStub
+	begins int
+}
+
+func (provider *continuingAuthorizationProviderStub) Begin(
+	_ context.Context,
+	request AuthorizationStartRequest,
+) (AuthorizationSession, error) {
+	provider.begins++
+	authorizationURL := "https://open.feishu.cn/page/cli"
+	if provider.begins > 1 {
+		authorizationURL = "https://accounts.feishu.cn/device"
+	}
+	return AuthorizationSession{
+		OperationID:      request.OperationID,
+		ConnectorKey:     request.Connector.Key,
+		SessionID:        request.OperationID + "/credential-broker",
+		ActionType:       "redirect",
+		AuthorizationURL: authorizationURL,
+		State:            AuthorizationStatePending,
 	}, nil
 }
 

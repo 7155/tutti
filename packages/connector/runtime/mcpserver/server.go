@@ -23,9 +23,10 @@ import (
 )
 
 const (
-	serverName      = "connector"
-	protocolVersion = "2026-07-28"
-	maxRequestBytes = 2 << 20
+	serverName              = "connector"
+	protocolVersion         = "2026-07-28"
+	providerProtocolVersion = "2025-06-18"
+	maxRequestBytes         = 2 << 20
 )
 
 type Config struct {
@@ -200,8 +201,16 @@ func (server *Server) handlePost(writer http.ResponseWriter, request *http.Reque
 	decoder.DisallowUnknownFields()
 	var rpc rpcRequest
 	if err := decoder.Decode(&rpc); err != nil || decoder.Decode(&struct{}{}) != io.EOF || rpc.JSONRPC != "2.0" ||
-		len(rpc.ID) == 0 || strings.TrimSpace(rpc.Method) == "" {
+		strings.TrimSpace(rpc.Method) == "" {
 		writeRPCError(writer, http.StatusBadRequest, nullID(rpc.ID), -32600, "Invalid MCP request", nil)
+		return
+	}
+	if isProviderNativeMethod(request, rpc.Method) {
+		server.handleProviderNativePost(writer, request, token, auth, rpc)
+		return
+	}
+	if len(rpc.ID) == 0 {
+		writeRPCError(writer, http.StatusBadRequest, nil, -32600, "Invalid MCP request", nil)
 		return
 	}
 	params, metadata, err := decodeRequestParams(rpc.Params)
@@ -235,7 +244,7 @@ func (server *Server) handlePost(writer http.ResponseWriter, request *http.Reque
 			"resultType": "complete", "tools": tools, "ttlMs": 0, "cacheScope": "private",
 		}})
 	case "tools/call":
-		server.handleToolCall(writer, request, rpc.ID, params)
+		server.handleToolCall(writer, request, rpc.ID, params, true)
 	case "subscriptions/listen":
 		server.handleSubscription(writer, request, token, auth, rpc.ID, params)
 	default:
@@ -243,7 +252,84 @@ func (server *Server) handlePost(writer http.ResponseWriter, request *http.Reque
 	}
 }
 
-func (server *Server) handleToolCall(writer http.ResponseWriter, request *http.Request, id json.RawMessage, params map[string]json.RawMessage) {
+func isProviderNativeMethod(request *http.Request, method string) bool {
+	switch method {
+	case "initialize", "notifications/initialized", "notifications/cancelled", "ping",
+		"resources/list", "resources/templates/list":
+		return true
+	case "tools/list", "tools/call":
+		// The modern protocol always carries the method in its integrity header.
+		// Provider-native MCP clients do not.
+		return strings.TrimSpace(request.Header.Get("Mcp-Method")) == ""
+	default:
+		return false
+	}
+}
+
+func (server *Server) handleProviderNativePost(
+	writer http.ResponseWriter,
+	request *http.Request,
+	token string,
+	auth authorization,
+	rpc rpcRequest,
+) {
+	_ = token
+	_ = auth
+	switch rpc.Method {
+	case "initialize":
+		if len(rpc.ID) == 0 {
+			writeRPCError(writer, http.StatusBadRequest, nil, -32600, "Initialize request ID is required", nil)
+			return
+		}
+		var params struct {
+			ProtocolVersion string         `json:"protocolVersion"`
+			Capabilities    map[string]any `json:"capabilities"`
+			ClientInfo      implementation `json:"clientInfo"`
+		}
+		if json.Unmarshal(rpc.Params, &params) != nil || strings.TrimSpace(params.ProtocolVersion) == "" ||
+			strings.TrimSpace(params.ClientInfo.Name) == "" || strings.TrimSpace(params.ClientInfo.Version) == "" {
+			writeRPCError(writer, http.StatusBadRequest, rpc.ID, -32602, "Invalid initialize parameters", nil)
+			return
+		}
+		writeRPC(writer, http.StatusOK, rpcResponse{JSONRPC: "2.0", ID: rpc.ID, Result: map[string]any{
+			"protocolVersion": providerProtocolVersion,
+			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": false}},
+			"serverInfo":      map[string]any{"name": serverName, "version": "1"},
+		}})
+	case "notifications/initialized", "notifications/cancelled":
+		writer.WriteHeader(http.StatusAccepted)
+	case "ping":
+		writeRPC(writer, http.StatusOK, rpcResponse{JSONRPC: "2.0", ID: rpc.ID, Result: map[string]any{}})
+	case "resources/list":
+		writeRPC(writer, http.StatusOK, rpcResponse{JSONRPC: "2.0", ID: rpc.ID, Result: map[string]any{"resources": []any{}}})
+	case "resources/templates/list":
+		writeRPC(writer, http.StatusOK, rpcResponse{JSONRPC: "2.0", ID: rpc.ID, Result: map[string]any{"resourceTemplates": []any{}}})
+	case "tools/list":
+		tools, err := server.registry.Tools(request.Context())
+		if err != nil {
+			writeRegistryError(writer, rpc.ID, err)
+			return
+		}
+		writeRPC(writer, http.StatusOK, rpcResponse{JSONRPC: "2.0", ID: rpc.ID, Result: map[string]any{"tools": tools}})
+	case "tools/call":
+		var params map[string]json.RawMessage
+		if len(rpc.ID) == 0 || json.Unmarshal(rpc.Params, &params) != nil {
+			writeRPCError(writer, http.StatusBadRequest, nullID(rpc.ID), -32602, "Invalid tool arguments", nil)
+			return
+		}
+		server.handleToolCall(writer, request, rpc.ID, params, false)
+	default:
+		writeRPCError(writer, http.StatusOK, nullID(rpc.ID), -32601, "Method not found", nil)
+	}
+}
+
+func (server *Server) handleToolCall(
+	writer http.ResponseWriter,
+	request *http.Request,
+	id json.RawMessage,
+	params map[string]json.RawMessage,
+	modern bool,
+) {
 	var name string
 	var arguments map[string]any
 	if json.Unmarshal(params["name"], &name) != nil || strings.TrimSpace(name) == "" ||
@@ -255,10 +341,14 @@ func (server *Server) handleToolCall(writer http.ResponseWriter, request *http.R
 		arguments = map[string]any{}
 	}
 	var parameterValidation error
-	raw, err := server.registry.CallValidated(request.Context(), name, arguments, func(tool implementationhost.MCPTool) error {
-		parameterValidation = validateToolParameterHeaders(request.Header, []implementationhost.MCPTool{tool}, name, params["arguments"])
-		return parameterValidation
-	})
+	var validate func(implementationhost.MCPTool) error
+	if modern {
+		validate = func(tool implementationhost.MCPTool) error {
+			parameterValidation = validateToolParameterHeaders(request.Header, []implementationhost.MCPTool{tool}, name, params["arguments"])
+			return parameterValidation
+		}
+	}
+	raw, err := server.registry.CallValidated(request.Context(), name, arguments, validate)
 	if err != nil {
 		if parameterValidation != nil {
 			writeRPCError(writer, http.StatusBadRequest, id, -32020, parameterValidation.Error(), nil)
@@ -272,8 +362,14 @@ func (server *Server) handleToolCall(writer http.ResponseWriter, request *http.R
 		writeRPCError(writer, http.StatusInternalServerError, id, -32603, "Invalid upstream tool result", nil)
 		return
 	}
-	if _, exists := result["resultType"]; !exists {
-		result["resultType"] = "complete"
+	if modern {
+		if _, exists := result["resultType"]; !exists {
+			result["resultType"] = "complete"
+		}
+	} else {
+		delete(result, "resultType")
+		delete(result, "ttlMs")
+		delete(result, "cacheScope")
 	}
 	writeRPC(writer, http.StatusOK, rpcResponse{JSONRPC: "2.0", ID: id, Result: result})
 }

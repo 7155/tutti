@@ -198,6 +198,11 @@ func (gateway *Gateway) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 	originalDirector := proxy.Director
 	proxy.Director = func(outbound *http.Request) {
 		originalDirector(outbound)
+		// NewSingleHostReverseProxy joins target.Path with the inbound path.
+		// Both bindings deliberately expose the same fixed MCP path, so the
+		// default join would forward /mcp/connector/mcp/connector.
+		outbound.URL.Path = target.Path
+		outbound.URL.RawPath = target.RawPath
 		outbound.Host = target.Host
 		outbound.Header.Del("Authorization")
 		if authorization := strings.TrimSpace(binding.Headers["Authorization"]); authorization != "" {

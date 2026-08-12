@@ -45,6 +45,12 @@ func overlayRuntimeContext(base map[string]any, overlay map[string]any) map[stri
 		result = make(map[string]any, len(overlay))
 	}
 	for key, value := range cloneMap(overlay) {
+		baseMap, baseIsMap := result[key].(map[string]any)
+		overlayMap, overlayIsMap := value.(map[string]any)
+		if baseIsMap && overlayIsMap {
+			result[key] = overlayRuntimeContext(baseMap, overlayMap)
+			continue
+		}
 		result[key] = value
 	}
 	return result

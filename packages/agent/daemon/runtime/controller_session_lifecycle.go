@@ -273,7 +273,8 @@ func (c *Controller) Resume(ctx context.Context, input ResumeInput) (Session, er
 		c.retainGoalGenerationFence(session, fence)
 	}
 	c.invalidateAppliedGoalGenerationFences(session)
-	if err := adapter.Resume(ctx, session); err != nil {
+	launchCtx := withProviderLaunchRuntimeContext(ctx, input.ProviderLaunchRuntimeContext)
+	if err := adapter.Resume(launchCtx, session); err != nil {
 		if !input.RecreateIfMissing || !isResumeRecreatableError(err) {
 			return Session{}, err
 		}
@@ -282,7 +283,7 @@ func (c *Controller) Resume(ctx context.Context, input ResumeInput) (Session, er
 		// start a fresh provider session bound to the same agent session. This is
 		// what keeps imported conversations continuable instead of forcing the
 		// user into a brand new conversation.
-		if err := c.recreateAdapterSession(ctx, session, adapter); err != nil {
+		if err := c.recreateAdapterSession(launchCtx, session, adapter); err != nil {
 			return Session{}, err
 		}
 		if refreshed, ok := c.get(session.RoomID, session.AgentSessionID); ok {
@@ -368,7 +369,7 @@ func (c *Controller) Reprepare(ctx context.Context, input ResumeInput) (Session,
 		}
 	}
 	c.invalidateAppliedGoalGenerationFences(replacement)
-	if err := adapter.Resume(ctx, replacement); err != nil {
+	if err := adapter.Resume(withProviderLaunchRuntimeContext(ctx, input.ProviderLaunchRuntimeContext), replacement); err != nil {
 		return Session{}, err
 	}
 	if err := c.applyRetainedGoalGenerationFences(ctx, replacement, adapter); err != nil {

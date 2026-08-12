@@ -12,6 +12,7 @@ type reprepareTestAdapter struct {
 	provider     string
 	live         bool
 	resumeInputs []Session
+	launchInputs []ProviderLaunchPrepareInput
 	releaseCalls int
 }
 
@@ -21,8 +22,15 @@ func (*reprepareTestAdapter) Start(context.Context, Session) ([]activityshared.E
 	return nil, errors.New("unexpected Start")
 }
 
-func (a *reprepareTestAdapter) Resume(_ context.Context, session Session) error {
+func (a *reprepareTestAdapter) Resume(ctx context.Context, session Session) error {
 	a.resumeInputs = append(a.resumeInputs, session)
+	_, _, err := prepareProviderLaunch(ctx, func(_ context.Context, input ProviderLaunchPrepareInput) (ProviderLaunchPrepareResult, error) {
+		a.launchInputs = append(a.launchInputs, input)
+		return ProviderLaunchPrepareResult{}, nil
+	}, session, ProcessSpec{})
+	if err != nil {
+		return err
+	}
 	a.live = true
 	return nil
 }
@@ -61,6 +69,7 @@ func TestControllerRepreparePreservesSessionIdentityAcrossProviders(t *testing.T
 			}
 			replacement := base
 			replacement.MCPServers = []MCPServerBinding{{Name: "connectors", Type: "http", URL: "http://127.0.0.1/new", Headers: map[string]string{"Authorization": "Bearer invocation"}}}
+			replacement.ProviderLaunchRuntimeContext = map[string]any{"canonical": true, "invocationId": "invocation-2"}
 			result, err := controller.Reprepare(t.Context(), replacement)
 			if err != nil {
 				t.Fatalf("Reprepare() error = %v", err)
@@ -74,8 +83,14 @@ func TestControllerRepreparePreservesSessionIdentityAcrossProviders(t *testing.T
 			if got := adapter.resumeInputs[1].MCPServers; len(got) != 1 || got[0].URL != "http://127.0.0.1/new" || got[0].Headers["Authorization"] != "Bearer invocation" {
 				t.Fatalf("replacement MCP binding = %#v", got)
 			}
+			if len(adapter.launchInputs) != 2 || adapter.launchInputs[1].Session.RuntimeContext["invocationId"] != "invocation-2" {
+				t.Fatalf("provider launch input = %#v", adapter.launchInputs)
+			}
+			if adapter.resumeInputs[1].RuntimeContext["invocationId"] != nil {
+				t.Fatalf("adapter retained ephemeral launch context: %#v", adapter.resumeInputs[1].RuntimeContext)
+			}
 			stored, ok := controller.Session("workspace-1", "session-1")
-			if !ok || stored.ProviderSessionID != "provider-session-1" || stored.MCPServers[0].URL != "http://127.0.0.1/new" {
+			if !ok || stored.ProviderSessionID != "provider-session-1" || stored.MCPServers[0].URL != "http://127.0.0.1/new" || stored.RuntimeContext["invocationId"] != nil {
 				t.Fatalf("stored replacement = %#v found=%t", stored, ok)
 			}
 		})

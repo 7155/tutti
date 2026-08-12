@@ -314,25 +314,29 @@ type RuntimeStartResult struct {
 }
 
 type RuntimeResumeInput struct {
-	WorkspaceID            string
-	AgentSessionID         string
-	AgentTargetID          string
-	Provider               string
-	ProviderSessionID      string
-	Resumable              bool
-	Cwd                    string
-	Env                    []string
-	MCPServers             []MCPServerBinding
-	Title                  string
-	Status                 string
-	Settings               ComposerSettings
-	CreatedAtUnixMS        int64
-	UpdatedAtUnixMS        int64
-	Visible                *bool
-	RuntimeContext         map[string]any
-	ProviderTargetRef      map[string]any
-	Metadata               storesqlite.SessionMetadata
-	InternalRuntimeContext map[string]any
+	WorkspaceID       string
+	AgentSessionID    string
+	AgentTargetID     string
+	Provider          string
+	ProviderSessionID string
+	Resumable         bool
+	Cwd               string
+	Env               []string
+	MCPServers        []MCPServerBinding
+	Title             string
+	Status            string
+	Settings          ComposerSettings
+	CreatedAtUnixMS   int64
+	UpdatedAtUnixMS   int64
+	Visible           *bool
+	RuntimeContext    map[string]any
+	// ProviderLaunchRuntimeContext is request-scoped context exposed only to
+	// provider launch preparation. Runtime implementations must not retain or
+	// publish it as canonical Session runtime context.
+	ProviderLaunchRuntimeContext map[string]any
+	ProviderTargetRef            map[string]any
+	Metadata                     storesqlite.SessionMetadata
+	InternalRuntimeContext       map[string]any
 	// GoalGenerationFences are loaded from durable Host state and retained by
 	// the Runtime before the resumed Session is exposed for Goal/Turn work.
 	GoalGenerationFences []RuntimeGoalGenerationFenceInput
@@ -351,6 +355,15 @@ type ReprepareRuntimeSessionInput struct {
 	WorkspaceID           string
 	AgentSessionID        string
 	RuntimeContextOverlay map[string]any
+}
+
+// ReprepareRuntimeSessionAndSendInputInput atomically replaces an idle
+// provider connection and admits the exact Turn that owns the replacement
+// bindings. This prevents another mutation lane from using request-scoped
+// launch authority between reprepare and Turn admission.
+type ReprepareRuntimeSessionAndSendInputInput struct {
+	Reprepare ReprepareRuntimeSessionInput
+	Send      SendInput
 }
 
 type RuntimeExecInput struct {

@@ -76,6 +76,23 @@ type reprepareRuntime struct {
 	session        ProviderRuntimeSession
 	reprepareCalls int
 	reprepareInput RuntimeResumeInput
+	reprepareErr   error
+}
+
+type disconnectedReprepareRuntime struct {
+	RuntimeController
+	resumeCalls int
+	resumeInput RuntimeResumeInput
+}
+
+func (*disconnectedReprepareRuntime) Session(string, string) (ProviderRuntimeSession, bool) {
+	return ProviderRuntimeSession{}, false
+}
+
+func (r *disconnectedReprepareRuntime) Resume(_ context.Context, input RuntimeResumeInput) (ProviderRuntimeSession, error) {
+	r.resumeCalls++
+	r.resumeInput = input
+	return ProviderRuntimeSession{ID: input.AgentSessionID, WorkspaceID: input.WorkspaceID, ProviderSessionID: input.ProviderSessionID}, nil
 }
 
 func (r *reprepareRuntime) Session(workspaceID, sessionID string) (ProviderRuntimeSession, bool) {
@@ -85,6 +102,9 @@ func (r *reprepareRuntime) Session(workspaceID, sessionID string) (ProviderRunti
 func (r *reprepareRuntime) Reprepare(_ context.Context, input RuntimeResumeInput) (ProviderRuntimeSession, error) {
 	r.reprepareCalls++
 	r.reprepareInput = input
+	if r.reprepareErr != nil {
+		return ProviderRuntimeSession{}, r.reprepareErr
+	}
 	r.session.MCPServers = cloneHostMCPServerBindings(input.MCPServers)
 	return r.session, nil
 }
@@ -158,7 +178,9 @@ func TestReprepareRuntimeSessionUsesRequestScopedPreparationContextAndPreservesI
 		session: storesqlite.Session{
 			ID: "session-1", WorkspaceID: "workspace-1", Kind: storesqlite.SessionKindRoot,
 			Provider: "codex", ProviderSessionID: "provider-session-1", Cwd: "/workspace",
-			InternalRuntimeContext: map[string]any{"canonical": true, "authority": "owner"},
+			InternalRuntimeContext: map[string]any{"canonical": true, "authority": "owner", "sharedAgent": map[string]any{
+				"bindingId": "binding-1", "taskKind": "chat", "executionRoute": "caller_peer_command_v1", "invocationId": "old",
+			}},
 		},
 		evidence: storesqlite.ProviderSessionResumeEvidence{Established: true},
 	}
@@ -174,7 +196,7 @@ func TestReprepareRuntimeSessionUsesRequestScopedPreparationContextAndPreservesI
 
 	result, err := host.ReprepareRuntimeSession(t.Context(), ReprepareRuntimeSessionInput{
 		WorkspaceID: "workspace-1", AgentSessionID: "session-1",
-		RuntimeContextOverlay: map[string]any{"invocationId": "invocation-1", "authority": "caller"},
+		RuntimeContextOverlay: map[string]any{"invocationId": "invocation-1", "authority": "caller", "sharedAgent": map[string]any{"invocationId": "invocation-1"}},
 	})
 	if err != nil {
 		t.Fatalf("ReprepareRuntimeSession() error = %v", err)
@@ -190,6 +212,14 @@ func TestReprepareRuntimeSessionUsesRequestScopedPreparationContextAndPreservesI
 	}
 	if runtime.reprepareInput.RuntimeContext["canonical"] != true || runtime.reprepareInput.RuntimeContext["invocationId"] != nil {
 		t.Fatalf("request-scoped overlay leaked into provider runtime context: %#v", runtime.reprepareInput.RuntimeContext)
+	}
+	if runtime.reprepareInput.ProviderLaunchRuntimeContext["invocationId"] != "invocation-1" ||
+		runtime.reprepareInput.ProviderLaunchRuntimeContext["authority"] != "caller" {
+		t.Fatalf("provider launch runtime context = %#v", runtime.reprepareInput.ProviderLaunchRuntimeContext)
+	}
+	shared, _ := runtime.reprepareInput.ProviderLaunchRuntimeContext["sharedAgent"].(map[string]any)
+	if shared["bindingId"] != "binding-1" || shared["taskKind"] != "chat" || shared["executionRoute"] != "caller_peer_command_v1" || shared["invocationId"] != "invocation-1" {
+		t.Fatalf("nested provider launch runtime context = %#v", shared)
 	}
 	if result.ID != "session-1" || result.ProviderSessionID != "provider-session-1" {
 		t.Fatalf("reprepared identity = %#v", result)
@@ -218,6 +248,57 @@ func TestReprepareRuntimeSessionRejectsCanonicalActiveTurnBeforePreparation(t *t
 	}
 	if preparation.prepareInput.WorkspaceID != "" || runtime.reprepareCalls != 0 {
 		t.Fatalf("active reprepare reached preparation/runtime: prepare=%#v calls=%d", preparation.prepareInput, runtime.reprepareCalls)
+	}
+}
+
+func TestReprepareRuntimeSessionResumesDisconnectedRuntimeWithInvocationBinding(t *testing.T) {
+	store := liveResumeCanonicalStore{
+		session: storesqlite.Session{ID: "session-1", WorkspaceID: "workspace-1", Kind: storesqlite.SessionKindRoot,
+			Provider: "codex", ProviderSessionID: "provider-session-1", Cwd: "/workspace",
+			InternalRuntimeContext: map[string]any{"canonical": true}},
+		evidence: storesqlite.ProviderSessionResumeEvidence{Established: true},
+	}
+	runtime := &disconnectedReprepareRuntime{}
+	preparation := &trackingResumePreparation{prepared: PreparedRuntime{Cwd: "/workspace", MCPServers: []MCPServerBinding{{Name: "connector", URL: "http://127.0.0.1/invocation"}}}}
+	host := New(Config{CanonicalStore: store, Runtime: runtime, RuntimePreparation: preparation})
+
+	result, err := host.ReprepareRuntimeSession(t.Context(), ReprepareRuntimeSessionInput{
+		WorkspaceID: "workspace-1", AgentSessionID: "session-1",
+		RuntimeContextOverlay: map[string]any{"invocationId": "invocation-2"},
+	})
+	if err != nil {
+		t.Fatalf("ReprepareRuntimeSession() error = %v", err)
+	}
+	if runtime.resumeCalls != 1 || len(runtime.resumeInput.MCPServers) != 1 || runtime.resumeInput.MCPServers[0].URL != "http://127.0.0.1/invocation" {
+		t.Fatalf("resume = calls %d input %#v", runtime.resumeCalls, runtime.resumeInput)
+	}
+	if preparation.prepareInput.RuntimeContext["invocationId"] != "invocation-2" || runtime.resumeInput.RuntimeContext["invocationId"] != nil ||
+		runtime.resumeInput.ProviderLaunchRuntimeContext["invocationId"] != "invocation-2" {
+		t.Fatalf("preparation=%#v runtime=%#v launch=%#v", preparation.prepareInput.RuntimeContext, runtime.resumeInput.RuntimeContext, runtime.resumeInput.ProviderLaunchRuntimeContext)
+	}
+	if result.ID != "session-1" || result.ProviderSessionID != "provider-session-1" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestReprepareRuntimeSessionCleansPreparedResourcesWhenRuntimeReplacementFails(t *testing.T) {
+	reprepareErr := errors.New("reprepare failed")
+	store := liveResumeCanonicalStore{
+		session: storesqlite.Session{ID: "session-1", WorkspaceID: "workspace-1", Kind: storesqlite.SessionKindRoot,
+			Provider: "codex", ProviderSessionID: "provider-session-1", Cwd: "/workspace"},
+		evidence: storesqlite.ProviderSessionResumeEvidence{Established: true},
+	}
+	runtime := &reprepareRuntime{session: ProviderRuntimeSession{ID: "session-1", WorkspaceID: "workspace-1", Provider: "codex", ProviderSessionID: "provider-session-1", Cwd: "/workspace"}, reprepareErr: reprepareErr}
+	preparation := &trackingResumePreparation{prepared: PreparedRuntime{Cwd: "/workspace"}}
+	host := New(Config{CanonicalStore: store, Runtime: runtime, RuntimePreparation: preparation})
+
+	_, err := host.ReprepareRuntimeSession(t.Context(), ReprepareRuntimeSessionInput{WorkspaceID: "workspace-1", AgentSessionID: "session-1"})
+	if !errors.Is(err, reprepareErr) {
+		t.Fatalf("ReprepareRuntimeSession() error = %v, want %v", err, reprepareErr)
+	}
+	if preparation.cleanupCalls != 1 || !preparation.cleanupInput.PreserveRecoverableState ||
+		preparation.cleanupInput.WorkspaceID != "workspace-1" || preparation.cleanupInput.AgentSessionID != "session-1" {
+		t.Fatalf("cleanup = calls %d input %#v", preparation.cleanupCalls, preparation.cleanupInput)
 	}
 }
 

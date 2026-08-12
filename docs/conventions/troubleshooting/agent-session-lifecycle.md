@@ -4133,6 +4133,36 @@ convergence deadline`.
   [goal_operation_worker.go](../../../packages/agent/host/goal_operation_worker.go)
   [goal_scenarios.go](../../../packages/agent/host/conformance/goal_scenarios.go)
 
+### Replaced Goal banner keeps the previous objective
+
+- Symptom:
+  A second `/goal <objective>` is accepted and runs, but AgentGUI continues to
+  show the first objective. The Goal state table contains the second objective
+  at a newer revision while `workspace_agent_sessions.session_metadata_json`
+  or a runtime Session snapshot still contains the first.
+- Quick checks:
+  Compare `workspace_agent_session_goals.desired_json`, `revision`, and
+  `updated_at_unix_ms` with the Session metadata Goal. Confirm that the second
+  Goal operation completed before attributing the mismatch to React rendering.
+- Root cause:
+  Durable Goal state and provider Session metadata update on different
+  schedules. Session reads previously exposed the provider metadata Goal and
+  attached only `goalSyncState`, so a later Session reload could overwrite the
+  correct Goal Control response with an older objective.
+- Fix:
+  Project Host-owned durable Goal state and its update timestamp onto every
+  single and batch Session read. Use `desired` while convergence is unresolved,
+  use `observed` after synchronization, and honor the durable tombstone.
+- Validation:
+  Read a Session whose metadata contains objective A beside durable Goal
+  revision N+1 containing objective B. Single and batch projections must return
+  B with a Session timestamp at least as new as the Goal state. A durable
+  tombstone must return no Session Goal; a synchronized terminal observation
+  must remain terminal instead of reverting to active `desired` state.
+- References:
+  [service_turns.go](../../../services/tuttid/service/agent/service_turns.go)
+  [goal_state.go](../../../packages/agent/store-sqlite/goal_state.go)
+
 ### Cleared Goal reappears as a newer provider-authored Goal
 
 - Symptom:

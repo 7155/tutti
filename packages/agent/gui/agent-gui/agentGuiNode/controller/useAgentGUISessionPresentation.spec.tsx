@@ -217,10 +217,12 @@ describe("useAgentGUISessionPresentation", () => {
     input.activePendingActivation = null;
     input.activeEngineLatestTurn = null;
     input.activeEngineRuntimeActivity = "running";
+    input.activityDisplayStatus = "working";
     rendered.rerender();
     expect(rendered.result.current.activeConversationBusy).toBe(true);
 
     input.activeEngineRuntimeActivity = "idle";
+    input.activityDisplayStatus = "idle";
     rendered.rerender();
     expect(rendered.result.current.activeConversationBusy).toBe(false);
 
@@ -371,6 +373,7 @@ describe("useAgentGUISessionPresentation", () => {
       updatedAtUnixMs: 5
     };
     input.activeEngineRuntimeActivity = "running";
+    input.activityDisplayStatus = "working";
     rendered.rerender();
     expect(rendered.result.current.activeConversationBusy).toBe(true);
 
@@ -381,7 +384,16 @@ describe("useAgentGUISessionPresentation", () => {
       settledAtUnixMs: 6,
       updatedAtUnixMs: 6
     };
-    input.activeEngineRuntimeActivity = "idle";
+    input.activityDisplayStatus = "completed";
+    rendered.rerender();
+    expect(rendered.result.current.activeConversationBusy).toBe(false);
+
+    input.activeEngineLatestTurn = {
+      ...input.activeEngineLatestTurn,
+      error: { message: "Runtime host unavailable" },
+      outcome: "failed"
+    };
+    input.activityDisplayStatus = "failed";
     rendered.rerender();
     expect(rendered.result.current.activeConversationBusy).toBe(false);
 

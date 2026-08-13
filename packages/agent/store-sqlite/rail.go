@@ -442,10 +442,6 @@ func railIdentityPathForPlatform(path string, goos string) string {
 	return path
 }
 
-func railPathForComparison(path string) string {
-	return railPathForComparisonForPlatform(path, runtime.GOOS)
-}
-
 func railPathForComparisonForPlatform(path string, goos string) string {
 	if goos == "windows" && isWindowsProjectPath(path) {
 		return strings.ToLower(path)

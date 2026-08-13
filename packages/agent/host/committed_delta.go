@@ -226,13 +226,17 @@ func StaleTurnSettlementDelta(settlements []storesqlite.StaleTurnSettlement) Com
 			WorkspaceID:    workspaceID,
 			AgentSessionID: agentSessionID,
 			Turn: storesqlite.Turn{
-				WorkspaceID:    workspaceID,
-				AgentSessionID: agentSessionID,
-				TurnID:         turnID,
-				Phase:          storesqlite.TurnPhaseSettled,
-				Outcome:        storesqlite.TurnOutcomeInterrupted,
-				ErrorMessage:   "stale turn settled on daemon startup",
+				WorkspaceID:     workspaceID,
+				AgentSessionID:  agentSessionID,
+				TurnID:          turnID,
+				Phase:           storesqlite.TurnPhaseSettled,
+				Outcome:         storesqlite.TurnOutcomeInterrupted,
+				ErrorMessage:    "stale turn settled on daemon startup",
+				StartedAtUnixMS: settlement.StartedAtUnixMS,
+				SettledAtUnixMS: settlement.SettledAtUnixMS,
 			},
+			Provider:          strings.TrimSpace(settlement.Provider),
+			IsChildSession:    settlement.IsChildSession,
 			StartupReconciled: true,
 		})
 	}

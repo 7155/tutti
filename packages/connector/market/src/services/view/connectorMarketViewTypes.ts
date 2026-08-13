@@ -39,6 +39,7 @@ export interface ConnectorCardView {
     | "installing"
     | "not_installed"
     | "unavailable"
+    | "updating"
     | "update_available";
 }
 
@@ -77,6 +78,7 @@ interface ConnectorDialogBaseView {
 }
 
 export interface ConnectorAuthorizationDialogView extends ConnectorDialogBaseView {
+  authorizationInteraction?: unknown;
   authorizationKind: string;
   authorizing: boolean;
   kind: "authorization";

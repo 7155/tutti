@@ -15,7 +15,13 @@ import (
 // CreateSession reports at most one aggregated TerminalFailure for a failed
 // command. Cleanup after a primary failure stays diagnostic.
 func (h *Host) CreateSession(ctx context.Context, workspaceID string, input CreateSessionInput) (CreateSessionResult, error) {
-	ctx, command := h.beginCommand(ctx, "session_create", workspaceID, input.AgentSessionID)
+	clientSubmitID := firstNonEmptyTrimmed(input.ClientSubmitID, legacyClientSubmitID(input.Metadata))
+	activationID := strings.TrimSpace(input.ActivationID)
+	operationID := firstNonEmptyTrimmed(activationID, clientSubmitID, input.AgentSessionID)
+	ctx, command := h.beginCommand(ctx, commandTerminalFailureInput{
+		flow: "session_create", workspaceID: workspaceID, agentSessionID: input.AgentSessionID,
+		operationID: operationID, requestID: activationID, clientSubmitID: clientSubmitID, turnID: input.TurnID,
+	})
 	result, err := h.createSession(ctx, workspaceID, input)
 	command.finish(ctx, h, err)
 	return result, err
@@ -461,7 +467,12 @@ func (h *Host) ensureRuntimeSessionLocked(ctx context.Context, ref SessionRef) (
 // SendInput reports at most one aggregated TerminalFailure for a failed
 // command. Guidance target binding and goal control own their own emissions.
 func (h *Host) SendInput(ctx context.Context, ref SessionRef, input SendInput) (SendInputResult, error) {
-	ctx, command := h.beginCommand(ctx, "message_send", ref.WorkspaceID, ref.AgentSessionID)
+	clientSubmitID := firstNonEmptyTrimmed(input.ClientSubmitID, legacyClientSubmitID(input.Metadata))
+	ctx, command := h.beginCommand(ctx, commandTerminalFailureInput{
+		flow: "message_send", workspaceID: ref.WorkspaceID, agentSessionID: ref.AgentSessionID,
+		operationID:    firstNonEmptyTrimmed(clientSubmitID, input.TurnID),
+		clientSubmitID: clientSubmitID, turnID: input.TurnID,
+	})
 	result, err := h.sendInput(ctx, ref, input)
 	command.finish(ctx, h, err)
 	return result, err

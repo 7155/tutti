@@ -335,7 +335,15 @@ func (application *Application) BeginAuthorization(
 	if remote && !accountScoped {
 		return AuthorizationResult{}, invalidRequest("accountId is required for remote connector authorization")
 	}
-	if accountScoped {
+	idempotentReplay, err := application.isIdempotentConnectorOperation(
+		ctx,
+		mutation,
+		OperationKindStartAuthorization,
+	)
+	if err != nil {
+		return AuthorizationResult{}, err
+	}
+	if accountScoped && !idempotentReplay {
 		projection, projectionErr := application.GetAuthorizationProjection(ctx, accountID, mutation.ConnectorKey)
 		if projectionErr != nil && !errors.Is(projectionErr, ErrNotFound) {
 			return AuthorizationResult{}, projectionErr
@@ -487,7 +495,7 @@ func (application *Application) ReconcileAuthorizations(ctx context.Context, sco
 		if observation.State == AuthorizationObservationFailed {
 			projectionState = AuthorizationStateFailed
 		}
-		if err := application.projectAuthorizationAndScheduleRuntime(ctx, operation.Scope, connector.Key,
+		if _, err := application.projectAuthorization(ctx, operation.Scope, connector.Key,
 			observation.ConnectionID, projectionState, observation.FailureCode); err != nil {
 			reconcileErr = errors.Join(reconcileErr, err)
 			continue
@@ -844,6 +852,35 @@ func (application *Application) acceptConnectorOperation(
 		}
 	}
 	return result, nil
+}
+
+// isIdempotentConnectorOperation distinguishes a continuation of an existing
+// command from a new state transition. Authorization providers may expose a
+// multi-step flow through repeated BeginAuthorization calls with one stable
+// clientRequestId, so account projection guards must not reject that replay as
+// a new pending-to-pending transition. acceptConnectorOperation repeats this
+// verification inside its mutation transaction before returning the operation.
+func (application *Application) isIdempotentConnectorOperation(
+	ctx context.Context,
+	mutation ConnectorMutation,
+	kind OperationKind,
+) (bool, error) {
+	var replay bool
+	err := application.config.Repository.Transaction(ctx, func(tx Transaction) error {
+		existing, err := tx.OperationByClientRequestID(mutation.ClientRequestID)
+		if err != nil {
+			return err
+		}
+		if existing == nil {
+			return nil
+		}
+		if err := verifyIdempotentOperation(*existing, kind, mutation.ConnectorKey, mutation.AccountID); err != nil {
+			return err
+		}
+		replay = true
+		return nil
+	})
+	return replay, err
 }
 
 func (application *Application) acceptOperation(

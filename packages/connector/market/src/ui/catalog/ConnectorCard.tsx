@@ -30,6 +30,7 @@ export function ConnectorCard({ connectorKey }: { connectorKey: string }) {
     return null;
   }
 
+  const buttonLabel = resolveButtonLabel(card, disconnecting, i18n.t);
   const actionLabel = resolveActionLabel(card, i18n.t);
   const status = resolveStatus(card.status, i18n.t);
   const handleAction = () => {
@@ -142,8 +143,8 @@ export function ConnectorCard({ connectorKey }: { connectorKey: string }) {
           }
           onClick={handleAction}
         >
-          {disconnecting ? <Spinner size={14} /> : null}
-          {disconnecting ? i18n.t("actionDisconnecting") : actionLabel}
+          {card.action === "busy" || disconnecting ? <Spinner size={14} /> : null}
+          {buttonLabel}
         </Button>
       </div>
     </Card>
@@ -229,4 +230,29 @@ function operationStageLabel(
     refreshing: "operationRefreshing"
   } as const;
   return t(keys[stage as keyof typeof keys] ?? "operationAccepted");
+}
+
+function resolveButtonLabel(
+  card: Readonly<Pick<ConnectorCardView, "action" | "authorizationState" | "installationState" | "operationStage">>,
+  disconnecting: boolean,
+  t: ConnectorMarketI18nRuntime["t"]
+): string {
+  if (disconnecting) {
+    return t("actionDisconnecting");
+  }
+  
+  if (card.action === "busy") {
+    if (card.operationStage === "authorizing") {
+      return t("operationAuthorizing");
+    }
+    if (card.operationStage === "activating" || card.operationStage === "accepted" || card.operationStage === "prepared" || card.operationStage === "downloading") {
+      return t("actionInstalling");
+    }
+    if (card.operationStage === "deactivating" || card.operationStage === "disconnecting") {
+      return t("actionDisconnecting");
+    }
+    return t("actionInstalling");
+  }
+  
+  return resolveActionLabel(card, t);
 }

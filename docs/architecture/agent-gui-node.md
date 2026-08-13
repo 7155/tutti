@@ -936,7 +936,12 @@ the associated state report wins canonical ordering. Desktop and Mobile Live
 consume the same event variant. The workspace Engine uses its occurrence time
 to reject reordering and prevents an older `running` observation from
 overriding a settled Turn. A disconnect clears the ephemeral observation,
-while canonical Turn state remains authoritative once it exists.
+while canonical Turn state remains authoritative once it exists. AgentGUI
+consumes the Engine's fenced Session display status after the canonical
+Session exists; it must not recompute Composer busy state from the raw runtime
+activity flag, because that would let an older `running` observation outlive a
+completed or failed latest Turn. Raw runtime activity may bridge presentation
+only before that canonical Session projection exists.
 
 ### 4.1 Read/write rules
 

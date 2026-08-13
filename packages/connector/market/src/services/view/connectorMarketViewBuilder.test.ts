@@ -144,15 +144,20 @@ test("preserves the connector authorization interaction for the dialog", () => {
   const interaction = {
     protocol: "tutti.connector.authorization.declarative.v1",
     initialView: {
-      type: "form",
-      fields: [
-        {
-          type: "secret",
-          name: "personal_token",
-          label: "Personal token",
-          required: true
+      defaultLocale: "en-US",
+      locales: {
+        "en-US": {
+          type: "form",
+          fields: [
+            {
+              type: "secret",
+              name: "personal_token",
+              label: "Personal token",
+              required: true
+            }
+          ]
         }
-      ]
+      }
     },
     submission: { kind: "native_secret", secretField: "personal_token" }
   };

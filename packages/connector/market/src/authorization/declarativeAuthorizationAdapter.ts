@@ -35,17 +35,22 @@ function createLegacySecretInteraction(
   return {
     protocol: "tutti.connector.authorization.declarative.v1",
     initialView: {
-      type: "form",
-      fields: [
-        {
-          type: "secret",
-          name: "secret",
-          label: labels.fieldLabel,
-          description: labels.description,
-          placeholder: labels.placeholder,
-          required: true
+      defaultLocale: "en-US",
+      locales: {
+        "en-US": {
+          type: "form",
+          fields: [
+            {
+              type: "secret",
+              name: "secret",
+              label: labels.fieldLabel,
+              description: labels.description,
+              placeholder: labels.placeholder,
+              required: true
+            }
+          ]
         }
-      ]
+      }
     },
     submission: {
       kind: "native_secret",

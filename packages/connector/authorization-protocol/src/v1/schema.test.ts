@@ -14,16 +14,21 @@ import { validateAuthorizationEventForViewV1 } from "./validation.ts";
 const figmaInteraction = {
   protocol: AUTHORIZATION_DECLARATIVE_PROTOCOL_V1,
   initialView: {
-    type: "form",
-    title: "Configure Figma",
-    fields: [
-      {
-        type: "secret",
-        name: "personal_access_token",
-        label: "Personal access token",
-        required: true
+    defaultLocale: "en-US",
+    locales: {
+      "en-US": {
+        type: "form",
+        title: "Configure Figma",
+        fields: [
+          {
+            type: "secret",
+            name: "personal_access_token",
+            label: "Personal access token",
+            required: true
+          }
+        ]
       }
-    ]
+    }
   },
   submission: {
     kind: "native_secret",
@@ -53,10 +58,14 @@ test("rejects a native-secret mapping to an undeclared field", () => {
 test("resolves an exact localized view and falls back to the default", () => {
   const parsed = parseDeclarativeAuthorizationInteractionV1({
     ...figmaInteraction,
-    localizedInitialViews: {
-      "zh-CN": {
-        ...figmaInteraction.initialView,
-        title: "配置 Figma"
+    initialView: {
+      ...figmaInteraction.initialView,
+      locales: {
+        ...figmaInteraction.initialView.locales,
+        "zh-CN": {
+          ...figmaInteraction.initialView.locales["en-US"],
+          title: "配置 Figma"
+        }
       }
     }
   });
@@ -72,12 +81,26 @@ test("resolves an exact localized view and falls back to the default", () => {
   );
 });
 
+test("rejects a missing default locale", () => {
+  const result = parseDeclarativeAuthorizationInteractionV1({
+    ...figmaInteraction,
+    initialView: {
+      ...figmaInteraction.initialView,
+      defaultLocale: "fr-FR"
+    }
+  });
+  assert.deepEqual(result, {
+    ok: false,
+    error: { code: "invalid_declarative_interaction" }
+  });
+});
+
 test("rejects unknown view properties", () => {
   const result = parseAuthorizationViewV1({
     protocol: AUTHORIZATION_VIEW_PROTOCOL_V1,
     viewId: "figma-token-1",
     view: {
-      ...figmaInteraction.initialView,
+      ...figmaInteraction.initialView.locales["en-US"],
       headerName: "X-Figma-Token"
     }
   });
@@ -91,7 +114,7 @@ test("validates a submit event against the current form without trimming secrets
   const view = {
     protocol: AUTHORIZATION_VIEW_PROTOCOL_V1,
     viewId: "figma-token-1",
-    view: figmaInteraction.initialView
+    view: figmaInteraction.initialView.locales["en-US"]
   };
   const event = {
     protocol: AUTHORIZATION_EVENT_PROTOCOL_V1,
@@ -117,7 +140,7 @@ test("rejects stale and unknown-field events", () => {
   const view = {
     protocol: AUTHORIZATION_VIEW_PROTOCOL_V1,
     viewId: "figma-token-1",
-    view: figmaInteraction.initialView
+    view: figmaInteraction.initialView.locales["en-US"]
   };
   const stale = validateAuthorizationEventForViewV1(
     view,

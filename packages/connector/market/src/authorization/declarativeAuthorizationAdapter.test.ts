@@ -42,15 +42,20 @@ test("maps a declared field to the existing native-secret input", () => {
     interaction: {
       protocol: "tutti.connector.authorization.declarative.v1",
       initialView: {
-        type: "form",
-        fields: [
-          {
-            type: "secret",
-            name: "personal_token",
-            label: "Personal token",
-            required: true
+        defaultLocale: "en-US",
+        locales: {
+          "en-US": {
+            type: "form",
+            fields: [
+              {
+                type: "secret",
+                name: "personal_token",
+                label: "Personal token",
+                required: true
+              }
+            ]
           }
-        ]
+        }
       },
       submission: {
         kind: "native_secret",
@@ -78,29 +83,32 @@ test("selects the localized presentation without changing submission binding", (
     interaction: {
       protocol: "tutti.connector.authorization.declarative.v1",
       initialView: {
-        type: "form",
-        title: "Connect",
-        fields: [
-          {
-            type: "secret",
-            name: "personal_token",
-            label: "Personal token",
-            required: true
+        defaultLocale: "en-US",
+        locales: {
+          "en-US": {
+            type: "form",
+            title: "Connect",
+            fields: [
+              {
+                type: "secret",
+                name: "personal_token",
+                label: "Personal token",
+                required: true
+              }
+            ]
+          },
+          "zh-CN": {
+            type: "form",
+            title: "连接",
+            fields: [
+              {
+                type: "secret",
+                name: "personal_token",
+                label: "个人令牌",
+                required: true
+              }
+            ]
           }
-        ]
-      },
-      localizedInitialViews: {
-        "zh-CN": {
-          type: "form",
-          title: "连接",
-          fields: [
-            {
-              type: "secret",
-              name: "personal_token",
-              label: "个人令牌",
-              required: true
-            }
-          ]
         }
       },
       submission: {

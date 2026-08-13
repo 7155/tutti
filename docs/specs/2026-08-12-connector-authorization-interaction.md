@@ -603,7 +603,10 @@ authorization method 中增加 `interaction`，由平台通用 Adapter 消费：
 ```ts
 interface DeclarativeAuthorizationInteractionV1 {
   protocol: "tutti.connector.authorization.declarative.v1";
-  initialView: AuthorizationViewV1;
+  initialView: {
+    defaultLocale: string;
+    locales: Record<string, AuthorizationViewV1>;
+  };
   submission: {
     kind: "native_secret";
     secretField: string;
@@ -611,7 +614,9 @@ interface DeclarativeAuthorizationInteractionV1 {
 }
 ```
 
-`secretField` 只能引用 `initialView` 中类型为 `secret` 的字段。通用 Adapter 收到 submit 后，
+`initialView.defaultLocale` 必须引用 `initialView.locales` 中存在的语言项。locale 精确命中时选择
+对应 View，未命中时选择 `defaultLocale`；所有语言项必须保持相同字段 contract。
+`secretField` 只能引用每个语言 View 中类型为 `secret` 的字段。通用 Adapter 收到 submit 后，
 从 values 中取出该字段，并调用现有 `native_secret` complete 流程；它无权指定 header、host、
 endpoint 或文件路径。这些安全敏感的运行时映射继续由 tsh binding 或其他受信 runtime
 binding 管理。
@@ -622,17 +627,35 @@ binding 管理。
 {
   "protocol": "tutti.connector.authorization.declarative.v1",
   "initialView": {
-    "type": "form",
-    "title": "配置 Figma",
-    "submitLabel": "保存并启用",
-    "fields": [
-      {
-        "type": "secret",
-        "name": "personal_access_token",
-        "label": "个人访问令牌",
-        "required": true
+    "defaultLocale": "en-US",
+    "locales": {
+      "en-US": {
+        "type": "form",
+        "title": "Configure Figma",
+        "submitLabel": "Save and enable",
+        "fields": [
+          {
+            "type": "secret",
+            "name": "personal_access_token",
+            "label": "Personal access token",
+            "required": true
+          }
+        ]
+      },
+      "zh-CN": {
+        "type": "form",
+        "title": "配置 Figma",
+        "submitLabel": "保存并启用",
+        "fields": [
+          {
+            "type": "secret",
+            "name": "personal_access_token",
+            "label": "个人访问令牌",
+            "required": true
+          }
+        ]
       }
-    ]
+    }
   },
   "submission": {
     "kind": "native_secret",
@@ -658,16 +681,33 @@ personal_access_token
 {
   "protocol": "tutti.connector.authorization.declarative.v1",
   "initialView": {
-    "type": "form",
-    "title": "连接 Tencent Docs",
-    "fields": [
-      {
-        "type": "secret",
-        "name": "personal_token",
-        "label": "Personal Token",
-        "required": true
+    "defaultLocale": "en-US",
+    "locales": {
+      "en-US": {
+        "type": "form",
+        "title": "Connect Tencent Docs",
+        "fields": [
+          {
+            "type": "secret",
+            "name": "personal_token",
+            "label": "Personal Token",
+            "required": true
+          }
+        ]
+      },
+      "zh-CN": {
+        "type": "form",
+        "title": "连接腾讯文档",
+        "fields": [
+          {
+            "type": "secret",
+            "name": "personal_token",
+            "label": "Personal Token",
+            "required": true
+          }
+        ]
       }
-    ]
+    }
   },
   "submission": {
     "kind": "native_secret",
@@ -697,16 +737,21 @@ Connector manifest tooling 可以提供轻量 builder 校验 presentation 和 su
 const figmaAuthorization = defineDeclarativeAuthorization({
   protocol: "tutti.connector.authorization.declarative.v1",
   initialView: {
-    type: "form",
-    title: "配置 Figma",
-    fields: [
-      {
-        type: "secret",
-        name: "personal_access_token",
-        label: "个人访问令牌",
-        required: true
+    defaultLocale: "en-US",
+    locales: {
+      "en-US": {
+        type: "form",
+        title: "Configure Figma",
+        fields: [
+          {
+            type: "secret",
+            name: "personal_access_token",
+            label: "Personal access token",
+            required: true
+          }
+        ]
       }
-    ]
+    }
   },
   submission: {
     kind: "native_secret",
@@ -1100,18 +1145,37 @@ presentation 和 submission 配置：
       "interaction": {
         "protocol": "tutti.connector.authorization.declarative.v1",
         "initialView": {
-          "type": "form",
-          "title": "配置 Figma",
-          "description": "输入 Figma Personal Access Token",
-          "submitLabel": "保存并启用",
-          "fields": [
-            {
-              "type": "secret",
-              "name": "personal_access_token",
-              "label": "个人访问令牌",
-              "required": true
+          "defaultLocale": "en-US",
+          "locales": {
+            "en-US": {
+              "type": "form",
+              "title": "Configure Figma",
+              "description": "Enter a Figma Personal Access Token",
+              "submitLabel": "Save and enable",
+              "fields": [
+                {
+                  "type": "secret",
+                  "name": "personal_access_token",
+                  "label": "Personal access token",
+                  "required": true
+                }
+              ]
+            },
+            "zh-CN": {
+              "type": "form",
+              "title": "配置 Figma",
+              "description": "输入 Figma Personal Access Token",
+              "submitLabel": "保存并启用",
+              "fields": [
+                {
+                  "type": "secret",
+                  "name": "personal_access_token",
+                  "label": "个人访问令牌",
+                  "required": true
+                }
+              ]
             }
-          ]
+          }
         },
         "submission": {
           "kind": "native_secret",
@@ -1312,7 +1376,8 @@ Transport 错误、Connector 崩溃和 Renderer error boundary 使用 Tutti-owne
 ### 阶段 C：声明式 Adapter 与 Connector adoption
 
 - 在 Connector manifest contract 中增加可选 `interaction` 配置；该配置不属于 Renderer
-  protocol package，内部 `initialView` 复用同一份 View Schema；
+  protocol package，`initialView.locales` 的每个值复用同一份 View Schema，并由
+  `defaultLocale` 声明未命中时的回退项；
 - 实现平台通用 declarative Adapter，负责生成 `viewId`、输出 view、消费 event，并调用现有
   authorization backend；
 - Tencent Docs 和 Figma 单 token 场景只增加配置，不增加 Connector 专属 JS；

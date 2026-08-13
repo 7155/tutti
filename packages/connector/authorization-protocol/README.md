@@ -14,7 +14,9 @@ V1 includes:
 - text, secret, number, select, boolean, and opaque local-file fields;
 - view-aware event validation, including stale-view and unknown-field rejection;
 - a narrow declarative `native_secret` interaction whose submission field must
-  reference its only secret field.
+  reference its only secret field;
+- symmetric localized initial views under `initialView.locales`, with an
+  explicit `initialView.defaultLocale` fallback.
 
 The declarative interaction is configuration, not executable Connector code.
 The host adapter owns runtime `viewId` generation and calls the existing trusted

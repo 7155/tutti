@@ -527,11 +527,23 @@ const authorizationLocaleV1Schema = v.pipe(
   v.regex(LOCALE_PATTERN, "authorization.invalid_locale")
 );
 
-const localizedInitialViewsV1Schema = v.pipe(
+const authorizationLocalizedViewsV1Schema = v.pipe(
   v.record(authorizationLocaleV1Schema, authorizationViewV1Schema),
   v.check(
     (views) => Object.keys(views).length > 0 && Object.keys(views).length <= 8,
     "authorization.invalid_localized_views"
+  )
+);
+
+export const authorizationLocalizedViewV1Schema = v.pipe(
+  v.strictObject({
+    defaultLocale: authorizationLocaleV1Schema,
+    locales: authorizationLocalizedViewsV1Schema
+  }),
+  v.check(
+    (localizedView) =>
+      Object.hasOwn(localizedView.locales, localizedView.defaultLocale),
+    "authorization.missing_default_locale"
   )
 );
 
@@ -551,15 +563,11 @@ function isNativeSecretForm(
 export const declarativeAuthorizationInteractionV1Schema = v.pipe(
   v.strictObject({
     protocol: v.literal(AUTHORIZATION_DECLARATIVE_PROTOCOL_V1),
-    initialView: authorizationViewV1Schema,
-    localizedInitialViews: v.optional(localizedInitialViewsV1Schema),
+    initialView: authorizationLocalizedViewV1Schema,
     submission: nativeSecretAuthorizationSubmissionV1Schema
   }),
   v.check((interaction) => {
-    const views = [
-      interaction.initialView,
-      ...Object.values(interaction.localizedInitialViews ?? {})
-    ];
+    const views = Object.values(interaction.initialView.locales);
     return views.every((view) =>
       isNativeSecretForm(view, interaction.submission.secretField)
     );
@@ -717,11 +725,9 @@ export function resolveDeclarativeAuthorizationInitialViewV1(
   locale: string
 ): AuthorizationViewV1 {
   const normalized = locale.trim();
-  const language = normalized.split("-")[0];
   return (
-    interaction.localizedInitialViews?.[normalized] ??
-    (language ? interaction.localizedInitialViews?.[language] : undefined) ??
-    interaction.initialView
+    interaction.initialView.locales[normalized] ??
+    interaction.initialView.locales[interaction.initialView.defaultLocale]!
   );
 }
 

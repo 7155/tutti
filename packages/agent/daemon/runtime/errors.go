@@ -9,6 +9,11 @@ const (
 )
 
 var (
+	// ErrProviderStartTimeout is attached only by a provider adapter that has
+	// reached its provider-readiness boundary and observed the start deadline
+	// before a runtime Session was established. Callers must not infer this
+	// verdict from an arbitrary context deadline.
+	ErrProviderStartTimeout          = errors.New("agent provider start timed out")
 	ErrSessionDisconnected           = errors.New("agent session is not connected")
 	ErrInteractiveRequestNotLive     = errors.New("interactive request is no longer live")
 	ErrInteractiveAlreadyAnswered    = errors.New("interactive request has already been answered")

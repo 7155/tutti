@@ -536,7 +536,7 @@ export function useAgentGUINodeController({
     (
       path: string | null,
       metadata?: {
-        action: "clear" | "create_new" | "select_existing";
+        action: "clear" | "create_new" | "import_directory" | "select_existing";
         project?: {
           id: string;
           path: string;

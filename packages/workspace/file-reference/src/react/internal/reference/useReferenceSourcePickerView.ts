@@ -1022,6 +1022,42 @@ export function useReferenceSourcePickerView({
       setFocusedNode(null);
       return true;
     },
+    selectTargets: async (
+      targets: readonly ReferenceLocateTarget[]
+    ): Promise<number> => {
+      const located = await Promise.all(
+        targets.map(async (target) => ({
+          path: await controller.locatePath(target),
+          target
+        }))
+      );
+      const selectable = located.flatMap(({ path, target }) => {
+        const node = path.at(-1);
+        return node && isSelectable(node) ? [{ node, path, target }] : [];
+      });
+      if (selectable.length === 0) {
+        return 0;
+      }
+      const visible = selectable.at(-1)!;
+      const rootGroupNode = visible.path[0] ?? null;
+      controller.setActiveSource(
+        visible.target.sourceId,
+        rootGroupNode?.ref.nodeId ?? null
+      );
+      controller.setSearchQuery("", rootGroupNode?.ref.nodeId ?? null);
+      controller.setSearchFilters([], rootGroupNode?.ref.nodeId ?? null);
+      controller.clearSelection();
+      for (const { node } of selectable) {
+        controller.toggleSelection(node);
+      }
+      setBreadcrumbBySource((current) => ({
+        ...current,
+        [visible.target.sourceId]: visible.path
+      }));
+      controller.ensureChildren(visible.node);
+      setFocusedNode(null);
+      return selectable.length;
+    },
     isSelectable,
     isSelected,
     isOpeningReference,

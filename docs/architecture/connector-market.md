@@ -283,10 +283,21 @@ restarted from the idempotent release installer; the business repository does
 not persist internal download/sync/import sub-stages:
 
 ```text
-accepted -> installing -> installed -> completed
-     |            |            |
-     +------------+------------+-> failed
+install/update:
+accepted -> installing(receipt) -> runtime_pending(candidate + Desired)
+         -> Observed(exact generation) -> current promoted -> completed
+
+uninstall:
+accepted -> deactivating(Desired=disabled) -> Observed(disabled)
+         -> removing -> absent -> completed
 ```
+
+These are short database transactions separated by idempotent external
+effects, not one long transaction. Every external effect is preceded by a
+durable phase/receipt. A retryable error leaves the Operation non-terminal and
+the continuous recovery scanner resumes it; a deterministic install failure
+clears Candidate and its convergence row before terminalizing. During update,
+Current and its route remain usable until Candidate has been observed ready.
 
 The repository owns operation leases and attempt metadata. Recovery observes
 staging markers, active-version markers, and host runtime state before deciding
@@ -310,14 +321,29 @@ from the authoritative connector/snapshot projection instead of relying on
 operation history.
 
 Installed release evidence is durable recovery input, not operation history.
-The SQLite store records one complete release record per installed connector in
-`connector_market_installed_releases`; install completion updates it and
-uninstall completion removes it in the same transaction as the business
-transition. Receipt-detected drift retains that evidence while the installation
-projection is failed so repair and uninstall still target the accepted release.
+The SQLite store records immutable Current and prepared Candidate releases by
+`(connector_key, release_digest)` in
+`connector_market_release_installations`; the legacy one-row table remains a
+compatibility projection. Uninstall completion removes all versions in the
+same transaction as the business transition. Receipt-detected drift retains
+Current evidence while the installation projection is failed so repair and
+uninstall still target the accepted release.
 Runtime recovery therefore remains valid after the corresponding completed
 install operation has expired, including when the accepted catalog has advanced
 to a newer release.
+
+Runtime publication is durable convergence state, not a public Operation. The
+runtime-pending transaction atomically commits Candidate evidence, a non-secret
+`RuntimeDesired`, the running install Operation, and the public outbox event.
+Only an exact current-boot `RuntimeObserved` allows the final transaction to
+promote Candidate to Current and complete the Operation.
+`RuntimeDesired.generation` is a Connector-and-account-scope clock
+independent from catalog and event revisions. A continuous daemon scanner claims
+`Desired != Observed` work with a renewable token-fenced lease, resolves any
+one-shot credential grant only immediately before the host call, and commits
+`RuntimeObserved` with a compare-and-swap on the exact desired generation. An
+Observed receipt from another daemon boot is stale even when its generation
+matches. Scheduling is only a latency hint; a lost wake-up cannot lose work.
 
 Before bootstrap republishes installed routes, it asks the physical installation
 manager to inspect the accepted artifact and optional CLI receipts. `absent` or
@@ -327,10 +353,13 @@ installed release evidence needed for safe repair or uninstall. A later
 preserves the projection. Runtime reconcile then performs interface readiness
 checks before any route is published.
 
-Authorization operations must follow the same recovery rule or remain fully
-synchronous without leaving a recoverable `running` operation. A provider uses
-the operation or client request identity to resume without creating duplicate
-external authorization sessions.
+Authorization operations follow the same recovery rule. Authorization creation
+is serialized per account and Connector, and an unresolved durable session
+receipt rejects a different request identity, so renderer reload cannot create
+a second external session. Managed runtimes are inspected during convergence;
+restart no longer fabricates a permanently pending observation. Disconnect is
+completed only after the disconnected projection and exact disabled Runtime
+Observed state are durable.
 
 For account-scoped runtimes, `AccountRuntimeBindingResolver` maps `none`
 authorization to an always-active device connection. OAuth/API-key connectors
@@ -361,21 +390,22 @@ receipts for the daemon's current account are polled. Applying an authoritative
 connected Snapshot atomically writes its monotonic Projection and surfaces all
 matching account-and-Connector receipts. The daemon holds the account lifecycle
 fence and is the single runtime scheduler for receipt recovery. Host projection
-does not enqueue a second operation. The daemon atomically creates or joins the
-active Reconcile for the same Connector and account scope, awaits it, and only
-then resolves the receipts as
+does not enqueue a second public operation. The daemon updates or joins the
+scope's durable Runtime Desired, awaits the exact generation in Observed, and
+only then resolves the receipts as
 `account_state_converged`. A same-revision Snapshot still surfaces a receipt created
 after an earlier Snapshot does not cause permanent polling. WebSocket hints and
 the five-minute calibration both fetch Snapshot; runtime reconcile is
 level-triggered and can safely repeat after restart or an interrupted pass.
-The external mutation API continues to use the global Snapshot revision for
-CAS. Internal level-triggered repair reads current durable state inside its
-transaction, so unrelated Connector operations cannot create false revision
-conflicts.
-An existing active Reconcile may have resolved its binding before a newer
-Projection was persisted. Joining it therefore drains older work but is not a
-convergence proof; the daemon ensures and awaits one follow-up Reconcile from
-current durable state before resolving the receipt.
+New external Connector mutations use `expectedConnectorRevision`, so unrelated
+Connectors accepted from one Snapshot can proceed independently. The required
+global `expectedRevision` remains in the wire contract for old clients and is
+used when the Connector fence is absent. Catalog refresh retains its global
+revision fence. Internal level-triggered repair reads current durable state
+inside its transaction.
+An in-flight reconcile may have resolved its binding before a newer Projection
+was persisted. Its Observed compare-and-swap is rejected after Desired advances;
+the scanner then applies the newer generation before receipt resolution.
 
 Authorization execution is selected from the exact release frozen into the
 durable operation. `managed_stdio` delegates to the local implementation host;
@@ -390,7 +420,22 @@ relay, while the VM receives only the non-credential runtime route identity.
 
 Business state and its invalidation event are written to a durable outbox in
 the same SQLite transaction. The host publisher delivers outbox entries through
-its existing event stream and records delivery progress.
+its existing event stream and records delivery progress. A full Snapshot carries
+the maximum outbox `eventCursor` read in the same SQLite snapshot. Each delivered
+event carries its durable outbox cursor; duplicates are ignored and a gap causes
+one authoritative reload. Snapshot revision, event cursor, and per-Connector
+revision are separate watermarks, so a late partial fetch cannot suppress an
+unrelated Connector update or overwrite a newer entity.
+
+Account authorization overlays are read in the same SQLite Snapshot as market
+state. A public projection change atomically advances the Connector revision and
+appends its invalidation event; account state can no longer change invisibly
+between market Snapshot reads.
+
+Concurrent catalog requests use a process-local monotonically increasing fetch
+fence: an older page or refresh response that returns after a newer response is
+dropped before its write transaction. This is a daemon compatibility mechanism
+and requires no remote catalog protocol change.
 
 Pending outbox entries never expire. Published entries are delivery receipts,
 not the replay or diagnostic authority, and are retained for one hour before

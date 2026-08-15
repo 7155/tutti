@@ -17,7 +17,15 @@ type stubConnectorMarketService struct {
 	pageFn       func(context.Context, market.CatalogPageQuery) (market.CatalogPage, error)
 	installFn    func(context.Context, market.ConnectorMutation) (market.MutationResult, error)
 	uninstallFn  func(context.Context, market.ConnectorMutation) (market.MutationResult, error)
+	cancelFn     func(context.Context, market.OperationScope, string) error
 	projectionFn func(context.Context, string, string) (market.AuthorizationProjection, error)
+}
+
+func (service stubConnectorMarketService) CancelAuthorization(ctx context.Context, scope market.OperationScope, connectorKey string) error {
+	if service.cancelFn == nil {
+		return nil
+	}
+	return service.cancelFn(ctx, scope, connectorKey)
 }
 
 func (service stubConnectorMarketService) GetAuthorizationProjection(ctx context.Context, accountID, connectorKey string) (market.AuthorizationProjection, error) {
@@ -84,6 +92,29 @@ func TestDaemonAPIConnectorMarketSnapshotHidesImplementationConfig(t *testing.T)
 	aliases := routing["aliases"].([]any)
 	if len(aliases) != 2 || aliases[0] != "Notion" || aliases[1] != "Notion AI" {
 		t.Fatalf("public agent routing aliases = %#v", aliases)
+	}
+}
+
+func TestDaemonAPICancelsConnectorAuthorizationForActiveAccount(t *testing.T) {
+	var gotScope market.OperationScope
+	var gotConnectorKey string
+	service := stubConnectorMarketService{cancelFn: func(_ context.Context, scope market.OperationScope, connectorKey string) error {
+		gotScope, gotConnectorKey = scope, connectorKey
+		return nil
+	}}
+	mux := http.NewServeMux()
+	RegisterRoutes(mux, NewRoutes(DaemonAPI{
+		ConnectorMarketService: service,
+		ConnectorMarketScope:   func() market.OperationScope { return market.OperationScope{AccountID: "account-1"} },
+	}))
+
+	recorder := performGeneratedRouteRequest(t, mux, http.MethodPost,
+		"/v1/connector-market/connectors/supabase/authorization:cancel", nil)
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d; body: %s", recorder.Code, http.StatusNoContent, recorder.Body.String())
+	}
+	if gotScope.AccountID != "account-1" || gotConnectorKey != "supabase" {
+		t.Fatalf("cancel scope=%#v connector=%q", gotScope, gotConnectorKey)
 	}
 }
 

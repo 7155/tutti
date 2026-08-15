@@ -18,6 +18,14 @@ func (store *Store) migrateLifecycle(ctx context.Context) error {
 		!isDuplicateColumnError(err) {
 		return fmt.Errorf("migrate connector market operation update timestamp: %w", err)
 	}
+	if _, err := store.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS connector_market_release_installations (
+  connector_key TEXT NOT NULL,
+  release_digest TEXT NOT NULL,
+  release_json TEXT NOT NULL,
+  PRIMARY KEY (connector_key, release_digest)
+)`); err != nil {
+		return fmt.Errorf("migrate connector release installations: %w", err)
+	}
 	if err := store.backfillLifecycleColumns(ctx); err != nil {
 		return err
 	}
@@ -169,17 +177,24 @@ WHERE connector_key = ? AND kind = ? AND state = ? ORDER BY updated_at_unix_ms D
 }
 
 func saveInstalledReleaseEvidenceOn(ctx context.Context, tx *sql.Tx, operation market.Operation) error {
-	if operation.State != market.OperationStateCompleted {
-		return nil
-	}
 	switch operation.Kind {
 	case market.OperationKindInstall:
+		if operation.Execution.ReleaseInstallation == nil && operation.State != market.OperationStateCompleted {
+			return nil
+		}
 		if operation.Target == nil || operation.Target.Release == nil || operation.Target.ReleaseDigest == "" {
-			return errors.New("completed connector install is missing release evidence")
+			return errors.New("prepared connector install is missing release evidence")
 		}
 		return saveInstalledReleaseOn(ctx, tx, *operation.Target.Release)
 	case market.OperationKindUninstall:
+		if operation.State != market.OperationStateCompleted {
+			return nil
+		}
 		_, err := tx.ExecContext(ctx, `DELETE FROM connector_market_installed_releases WHERE connector_key = ?`, operation.ConnectorKey)
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `DELETE FROM connector_market_release_installations WHERE connector_key = ?`, operation.ConnectorKey)
 		return err
 	default:
 		return nil
@@ -188,6 +203,14 @@ func saveInstalledReleaseEvidenceOn(ctx context.Context, tx *sql.Tx, operation m
 
 func saveInstalledReleaseOn(ctx context.Context, tx *sql.Tx, release market.Release) error {
 	payload, err := json.Marshal(release)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `
+INSERT INTO connector_market_release_installations (connector_key, release_digest, release_json)
+VALUES (?, ?, ?)
+ON CONFLICT(connector_key, release_digest) DO UPDATE SET
+  release_json = excluded.release_json`, release.ConnectorKey, release.ReleaseDigest, string(payload))
 	if err != nil {
 		return err
 	}

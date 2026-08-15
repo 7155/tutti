@@ -33,6 +33,7 @@ export interface ConnectorAuthorizationDialogProps {
   i18n: ConnectorMarketI18nRuntime;
   locale: string;
   onAuthorize: (secret?: string) => Promise<void>;
+  onCancel: () => void;
   onClose: () => void;
   pending: boolean;
 }
@@ -48,6 +49,7 @@ export function ConnectorAuthorizationDialog({
   i18n,
   locale,
   onAuthorize,
+  onCancel,
   onClose,
   pending
 }: ConnectorAuthorizationDialogProps) {
@@ -64,7 +66,7 @@ export function ConnectorAuthorizationDialog({
 
   const handleInteractionEvent = (event: AuthorizationEventEnvelopeV1) => {
     if (event.event.type === "cancel") {
-      onClose();
+      onCancel();
       return;
     }
     if (resolved.kind !== "form") return;
@@ -146,7 +148,7 @@ export function ConnectorAuthorizationDialog({
             size="dialog"
             type="button"
             variant="secondary"
-            onClick={onClose}
+            onClick={onCancel}
           >
             {i18n.t("cancel")}
           </Button>

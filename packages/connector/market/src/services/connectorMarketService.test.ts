@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type {
   Connector,
+  ConnectorAuthorizationResult,
   ConnectorMarketBackend,
   ConnectorMarketChangedEvent,
   ConnectorMarketEventSource,
@@ -83,6 +84,7 @@ function backendWith(
     installConnector: unsupported,
     uninstallConnector: unsupported,
     beginAuthorization: unsupported,
+    cancelAuthorization: unsupported,
     disconnectAuthorization: unsupported,
     ...overrides
   };
@@ -412,7 +414,52 @@ test("installs one connector with the current catalog revision", async () => {
   assert.deepEqual(installInputs[0], {
     connectorKey: "github",
     clientRequestId: "request-1",
-    expectedRevision: 1
+    expectedRevision: 1,
+    expectedConnectorRevision: 1
+  });
+  service.dispose();
+});
+
+test("does not resolve install success when an accepted operation later fails", async () => {
+  const acceptedConnector = connector("github", 1);
+  acceptedConnector.installation = { state: "installing" };
+  const failedConnector = connector("github", 3);
+  failedConnector.installation = {
+    state: "failed",
+    failureCode: "candidate_runtime_failed"
+  };
+  const failedOperation: ConnectorOperation = {
+    operationId: "operation-install-failed",
+    clientRequestId: "request-install-failed",
+    connectorKey: "github",
+    kind: "install",
+    state: "failed",
+    stage: "failed",
+    attempt: 1,
+    failureCode: "candidate_runtime_failed",
+    createdAt: "2026-08-03T00:00:00Z",
+    updatedAt: "2026-08-03T00:00:03Z"
+  };
+  const service = new ConnectorMarketService({
+    backend: backendWith({
+      installConnector: async () => ({
+        connector: acceptedConnector,
+        operation: { ...failedOperation, state: "accepted", stage: "accepted" },
+        revision: 2
+      }),
+      getOperation: async () => failedOperation,
+      getConnector: async () => failedConnector
+    }),
+    waitForOperationPoll: async () => undefined
+  });
+
+  await assert.rejects(service.install("github"), (error: unknown) => {
+    return (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "candidate_runtime_failed"
+    );
   });
   service.dispose();
 });
@@ -497,7 +544,8 @@ test("uninstalls one connector and tracks the durable operation to completion", 
     {
       connectorKey: "github",
       clientRequestId: "request-uninstall-1",
-      expectedRevision: 1
+      expectedRevision: 1,
+      expectedConnectorRevision: 1
     }
   ]);
   assert.equal(
@@ -989,12 +1037,14 @@ test("converges a busy authorization continuation from a connected snapshot", as
     {
       connectorKey: "notion",
       clientRequestId: "one-notion-authorization",
-      expectedRevision: 1
+      expectedRevision: 1,
+      expectedConnectorRevision: 1
     },
     {
       connectorKey: "notion",
       clientRequestId: "one-notion-authorization",
-      expectedRevision: 1
+      expectedRevision: 1,
+      expectedConnectorRevision: 2
     }
   ]);
   assert.deepEqual(openedUrls, ["https://authorization.example/notion"]);
@@ -1063,12 +1113,14 @@ test("recovers one stale authorization revision without dropping the secret", as
       connectorKey: "token-mail",
       clientRequestId: "one-secret-request",
       expectedRevision: 1,
+      expectedConnectorRevision: 1,
       secret: "secret-value"
     },
     {
       connectorKey: "token-mail",
       clientRequestId: "one-secret-request",
       expectedRevision: 4,
+      expectedConnectorRevision: 4,
       secret: "secret-value"
     }
   ]);
@@ -1161,17 +1213,20 @@ test("continues one authorization session, opens each URL once, and clears loadi
     {
       connectorKey: "lark-cli",
       clientRequestId: "one-authorization-request",
-      expectedRevision: 1
+      expectedRevision: 1,
+      expectedConnectorRevision: 1
     },
     {
       connectorKey: "lark-cli",
       clientRequestId: "one-authorization-request",
-      expectedRevision: 1
+      expectedRevision: 1,
+      expectedConnectorRevision: 2
     },
     {
       connectorKey: "lark-cli",
       clientRequestId: "one-authorization-request",
-      expectedRevision: 1
+      expectedRevision: 1,
+      expectedConnectorRevision: 3
     }
   ]);
   assert.deepEqual(openedUrls, [
@@ -1183,6 +1238,163 @@ test("continues one authorization session, opens each URL once, and clears loadi
     "connected"
   );
   assert.deepEqual(service.dataStore.authorizingConnectorKeys, {});
+  service.dispose();
+});
+
+test("keeps a pending authorization session stable across a disconnected snapshot", async () => {
+  const continuation = deferred<ConnectorAuthorizationResult>();
+  const initial = connector("supabase", 1);
+  initial.authorization = { state: "disconnected" };
+  const refreshed = connector("supabase", 2);
+  refreshed.authorization = { state: "disconnected" };
+  const pending = connector("supabase", 2);
+  pending.authorization = { state: "pending" };
+  const connected = connector("supabase", 3);
+  connected.authorization = { state: "connected" };
+  let snapshotReads = 0;
+  let authorizationCalls = 0;
+  const authorizationOperation = {
+    ...operation("start_authorization", 2),
+    connectorKey: "supabase",
+    operationId: "supabase-authorization",
+    state: "completed" as const,
+    stage: "completed" as const
+  };
+  const service = new ConnectorMarketService({
+    backend: backendWith({
+      getSnapshot: async () => {
+        snapshotReads += 1;
+        return snapshot(snapshotReads === 1 ? 1 : 2, [
+          snapshotReads === 1 ? initial : refreshed
+        ]);
+      },
+      beginAuthorization: async () => {
+        authorizationCalls += 1;
+        if (authorizationCalls === 1) {
+          return {
+            connector: pending,
+            operation: authorizationOperation,
+            authorizationUrl: "https://authorization.example/supabase",
+            revision: 2
+          };
+        }
+        return continuation.promise;
+      }
+    }),
+    openAuthorizationUrl: async () => undefined
+  });
+  await service.ensureLoaded();
+
+  const authorization = service.beginAuthorization("supabase");
+  await waitFor(() => authorizationCalls === 2);
+  await service.reload();
+
+  assert.equal(
+    service.dataStore.connectorsByKey.supabase?.authorization.state,
+    "disconnected"
+  );
+  assert.equal(
+    service.dataStore.pendingAuthorizationsByConnectorKey.supabase,
+    true
+  );
+
+  continuation.resolve({
+    connector: connected,
+    operation: authorizationOperation,
+    revision: 3
+  });
+  await authorization;
+
+  assert.deepEqual(service.dataStore.pendingAuthorizationsByConnectorKey, {});
+  service.dispose();
+});
+
+test("cancels a pending authorization attempt and stops waiting", async () => {
+  const wait = deferred<void>();
+  const pending = connector("supabase", 2);
+  pending.authorization = { state: "pending" };
+  let authorizationCalls = 0;
+  let cancellationCalls = 0;
+  const service = new ConnectorMarketService({
+    backend: backendWith({
+      getSnapshot: async () => snapshot(1, [connector("supabase", 1)]),
+      beginAuthorization: async () => {
+        authorizationCalls += 1;
+        return {
+          connector: pending,
+          operation: {
+            ...operation("start_authorization", 2),
+            connectorKey: "supabase",
+            state: "completed" as const
+          },
+          authorizationUrl: "https://authorization.example/supabase",
+          authorizationExpiresAt: new Date(Date.now() + 600_000).toISOString(),
+          revision: 2
+        };
+      },
+      cancelAuthorization: async () => {
+        cancellationCalls += 1;
+      }
+    }),
+    openAuthorizationUrl: async () => undefined,
+    waitForAuthorizationContinuation: () => wait.promise
+  });
+  await service.ensureLoaded();
+
+  const authorization = service.beginAuthorization("supabase");
+  await waitFor(() => authorizationCalls === 2);
+  await service.cancelAuthorization("supabase");
+  wait.resolve();
+
+  await assert.rejects(
+    authorization,
+    (error: unknown) =>
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "connector_authorization_canceled"
+  );
+  assert.equal(cancellationCalls, 1);
+  assert.deepEqual(service.dataStore.pendingAuthorizationsByConnectorKey, {});
+  service.dispose();
+});
+
+test("expires a pending authorization attempt at its overall deadline", async () => {
+  const pending = connector("supabase", 2);
+  pending.authorization = { state: "pending" };
+  let cancellationCalls = 0;
+  const service = new ConnectorMarketService({
+    backend: backendWith({
+      getSnapshot: async () => snapshot(1, [connector("supabase", 1)]),
+      beginAuthorization: async () => ({
+        connector: pending,
+        operation: {
+          ...operation("start_authorization", 2),
+          connectorKey: "supabase",
+          state: "completed" as const
+        },
+        authorizationUrl: "https://authorization.example/supabase",
+        authorizationExpiresAt: new Date(Date.now() - 1).toISOString(),
+        revision: 2
+      }),
+      cancelAuthorization: async () => {
+        cancellationCalls += 1;
+      }
+    }),
+    openAuthorizationUrl: async () => undefined
+  });
+  await service.ensureLoaded();
+
+  await assert.rejects(
+    service.beginAuthorization("supabase"),
+    (error: unknown) =>
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "connector_authorization_timeout"
+  );
+  assert.equal(cancellationCalls, 1);
+  assert.deepEqual(service.dataStore.pendingAuthorizationsByConnectorKey, {});
   service.dispose();
 });
 
@@ -1251,7 +1463,7 @@ test("waits for terminal authorization reconciliation before clearing loading", 
   assert.equal(settled, false);
   assert.equal(
     service.dataStore.operationsByConnectorKey.notion?.stage,
-    "accepted"
+    "completed"
   );
 
   terminalConnector.resolve(connected);
@@ -1377,6 +1589,87 @@ test("reconciles connector-scoped events without reloading the catalog", async (
     service.dataStore.operationsByConnectorKey.github?.stage,
     "failed"
   );
+  service.dispose();
+});
+
+test("reloads one complete snapshot when the durable event cursor has a gap", async () => {
+  const events = new TestEventSource();
+  let snapshotCalls = 0;
+  let connectorCalls = 0;
+  const service = new ConnectorMarketService({
+    backend: backendWith({
+      getSnapshot: async () => {
+        snapshotCalls += 1;
+        return {
+          ...snapshot(snapshotCalls >= 3 ? 7 : 5, [
+            connector("github", snapshotCalls >= 3 ? 7 : 5)
+          ]),
+          eventCursor: snapshotCalls >= 3 ? 7 : 5
+        };
+      },
+      getConnector: async () => {
+        connectorCalls += 1;
+        return connector("github", 7);
+      }
+    }),
+    events
+  });
+
+  await service.ensureLoaded();
+  service.start();
+  await waitFor(() => snapshotCalls === 2);
+  events.emit({
+    type: "connector.market.changed",
+    connectorKey: "github",
+    revision: 7,
+    cursor: 7
+  });
+  await waitFor(() => snapshotCalls === 3);
+
+  assert.equal(connectorCalls, 0);
+  assert.equal(service.dataStore.snapshotRevision, 7);
+  assert.equal(service.dataStore.lastEventCursor, 7);
+  service.dispose();
+});
+
+test("keeps cross-connector event loads when a newer global revision finishes first", async () => {
+  const events = new TestEventSource();
+  const alpha = deferred<Connector>();
+  const beta = deferred<Connector>();
+  let snapshotCalls = 0;
+  const service = new ConnectorMarketService({
+    backend: backendWith({
+      getSnapshot: async () => {
+        snapshotCalls += 1;
+        return snapshot(1, [connector("alpha", 1), connector("beta", 1)]);
+      },
+      getConnector: async ({ connectorKey }) =>
+        connectorKey === "alpha" ? alpha.promise : beta.promise
+    }),
+    events
+  });
+  await service.ensureLoaded();
+  service.start();
+  await waitFor(() => snapshotCalls === 2);
+
+  events.emit({
+    type: "connector.market.changed",
+    connectorKey: "beta",
+    revision: 2
+  });
+  events.emit({
+    type: "connector.market.changed",
+    connectorKey: "alpha",
+    revision: 3
+  });
+  alpha.resolve(connector("alpha", 3));
+  await waitFor(() => service.dataStore.connectorsByKey.alpha?.revision === 3);
+  beta.resolve(connector("beta", 2));
+  await waitFor(() => service.dataStore.connectorsByKey.beta?.revision === 2);
+
+  assert.equal(service.dataStore.revision, 3);
+  assert.equal(service.dataStore.connectorsByKey.alpha?.revision, 3);
+  assert.equal(service.dataStore.connectorsByKey.beta?.revision, 2);
   service.dispose();
 });
 

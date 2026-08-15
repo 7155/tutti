@@ -92,6 +92,17 @@ export interface ReferenceSourcePickerProps {
   renderHeaderActions?: (context: {
     refresh: () => void;
     selectTarget: (target: ReferenceLocateTarget) => Promise<boolean>;
+    selectTargets: (
+      targets: readonly ReferenceLocateTarget[]
+    ) => Promise<number>;
+  }) => ReactNode;
+  /** Optional host actions pinned above the source list. Omission preserves the existing sidebar DOM. */
+  renderSidebarActions?: (context: {
+    refresh: () => void;
+    selectTarget: (target: ReferenceLocateTarget) => Promise<boolean>;
+    selectTargets: (
+      targets: readonly ReferenceLocateTarget[]
+    ) => Promise<number>;
   }) => ReactNode;
   resolveContentErrorAction?: (
     error: Error
@@ -200,6 +211,7 @@ export function ReferenceSourcePicker({
   purpose = "reference",
   confirmRootDirectoryPath,
   renderHeaderActions,
+  renderSidebarActions,
   resolveContentErrorAction,
   resolveEntryIconUrl,
   resolveOpenWithApplicationIcon,
@@ -671,7 +683,8 @@ export function ReferenceSourcePicker({
             <div className="flex items-center gap-2">
               {renderHeaderActions?.({
                 refresh: view.retryContent,
-                selectTarget: view.selectTarget
+                selectTarget: view.selectTarget,
+                selectTargets: view.selectTargets
               })}
               <Button
                 aria-label={copy.t("actions.cancel")}
@@ -708,6 +721,11 @@ export function ReferenceSourcePicker({
                 <SourceSidebar
                   contentRef={sidebarContentRef}
                   copy={copy}
+                  headerActions={renderSidebarActions?.({
+                    refresh: view.retryContent,
+                    selectTarget: view.selectTarget,
+                    selectTargets: view.selectTargets
+                  })}
                   view={view}
                 />
               </ResizablePanel>
@@ -1441,11 +1459,13 @@ function GroupFallbackIcon({
 function SourceSidebar({
   copy,
   view,
-  contentRef
+  contentRef,
+  headerActions
 }: {
   copy: WorkspaceFileReferenceCopy;
   view: PickerView;
   contentRef: RefObject<HTMLDivElement | null>;
+  headerActions?: ReactNode;
 }): JSX.Element {
   // 选中分组(含 initialTarget 定位结果)变化时,把它滚入可视区。
   const selectedGroupRef = useRef<HTMLButtonElement | null>(null);
@@ -1469,7 +1489,7 @@ function SourceSidebar({
       view.loadMoreSidebarGroups(sourceId);
     }
   };
-  return (
+  const sourceList = (
     <ScrollArea className="h-full min-h-0 w-full">
       <div ref={contentRef} className="flex flex-col gap-0.5 p-2">
         <p className="px-2 py-1 text-[11px] font-semibold text-[var(--text-tertiary)]">
@@ -1592,6 +1612,17 @@ function SourceSidebar({
         })}
       </div>
     </ScrollArea>
+  );
+  if (headerActions == null) {
+    return sourceList;
+  }
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 border-b border-[var(--line-1)] p-2">
+        {headerActions}
+      </div>
+      <div className="min-h-0 flex-1">{sourceList}</div>
+    </div>
   );
 }
 

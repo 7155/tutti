@@ -340,8 +340,8 @@ func (host *Host) authorizationRoute(ctx context.Context, scope market.Operation
 	if host == nil {
 		return nil, errors.New("managed connector authorization is unavailable")
 	}
-	host.lifecycleMu.Lock()
-	defer host.lifecycleMu.Unlock()
+	releaseLane := host.enterConnectorLane(connector.Key)
+	defer releaseLane()
 	managed := connector.Release.Manifest.Implementation.ManagedStdio
 	if connector.Release.Manifest.Implementation.Kind != market.ImplementationKindManagedStdio ||
 		connector.Release.Manifest.AuthorizationKind == "none" || managed == nil || managed.CredentialBroker == nil ||

@@ -81,6 +81,13 @@ type Repository interface {
 	Transaction(ctx context.Context, fn func(Transaction) error) error
 	RecoverableOperations(ctx context.Context) ([]Operation, error)
 	InstalledRelease(ctx context.Context, connectorKey, releaseDigest string) (Release, error)
+	RuntimeConvergence(ctx context.Context, scope OperationScope, connectorKey string) (RuntimeConvergence, error)
+	DueRuntimeConvergences(ctx context.Context, scope OperationScope, bootEpoch string, now time.Time, limit int) ([]RuntimeConvergence, error)
+	ClaimRuntimeConvergence(ctx context.Context, scope OperationScope, connectorKey, bootEpoch, owner string, now, leaseExpiresAt time.Time) (RuntimeConvergence, bool, error)
+	RenewRuntimeConvergenceLease(ctx context.Context, scope OperationScope, connectorKey, owner string, token uint64, now, leaseExpiresAt time.Time) error
+	ReleaseRuntimeConvergenceLease(ctx context.Context, scope OperationScope, connectorKey, owner string, token uint64) error
+	CompleteRuntimeConvergence(ctx context.Context, scope OperationScope, connectorKey, owner string, token, desiredGeneration uint64, observed RuntimeObserved, now time.Time) error
+	RetryRuntimeConvergence(ctx context.Context, scope OperationScope, connectorKey, owner string, token, desiredGeneration uint64, nextAttemptAt time.Time, errorCode, errorMessage string, now time.Time) error
 }
 
 type Transaction interface {
@@ -96,6 +103,9 @@ type Transaction interface {
 	SaveConnector(Connector) error
 	DeleteConnector(connectorKey string) error
 	SaveOperation(Operation) error
+	RuntimeConvergence(scope OperationScope, connectorKey string) (RuntimeConvergence, error)
+	SaveRuntimeConvergence(RuntimeConvergence) error
+	DeleteRuntimeConvergence(scope OperationScope, connectorKey string) error
 	EnqueueConnectorMarketChanged(ChangedEvent) error
 }
 
@@ -292,6 +302,7 @@ type RuntimeBindingRequest struct {
 type RuntimeBindingPurpose string
 
 const (
+	RuntimeBindingPurposePlan       RuntimeBindingPurpose = "plan"
 	RuntimeBindingPurposeReconcile  RuntimeBindingPurpose = "reconcile"
 	RuntimeBindingPurposeDeactivate RuntimeBindingPurpose = "deactivate"
 )
@@ -392,6 +403,7 @@ type ChangedEvent struct {
 	ConnectorKey string `json:"connectorKey,omitempty"`
 	OperationID  string `json:"operationId,omitempty"`
 	Revision     uint64 `json:"revision"`
+	Cursor       int64  `json:"cursor,omitempty"`
 }
 
 type ChangedEventRecord struct {

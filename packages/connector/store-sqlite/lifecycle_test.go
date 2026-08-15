@@ -372,6 +372,64 @@ func TestStoreCompletedLocalUninstallDeletesReleaseEvidenceButKeepsAuthorization
 	}
 }
 
+func TestStoreRetainsCurrentAndPreparedCandidateReleaseEvidence(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, filepath.Join(t.TempDir(), "tuttid.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	connector := testConnector()
+	current := connector.Release
+	connector.Installation = market.Installation{
+		State: market.InstallationStateUpdating, InstalledVersion: current.Version,
+		InstalledReleaseID: current.ReleaseID, InstalledReleaseDigest: current.ReleaseDigest,
+	}
+	candidate := current
+	candidate.Version = "2.0.0"
+	candidate.ReleaseID = connector.Key + "@2.0.0"
+	candidate.ReleaseDigest = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	candidate.ManifestDigest = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+	installedAt := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
+	currentOperation := lifecycleTestOperation("current-release", connector.Key, market.OperationStateCompleted, installedAt)
+	currentOperation.Kind = market.OperationKindInstall
+	currentOperation.Target = &market.OperationTarget{
+		ConnectorKey: connector.Key, Version: current.Version, ReleaseID: current.ReleaseID,
+		ReleaseDigest: current.ReleaseDigest, ArtifactSHA256: current.Artifact.SHA256, Release: &current,
+	}
+	candidateOperation := lifecycleTestOperation("candidate-release", connector.Key, market.OperationStateRunning, installedAt.Add(time.Minute))
+	candidateOperation.Kind = market.OperationKindInstall
+	candidateOperation.Stage = market.OperationStageRuntimePending
+	candidateOperation.Target = &market.OperationTarget{
+		ConnectorKey: connector.Key, Version: candidate.Version, ReleaseID: candidate.ReleaseID,
+		ReleaseDigest: candidate.ReleaseDigest, ArtifactSHA256: candidate.Artifact.SHA256, Release: &candidate,
+	}
+	candidateOperation.Execution.ReleaseInstallation = &market.ReleaseInstallationReceipt{
+		OperationID: candidateOperation.OperationID, ConnectorKey: connector.Key,
+		Version: candidate.Version, ReleaseID: candidate.ReleaseID, ReleaseDigest: candidate.ReleaseDigest,
+	}
+	if err := store.Transaction(ctx, func(tx market.Transaction) error {
+		connector.Revision = tx.AdvanceRevision()
+		if err := tx.SaveConnector(connector); err != nil {
+			return err
+		}
+		if err := tx.SaveOperation(currentOperation); err != nil {
+			return err
+		}
+		return tx.SaveOperation(candidateOperation)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, expected := range map[string]market.Release{"current": current, "candidate": candidate} {
+		got, err := store.InstalledRelease(ctx, connector.Key, expected.ReleaseDigest)
+		if err != nil || got.ReleaseDigest != expected.ReleaseDigest || got.ManifestDigest != expected.ManifestDigest {
+			t.Fatalf("%s release = %#v, error = %v", name, got, err)
+		}
+	}
+}
+
 func TestStoreMigrationBackfillsLifecycleTimestampAndInstalledReleaseEvidence(t *testing.T) {
 	ctx := context.Background()
 	databasePath := filepath.Join(t.TempDir(), "tuttid.db")

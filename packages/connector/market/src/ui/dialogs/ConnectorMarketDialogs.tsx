@@ -81,6 +81,19 @@ export function ConnectorMarketDialogs() {
     dialog?.kind === "management" &&
     Boolean(showSuccessToast || uninstallSuccess);
 
+  const cancelAuthorizationDialog = () => {
+    if (dialog?.kind !== "authorization") {
+      uiState.closeDialog();
+      return;
+    }
+    void market
+      .cancelAuthorization(dialog.connectorKey)
+      .catch(() => {
+        onError?.(i18n.t("connectorAuthorizationFailed"));
+      })
+      .finally(() => uiState.closeDialog());
+  };
+
   return (
     <>
       {dialog?.kind === "uninstall_confirmation" ? (
@@ -122,11 +135,16 @@ export function ConnectorMarketDialogs() {
       ) : dialog && !shouldHideDialog ? (
         <Dialog
           open
-          onOpenChange={(open) =>
-            !open &&
-            !(dialog.kind === "installation" && dialog.installing) &&
-            uiState.closeDialog()
-          }
+          onOpenChange={(open) => {
+            if (open || (dialog.kind === "installation" && dialog.installing)) {
+              return;
+            }
+            if (dialog.kind === "authorization") {
+              cancelAuthorizationDialog();
+              return;
+            }
+            uiState.closeDialog();
+          }}
         >
           {dialog.kind === "installation" ? (
             <ConnectorInstallationDialog
@@ -166,6 +184,7 @@ export function ConnectorMarketDialogs() {
               i18n={i18n}
               locale={locale}
               pending={dialog.pending}
+              onCancel={cancelAuthorizationDialog}
               onAuthorize={(secret) => {
                 setShowSuccessToast(null);
                 return market
@@ -174,8 +193,27 @@ export function ConnectorMarketDialogs() {
                     setShowSuccessToast("authorize");
                     uiState.closeDialog();
                   })
-                  .catch(() => {
-                    onError?.(i18n.t("connectorAuthorizationFailed"));
+                  .catch((error: unknown) => {
+                    if (
+                      !error ||
+                      typeof error !== "object" ||
+                      !("code" in error) ||
+                      error.code !== "connector_authorization_canceled"
+                    ) {
+                      const code =
+                        typeof error === "object" &&
+                        error !== null &&
+                        "code" in error
+                          ? error.code
+                          : undefined;
+                      onError?.(
+                        i18n.t(
+                          code === "connector_authorization_timeout"
+                            ? "connectorAuthorizationTimedOut"
+                            : "connectorAuthorizationFailed"
+                        )
+                      );
+                    }
                   });
               }}
               onClose={() => uiState.closeDialog()}

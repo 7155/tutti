@@ -1587,15 +1587,17 @@ func (e ConnectorMarketOperationKind) Valid() bool {
 
 // Defines values for ConnectorMarketOperationStage.
 const (
-	ConnectorMarketOperationStageAccepted      ConnectorMarketOperationStage = "accepted"
-	ConnectorMarketOperationStageAuthorizing   ConnectorMarketOperationStage = "authorizing"
-	ConnectorMarketOperationStageCompleted     ConnectorMarketOperationStage = "completed"
-	ConnectorMarketOperationStageDeactivating  ConnectorMarketOperationStage = "deactivating"
-	ConnectorMarketOperationStageDisconnecting ConnectorMarketOperationStage = "disconnecting"
-	ConnectorMarketOperationStageFailed        ConnectorMarketOperationStage = "failed"
-	ConnectorMarketOperationStageInstalled     ConnectorMarketOperationStage = "installed"
-	ConnectorMarketOperationStageInstalling    ConnectorMarketOperationStage = "installing"
-	ConnectorMarketOperationStageRefreshing    ConnectorMarketOperationStage = "refreshing"
+	ConnectorMarketOperationStageAccepted       ConnectorMarketOperationStage = "accepted"
+	ConnectorMarketOperationStageAuthorizing    ConnectorMarketOperationStage = "authorizing"
+	ConnectorMarketOperationStageCompleted      ConnectorMarketOperationStage = "completed"
+	ConnectorMarketOperationStageDeactivating   ConnectorMarketOperationStage = "deactivating"
+	ConnectorMarketOperationStageDisconnecting  ConnectorMarketOperationStage = "disconnecting"
+	ConnectorMarketOperationStageFailed         ConnectorMarketOperationStage = "failed"
+	ConnectorMarketOperationStageInstalled      ConnectorMarketOperationStage = "installed"
+	ConnectorMarketOperationStageInstalling     ConnectorMarketOperationStage = "installing"
+	ConnectorMarketOperationStageRefreshing     ConnectorMarketOperationStage = "refreshing"
+	ConnectorMarketOperationStageRemoving       ConnectorMarketOperationStage = "removing"
+	ConnectorMarketOperationStageRuntimePending ConnectorMarketOperationStage = "runtime_pending"
 )
 
 // Valid indicates whether the value is a known member of the ConnectorMarketOperationStage enum.
@@ -1618,6 +1620,10 @@ func (e ConnectorMarketOperationStage) Valid() bool {
 	case ConnectorMarketOperationStageInstalling:
 		return true
 	case ConnectorMarketOperationStageRefreshing:
+		return true
+	case ConnectorMarketOperationStageRemoving:
+		return true
+	case ConnectorMarketOperationStageRuntimePending:
 		return true
 	default:
 		return false
@@ -6129,17 +6135,19 @@ type ConnectorMarketAuthorization struct {
 
 // ConnectorMarketAuthorizationRequest defines model for ConnectorMarketAuthorizationRequest.
 type ConnectorMarketAuthorizationRequest struct {
-	ClientRequestId  string  `json:"clientRequestId"`
-	ExpectedRevision int64   `json:"expectedRevision"`
-	Secret           *string `json:"secret,omitempty"`
+	ClientRequestId           string  `json:"clientRequestId"`
+	ExpectedConnectorRevision *int64  `json:"expectedConnectorRevision,omitempty"`
+	ExpectedRevision          int64   `json:"expectedRevision"`
+	Secret                    *string `json:"secret,omitempty"`
 }
 
 // ConnectorMarketAuthorizationResponse defines model for ConnectorMarketAuthorizationResponse.
 type ConnectorMarketAuthorizationResponse struct {
-	AuthorizationUrl *string                  `json:"authorizationUrl,omitempty"`
-	Connector        ConnectorMarketConnector `json:"connector"`
-	Operation        ConnectorMarketOperation `json:"operation"`
-	Revision         int64                    `json:"revision"`
+	AuthorizationExpiresAt time.Time                `json:"authorizationExpiresAt"`
+	AuthorizationUrl       *string                  `json:"authorizationUrl,omitempty"`
+	Connector              ConnectorMarketConnector `json:"connector"`
+	Operation              ConnectorMarketOperation `json:"operation"`
+	Revision               int64                    `json:"revision"`
 }
 
 // ConnectorMarketAuthorizationState defines model for ConnectorMarketAuthorizationState.
@@ -6266,8 +6274,9 @@ type ConnectorMarketManifestSchemaVersion string
 
 // ConnectorMarketMutationRequest defines model for ConnectorMarketMutationRequest.
 type ConnectorMarketMutationRequest struct {
-	ClientRequestId  string `json:"clientRequestId"`
-	ExpectedRevision int64  `json:"expectedRevision"`
+	ClientRequestId           string `json:"clientRequestId"`
+	ExpectedConnectorRevision *int64 `json:"expectedConnectorRevision,omitempty"`
+	ExpectedRevision          int64  `json:"expectedRevision"`
 }
 
 // ConnectorMarketMutationResponse defines model for ConnectorMarketMutationResponse.
@@ -6334,6 +6343,7 @@ type ConnectorMarketReleaseStatus string
 type ConnectorMarketSnapshot struct {
 	CatalogState   ConnectorMarketCatalogState `json:"catalogState"`
 	Connectors     []ConnectorMarketConnector  `json:"connectors"`
+	EventCursor    int64                       `json:"eventCursor"`
 	Operations     []ConnectorMarketOperation  `json:"operations"`
 	Revision       int64                       `json:"revision"`
 	SourceRevision *string                     `json:"sourceRevision,omitempty"`

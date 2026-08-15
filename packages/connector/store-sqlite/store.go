@@ -143,10 +143,24 @@ ON connector_market_outbox(published_at_unix_ms, sequence)`,
 		!strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
 		return fmt.Errorf("migrate connector market operation lease token: %w", err)
 	}
-	return store.migrateLifecycle(ctx)
+	if err := store.migrateLifecycle(ctx); err != nil {
+		return err
+	}
+	return store.migrateRuntimeConvergence(ctx)
 }
 
 func (store *Store) Snapshot(ctx context.Context) (market.Snapshot, error) {
+	return store.snapshot(ctx, "")
+}
+
+// SnapshotForScope reads market state and the account authorization overlay
+// from one SQLite snapshot, so its revision/event cursor describe exactly the
+// projection returned to the renderer.
+func (store *Store) SnapshotForScope(ctx context.Context, scope market.OperationScope) (market.Snapshot, error) {
+	return store.snapshot(ctx, strings.TrimSpace(scope.AccountID))
+}
+
+func (store *Store) snapshot(ctx context.Context, accountID string) (market.Snapshot, error) {
 	tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return market.Snapshot{}, err
@@ -163,12 +177,21 @@ FROM connector_market_metadata WHERE id = ?`, metadataID).
 	if err != nil {
 		return market.Snapshot{}, err
 	}
+	if accountID != "" {
+		connectors, err = overlayAuthorizationProjectionsOn(ctx, tx, accountID, connectors)
+		if err != nil {
+			return market.Snapshot{}, err
+		}
+	}
 	operations, err := listOperationsOn(ctx, tx)
 	if err != nil {
 		return market.Snapshot{}, err
 	}
 	result.Connectors = connectors
 	result.Operations = operations
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(sequence), 0) FROM connector_market_outbox`).Scan(&result.EventCursor); err != nil {
+		return market.Snapshot{}, fmt.Errorf("read connector market event cursor: %w", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return market.Snapshot{}, err
 	}
@@ -216,8 +239,8 @@ WHERE operation_id = ?
   AND state IN ('accepted', 'running')
   AND (
     lease_owner = '' OR lease_expires_at_unix_ms IS NULL OR
-    lease_expires_at_unix_ms <= ? OR lease_owner = ?
-  )`, owner, leaseExpiresAt.UTC().UnixMilli(), operationID, now.UTC().UnixMilli(), owner)
+    lease_expires_at_unix_ms <= ?
+  )`, owner, leaseExpiresAt.UTC().UnixMilli(), operationID, now.UTC().UnixMilli())
 	if err != nil {
 		return market.Operation{}, false, err
 	}
@@ -320,8 +343,13 @@ WHERE operation_id = ? AND lease_owner = ? AND lease_token = ?`, operationID, ow
 func (store *Store) InstalledRelease(ctx context.Context, connectorKey, releaseDigest string) (market.Release, error) {
 	var payload string
 	err := store.db.QueryRowContext(ctx, `
+SELECT release_json FROM connector_market_release_installations
+WHERE connector_key = ? AND release_digest = ?`, connectorKey, releaseDigest).Scan(&payload)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = store.db.QueryRowContext(ctx, `
 SELECT release_json FROM connector_market_installed_releases
 WHERE connector_key = ? AND release_digest = ?`, connectorKey, releaseDigest).Scan(&payload)
+	}
 	if err != nil {
 		return market.Release{}, mapNotFound(err)
 	}
@@ -606,6 +634,24 @@ func (transaction *transaction) SaveOperation(operation market.Operation) error 
 	return saveOperationOn(transaction.ctx, transaction.tx, operation)
 }
 
+func (transaction *transaction) RuntimeConvergence(
+	scope market.OperationScope,
+	connectorKey string,
+) (market.RuntimeConvergence, error) {
+	return runtimeConvergenceOn(transaction.ctx, transaction.tx, scope, connectorKey)
+}
+
+func (transaction *transaction) SaveRuntimeConvergence(convergence market.RuntimeConvergence) error {
+	return saveRuntimeConvergenceOn(transaction.ctx, transaction.tx, convergence)
+}
+
+func (transaction *transaction) DeleteRuntimeConvergence(scope market.OperationScope, connectorKey string) error {
+	_, err := transaction.tx.ExecContext(transaction.ctx, `
+DELETE FROM connector_market_runtime_convergence
+WHERE account_id = ? AND connector_key = ?`, strings.TrimSpace(scope.AccountID), strings.TrimSpace(connectorKey))
+	return err
+}
+
 func (transaction *transaction) EnqueueConnectorMarketChanged(event market.ChangedEvent) error {
 	payload, err := json.Marshal(event)
 	if err != nil {
@@ -666,6 +712,9 @@ SELECT operation_json FROM connector_market_operations ORDER BY operation_id`)
 		operation, err := decodeOperation(payload)
 		if err != nil {
 			return nil, err
+		}
+		if operation.Kind == market.OperationKindReconcileRuntime {
+			continue
 		}
 		operations = append(operations, publicOperation(operation))
 	}

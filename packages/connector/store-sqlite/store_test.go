@@ -109,7 +109,7 @@ func TestStorePersistsRevisionOperationBindingAndOutboxAtomically(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.Revision != 1 || len(snapshot.Connectors) != 1 || len(snapshot.Operations) != 1 {
+	if snapshot.Revision != 1 || snapshot.EventCursor != 1 || len(snapshot.Connectors) != 1 || len(snapshot.Operations) != 1 {
 		t.Fatalf("snapshot = %#v", snapshot)
 	}
 	entries, err := store.PendingChangedEvents(ctx, 10)
@@ -203,6 +203,49 @@ func TestStorePersistsAuthorizationProjectionByAccount(t *testing.T) {
 	}
 	if loaded != second {
 		t.Fatalf("projection = %#v, want %#v", loaded, second)
+	}
+}
+
+func TestStoreScopedSnapshotAtomicallyIncludesAuthorizationRevisionAndEventCursor(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, filepath.Join(t.TempDir(), "tuttid.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	connector := testConnector()
+	if err := store.Transaction(ctx, func(tx market.Transaction) error {
+		connector.Revision = tx.AdvanceRevision()
+		return tx.SaveConnector(connector)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	projection := market.AuthorizationProjection{
+		AccountID: "account-1", ConnectorKey: connector.Key, ConnectionID: "connection-1",
+		State: market.AuthorizationStateConnected, UpdatedAt: time.Unix(1, 0).UTC(),
+	}
+	if err := store.SaveAuthorizationProjection(ctx, projection); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, err := store.SnapshotForScope(ctx, market.OperationScope{AccountID: projection.AccountID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Revision != 2 || snapshot.EventCursor != 1 || len(snapshot.Connectors) != 1 ||
+		snapshot.Connectors[0].Revision != 2 || snapshot.Connectors[0].Authorization.State != market.AuthorizationStateConnected {
+		t.Fatalf("scoped snapshot = %#v", snapshot)
+	}
+	projection.UpdatedAt = projection.UpdatedAt.Add(time.Minute)
+	if err := store.SaveAuthorizationProjection(ctx, projection); err != nil {
+		t.Fatal(err)
+	}
+	unchanged, err := store.SnapshotForScope(ctx, market.OperationScope{AccountID: projection.AccountID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Revision != snapshot.Revision || unchanged.EventCursor != snapshot.EventCursor {
+		t.Fatalf("non-public projection update advanced snapshot: %#v", unchanged)
 	}
 }
 

@@ -4811,6 +4811,7 @@ export type ConnectorMarketSnapshot = {
   connectors: Array<ConnectorMarketConnector>;
   operations: Array<ConnectorMarketOperation>;
   revision: number;
+  eventCursor: number;
   sourceRevision?: string;
 };
 
@@ -4921,11 +4922,13 @@ export type ConnectorMarketOperationTarget = {
 export type ConnectorMarketMutationRequest = {
   clientRequestId: string;
   expectedRevision: number;
+  expectedConnectorRevision?: number;
 };
 
 export type ConnectorMarketAuthorizationRequest = {
   clientRequestId: string;
   expectedRevision: number;
+  expectedConnectorRevision?: number;
 };
 
 export type ConnectorMarketMutationResponse = {
@@ -4938,6 +4941,7 @@ export type ConnectorMarketAuthorizationResponse = {
   connector: ConnectorMarketConnector;
   operation: ConnectorMarketOperation;
   authorizationUrl?: string;
+  authorizationExpiresAt: string;
   revision: number;
 };
 
@@ -5001,7 +5005,9 @@ export type ConnectorMarketOperationStage =
   | "refreshing"
   | "installing"
   | "installed"
+  | "runtime_pending"
   | "deactivating"
+  | "removing"
   | "authorizing"
   | "disconnecting"
   | "completed"
@@ -5077,6 +5083,7 @@ export type DesktopFileDefaultOpenersByExtensionWritable = {
 export type ConnectorMarketAuthorizationRequestWritable = {
   clientRequestId: string;
   expectedRevision: number;
+  expectedConnectorRevision?: number;
   secret?: string;
 };
 
@@ -17164,6 +17171,43 @@ export type StartConnectorMarketAuthorizationResponses = {
 
 export type StartConnectorMarketAuthorizationResponse =
   StartConnectorMarketAuthorizationResponses[keyof StartConnectorMarketAuthorizationResponses];
+
+export type CancelConnectorMarketAuthorizationData = {
+  body?: never;
+  path: {
+    connectorKey: string;
+  };
+  query?: never;
+  url: "/v1/connector-market/connectors/{connectorKey}/authorization:cancel";
+};
+
+export type CancelConnectorMarketAuthorizationErrors = {
+  /**
+   * Daemon authorization is required
+   */
+  401: ConnectorMarketError;
+  /**
+   * Connector or operation was not found
+   */
+  404: ConnectorMarketError;
+  /**
+   * Connector-market capability is temporarily unavailable
+   */
+  503: ConnectorMarketError;
+};
+
+export type CancelConnectorMarketAuthorizationError =
+  CancelConnectorMarketAuthorizationErrors[keyof CancelConnectorMarketAuthorizationErrors];
+
+export type CancelConnectorMarketAuthorizationResponses = {
+  /**
+   * Pending authorization attempt canceled
+   */
+  204: void;
+};
+
+export type CancelConnectorMarketAuthorizationResponse =
+  CancelConnectorMarketAuthorizationResponses[keyof CancelConnectorMarketAuthorizationResponses];
 
 export type DisconnectConnectorMarketAuthorizationData = {
   body: ConnectorMarketMutationRequest;

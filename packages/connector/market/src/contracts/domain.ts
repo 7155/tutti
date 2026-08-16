@@ -137,6 +137,7 @@ export interface ConnectorManifest {
   implementation: ConnectorManifestImplementation;
   authorizationKind: string;
   authorizationInteraction?: unknown;
+  authorizationInteractionMode?: "managed";
   compatibility?: ConnectorCompatibilityRequirements;
 }
 
@@ -258,6 +259,7 @@ export interface ConnectorAuthorizationResult {
   operation: ConnectorOperation;
   authorizationUrl?: string;
   authorizationExpiresAt?: string;
+  authorizationView?: unknown;
   revision: number;
 }
 

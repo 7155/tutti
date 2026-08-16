@@ -536,6 +536,12 @@ components:
             Hosts transport this value without interpreting its UI semantics;
             renderers must validate it against the versioned protocol.
           additionalProperties: true
+        authorizationInteractionMode:
+          type: string
+          enum: [managed]
+          description: >-
+            Public host projection indicating that authorization is owned by a
+            managed credential broker and must start without a local secret.
         compatibility:
           $ref: "#/components/schemas/ConnectorMarketCompatibilityRequirements"
     ConnectorMarketAgentRouting:
@@ -746,6 +752,12 @@ components:
         authorizationUrl:
           type: string
           format: uri
+        authorizationView:
+          type: object
+          description: >-
+            Opaque runtime Authorization View V1 envelope. Clients must validate
+            it with the shared authorization protocol before rendering.
+          additionalProperties: true
         authorizationExpiresAt:
           type: string
           format: date-time

@@ -551,6 +551,7 @@ func (application *Application) BeginAuthorization(
 		Connector:              connector,
 		Operation:              operation,
 		AuthorizationURL:       session.AuthorizationURL,
+		AuthorizationView:      authorizationViewForSession(connector.Release, session),
 		AuthorizationExpiresAt: session.ExpiresAt,
 		Revision:               connector.Revision,
 	}, nil

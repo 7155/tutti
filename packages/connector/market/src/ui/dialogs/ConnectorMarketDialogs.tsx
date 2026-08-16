@@ -6,8 +6,9 @@ import {
   ToastTitle,
   ToastViewport
 } from "@tutti-os/ui-system/components";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSnapshot } from "valtio";
+import type { AuthorizationViewEnvelopeV1 } from "@tutti-os/connector-authorization-protocol/v1";
 
 import { useConnectorMarketServices } from "../ConnectorMarketServicesContext.tsx";
 import { ConnectorAuthorizationDialog } from "./ConnectorAuthorizationDialog.tsx";
@@ -40,6 +41,59 @@ export function ConnectorMarketDialogs() {
   const [uninstallSubmitting, setUninstallSubmitting] = useState(false);
   const [uninstallSuccess, setUninstallSuccess] =
     useState<UninstallSuccessToast | null>(null);
+  const autoStartedAuthorizationRef = useRef<string | null>(null);
+
+  const authorizeConnector = useCallback(
+    (connectorKey: string, secret?: string) => {
+      setShowSuccessToast(null);
+      return market
+        .beginAuthorization(connectorKey, secret)
+        .then(() => {
+          setShowSuccessToast("authorize");
+          uiState.closeDialog();
+        })
+        .catch((error: unknown) => {
+          if (
+            !error ||
+            typeof error !== "object" ||
+            !("code" in error) ||
+            error.code !== "connector_authorization_canceled"
+          ) {
+            const code =
+              typeof error === "object" && error !== null && "code" in error
+                ? error.code
+                : undefined;
+            onError?.(
+              i18n.t(
+                code === "connector_authorization_timeout"
+                  ? "connectorAuthorizationTimedOut"
+                  : "connectorAuthorizationFailed"
+              )
+            );
+          }
+        });
+    },
+    [i18n, market, onError, uiState]
+  );
+
+  const brokeredAuthorizationConnectorKey =
+    dialog?.kind === "authorization" && dialog.brokeredAuthorization
+      ? dialog.connectorKey
+      : null;
+
+  useEffect(() => {
+    if (!brokeredAuthorizationConnectorKey) {
+      autoStartedAuthorizationRef.current = null;
+      return;
+    }
+    if (
+      autoStartedAuthorizationRef.current === brokeredAuthorizationConnectorKey
+    ) {
+      return;
+    }
+    autoStartedAuthorizationRef.current = brokeredAuthorizationConnectorKey;
+    void authorizeConnector(brokeredAuthorizationConnectorKey);
+  }, [authorizeConnector, brokeredAuthorizationConnectorKey]);
 
   useEffect(() => {
     for (const tracked of Object.values(
@@ -181,45 +235,24 @@ export function ConnectorMarketDialogs() {
               authorizationInteraction={dialog.authorizationInteraction}
               authorizationKind={dialog.authorizationKind}
               authorizationRenderer={authorizationRenderer}
+              authorizationView={
+                dialog.authorizationView as
+                  | AuthorizationViewEnvelopeV1
+                  | undefined
+              }
               authorizing={dialog.authorizing}
+              brokeredAuthorization={dialog.brokeredAuthorization}
               displayName={dialog.displayName}
               iconUrl={dialog.iconUrl}
               i18n={i18n}
               locale={locale}
               pending={dialog.pending}
               onCancel={cancelAuthorizationDialog}
-              onAuthorize={(secret) => {
-                setShowSuccessToast(null);
-                return market
-                  .beginAuthorization(dialog.connectorKey, secret)
-                  .then(() => {
-                    setShowSuccessToast("authorize");
-                    uiState.closeDialog();
-                  })
-                  .catch((error: unknown) => {
-                    if (
-                      !error ||
-                      typeof error !== "object" ||
-                      !("code" in error) ||
-                      error.code !== "connector_authorization_canceled"
-                    ) {
-                      const code =
-                        typeof error === "object" &&
-                        error !== null &&
-                        "code" in error
-                          ? error.code
-                          : undefined;
-                      onError?.(
-                        i18n.t(
-                          code === "connector_authorization_timeout"
-                            ? "connectorAuthorizationTimedOut"
-                            : "connectorAuthorizationFailed"
-                        )
-                      );
-                    }
-                  });
-              }}
+              onAuthorize={(secret) =>
+                authorizeConnector(dialog.connectorKey, secret)
+              }
               onClose={() => uiState.closeDialog()}
+              onOpenAuthorizationUrl={(url) => market.openAuthorizationUrl(url)}
             />
           ) : dialog.kind === "management" ? (
             <ConnectorManagementDialog

@@ -102,10 +102,38 @@ func TestDaemonAPIConnectorMarketSnapshotHidesImplementationConfig(t *testing.T)
 	if implementation["kind"] != market.ImplementationKindManagedStdio {
 		t.Fatalf("implementation.kind = %#v, want managed_stdio", implementation["kind"])
 	}
+	if manifest["authorizationInteractionMode"] != market.AuthorizationInteractionModeManaged {
+		t.Fatalf("authorizationInteractionMode = %#v, want managed", manifest["authorizationInteractionMode"])
+	}
 	routing := manifest["agentRouting"].(map[string]any)
 	aliases := routing["aliases"].([]any)
 	if len(aliases) != 2 || aliases[0] != "Notion" || aliases[1] != "Notion AI" {
 		t.Fatalf("public agent routing aliases = %#v", aliases)
+	}
+}
+
+func TestProjectConnectorMarketPreservesRuntimeAuthorizationView(t *testing.T) {
+	projected, err := projectConnectorMarket[tuttigenerated.ConnectorMarketAuthorizationResponse](market.AuthorizationResult{
+		AuthorizationView: &market.AuthorizationViewEnvelope{
+			Protocol: market.AuthorizationViewProtocolV1,
+			ViewID:   "authorization-session-1",
+			View: market.AuthorizationView{
+				Type: market.AuthorizationViewTypeQRCode,
+				Source: &market.AuthorizationQRCodeSource{
+					Type: market.AuthorizationQRCodeSourcePayload, Value: "opaque-payload",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projected.AuthorizationView == nil {
+		t.Fatal("runtime authorization view was dropped")
+	}
+	view, ok := (*projected.AuthorizationView)["view"].(map[string]any)
+	if !ok || view["type"] != market.AuthorizationViewTypeQRCode {
+		t.Fatalf("projected authorization view = %#v", projected.AuthorizationView)
 	}
 }
 

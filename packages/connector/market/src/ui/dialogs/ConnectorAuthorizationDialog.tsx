@@ -9,7 +9,11 @@ import {
 } from "@tutti-os/ui-system/components";
 import { ChangeLined, TuttiMarkNew } from "@tutti-os/ui-system/icons";
 
-import type { AuthorizationEventEnvelopeV1 } from "@tutti-os/connector-authorization-protocol/v1";
+import {
+  validateAuthorizationEventForViewV1,
+  type AuthorizationEventEnvelopeV1,
+  type AuthorizationViewEnvelopeV1
+} from "@tutti-os/connector-authorization-protocol/v1";
 
 import {
   DefaultAuthorizationViewRenderer,
@@ -27,7 +31,9 @@ export interface ConnectorAuthorizationDialogProps {
   authorizationInteraction?: unknown;
   authorizationKind: string;
   authorizationRenderer?: AuthorizationViewRenderer;
+  authorizationView?: AuthorizationViewEnvelopeV1;
   authorizing: boolean;
+  brokeredAuthorization: boolean;
   displayName: string;
   iconUrl: string;
   i18n: ConnectorMarketI18nRuntime;
@@ -35,6 +41,7 @@ export interface ConnectorAuthorizationDialogProps {
   onAuthorize: (secret?: string) => Promise<void>;
   onCancel: () => void;
   onClose: () => void;
+  onOpenAuthorizationUrl: (url: string) => Promise<void>;
   pending: boolean;
 }
 
@@ -43,7 +50,9 @@ export function ConnectorAuthorizationDialog({
   authorizationKind,
   authorizationRenderer:
     AuthorizationRenderer = DefaultAuthorizationViewRenderer,
+  authorizationView,
   authorizing,
+  brokeredAuthorization,
   displayName,
   iconUrl,
   i18n,
@@ -51,10 +60,12 @@ export function ConnectorAuthorizationDialog({
   onAuthorize,
   onCancel,
   onClose,
+  onOpenAuthorizationUrl,
   pending
 }: ConnectorAuthorizationDialogProps) {
   const resolved = resolveAuthorizationInteraction({
     authorizationKind,
+    enableLegacySecretFallback: !brokeredAuthorization,
     interaction: authorizationInteraction,
     legacyLabels: {
       description: i18n.t("secretInputDescription"),
@@ -63,16 +74,34 @@ export function ConnectorAuthorizationDialog({
     },
     locale
   });
+  const currentView =
+    authorizationView ?? (resolved.kind === "form" ? resolved.view : null);
 
   const handleInteractionEvent = (event: AuthorizationEventEnvelopeV1) => {
-    if (event.event.type === "cancel") {
+    if (!currentView) return;
+    const validated = validateAuthorizationEventForViewV1(currentView, event, {
+      isCurrentLocalFileHandle: () => false
+    });
+    if (!validated.ok) return;
+    if (validated.value.event.type === "cancel") {
       onCancel();
       return;
     }
-    if (resolved.kind !== "form") return;
+    if (validated.value.event.type === "activate") {
+      const view = currentView.view;
+      const url =
+        view.type === "device_code"
+          ? view.verificationUrl
+          : view.type === "external_link"
+            ? view.url
+            : null;
+      if (url) void onOpenAuthorizationUrl(url);
+      return;
+    }
+    if (authorizationView || resolved.kind !== "form") return;
     const submission = resolveDeclarativeAuthorizationSubmission(
       resolved,
-      event
+      validated.value
     );
     if (submission.ok) {
       void onAuthorize(submission.secret);
@@ -111,9 +140,9 @@ export function ConnectorAuthorizationDialog({
         />
       </div>
 
-      {resolved.kind === "form" ? (
+      {currentView ? (
         <AuthorizationRenderer
-          busy={authorizing || pending}
+          busy={authorizationView ? false : authorizing || pending}
           labels={{
             activate: i18n.t("actionContinueAuthorization"),
             cancel: i18n.t("cancel"),
@@ -123,7 +152,7 @@ export function ConnectorAuthorizationDialog({
             submit: i18n.t("actionAuthorize"),
             unsupportedField: i18n.t("unsupportedAuthorizationField")
           }}
-          view={resolved.view}
+          view={currentView}
           onEvent={handleInteractionEvent}
         />
       ) : resolved.kind === "invalid" ? (

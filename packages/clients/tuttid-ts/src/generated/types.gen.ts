@@ -4872,6 +4872,10 @@ export type ConnectorMarketManifest = {
   authorizationInteraction?: {
     [key: string]: unknown;
   };
+  /**
+   * Public host projection indicating that authorization is owned by a managed credential broker and must start without a local secret.
+   */
+  authorizationInteractionMode?: "managed";
   compatibility?: ConnectorMarketCompatibilityRequirements;
 };
 
@@ -4961,6 +4965,12 @@ export type ConnectorMarketAuthorizationResponse = {
   connector: ConnectorMarketConnector;
   operation: ConnectorMarketOperation;
   authorizationUrl?: string;
+  /**
+   * Opaque runtime Authorization View V1 envelope. Clients must validate it with the shared authorization protocol before rendering.
+   */
+  authorizationView?: {
+    [key: string]: unknown;
+  };
   authorizationExpiresAt: string;
   revision: number;
 };

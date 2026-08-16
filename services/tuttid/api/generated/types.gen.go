@@ -1543,6 +1543,21 @@ func (e ConnectorMarketInstallationState) Valid() bool {
 	}
 }
 
+// Defines values for ConnectorMarketManifestAuthorizationInteractionMode.
+const (
+	Managed ConnectorMarketManifestAuthorizationInteractionMode = "managed"
+)
+
+// Valid indicates whether the value is a known member of the ConnectorMarketManifestAuthorizationInteractionMode enum.
+func (e ConnectorMarketManifestAuthorizationInteractionMode) Valid() bool {
+	switch e {
+	case Managed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ConnectorMarketManifestSchemaVersion.
 const (
 	ConnectorMarketManifestSchemaVersionN1 ConnectorMarketManifestSchemaVersion = "1"
@@ -6185,11 +6200,14 @@ type ConnectorMarketAuthorizationRequest struct {
 
 // ConnectorMarketAuthorizationResponse defines model for ConnectorMarketAuthorizationResponse.
 type ConnectorMarketAuthorizationResponse struct {
-	AuthorizationExpiresAt time.Time                `json:"authorizationExpiresAt"`
-	AuthorizationUrl       *string                  `json:"authorizationUrl,omitempty"`
-	Connector              ConnectorMarketConnector `json:"connector"`
-	Operation              ConnectorMarketOperation `json:"operation"`
-	Revision               int64                    `json:"revision"`
+	AuthorizationExpiresAt time.Time `json:"authorizationExpiresAt"`
+	AuthorizationUrl       *string   `json:"authorizationUrl,omitempty"`
+
+	// AuthorizationView Opaque runtime Authorization View V1 envelope. Clients must validate it with the shared authorization protocol before rendering.
+	AuthorizationView *map[string]interface{}  `json:"authorizationView,omitempty"`
+	Connector         ConnectorMarketConnector `json:"connector"`
+	Operation         ConnectorMarketOperation `json:"operation"`
+	Revision          int64                    `json:"revision"`
 }
 
 // ConnectorMarketAuthorizationState defines model for ConnectorMarketAuthorizationState.
@@ -6298,18 +6316,24 @@ type ConnectorMarketManifest struct {
 	AgentRouting *ConnectorMarketAgentRouting `json:"agentRouting,omitempty"`
 
 	// AuthorizationInteraction Opaque Connector-owned authorization interaction configuration. Hosts transport this value without interpreting its UI semantics; renderers must validate it against the versioned protocol.
-	AuthorizationInteraction *map[string]interface{}                   `json:"authorizationInteraction,omitempty"`
-	AuthorizationKind        string                                    `json:"authorizationKind"`
-	Compatibility            *ConnectorMarketCompatibilityRequirements `json:"compatibility,omitempty"`
-	Description              *string                                   `json:"description,omitempty"`
-	DisplayName              string                                    `json:"displayName"`
-	IconUrl                  string                                    `json:"iconUrl"`
+	AuthorizationInteraction *map[string]interface{} `json:"authorizationInteraction,omitempty"`
+
+	// AuthorizationInteractionMode Public host projection indicating that authorization is owned by a managed credential broker and must start without a local secret.
+	AuthorizationInteractionMode *ConnectorMarketManifestAuthorizationInteractionMode `json:"authorizationInteractionMode,omitempty"`
+	AuthorizationKind            string                                               `json:"authorizationKind"`
+	Compatibility                *ConnectorMarketCompatibilityRequirements            `json:"compatibility,omitempty"`
+	Description                  *string                                              `json:"description,omitempty"`
+	DisplayName                  string                                               `json:"displayName"`
+	IconUrl                      string                                               `json:"iconUrl"`
 
 	// Implementation Public implementation discriminator; sensitive host configuration is never returned.
 	Implementation ConnectorMarketImplementation        `json:"implementation"`
 	Permissions    []string                             `json:"permissions"`
 	SchemaVersion  ConnectorMarketManifestSchemaVersion `json:"schemaVersion"`
 }
+
+// ConnectorMarketManifestAuthorizationInteractionMode Public host projection indicating that authorization is owned by a managed credential broker and must start without a local secret.
+type ConnectorMarketManifestAuthorizationInteractionMode string
 
 // ConnectorMarketManifestSchemaVersion defines model for ConnectorMarketManifest.SchemaVersion.
 type ConnectorMarketManifestSchemaVersion string

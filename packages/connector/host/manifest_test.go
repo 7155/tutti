@@ -124,6 +124,19 @@ func TestManagedCredentialBrokerRequiresConnectorOwnedEntrypointAndAllowedHosts(
 	if err := ValidateManifestShape(manifest); err != nil {
 		t.Fatal(err)
 	}
+	manifest.Implementation.ManagedStdio.CredentialBroker.Presentation = CredentialBrokerPresentationQRCode
+	if err := ValidateManifestShape(manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest.Implementation.ManagedStdio.CredentialBroker.Presentation = CredentialBrokerPresentationEmbeddedPage
+	if err := ValidateManifestShape(manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest.Implementation.ManagedStdio.CredentialBroker.Presentation = "inline"
+	if err := ValidateManifestShape(manifest); err == nil || !strings.Contains(err.Error(), "presentation") {
+		t.Fatalf("unsupported credential broker presentation error = %v", err)
+	}
+	manifest.Implementation.ManagedStdio.CredentialBroker.Presentation = ""
 	manifest.Implementation.ManagedStdio.CredentialBroker.Entrypoint = "../broker.mjs"
 	if err := ValidateManifestShape(manifest); err == nil {
 		t.Fatal("unsafe credential broker entrypoint was accepted")
@@ -190,6 +203,40 @@ func TestRuntimeReleaseValidationDoesNotRequirePresentationIcon(t *testing.T) {
 	release.Manifest.Permissions = []string{"network:*", "network:*"}
 	if err := ValidateRuntimeReleaseShape(release); err == nil || !strings.Contains(err.Error(), "unique") {
 		t.Fatalf("runtime release validation error = %v, want duplicate permission rejection", err)
+	}
+}
+
+func TestReleaseValidationRestrictsLegacyEmbeddedPagePresentation(t *testing.T) {
+	release := testReleaseWithImplementation("wecom-cli", "0.1.4", ImplementationKindManagedStdio)
+	release.Manifest.AuthorizationKind = "oauth2"
+	release.Manifest.Implementation.ManagedStdio.Runtime.VersionRange = ">=20.0.0 <21.0.0"
+	release.Manifest.Implementation.ManagedStdio.CLI = &ManagedCLIInterface{
+		Entrypoint: "wecom-cli",
+		TimeoutMS:  120_000,
+	}
+	release.Manifest.Implementation.ManagedStdio.CredentialBroker = &ManagedCredentialBroker{
+		Protocol:     CredentialBrokerProtocolV1,
+		Entrypoint:   "authorization/broker.mjs",
+		TimeoutMS:    300_000,
+		AllowedHosts: []string{"work.weixin.qq.com"},
+		Presentation: CredentialBrokerPresentationEmbeddedPage,
+	}
+
+	if err := ValidateReleaseShape(release); err != nil {
+		t.Fatalf("legacy wecom-cli 0.1.4 release was rejected: %v", err)
+	}
+
+	release.Version = "0.1.5"
+	release.ReleaseID = "wecom-cli@0.1.5"
+	if err := ValidateReleaseShape(release); err == nil || !strings.Contains(err.Error(), "embedded_page") {
+		t.Fatalf("new wecom-cli embedded_page release error = %v", err)
+	}
+
+	release.ConnectorKey = "example"
+	release.Version = "0.1.4"
+	release.ReleaseID = "example@0.1.4"
+	if err := ValidateReleaseShape(release); err == nil || !strings.Contains(err.Error(), "embedded_page") {
+		t.Fatalf("non-WeCom embedded_page release error = %v", err)
 	}
 }
 

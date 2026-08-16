@@ -105,17 +105,18 @@ type Release struct {
 }
 
 type Manifest struct {
-	SchemaVersion            string                    `json:"schemaVersion"`
-	DisplayName              string                    `json:"displayName"`
-	IconURL                  string                    `json:"iconUrl"`
-	Description              string                    `json:"description,omitempty"`
-	AgentRouting             *AgentRouting             `json:"agentRouting,omitempty"`
-	Permissions              []string                  `json:"permissions"`
-	RequiredCapabilities     []string                  `json:"requiredCapabilities,omitempty"`
-	Implementation           Implementation            `json:"implementation"`
-	AuthorizationKind        string                    `json:"authorizationKind"`
-	AuthorizationInteraction json.RawMessage           `json:"authorizationInteraction,omitempty"`
-	Compatibility            CompatibilityRequirements `json:"compatibility,omitempty"`
+	SchemaVersion                string                    `json:"schemaVersion"`
+	DisplayName                  string                    `json:"displayName"`
+	IconURL                      string                    `json:"iconUrl"`
+	Description                  string                    `json:"description,omitempty"`
+	AgentRouting                 *AgentRouting             `json:"agentRouting,omitempty"`
+	Permissions                  []string                  `json:"permissions"`
+	RequiredCapabilities         []string                  `json:"requiredCapabilities,omitempty"`
+	Implementation               Implementation            `json:"implementation"`
+	AuthorizationKind            string                    `json:"authorizationKind"`
+	AuthorizationInteraction     json.RawMessage           `json:"authorizationInteraction,omitempty"`
+	AuthorizationInteractionMode string                    `json:"authorizationInteractionMode,omitempty"`
+	Compatibility                CompatibilityRequirements `json:"compatibility,omitempty"`
 }
 
 // AgentRouting carries connector-owned brand and product aliases used only to
@@ -173,6 +174,7 @@ type ManagedCredentialBroker struct {
 	Protocol     string   `json:"protocol"`
 	Entrypoint   string   `json:"entrypoint"`
 	TimeoutMS    int      `json:"timeoutMs"`
+	Presentation string   `json:"presentation,omitempty"`
 	AllowedHosts []string `json:"allowedHosts"`
 }
 
@@ -638,9 +640,10 @@ type MutationResult struct {
 }
 
 type AuthorizationResult struct {
-	Connector              Connector `json:"connector"`
-	Operation              Operation `json:"operation"`
-	AuthorizationURL       string    `json:"authorizationUrl,omitempty"`
-	AuthorizationExpiresAt time.Time `json:"authorizationExpiresAt"`
-	Revision               uint64    `json:"revision"`
+	Connector              Connector                  `json:"connector"`
+	Operation              Operation                  `json:"operation"`
+	AuthorizationURL       string                     `json:"authorizationUrl,omitempty"`
+	AuthorizationView      *AuthorizationViewEnvelope `json:"authorizationView,omitempty"`
+	AuthorizationExpiresAt time.Time                  `json:"authorizationExpiresAt"`
+	Revision               uint64                     `json:"revision"`
 }

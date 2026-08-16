@@ -10,6 +10,7 @@ const labels = {
   addContentConnectorConnect: "Connect",
   addContentConnectorAuthorize: "Authorize",
   addContentConnectorEmpty: "No connectors available",
+  addContentConnectorLoading: "Loading connectors…",
   addContentConnectorMore: "View more connectors",
   tuttiModeDescription: "Coordinate work",
   tuttiModeLabel: "Tutti Mode"
@@ -25,6 +26,7 @@ describe("ComposerPrimaryCapabilityControl", () => {
         isTuttiModeActive={false}
         isTuttiModeUpdating={false}
         labels={labels}
+        loading={false}
         onCapabilitySettingsRequest={vi.fn()}
         onTuttiModeChange={vi.fn()}
         tuttiModeSupported={true}
@@ -49,6 +51,7 @@ describe("ComposerPrimaryCapabilityControl", () => {
         isTuttiModeActive={false}
         isTuttiModeUpdating={false}
         labels={labels}
+        loading
         onRetryComposerOptions={onRetryComposerOptions}
         onCapabilitySettingsRequest={vi.fn()}
         onTuttiModeChange={vi.fn()}
@@ -67,7 +70,10 @@ describe("ComposerPrimaryCapabilityControl", () => {
       { button: 0, ctrlKey: false, pointerType: "mouse" }
     );
     expect(onRetryComposerOptions).toHaveBeenCalledWith({
-      section: "capabilities"
+      section: "connectors"
     });
+    expect(
+      screen.getByTestId("connector-market-composer-loading")
+    ).toHaveTextContent("Loading connectors…");
   });
 });

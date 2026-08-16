@@ -368,6 +368,7 @@ export interface AgentComposerProps {
     addContentConnectorConnect: string;
     addContentConnectorAuthorize: string;
     addContentConnectorEmpty: string;
+    addContentConnectorLoading: string;
     addContentConnectorMore: string;
     referenceWorkspaceFiles: string;
     handoffConversation: string;
@@ -424,7 +425,7 @@ export interface AgentComposerProps {
   }) => void;
   /** Retries or explicitly refreshes the target-scoped composer options. */
   onRetryComposerOptions?: (options?: {
-    section?: "core" | "capabilities";
+    section?: "core" | "capabilities" | "connectors";
     waitForFreshModelCatalog?: boolean;
   }) => void;
   onTuttiModeChange?: (active: boolean) => void;

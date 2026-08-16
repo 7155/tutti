@@ -47,6 +47,7 @@ paths:
       summary: List one server-owned connector-market section
       parameters:
         - $ref: "#/components/parameters/ConnectorMarketSectionID"
+        - $ref: "#/components/parameters/ConnectorMarketInstallationFilter"
         - $ref: "#/components/parameters/ConnectorMarketPageSize"
         - $ref: "#/components/parameters/ConnectorMarketPageToken"
       responses:
@@ -297,6 +298,14 @@ components:
       schema:
         type: string
         minLength: 1
+    ConnectorMarketInstallationFilter:
+      name: installation
+      in: query
+      required: false
+      description: Filters connector installation projections before page boundaries and next-page calculation.
+      schema:
+        type: string
+        enum: [not_installed]
     ConnectorMarketPageSize:
       name: pageSize
       in: query

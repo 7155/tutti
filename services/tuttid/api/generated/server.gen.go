@@ -1689,6 +1689,19 @@ func (siw *ServerInterfaceWrapper) ListConnectorMarketCatalog(w http.ResponseWri
 		return
 	}
 
+	// ------------- Optional query parameter "installation" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "installation", r.URL.Query(), &params.Installation, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "installation"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "installation", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "pageSize" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "pageSize", r.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})

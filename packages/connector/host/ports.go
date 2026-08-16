@@ -23,10 +23,17 @@ type CatalogSourcePageQuery struct {
 	PageToken string
 }
 
+type CatalogInstallationFilter string
+
+const (
+	CatalogInstallationFilterNotInstalled CatalogInstallationFilter = "not_installed"
+)
+
 type CatalogPageQuery struct {
-	SectionID string
-	PageSize  int
-	PageToken string
+	SectionID          string
+	PageSize           int
+	PageToken          string
+	InstallationFilter CatalogInstallationFilter
 }
 
 type CatalogCategory struct {

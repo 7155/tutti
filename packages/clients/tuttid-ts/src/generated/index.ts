@@ -567,6 +567,7 @@ export type {
   ConnectorMarketErrorCode,
   ConnectorMarketImplementation,
   ConnectorMarketInstallation,
+  ConnectorMarketInstallationFilter,
   ConnectorMarketInstallationState,
   ConnectorMarketManifest,
   ConnectorMarketMutationRequest,

@@ -1917,9 +1917,9 @@ export type AgentProviderComposerConfig = {
 
 export type GetAgentProviderComposerOptionsRequest = {
   /**
-   * Selects the independently loadable composer section. Core contains model, reasoning, speed, permission, and runtime settings; capabilities contains skills and capability catalog data. Full is retained for callers that need the combined legacy response.
+   * Selects the independently loadable composer section. Core contains model, reasoning, speed, permission, and runtime settings; capabilities contains skills and capability catalog data; connectors contains only the local Connector Market projection. Full is retained for callers that need the combined legacy response.
    */
-  section?: "full" | "core" | "capabilities";
+  section?: "full" | "core" | "capabilities" | "connectors";
   /**
    * Waits for an authoritative model catalog when the cached result is stale. Use only for an explicit model-picker request; ordinary composer loads should render the last successful catalog first.
    */
@@ -1941,7 +1941,7 @@ export type GetWorkspaceAppFactoryAgentTargetComposerOptionsRequest = {
   /**
    * Independently loadable composer section.
    */
-  section?: "full" | "core" | "capabilities";
+  section?: "full" | "core" | "capabilities" | "connectors";
   locale?: DesktopLocale;
   settings?: AgentSessionComposerSettings;
 };
@@ -5213,6 +5213,11 @@ export type ConnectorMarketConnectorKey = string;
 export type ConnectorMarketOperationId = string;
 
 export type ConnectorMarketSectionId = string;
+
+/**
+ * Filters connector installation projections before page boundaries and next-page calculation.
+ */
+export type ConnectorMarketInstallationFilter = "not_installed";
 
 export type ConnectorMarketPageSize = number;
 
@@ -16953,6 +16958,10 @@ export type ListConnectorMarketCatalogData = {
   path?: never;
   query: {
     sectionId: string;
+    /**
+     * Filters connector installation projections before page boundaries and next-page calculation.
+     */
+    installation?: "not_installed";
     pageSize?: number;
     pageToken?: string;
   };

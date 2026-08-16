@@ -224,6 +224,7 @@ export function ComposerFooter({
             isTuttiModeActive={isTuttiModeActive}
             isTuttiModeUpdating={isTuttiModeUpdating}
             labels={labels}
+            loading={composerSettings.isConnectorOptionsLoading === true}
             onRetryComposerOptions={onRetryComposerOptions}
             onCapabilitySettingsRequest={onCapabilitySettingsRequest}
             onTuttiModeChange={onTuttiModeChange}

@@ -10,6 +10,7 @@ const labels = {
   connectorConnect: "Connect",
   connectorAuthorize: "Authorize",
   connectorEmpty: "No connectors available",
+  connectorLoading: "Loading connectors…",
   connectorMore: "View more connectors"
 };
 
@@ -28,6 +29,56 @@ function connector(
 }
 
 describe("ComposerConnectorsMenu", () => {
+  it("shows loading instead of an empty state while the first catalog request is pending", async () => {
+    render(
+      <ComposerConnectorsMenu
+        connectors={[]}
+        disabled={false}
+        labels={labels}
+        loading
+        onOpenConnector={vi.fn()}
+        onOpenConnectors={vi.fn()}
+      />
+    );
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Connectors" }), {
+      button: 0,
+      ctrlKey: false
+    });
+
+    expect(
+      await screen.findByTestId("connector-market-composer-loading")
+    ).toHaveTextContent("Loading connectors…");
+    expect(
+      screen.queryByText("No connectors available")
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the last successful connector list visible during a refresh", async () => {
+    render(
+      <ComposerConnectorsMenu
+        connectors={[connector("github", "available")]}
+        disabled={false}
+        labels={labels}
+        loading
+        onOpenConnector={vi.fn()}
+        onOpenConnectors={vi.fn()}
+      />
+    );
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Connectors" }), {
+      button: 0,
+      ctrlKey: false
+    });
+
+    expect(
+      await screen.findByTestId("connector-market-composer-item-github")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("connector-market-composer-loading")
+    ).not.toBeInTheDocument();
+  });
+
   it("summarizes connected connectors in a compact preview group", () => {
     const connectedConnectors = Array.from({ length: 5 }, (_, index) => ({
       ...connector(`connected-${index}`, "available"),

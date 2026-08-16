@@ -106,6 +106,7 @@ test("exposes commands directly on a class service and state through dataStore",
 
 test("loads server categories and appends cursor pages", async () => {
   const pageTokens: (string | undefined)[] = [];
+  const installationFilters: ("not_installed" | undefined)[] = [];
   const service = new ConnectorMarketService({
     backend: backendWith({
       listCategories: async () => [
@@ -116,7 +117,8 @@ test("loads server categories and appends cursor pages", async () => {
           itemCount: 2
         }
       ],
-      listCatalogPage: async ({ pageToken }) => {
+      listCatalogPage: async ({ installation, pageToken }) => {
+        installationFilters.push(installation);
         pageTokens.push(pageToken);
         const item = connector(
           pageToken ? "linear" : "github",
@@ -147,6 +149,7 @@ test("loads server categories and appends cursor pages", async () => {
   ]);
   assert.equal(service.dataStore.catalogSections[0]?.nextPageToken, undefined);
   assert.deepEqual(pageTokens, [undefined, "page-2"]);
+  assert.deepEqual(installationFilters, ["not_installed", "not_installed"]);
   assert.equal(service.dataStore.revision, 2);
   service.dispose();
 });

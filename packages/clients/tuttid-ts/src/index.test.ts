@@ -2589,6 +2589,7 @@ test("shared tuttid connector client preserves category and cursor pagination", 
   assert.deepEqual(await client.listConnectorMarketCategories(), categories);
   assert.deepEqual(
     await client.listConnectorMarketCatalog({
+      installation: "not_installed",
       sectionId: "development",
       pageSize: 20,
       pageToken: "cursor-1"
@@ -2608,6 +2609,7 @@ test("shared tuttid connector client preserves category and cursor pagination", 
     method: "GET",
     path: "/v1/connector-market/catalog",
     query: {
+      installation: "not_installed",
       pageSize: "20",
       pageToken: "cursor-1",
       sectionId: "development"

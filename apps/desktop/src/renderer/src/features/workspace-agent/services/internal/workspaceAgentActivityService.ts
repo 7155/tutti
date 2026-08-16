@@ -890,7 +890,7 @@ export class WorkspaceAgentActivityService
     force?: boolean;
     waitForFreshModelCatalog?: boolean;
     provider?: string;
-    section?: "full" | "core" | "capabilities";
+    section?: "full" | "core" | "capabilities" | "connectors";
     signal?: AbortSignal;
     settings?: Parameters<typeof normalizeComposerSettings>[0] | null;
     workspaceId: string;

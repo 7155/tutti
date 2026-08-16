@@ -338,6 +338,8 @@ export interface AgentGUIComposerSettingsVM {
   composerOptionsLoadStatus?: AgentActivityComposerOptionsLoadStatus;
   /** Initial slash command and capability catalog request is in flight. */
   isCapabilityOptionsLoading?: boolean;
+  /** Local Connector Market projection is being loaded or refreshed. */
+  isConnectorOptionsLoading?: boolean;
   isModelOptionsLoading?: boolean;
   /** Device-local model recents/favorites identity and catalog testimony. */
   modelChoiceHistory?: AgentGUIComposerModelChoiceHistoryVM;

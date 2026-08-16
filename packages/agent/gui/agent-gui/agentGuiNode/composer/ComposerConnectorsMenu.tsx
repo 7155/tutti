@@ -10,6 +10,7 @@ export interface ComposerConnectorsMenuLabels {
   connectorConnect: string;
   connectorAuthorize: string;
   connectorEmpty: string;
+  connectorLoading: string;
   connectorMore: string;
 }
 
@@ -17,6 +18,7 @@ interface Props {
   connectors: readonly AgentGUIProviderSkillOption[];
   disabled: boolean;
   labels: ComposerConnectorsMenuLabels;
+  loading?: boolean;
   onOpenChange?: (open: boolean) => void;
   onOpenConnector: (connectorKey: string) => void;
   onOpenConnectors: () => void;
@@ -27,6 +29,7 @@ export function ComposerConnectorsMenu({
   connectors,
   disabled,
   labels,
+  loading = false,
   onOpenChange,
   onOpenConnector,
   onOpenConnectors
@@ -41,8 +44,10 @@ export function ComposerConnectorsMenu({
         connected: labels.connectorConnected,
         connectors: labels.connectors,
         empty: labels.connectorEmpty,
+        loading: labels.connectorLoading,
         more: labels.connectorMore
       }}
+      loading={loading}
       onOpenChange={onOpenChange}
       onOpenConnector={onOpenConnector}
       onOpenMarket={onOpenConnectors}

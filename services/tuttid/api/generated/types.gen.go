@@ -2344,6 +2344,7 @@ func (e ExternalAgentImportArchiveKind) Valid() bool {
 // Defines values for GetAgentProviderComposerOptionsRequestSection.
 const (
 	GetAgentProviderComposerOptionsRequestSectionCapabilities GetAgentProviderComposerOptionsRequestSection = "capabilities"
+	GetAgentProviderComposerOptionsRequestSectionConnectors   GetAgentProviderComposerOptionsRequestSection = "connectors"
 	GetAgentProviderComposerOptionsRequestSectionCore         GetAgentProviderComposerOptionsRequestSection = "core"
 	GetAgentProviderComposerOptionsRequestSectionFull         GetAgentProviderComposerOptionsRequestSection = "full"
 )
@@ -2352,6 +2353,8 @@ const (
 func (e GetAgentProviderComposerOptionsRequestSection) Valid() bool {
 	switch e {
 	case GetAgentProviderComposerOptionsRequestSectionCapabilities:
+		return true
+	case GetAgentProviderComposerOptionsRequestSectionConnectors:
 		return true
 	case GetAgentProviderComposerOptionsRequestSectionCore:
 		return true
@@ -2365,6 +2368,7 @@ func (e GetAgentProviderComposerOptionsRequestSection) Valid() bool {
 // Defines values for GetWorkspaceAppFactoryAgentTargetComposerOptionsRequestSection.
 const (
 	GetWorkspaceAppFactoryAgentTargetComposerOptionsRequestSectionCapabilities GetWorkspaceAppFactoryAgentTargetComposerOptionsRequestSection = "capabilities"
+	GetWorkspaceAppFactoryAgentTargetComposerOptionsRequestSectionConnectors   GetWorkspaceAppFactoryAgentTargetComposerOptionsRequestSection = "connectors"
 	GetWorkspaceAppFactoryAgentTargetComposerOptionsRequestSectionCore         GetWorkspaceAppFactoryAgentTargetComposerOptionsRequestSection = "core"
 	GetWorkspaceAppFactoryAgentTargetComposerOptionsRequestSectionFull         GetWorkspaceAppFactoryAgentTargetComposerOptionsRequestSection = "full"
 )
@@ -2373,6 +2377,8 @@ const (
 func (e GetWorkspaceAppFactoryAgentTargetComposerOptionsRequestSection) Valid() bool {
 	switch e {
 	case GetWorkspaceAppFactoryAgentTargetComposerOptionsRequestSectionCapabilities:
+		return true
+	case GetWorkspaceAppFactoryAgentTargetComposerOptionsRequestSectionConnectors:
 		return true
 	case GetWorkspaceAppFactoryAgentTargetComposerOptionsRequestSectionCore:
 		return true
@@ -4702,6 +4708,36 @@ const (
 func (e AgentCommandOrigin) Valid() bool {
 	switch e {
 	case AgentCommandOriginRendererEngine:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ConnectorMarketInstallationFilter.
+const (
+	ConnectorMarketInstallationFilterNotInstalled ConnectorMarketInstallationFilter = "not_installed"
+)
+
+// Valid indicates whether the value is a known member of the ConnectorMarketInstallationFilter enum.
+func (e ConnectorMarketInstallationFilter) Valid() bool {
+	switch e {
+	case ConnectorMarketInstallationFilterNotInstalled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListConnectorMarketCatalogParamsInstallation.
+const (
+	ListConnectorMarketCatalogParamsInstallationNotInstalled ListConnectorMarketCatalogParamsInstallation = "not_installed"
+)
+
+// Valid indicates whether the value is a known member of the ListConnectorMarketCatalogParamsInstallation enum.
+func (e ListConnectorMarketCatalogParamsInstallation) Valid() bool {
+	switch e {
+	case ListConnectorMarketCatalogParamsInstallationNotInstalled:
 		return true
 	default:
 		return false
@@ -7174,7 +7210,7 @@ type GetAgentProviderComposerOptionsRequest struct {
 	Cwd           *string        `json:"cwd,omitempty"`
 	Locale        *DesktopLocale `json:"locale,omitempty"`
 
-	// Section Selects the independently loadable composer section. Core contains model, reasoning, speed, permission, and runtime settings; capabilities contains skills and capability catalog data. Full is retained for callers that need the combined legacy response.
+	// Section Selects the independently loadable composer section. Core contains model, reasoning, speed, permission, and runtime settings; capabilities contains skills and capability catalog data; connectors contains only the local Connector Market projection. Full is retained for callers that need the combined legacy response.
 	Section  *GetAgentProviderComposerOptionsRequestSection `json:"section,omitempty"`
 	Settings *AgentSessionComposerSettings                  `json:"settings,omitempty"`
 
@@ -7185,7 +7221,7 @@ type GetAgentProviderComposerOptionsRequest struct {
 	WorkspaceId *string `json:"workspaceId,omitempty"`
 }
 
-// GetAgentProviderComposerOptionsRequestSection Selects the independently loadable composer section. Core contains model, reasoning, speed, permission, and runtime settings; capabilities contains skills and capability catalog data. Full is retained for callers that need the combined legacy response.
+// GetAgentProviderComposerOptionsRequestSection Selects the independently loadable composer section. Core contains model, reasoning, speed, permission, and runtime settings; capabilities contains skills and capability catalog data; connectors contains only the local Connector Market projection. Full is retained for callers that need the combined legacy response.
 type GetAgentProviderComposerOptionsRequestSection string
 
 // GetWorkspaceAppFactoryAgentTargetComposerOptionsRequest defines model for GetWorkspaceAppFactoryAgentTargetComposerOptionsRequest.
@@ -10070,6 +10106,9 @@ type CollaborationRunID = string
 // ConnectorMarketConnectorKey defines model for ConnectorMarketConnectorKey.
 type ConnectorMarketConnectorKey = string
 
+// ConnectorMarketInstallationFilter defines model for ConnectorMarketInstallationFilter.
+type ConnectorMarketInstallationFilter string
+
 // ConnectorMarketOperationID defines model for ConnectorMarketOperationID.
 type ConnectorMarketOperationID = string
 
@@ -10307,10 +10346,16 @@ type ListCliCapabilitiesParams struct {
 
 // ListConnectorMarketCatalogParams defines parameters for ListConnectorMarketCatalog.
 type ListConnectorMarketCatalogParams struct {
-	SectionId ConnectorMarketSectionID  `form:"sectionId" json:"sectionId"`
-	PageSize  *ConnectorMarketPageSize  `form:"pageSize,omitempty" json:"pageSize,omitempty"`
-	PageToken *ConnectorMarketPageToken `form:"pageToken,omitempty" json:"pageToken,omitempty"`
+	SectionId ConnectorMarketSectionID `form:"sectionId" json:"sectionId"`
+
+	// Installation Filters connector installation projections before page boundaries and next-page calculation.
+	Installation *ListConnectorMarketCatalogParamsInstallation `form:"installation,omitempty" json:"installation,omitempty"`
+	PageSize     *ConnectorMarketPageSize                      `form:"pageSize,omitempty" json:"pageSize,omitempty"`
+	PageToken    *ConnectorMarketPageToken                     `form:"pageToken,omitempty" json:"pageToken,omitempty"`
 }
+
+// ListConnectorMarketCatalogParamsInstallation defines parameters for ListConnectorMarketCatalog.
+type ListConnectorMarketCatalogParamsInstallation string
 
 // ListWorkspaceAgentGeneratedFilesParams defines parameters for ListWorkspaceAgentGeneratedFiles.
 type ListWorkspaceAgentGeneratedFilesParams struct {

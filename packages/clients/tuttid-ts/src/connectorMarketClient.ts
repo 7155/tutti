@@ -60,6 +60,7 @@ export interface ConnectorMarketClient {
   getConnectorMarket(): Promise<ConnectorMarketSnapshot>;
   listConnectorMarketCategories(): Promise<ConnectorMarketCategoriesResponse>;
   listConnectorMarketCatalog(input: {
+    installation?: "not_installed";
     sectionId: string;
     pageSize?: number;
     pageToken?: string;

@@ -172,15 +172,67 @@ func (application *Application) ListCatalogCategories(ctx context.Context) ([]Ca
 func (application *Application) ListCatalogPage(ctx context.Context, query CatalogPageQuery) (CatalogPage, error) {
 	query.SectionID = strings.TrimSpace(query.SectionID)
 	query.PageToken = strings.TrimSpace(query.PageToken)
+	query.InstallationFilter = CatalogInstallationFilter(strings.TrimSpace(string(query.InstallationFilter)))
 	if query.SectionID == "" || query.PageSize < 1 || query.PageSize > 100 {
 		return CatalogPage{}, invalidRequest("sectionId and a pageSize between 1 and 100 are required")
 	}
-	fetchSequence := application.beginCatalogFetch()
-	page, err := application.config.CatalogSource.ListPage(ctx, CatalogSourcePageQuery(query))
-	if err != nil {
-		return CatalogPage{}, preserveCatalogSourceError("connector catalog page could not be loaded", err)
+	if query.InstallationFilter != "" && query.InstallationFilter != CatalogInstallationFilterNotInstalled {
+		return CatalogPage{}, invalidRequest("installation filter is invalid")
 	}
-	if page.SectionID != query.SectionID {
+	fetchSequence := application.beginCatalogFetch()
+	pageToken := query.PageToken
+	seenPageTokens := map[string]struct{}{pageToken: {}}
+	result := CatalogPage{
+		SectionID: query.SectionID,
+		Items:     make([]CatalogListing, 0, query.PageSize),
+	}
+	for {
+		pageSize := query.PageSize
+		if query.InstallationFilter == CatalogInstallationFilterNotInstalled {
+			pageSize -= len(result.Items)
+		}
+		page, err := application.config.CatalogSource.ListPage(ctx, CatalogSourcePageQuery{
+			SectionID: query.SectionID,
+			PageSize:  pageSize,
+			PageToken: pageToken,
+		})
+		if err != nil {
+			return CatalogPage{}, preserveCatalogSourceError("connector catalog page could not be loaded", err)
+		}
+		projected, err := application.projectCatalogSourcePage(ctx, fetchSequence, query.SectionID, page)
+		if err != nil {
+			return CatalogPage{}, err
+		}
+		if query.InstallationFilter == "" {
+			return projected, nil
+		}
+		if projected.Revision > result.Revision {
+			result.Revision = projected.Revision
+		}
+		for _, item := range projected.Items {
+			if !connectorHasInstalledArtifact(item.Connector) {
+				result.Items = append(result.Items, item)
+			}
+		}
+		result.NextPageToken = projected.NextPageToken
+		if len(result.Items) >= query.PageSize || projected.NextPageToken == "" {
+			return result, nil
+		}
+		if _, exists := seenPageTokens[projected.NextPageToken]; exists {
+			return CatalogPage{}, invalidManifest("connector catalog pagination did not advance", nil)
+		}
+		seenPageTokens[projected.NextPageToken] = struct{}{}
+		pageToken = projected.NextPageToken
+	}
+}
+
+func (application *Application) projectCatalogSourcePage(
+	ctx context.Context,
+	fetchSequence uint64,
+	sectionID string,
+	page CatalogSourcePage,
+) (CatalogPage, error) {
+	if page.SectionID != sectionID {
 		return CatalogPage{}, invalidManifest("connector catalog page section does not match the request", nil)
 	}
 	seen := make(map[string]struct{}, len(page.Entries))
@@ -264,6 +316,22 @@ func (application *Application) ListCatalogPage(ctx context.Context, query Catal
 		result.Items = append(result.Items, CatalogListing{CategoryID: entry.CategoryID, Featured: entry.Featured, Connector: connector})
 	}
 	return result, nil
+}
+
+func connectorHasInstalledArtifact(connector Connector) bool {
+	installation := connector.Installation
+	if installation.State == InstallationStateNotInstalled || installation.State == InstallationStateInstalling {
+		return false
+	}
+	if installationRequiresPhysicalRepair(installation) {
+		return false
+	}
+	if installation.InstalledReleaseDigest != "" || installation.InstalledReleaseID != "" || installation.InstalledVersion != "" {
+		return true
+	}
+	return installation.State == InstallationStateInstalled ||
+		installation.State == InstallationStateUpdating ||
+		installation.State == InstallationStateUninstalling
 }
 
 func (application *Application) beginCatalogFetch() uint64 {

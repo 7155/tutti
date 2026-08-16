@@ -74,8 +74,12 @@ func (api DaemonAPI) ListConnectorMarketCatalog(
 	if request.Params.PageToken != nil {
 		pageToken = *request.Params.PageToken
 	}
+	installationFilter := market.CatalogInstallationFilter("")
+	if request.Params.Installation != nil {
+		installationFilter = market.CatalogInstallationFilter(*request.Params.Installation)
+	}
 	page, err := api.ConnectorMarketService.ListCatalogPage(ctx, market.CatalogPageQuery{
-		SectionID: request.Params.SectionId, PageSize: pageSize, PageToken: pageToken,
+		SectionID: request.Params.SectionId, PageSize: pageSize, PageToken: pageToken, InstallationFilter: installationFilter,
 	})
 	if err != nil {
 		payload, status := connectorMarketError(err)

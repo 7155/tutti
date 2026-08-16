@@ -34,6 +34,7 @@ export interface ConnectorComposerMenuLabels {
   connected: string;
   connectors: string;
   empty: string;
+  loading: string;
   more: string;
 }
 
@@ -41,6 +42,7 @@ export interface ConnectorComposerMenuProps {
   disabled?: boolean;
   items: readonly ConnectorComposerItem[];
   labels: ConnectorComposerMenuLabels;
+  loading?: boolean;
   onOpenChange?: (open: boolean) => void;
   onOpenConnector: (connectorKey: string) => void;
   onOpenMarket: () => void;
@@ -54,6 +56,7 @@ export function ConnectorComposerMenu({
   disabled = false,
   items,
   labels,
+  loading = false,
   onOpenChange,
   onOpenConnector,
   onOpenMarket
@@ -174,6 +177,13 @@ export function ConnectorComposerMenu({
               </DropdownMenuItem>
             );
           })
+        ) : loading ? (
+          <div
+            className="px-2 py-1.5 text-xs text-[var(--text-tertiary)]"
+            data-testid="connector-market-composer-loading"
+          >
+            {labels.loading}
+          </div>
         ) : (
           <div className="px-2 py-1.5 text-xs text-[var(--text-tertiary)]">
             {labels.empty}

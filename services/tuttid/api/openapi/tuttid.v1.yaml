@@ -11525,12 +11525,14 @@ components:
             - full
             - core
             - capabilities
+            - connectors
           default: full
           description: >-
             Selects the independently loadable composer section. Core contains
             model, reasoning, speed, permission, and runtime settings;
-            capabilities contains skills and capability catalog data. Full is
-            retained for callers that need the combined legacy response.
+            capabilities contains skills and capability catalog data;
+            connectors contains only the local Connector Market projection.
+            Full is retained for callers that need the combined legacy response.
         waitForFreshModelCatalog:
           type: boolean
           description: >-
@@ -11562,6 +11564,7 @@ components:
             - full
             - core
             - capabilities
+            - connectors
           default: full
           description: Independently loadable composer section.
         locale:

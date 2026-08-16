@@ -15,6 +15,7 @@ export interface ConnectorMarketBackend {
   getSnapshot(): Promise<ConnectorMarketSnapshot>;
   listCategories(): Promise<ConnectorMarketCategory[]>;
   listCatalogPage(input: {
+    installation?: "not_installed";
     sectionId: string;
     pageSize: number;
     pageToken?: string;

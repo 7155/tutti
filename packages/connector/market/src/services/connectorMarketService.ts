@@ -673,6 +673,7 @@ export class ConnectorMarketService implements IConnectorMarketService {
       const pageResults = await Promise.allSettled(
         requestedCategories.map((category) =>
           this.dependencies.backend.listCatalogPage({
+            installation: "not_installed",
             sectionId: category.categoryId,
             pageSize: 20
           })
@@ -774,6 +775,7 @@ export class ConnectorMarketService implements IConnectorMarketService {
     markConnectorMarketSectionLoading(this.dataStore, sectionId);
     try {
       const page = await this.dependencies.backend.listCatalogPage({
+        installation: "not_installed",
         sectionId,
         pageSize: 20,
         pageToken

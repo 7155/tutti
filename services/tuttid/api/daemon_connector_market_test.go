@@ -345,7 +345,8 @@ func TestDaemonAPIConnectorMarketServesCategoriesAndCursorPage(t *testing.T) {
 			return []market.CatalogCategory{{CategoryID: "development", Kind: "category", SortOrder: 20, ItemCount: 1}}, nil
 		},
 		pageFn: func(_ context.Context, query market.CatalogPageQuery) (market.CatalogPage, error) {
-			if query.SectionID != "development" || query.PageSize != 20 || query.PageToken != "cursor-1" {
+			if query.SectionID != "development" || query.PageSize != 20 || query.PageToken != "cursor-1" ||
+				query.InstallationFilter != market.CatalogInstallationFilterNotInstalled {
 				t.Fatalf("query = %#v", query)
 			}
 			return market.CatalogPage{
@@ -363,7 +364,7 @@ func TestDaemonAPIConnectorMarketServesCategoriesAndCursorPage(t *testing.T) {
 	if categories.Code != http.StatusOK {
 		t.Fatalf("categories status = %d; body: %s", categories.Code, categories.Body.String())
 	}
-	page := performGeneratedRouteRequest(t, mux, http.MethodGet, "/v1/connector-market/catalog?sectionId=development&pageSize=20&pageToken=cursor-1", nil)
+	page := performGeneratedRouteRequest(t, mux, http.MethodGet, "/v1/connector-market/catalog?sectionId=development&installation=not_installed&pageSize=20&pageToken=cursor-1", nil)
 	if page.Code != http.StatusOK {
 		t.Fatalf("page status = %d; body: %s", page.Code, page.Body.String())
 	}

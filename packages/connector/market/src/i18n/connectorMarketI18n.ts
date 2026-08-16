@@ -50,7 +50,7 @@ const connectorMarketEn = {
     "This connector cannot be used in the current environment",
   blockedTitle: "Connector unavailable",
   cancel: "Cancel",
-  catalogEmpty: "No connectors are available yet",
+  catalogEmpty: "There are no more connectors available to install",
   catalogError: "The connector catalog could not be loaded",
   catalogErrorDescription: "Please try again later",
   catalogInvalidDataDescription:
@@ -176,7 +176,7 @@ const connectorMarketZhCN = {
   blockedDescription: "当前环境无法使用这个连接器",
   blockedTitle: "连接器不可用",
   cancel: "取消",
-  catalogEmpty: "暂无可用连接器",
+  catalogEmpty: "没有更多连接器可以安装了",
   catalogError: "无法加载连接器",
   catalogErrorDescription: "请稍后再试",
   catalogInvalidDataDescription: "连接器服务返回的数据有误，请稍后再试",

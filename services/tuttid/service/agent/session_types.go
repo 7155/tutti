@@ -74,6 +74,7 @@ type Service struct {
 	ComputerUseAvailable           func() bool
 	CapabilityLister               ComposerCapabilityLister
 	ConnectorMarketSnapshots       market.SnapshotReader
+	ConnectorMarketCurrentScope    func() market.OperationScope
 	ExtensionComposerProfiles      ExtensionComposerProfileResolver
 	AgentComposerDefaultsReader    AgentComposerDefaultsReader
 	DesktopPreferencesReader       DesktopPreferencesReader

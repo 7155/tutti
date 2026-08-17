@@ -6,24 +6,29 @@ import {
   type ConnectorComposerItem
 } from "./ConnectorComposerMenu.tsx";
 
-test("normalizes connector keys while preserving catalog order and first identity", () => {
+test("prioritizes connected connectors while preserving group order and first identity", () => {
   const items: ConnectorComposerItem[] = [
     item(" github "),
-    item("notion"),
+    item("notion", "connected"),
     item("github"),
+    item("lark"),
+    item("figma", "connected"),
     item("   ")
   ];
 
   assert.deepEqual(
     normalizeConnectorItems(items).map((entry) => entry.connectorKey),
-    ["github", "notion"]
+    ["notion", "figma", "github", "lark"]
   );
 });
 
-function item(connectorKey: string): ConnectorComposerItem {
+function item(
+  connectorKey: string,
+  status: ConnectorComposerItem["status"] = "setup_required"
+): ConnectorComposerItem {
   return {
     connectorKey,
     name: connectorKey,
-    status: "setup_required"
+    status
   };
 }

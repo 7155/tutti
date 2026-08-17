@@ -327,7 +327,11 @@ func (s *Service) GetComposerOptions(ctx context.Context, input ComposerOptionsI
 		})
 		if s.ConnectorMarketSnapshots != nil {
 			capabilityGroup.Go(func() error {
-				localConnectors, localConnectorsErr = localConnectorCapabilityOptions(capabilityContext, s.ConnectorMarketSnapshots)
+				localConnectors, localConnectorsErr = localConnectorCapabilityOptions(
+					capabilityContext,
+					s.ConnectorMarketSnapshots,
+					s.ConnectorMarketCurrentScope,
+				)
 				return nil
 			})
 		}

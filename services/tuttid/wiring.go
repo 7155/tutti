@@ -415,6 +415,7 @@ func (w *tuttiWiring) buildWorkspaceModule(ctx context.Context) error {
 		}
 		if service, ok := api.AgentSessionService.(*agentservice.Service); ok {
 			service.ConnectorMarketSnapshots = connectorMarketHost.Application
+			service.ConnectorMarketCurrentScope = connectorMarketScope
 		}
 		api.ConnectorMarketService = connectorMarketHost.Application
 		api.ConnectorMarketScope = connectorMarketScope

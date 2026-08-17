@@ -262,7 +262,9 @@ reads its authoritative local Connector Market snapshot, then uses
 installation, compatibility, and authorization state into the closed Composer
 capability contract. Host transports only serialize that projection and route
 semantic open intents; they must not duplicate Connector readiness rules or
-derive Composer entries from renderer-local market state. Connector Market
+derive Composer entries from renderer-local market state. The snapshot uses the
+host's current account scope so Composer status and prompt admission include the
+same authorization overlay as Connector Market management. Connector Market
 change events invalidate retained Composer options, while a menu open may still
 force an authoritative reread as a recovery path.
 

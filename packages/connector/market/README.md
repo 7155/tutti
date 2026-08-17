@@ -140,7 +140,9 @@ shared component does not import AgentGUI or host settings code. Item selection
 must be routed through `openConnectorMarketDialog` from
 `@tutti-os/connector-market/services`, which loads the authoritative View before
 opening the package-owned installation, authorization, management, or blocked
-dialog. “More connectors” is a separate host navigation callback.
+dialog. The bounded quick list places connected connectors first while
+preserving the host order within connected and remaining groups. “More
+connectors” is a separate host navigation callback.
 
 Mount one `ConnectorMarketDialogHost` per renderer window/application
 container, not per composer entry or settings page. Multiple entries share the

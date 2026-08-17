@@ -216,7 +216,8 @@ export function ConnectorComposerMenu({
 export function normalizeConnectorItems(
   items: readonly ConnectorComposerItem[]
 ): ConnectorComposerItem[] {
-  const normalizedItems: ConnectorComposerItem[] = [];
+  const connectedItems: ConnectorComposerItem[] = [];
+  const remainingItems: ConnectorComposerItem[] = [];
   const seenConnectorKeys = new Set<string>();
   for (const item of items) {
     const connectorKey = item.connectorKey.trim();
@@ -224,9 +225,14 @@ export function normalizeConnectorItems(
       continue;
     }
     seenConnectorKeys.add(connectorKey);
-    normalizedItems.push({ ...item, connectorKey });
+    const normalizedItem = { ...item, connectorKey };
+    if (normalizedItem.status === "connected") {
+      connectedItems.push(normalizedItem);
+    } else {
+      remainingItems.push(normalizedItem);
+    }
   }
-  return normalizedItems;
+  return [...connectedItems, ...remainingItems];
 }
 
 function ConnectorComposerIcon({

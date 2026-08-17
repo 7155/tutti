@@ -243,4 +243,39 @@ describe("ComposerConnectorsMenu", () => {
       screen.queryByTestId("connector-market-composer-item-connector-10")
     ).not.toBeInTheDocument();
   });
+
+  it("prioritizes connected connectors before applying the quick menu limit", async () => {
+    const setupRequiredConnectors = Array.from({ length: 10 }, (_, index) =>
+      connector(`setup-${index}`, "setupRequired")
+    );
+    render(
+      <ComposerConnectorsMenu
+        connectors={[
+          ...setupRequiredConnectors,
+          connector("connected-after-limit", "available")
+        ]}
+        disabled={false}
+        labels={labels}
+        onOpenConnector={vi.fn()}
+        onOpenConnectors={vi.fn()}
+      />
+    );
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Connectors" }), {
+      button: 0,
+      ctrlKey: false
+    });
+
+    const quickItems = await screen.findAllByTestId(
+      /^connector-market-composer-item-/
+    );
+    expect(quickItems).toHaveLength(10);
+    expect(quickItems[0]).toHaveAttribute(
+      "data-testid",
+      "connector-market-composer-item-connected-after-limit"
+    );
+    expect(
+      screen.queryByTestId("connector-market-composer-item-setup-9")
+    ).not.toBeInTheDocument();
+  });
 });

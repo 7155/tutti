@@ -440,7 +440,9 @@ unrelated Connector update or overwrite a newer entity.
 Account authorization overlays are read in the same SQLite Snapshot as market
 state. A public projection change atomically advances the Connector revision and
 appends its invalidation event; account state can no longer change invisibly
-between market Snapshot reads.
+between market Snapshot reads. Composer capability projection and prompt
+admission use the current account-scoped Snapshot as well, so their connected
+state cannot diverge from Connector Market management surfaces.
 
 Operation-bearing events carry an internal account audience and are delivered
 only while that owner is the host's active account. Every state change also
@@ -537,8 +539,11 @@ options into that projection and retains only placement plus its Tutti Mode
 fallback. Selecting one item emits a semantic connector-open intent. The host
 executes `openConnectorMarketDialog(root, connectorKey)`, which waits for the
 authoritative market view, rejects invalid or unknown keys, and then advances
-the package-owned dialog state machine. Selecting “more” remains host
-navigation because settings/workbench location is product-owned.
+the package-owned dialog state machine. Before applying the bounded quick-list
+limit, the shared menu stably groups connected connectors ahead of connectors
+that still require authorization or setup; each group preserves host catalog
+order. Selecting “more” remains host navigation because settings/workbench
+location is product-owned.
 
 Every renderer window mounts exactly one `ConnectorMarketDialogHost` alongside
 its other window-level panel hosts. Composer entries and catalog cards never

@@ -12,8 +12,8 @@ import { registerAppUpdateServices } from "@renderer/features/app-update/service
 import {
   registerConnectorMarketModule,
   requestDesktopConnectorInstallAdmission
-} from "@renderer/features/connector-market";
-import { addTuttiDesktopClientToConnectorAuthorizationUrl } from "@renderer/features/connector-market/services/connectorAuthorizationClientUrl.ts";
+} from "@renderer/features/connector";
+import { addTuttiDesktopClientToConnectorAuthorizationUrl } from "@renderer/features/connector/adapters/connectorAuthorizationClientUrl.ts";
 import { registerDesktopPreferencesServices } from "@renderer/features/desktop-preferences/services/registerDesktopPreferencesServices.ts";
 import type { DesktopWorkspaceUiMode } from "@shared/preferences";
 import { registerRichTextAtServices } from "@renderer/features/rich-text-at/services/registerRichTextAtServices";

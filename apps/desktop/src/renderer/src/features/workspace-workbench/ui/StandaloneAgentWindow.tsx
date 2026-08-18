@@ -48,7 +48,7 @@ import { useService } from "@tutti-os/infra/di";
 import {
   IConnectorMarketModule,
   openConnectorMarketDialog
-} from "@tutti-os/connector-market/services";
+} from "@tutti-os/connector-renderer/application";
 import { IWorkspaceFileManagerService } from "@renderer/features/workspace-file-manager";
 import { IWorkspaceFilePreviewSurfaceHost } from "@renderer/features/workspace-file-preview";
 import type {

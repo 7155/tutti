@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
   Badge,
   Button,
-  CheckIcon,
   ConnectorLinedIcon,
   DropdownMenu,
   DropdownMenuContent,
@@ -10,7 +9,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   LinkIcon,
-  OpenLinkLinedIcon
+  OpenLinkLinedIcon,
+  Switch
 } from "@tutti-os/ui-system";
 import { cn } from "@tutti-os/ui-system/utils";
 
@@ -146,6 +146,7 @@ export function ConnectorComposerMenu({
         {quickItems.length > 0 ? (
           quickItems.map((item) => {
             const connected = item.status === "connected";
+            const installed = connected || item.status === "disabled";
             const selected = connected && item.selected === true;
             const actionLabel =
               item.status === "authorization_required"
@@ -190,16 +191,14 @@ export function ConnectorComposerMenu({
                   label={item.name}
                 />
                 <span className="min-w-0 flex-1 truncate">{item.name}</span>
-                {connected ? (
-                  <div
-                    className="ml-auto inline-flex shrink-0 items-center gap-1 pl-3 text-xs text-[var(--success)]"
+                {installed ? (
+                  <Switch
+                    aria-label={item.name}
+                    checked={connected}
+                    className="pointer-events-none ml-auto shrink-0"
                     data-testid={`connector-market-composer-status-${item.connectorKey}`}
-                  >
-                    <CheckIcon aria-hidden className="size-4" />
-                    {selected
-                      ? (labels.selected ?? labels.connected)
-                      : labels.connected}
-                  </div>
+                    tabIndex={-1}
+                  />
                 ) : !readOnly ? (
                   <div className="ml-auto inline-flex shrink-0 items-center gap-1 pl-3 text-xs text-[var(--text-primary)]">
                     <LinkIcon aria-hidden className="size-4" />

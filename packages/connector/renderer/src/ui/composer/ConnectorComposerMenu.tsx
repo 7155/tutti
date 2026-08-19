@@ -3,6 +3,7 @@ import {
   Badge,
   Button,
   CheckIcon,
+  ConnectorLinedIcon,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -130,7 +131,7 @@ export function ConnectorComposerMenu({
             </>
           ) : (
             <>
-              <LinkIcon aria-hidden className="size-4" />
+              <ConnectorLinedIcon aria-hidden className="size-4" />
               <span>{labels.connectors}</span>
             </>
           )}
@@ -138,7 +139,7 @@ export function ConnectorComposerMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="w-[300px] max-w-[calc(100vw-24px)] p-1.5"
+        className="w-[280px] max-w-[calc(100vw-24px)] p-1.5"
         side="top"
         sideOffset={8}
       >
@@ -188,16 +189,9 @@ export function ConnectorComposerMenu({
                   iconUrl={item.iconUrl}
                   label={item.name}
                 />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate">{item.name}</span>
-                  {item.description ? (
-                    <span className="block truncate text-xs text-[var(--text-tertiary)]">
-                      {item.description}
-                    </span>
-                  ) : null}
-                </span>
+                <span className="min-w-0 flex-1 truncate">{item.name}</span>
                 {connected ? (
-                  <span
+                  <div
                     className="ml-auto inline-flex shrink-0 items-center gap-1 pl-3 text-xs text-[var(--success)]"
                     data-testid={`connector-market-composer-status-${item.connectorKey}`}
                   >
@@ -205,12 +199,12 @@ export function ConnectorComposerMenu({
                     {selected
                       ? (labels.selected ?? labels.connected)
                       : labels.connected}
-                  </span>
+                  </div>
                 ) : !readOnly ? (
-                  <span className="ml-auto inline-flex shrink-0 items-center gap-1 pl-3 text-xs text-[var(--text-primary)]">
+                  <div className="ml-auto inline-flex shrink-0 items-center gap-1 pl-3 text-xs text-[var(--text-primary)]">
                     <LinkIcon aria-hidden className="size-4" />
                     {actionLabel}
-                  </span>
+                  </div>
                 ) : null}
               </DropdownMenuItem>
             );

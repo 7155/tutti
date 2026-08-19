@@ -10,10 +10,47 @@ vi.mock("../AgentComposer", () => ({
 }));
 
 vi.mock("./AgentGUIConversationTimelinePane", () => ({
-  AgentGUIConversationTimelinePane: () => <div>Side timeline</div>
+  AgentGUIConversationTimelinePane: ({ isLoading }: { isLoading: boolean }) => (
+    <div data-testid="side-timeline-state">
+      {isLoading ? "loading" : "ready"}
+    </div>
+  )
 }));
 
 describe("AgentGUISideConversationPane", () => {
+  it("shows the timeline loading state while Side is opening", () => {
+    render(
+      <AgentGUISideConversationPane
+        active={
+          {
+            status: "opening",
+            activeTurnId: null,
+            conversation: null,
+            error: null
+          } as never
+        }
+        availableSkills={[]}
+        composerProps={{} as never}
+        conversationFlowLabels={{
+          thinkingLabel: "Thinking",
+          toolCallsLabel: (count) => `${count}`,
+          processing: "Processing",
+          turnSummary: "Summary",
+          userMessageLocator: "User"
+        }}
+        isVisible
+        loadingLabel="Loading Side"
+        workspaceAppIcons={[]}
+        onClose={vi.fn()}
+        onFocusChange={vi.fn()}
+      />
+    );
+
+    expect(screen.getByTestId("side-timeline-state")).toHaveTextContent(
+      "loading"
+    );
+  });
+
   it("releases Side focus when the pane hides or unmounts", () => {
     const onFocusChange = vi.fn();
     const rendered = render(

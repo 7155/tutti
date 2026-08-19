@@ -369,6 +369,7 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
     sourceAgentSessionId: viewModel.rail.activeConversationId,
     provider: composerProvider,
     cwd: viewModel.shell.workspacePath ?? null,
+    capabilityRevision: `${viewModel.detail.conversationDetail?.session.providerSessionId ?? ""}:${sourceActiveTurn?.turnId ?? ""}:${sourceActiveTurn?.phase ?? ""}`,
     availableCommands: viewModel.composer.availableCommands,
     clearMainDraft,
     submitPrompt: tuttiWorkflowComposer.submitPromptOrDecidePlan

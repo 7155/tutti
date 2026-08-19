@@ -55,6 +55,7 @@ interface UseAgentGUIDetailSideConversationInput {
   sourceAgentSessionId: string | null;
   provider: string;
   cwd: string | null;
+  capabilityRevision?: string;
   availableCommands: AgentComposerProps["availableCommands"];
   clearMainDraft: () => void;
   submitPrompt: NonNullable<AgentComposerProps["onSubmit"]>;
@@ -66,6 +67,7 @@ export function useAgentGUIDetailSideConversation({
   sourceAgentSessionId,
   provider,
   cwd,
+  capabilityRevision = "",
   availableCommands,
   clearMainDraft,
   submitPrompt
@@ -83,18 +85,31 @@ export function useAgentGUIDetailSideConversation({
     entryErrorState.runtime === runtime
       ? entryErrorState.code
       : null;
-  const sideSupported = useAgentSideConversationSupport({
-    workspaceId,
-    sourceAgentSessionId: enabled ? (sourceAgentSessionId ?? "") : "",
-    provider,
-    cwd
-  });
+  const sideSupported = useAgentSideConversationSupport(
+    {
+      workspaceId,
+      sourceAgentSessionId: enabled ? (sourceAgentSessionId ?? "") : "",
+      provider,
+      cwd
+    },
+    capabilityRevision
+  );
   const runtimeActive = useAgentSideConversationSnapshot(workspaceId).active;
   const active = useMemo(
     () => projectAgentSideConversationViewState(runtimeActive),
     [runtimeActive]
   );
   const activeSideAgentSessionId = active?.sideAgentSessionId ?? null;
+  const hasCurrentSourceSide =
+    active?.sourceAgentSessionId === sourceAgentSessionId &&
+    (active.status === "opening" ||
+      active.status === "idle" ||
+      active.status === "running");
+  const currentSourceSideUnavailable =
+    active?.sourceAgentSessionId === sourceAgentSessionId &&
+    !hasCurrentSourceSide;
+  const sideAvailable =
+    !currentSourceSideUnavailable && (sideSupported || hasCurrentSourceSide);
   const [focusedSideAgentSessionId, setFocusedSideAgentSessionId] = useState<
     string | null
   >(null);
@@ -224,7 +239,7 @@ export function useAgentGUIDetailSideConversation({
         submitPrompt(content, displayPrompt, options);
         return;
       }
-      if (!sideSupported) {
+      if (!sideAvailable) {
         // /side is an isolation boundary, not an ordinary provider command.
         // Match Codex App's fail-closed behavior: if the exact live source
         // cannot open Side, never leak the intended Side prompt into main.
@@ -253,7 +268,7 @@ export function useAgentGUIDetailSideConversation({
       enabled,
       open,
       runtime,
-      sideSupported,
+      sideAvailable,
       submitPrompt
     ]
   );
@@ -313,7 +328,7 @@ export function useAgentGUIDetailSideConversation({
       !runtime ||
       !enabled ||
       !sourceAgentSessionId ||
-      !sideSupported ||
+      !sideAvailable ||
       (active && active.sourceAgentSessionId !== sourceAgentSessionId)
     ) {
       return commandsWithoutSide;
@@ -330,7 +345,7 @@ export function useAgentGUIDetailSideConversation({
     availableCommands,
     enabled,
     runtime,
-    sideSupported,
+    sideAvailable,
     sourceAgentSessionId,
     t
   ]);
@@ -463,7 +478,7 @@ export function useAgentGUIDetailSideConversation({
     canOpen: Boolean(
       runtime &&
       sourceAgentSessionId &&
-      sideSupported &&
+      sideAvailable &&
       (!active || active.sourceAgentSessionId === sourceAgentSessionId)
     ),
     close,

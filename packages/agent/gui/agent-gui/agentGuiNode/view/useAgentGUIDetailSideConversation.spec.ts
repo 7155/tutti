@@ -230,6 +230,225 @@ describe("useAgentGUIDetailSideConversation lifecycle", () => {
     runtime.dispose();
   });
 
+  it("rechecks /side support when the source runtime lifecycle changes", async () => {
+    const resolveCapabilities = vi
+      .fn<AgentSideConversationTransport["resolveCapabilities"]>()
+      .mockResolvedValueOnce({
+        supported: false,
+        activeSourceTurn: false,
+        ephemeral: false,
+        hideInheritedTurns: false,
+        modelBoundaryInjected: false
+      })
+      .mockResolvedValueOnce({
+        supported: true,
+        activeSourceTurn: true,
+        ephemeral: true,
+        hideInheritedTurns: true,
+        modelBoundaryInjected: true
+      });
+    const transport: AgentSideConversationTransport = {
+      resolveCapabilities,
+      open: vi.fn(async () => ({ status: "idle" })),
+      send: vi.fn(async () => {}),
+      cancel: vi.fn(async () => {}),
+      respond: vi.fn(async () => {}),
+      close: vi.fn(async () => {}),
+      subscribe: vi.fn(() => () => {}),
+      subscribeConnectionState: vi.fn(() => () => {}),
+      getConnectionState: vi.fn(() => "connected" as const)
+    };
+    const runtime = createAgentSideConversationRuntime(transport);
+    const wrapper = ({ children }: PropsWithChildren) =>
+      createElement(
+        AgentSideConversationRuntimeProvider,
+        { runtime },
+        children
+      );
+    const rendered = renderHook(
+      ({ capabilityRevision }: { capabilityRevision: string }) =>
+        useAgentGUIDetailSideConversation({
+          workspaceId: "workspace-1",
+          sourceAgentSessionId: "source-1",
+          provider: "codex",
+          cwd: null,
+          capabilityRevision,
+          availableCommands: [],
+          clearMainDraft: vi.fn(),
+          submitPrompt: vi.fn()
+        }),
+      { initialProps: { capabilityRevision: "not-live" }, wrapper }
+    );
+
+    await vi.waitFor(() => expect(resolveCapabilities).toHaveBeenCalledOnce());
+    expect(rendered.result.current.commands).toEqual([]);
+
+    rendered.rerender({ capabilityRevision: "turn-1:running" });
+    await vi.waitFor(() =>
+      expect(rendered.result.current.commands).toEqual([
+        expect.objectContaining({ name: "side" })
+      ])
+    );
+    expect(resolveCapabilities).toHaveBeenCalledTimes(2);
+
+    rendered.unmount();
+    runtime.dispose();
+  });
+
+  it("rechecks a stale negative capability result when resubscribed", async () => {
+    const resolveCapabilities = vi
+      .fn<AgentSideConversationTransport["resolveCapabilities"]>()
+      .mockResolvedValueOnce({
+        supported: false,
+        activeSourceTurn: false,
+        ephemeral: false,
+        hideInheritedTurns: false,
+        modelBoundaryInjected: false
+      })
+      .mockResolvedValueOnce({
+        supported: true,
+        activeSourceTurn: true,
+        ephemeral: true,
+        hideInheritedTurns: true,
+        modelBoundaryInjected: true
+      });
+    const transport: AgentSideConversationTransport = {
+      resolveCapabilities,
+      open: vi.fn(async () => ({ status: "idle" })),
+      send: vi.fn(async () => {}),
+      cancel: vi.fn(async () => {}),
+      respond: vi.fn(async () => {}),
+      close: vi.fn(async () => {}),
+      subscribe: vi.fn(() => () => {}),
+      subscribeConnectionState: vi.fn(() => () => {}),
+      getConnectionState: vi.fn(() => "connected" as const)
+    };
+    const runtime = createAgentSideConversationRuntime(transport);
+    const wrapper = ({ children }: PropsWithChildren) =>
+      createElement(
+        AgentSideConversationRuntimeProvider,
+        { runtime },
+        children
+      );
+    const firstRender = renderHook(
+      () =>
+        useAgentGUIDetailSideConversation({
+          workspaceId: "workspace-retry",
+          sourceAgentSessionId: "source-retry",
+          provider: "codex",
+          cwd: null,
+          availableCommands: [],
+          clearMainDraft: vi.fn(),
+          submitPrompt: vi.fn()
+        }),
+      { wrapper }
+    );
+
+    await vi.waitFor(() => expect(resolveCapabilities).toHaveBeenCalledOnce());
+    expect(firstRender.result.current.commands).toEqual([]);
+    firstRender.unmount();
+
+    const remounted = renderHook(
+      () =>
+        useAgentGUIDetailSideConversation({
+          workspaceId: "workspace-retry",
+          sourceAgentSessionId: "source-retry",
+          provider: "codex",
+          cwd: null,
+          availableCommands: [],
+          clearMainDraft: vi.fn(),
+          submitPrompt: vi.fn()
+        }),
+      { wrapper }
+    );
+    await vi.waitFor(() =>
+      expect(remounted.result.current.commands).toEqual([
+        expect.objectContaining({ name: "side" })
+      ])
+    );
+    expect(resolveCapabilities).toHaveBeenCalledTimes(2);
+
+    remounted.unmount();
+    runtime.dispose();
+  });
+
+  it("rechecks when reconnect arrives during the initial capability probe", async () => {
+    const connectionListeners = new Set<
+      (state: "connected" | "connecting" | "disconnected" | "disposed") => void
+    >();
+    let finishInitialProbe: (() => void) | null = null;
+    const unsupported: AgentSideCapabilities = {
+      supported: false,
+      activeSourceTurn: false,
+      ephemeral: false,
+      hideInheritedTurns: false,
+      modelBoundaryInjected: false
+    };
+    const supported: AgentSideCapabilities = {
+      supported: true,
+      activeSourceTurn: true,
+      ephemeral: true,
+      hideInheritedTurns: true,
+      modelBoundaryInjected: true
+    };
+    const resolveCapabilities = vi
+      .fn<AgentSideConversationTransport["resolveCapabilities"]>()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishInitialProbe = () => resolve(unsupported);
+          })
+      )
+      .mockResolvedValueOnce(supported);
+    const transport: AgentSideConversationTransport = {
+      resolveCapabilities,
+      open: vi.fn(async () => ({ status: "idle" })),
+      send: vi.fn(async () => {}),
+      cancel: vi.fn(async () => {}),
+      respond: vi.fn(async () => {}),
+      close: vi.fn(async () => {}),
+      subscribe: vi.fn(() => () => {}),
+      subscribeConnectionState: vi.fn((listener) => {
+        connectionListeners.add(listener);
+        return () => connectionListeners.delete(listener);
+      }),
+      getConnectionState: vi.fn(() => "connected" as const)
+    };
+    const runtime = createAgentSideConversationRuntime(transport);
+    const wrapper = ({ children }: PropsWithChildren) =>
+      createElement(
+        AgentSideConversationRuntimeProvider,
+        { runtime },
+        children
+      );
+    const rendered = renderHook(
+      () =>
+        useAgentGUIDetailSideConversation({
+          workspaceId: "workspace-pending-reconnect",
+          sourceAgentSessionId: "source-pending-reconnect",
+          provider: "codex",
+          cwd: null,
+          availableCommands: [],
+          clearMainDraft: vi.fn(),
+          submitPrompt: vi.fn()
+        }),
+      { wrapper }
+    );
+
+    await vi.waitFor(() => expect(resolveCapabilities).toHaveBeenCalledOnce());
+    act(() => connectionListeners.forEach((listener) => listener("connected")));
+    await act(async () => finishInitialProbe?.());
+    await vi.waitFor(() =>
+      expect(rendered.result.current.commands).toEqual([
+        expect.objectContaining({ name: "side" })
+      ])
+    );
+    expect(resolveCapabilities).toHaveBeenCalledTimes(2);
+
+    rendered.unmount();
+    runtime.dispose();
+  });
+
   it("hides a provider-advertised /side when Side is unsupported", async () => {
     const transport: AgentSideConversationTransport = {
       resolveCapabilities: vi.fn(async () => ({
@@ -274,6 +493,75 @@ describe("useAgentGUIDetailSideConversation lifecycle", () => {
 
     expect(rendered.result.current.commands).toEqual([{ name: "status" }]);
 
+    rendered.unmount();
+    runtime.dispose();
+  });
+
+  it("does not expose /side while a supported same-source Side is closing", async () => {
+    let finishClose: (() => void) | null = null;
+    const transport: AgentSideConversationTransport = {
+      resolveCapabilities: vi.fn(async () => ({
+        supported: true,
+        activeSourceTurn: true,
+        ephemeral: true,
+        hideInheritedTurns: true,
+        modelBoundaryInjected: true
+      })),
+      open: vi.fn(async () => ({ status: "idle" })),
+      send: vi.fn(async () => {}),
+      cancel: vi.fn(async () => {}),
+      respond: vi.fn(async () => {}),
+      close: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishClose = resolve;
+          })
+      ),
+      subscribe: vi.fn(() => () => {}),
+      subscribeConnectionState: vi.fn(() => () => {}),
+      getConnectionState: vi.fn(() => "connected" as const)
+    };
+    const runtime = createAgentSideConversationRuntime(transport);
+    const opened = await runtime.open({
+      workspaceId: "workspace-closing",
+      sourceAgentSessionId: "source-closing"
+    });
+    const wrapper = ({ children }: PropsWithChildren) =>
+      createElement(
+        AgentSideConversationRuntimeProvider,
+        { runtime },
+        children
+      );
+    const rendered = renderHook(
+      () =>
+        useAgentGUIDetailSideConversation({
+          workspaceId: "workspace-closing",
+          sourceAgentSessionId: "source-closing",
+          provider: "codex",
+          cwd: null,
+          availableCommands: [],
+          clearMainDraft: vi.fn(),
+          submitPrompt: vi.fn()
+        }),
+      { wrapper }
+    );
+
+    await vi.waitFor(() => expect(rendered.result.current.canOpen).toBe(true));
+    let closePromise: Promise<void> | null = null;
+    act(() => {
+      closePromise = runtime.close({
+        workspaceId: "workspace-closing",
+        sideAgentSessionId: opened.sideAgentSessionId
+      });
+    });
+    await vi.waitFor(() =>
+      expect(rendered.result.current.active?.status).toBe("closing")
+    );
+    expect(rendered.result.current.canOpen).toBe(false);
+    expect(rendered.result.current.commands).toEqual([]);
+
+    await act(async () => finishClose?.());
+    await closePromise;
     rendered.unmount();
     runtime.dispose();
   });
@@ -331,6 +619,124 @@ describe("useAgentGUIDetailSideConversation lifecycle", () => {
     expect(transport.open).not.toHaveBeenCalled();
     expect(clearMainDraft).not.toHaveBeenCalled();
     expect(rendered.result.current.entryError).toBe("operation_failed");
+
+    rendered.unmount();
+    runtime.dispose();
+  });
+
+  it("keeps /side available for an existing same-source Side", async () => {
+    const clearMainDraft = vi.fn();
+    const transport: AgentSideConversationTransport = {
+      resolveCapabilities: vi.fn(async () => ({
+        supported: false,
+        activeSourceTurn: false,
+        ephemeral: false,
+        hideInheritedTurns: false,
+        modelBoundaryInjected: false
+      })),
+      open: vi.fn(async () => ({ status: "idle" })),
+      send: vi.fn(async () => {}),
+      cancel: vi.fn(async () => {}),
+      respond: vi.fn(async () => {}),
+      close: vi.fn(async () => {}),
+      subscribe: vi.fn(() => () => {}),
+      subscribeConnectionState: vi.fn(() => () => {}),
+      getConnectionState: vi.fn(() => "connected" as const)
+    };
+    const runtime = createAgentSideConversationRuntime(transport);
+    await runtime.open({
+      workspaceId: "workspace-1",
+      sourceAgentSessionId: "source-1"
+    });
+    const wrapper = ({ children }: PropsWithChildren) =>
+      createElement(
+        AgentSideConversationRuntimeProvider,
+        { runtime },
+        children
+      );
+    const rendered = renderHook(
+      () =>
+        useAgentGUIDetailSideConversation({
+          workspaceId: "workspace-1",
+          sourceAgentSessionId: "source-1",
+          provider: "codex",
+          cwd: null,
+          availableCommands: [],
+          clearMainDraft,
+          submitPrompt: vi.fn()
+        }),
+      { wrapper }
+    );
+
+    await act(async () => undefined);
+    expect(rendered.result.current.commands).toEqual([
+      expect.objectContaining({ name: "side" })
+    ]);
+
+    act(() => {
+      rendered.result.current.submitMain(
+        [{ type: "text", text: "/side inspect this" }],
+        "/side inspect this"
+      );
+    });
+    await vi.waitFor(() => expect(transport.send).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(clearMainDraft).toHaveBeenCalledOnce());
+
+    rendered.unmount();
+    runtime.dispose();
+  });
+
+  it("does not expose /side for a failed same-source Side", async () => {
+    const transport: AgentSideConversationTransport = {
+      resolveCapabilities: vi.fn(async () => ({
+        supported: true,
+        activeSourceTurn: true,
+        ephemeral: true,
+        hideInheritedTurns: true,
+        modelBoundaryInjected: true
+      })),
+      open: vi.fn(async () => {
+        throw new Error("open failed");
+      }),
+      send: vi.fn(async () => {}),
+      cancel: vi.fn(async () => {}),
+      respond: vi.fn(async () => {}),
+      close: vi.fn(async () => {}),
+      subscribe: vi.fn(() => () => {}),
+      subscribeConnectionState: vi.fn(() => () => {}),
+      getConnectionState: vi.fn(() => "connected" as const)
+    };
+    const runtime = createAgentSideConversationRuntime(transport);
+    await expect(
+      runtime.open({
+        workspaceId: "workspace-failed",
+        sourceAgentSessionId: "source-failed"
+      })
+    ).rejects.toThrow("open failed");
+    const wrapper = ({ children }: PropsWithChildren) =>
+      createElement(
+        AgentSideConversationRuntimeProvider,
+        { runtime },
+        children
+      );
+    const rendered = renderHook(
+      () =>
+        useAgentGUIDetailSideConversation({
+          workspaceId: "workspace-failed",
+          sourceAgentSessionId: "source-failed",
+          provider: "codex",
+          cwd: null,
+          availableCommands: [],
+          clearMainDraft: vi.fn(),
+          submitPrompt: vi.fn()
+        }),
+      { wrapper }
+    );
+
+    await act(async () => undefined);
+    expect(rendered.result.current.active?.status).toBe("error");
+    expect(rendered.result.current.canOpen).toBe(false);
+    expect(rendered.result.current.commands).toEqual([]);
 
     rendered.unmount();
     runtime.dispose();

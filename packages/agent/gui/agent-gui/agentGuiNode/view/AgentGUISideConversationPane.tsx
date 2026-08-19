@@ -161,7 +161,7 @@ export function AgentGUISideConversationPane({
         <AgentGUIConversationTimelinePane
           conversation={active.conversation}
           followEndMode={followEndMode}
-          isLoading={false}
+          isLoading={active.status === "opening"}
           isLoadingOlderMessages={false}
           isVisible={isVisible}
           loadingLabel={loadingLabel}

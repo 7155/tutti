@@ -36,7 +36,6 @@ import { skillTriggerForPrefix } from "../model/agentSkillOptions";
 import { moveSlashCommandHighlight } from "../model/agentSlashCommands";
 import {
   agentComposerDraftHasContent,
-  buildAgentComposerDraft,
   emptyAgentComposerDraft,
   projectAgentComposerDraftSubmission,
   textPromptContent,
@@ -499,7 +498,7 @@ export function useComposerSlashActions(input: UseComposerSlashActionsInput) {
         return;
       }
       const nextPrompt = draftPromptRef.current;
-      const nextDraftContent = buildAgentComposerDraft({
+      const nextDraftContent = updateAgentComposerDraft(draftContent, {
         prompt: nextPrompt,
         images: currentDraftImages,
         files: currentDraftFiles,

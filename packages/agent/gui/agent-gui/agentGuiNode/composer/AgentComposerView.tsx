@@ -41,6 +41,7 @@ import {
   agentComposerDraftConnectors,
   agentComposerDraftImages,
   agentComposerDraftPrompt,
+  agentComposerDraftQuotes,
   updateAgentComposerDraft
 } from "../model/agentComposerDraft";
 
@@ -89,6 +90,7 @@ export function AgentComposerView(
     hasCompactableContext = true
   } = input.props;
   const draftImages = agentComposerDraftImages(draftContent);
+  const draftQuotes = agentComposerDraftQuotes(draftContent);
   const draftConnectors = agentComposerDraftConnectors(draftContent);
   const slashStatusAgentSessionId = slashStatus?.agentSessionId ?? null;
   const draftPrompt = agentComposerDraftPrompt(draftContent);
@@ -131,6 +133,7 @@ export function AgentComposerView(
     handleWorkspaceReferencePicker,
     removeDraftImage,
     removeDraftLargeText,
+    removeDraftQuotes,
     setDraftConnectorSelected
   } = input.attachments;
   const {
@@ -373,10 +376,12 @@ export function AgentComposerView(
                 <ComposerDraftAttachments
                   draftImages={draftImages}
                   draftLargeTexts={visibleDraftLargeTexts}
+                  draftQuotes={draftQuotes}
                   removeLabel={labels.removeMention}
                   onRemoveImage={removeDraftImage}
                   onRemoveLargeText={removeDraftLargeText}
                   onExpandLargeText={expandDraftLargeTextToPrompt}
+                  onRemoveQuotes={removeDraftQuotes}
                 />
                 <div
                   className={cn(

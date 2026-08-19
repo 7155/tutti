@@ -1,11 +1,12 @@
 import { Spinner } from "@tutti-os/ui-system";
-import { FileText, X } from "lucide-react";
+import { FileText, MessageSquareText, X } from "lucide-react";
 import { cn } from "../../../app/renderer/lib/utils";
 import { translate } from "../../../i18n/index";
 import { pastedTextPreview } from "../model/agentComposerDraft";
 import type {
   AgentComposerDraftImage,
-  AgentComposerDraftLargeText
+  AgentComposerDraftLargeText,
+  AgentComposerQuoteBlock
 } from "../model/agentGuiNodeTypes";
 import { AgentComposerDraftImagePreview } from "./AgentComposerDraftPreview";
 import { AGENT_COMPOSER_PASTED_TEXT_FILE_PREFIX } from "./composerDraftUtils";
@@ -13,23 +14,59 @@ import { AGENT_COMPOSER_PASTED_TEXT_FILE_PREFIX } from "./composerDraftUtils";
 interface Props {
   draftImages: AgentComposerDraftImage[];
   draftLargeTexts: AgentComposerDraftLargeText[];
+  draftQuotes: AgentComposerQuoteBlock[];
   removeLabel: string;
   onRemoveImage: (id: string) => void;
   onRemoveLargeText: (id: string) => void;
   onExpandLargeText: (id: string) => void;
+  onRemoveQuotes: () => void;
 }
 
 export function ComposerDraftAttachments({
   draftImages,
   draftLargeTexts: visibleDraftLargeTexts,
+  draftQuotes,
   removeLabel,
   onRemoveImage: removeDraftImage,
   onRemoveLargeText: removeDraftLargeText,
-  onExpandLargeText: expandDraftLargeTextToPrompt
+  onExpandLargeText: expandDraftLargeTextToPrompt,
+  onRemoveQuotes
 }: Props) {
   const labels = { removeMention: removeLabel };
   return (
     <>
+      {draftQuotes.length > 0 ? (
+        <div
+          className="mb-2 flex max-w-full items-center"
+          data-testid="agent-gui-composer-quote-drafts"
+        >
+          <div className="group relative inline-flex max-w-full items-center gap-2 rounded-[10px] border border-[var(--line-1)] bg-[var(--background-fronted)] py-2 pl-3 pr-9 text-sm font-medium text-[var(--text-primary)]">
+            <MessageSquareText
+              aria-hidden
+              className="shrink-0 text-[var(--text-secondary)]"
+              size={16}
+              strokeWidth={2}
+            />
+            <span>
+              {translate(
+                draftQuotes.length === 1
+                  ? "agentHost.agentGui.selectionReferenceCountOne"
+                  : "agentHost.agentGui.selectionReferenceCountMany",
+                { count: draftQuotes.length }
+              )}
+            </span>
+            <button
+              type="button"
+              className="absolute right-1.5 top-1/2 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded-full text-[var(--text-secondary)] transition hover:bg-[var(--transparency-hover)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--text-primary)_34%,transparent)]"
+              aria-label={labels.removeMention}
+              title={labels.removeMention}
+              onClick={onRemoveQuotes}
+            >
+              <X size={12} strokeWidth={2.4} aria-hidden />
+            </button>
+          </div>
+        </div>
+      ) : null}
       {draftImages.length > 0 ? (
         <div
           className="mb-2 flex w-full max-w-full flex-wrap items-start gap-2"

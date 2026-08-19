@@ -39,13 +39,13 @@ import { useScopedProjectMissingState } from "./composer/useScopedProjectMissing
 import type { AgentComposerProps } from "./composer/AgentComposer.types";
 import { withAgentComposerTuttiModeSnapshot } from "./composer/agentComposerSubmitOptions";
 import {
-  agentComposerDraftAttachmentProjection,
   agentComposerDraftFiles,
   agentComposerDraftImages,
   agentComposerDraftLargeTexts,
   agentComposerDraftHasContent,
   agentComposerDraftPrompt
 } from "./model/agentComposerDraft";
+import { agentComposerDraftAttachmentProjection } from "./model/agentComposerDraftAttachmentProjection";
 import type { AgentGUIComposerContentType } from "./engagement/agentGUIEngagement.types";
 import { projectAgentGUIComposerGateControls } from "./model/agentGuiComposerGate";
 import {

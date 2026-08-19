@@ -16,6 +16,10 @@ import {
   parseAgentSideInvocation,
   useAgentGUIDetailSideConversation
 } from "./useAgentGUIDetailSideConversation";
+import {
+  agentComposerDraftQuotes,
+  projectAgentComposerDraftSubmission
+} from "../model/agentComposerDraft";
 
 describe("parseAgentSideInvocation", () => {
   it("extracts a text-only Side prompt", () => {
@@ -63,6 +67,84 @@ describe("appendAgentSidePromptToDraft", () => {
 });
 
 describe("useAgentGUIDetailSideConversation lifecycle", () => {
+  it("stages selected transcript text in Side without sending until submit", async () => {
+    const transport: AgentSideConversationTransport = {
+      resolveCapabilities: vi.fn(async () => ({
+        supported: true,
+        activeSourceTurn: true,
+        ephemeral: true,
+        hideInheritedTurns: true,
+        modelBoundaryInjected: true
+      })),
+      open: vi.fn(async () => ({ status: "idle" })),
+      send: vi.fn(async () => {}),
+      cancel: vi.fn(async () => {}),
+      respond: vi.fn(async () => {}),
+      close: vi.fn(async () => {}),
+      subscribe: vi.fn(() => () => {}),
+      subscribeConnectionState: vi.fn(() => () => {}),
+      getConnectionState: vi.fn(() => "connected" as const)
+    };
+    const runtime = createAgentSideConversationRuntime(transport);
+    const wrapper = ({ children }: PropsWithChildren) =>
+      createElement(
+        AgentSideConversationRuntimeProvider,
+        { runtime },
+        children
+      );
+    const rendered = renderHook(
+      ({ sourceAgentSessionId }: { sourceAgentSessionId: string }) =>
+        useAgentGUIDetailSideConversation({
+          workspaceId: "workspace-1",
+          sourceAgentSessionId,
+          provider: "codex",
+          cwd: null,
+          availableCommands: [],
+          clearMainDraft: vi.fn(),
+          submitPrompt: vi.fn()
+        }),
+      { initialProps: { sourceAgentSessionId: "source-1" }, wrapper }
+    );
+
+    await vi.waitFor(() => expect(rendered.result.current.canOpen).toBe(true));
+    await act(async () => {
+      await rendered.result.current.stageSelection("Selected answer text");
+    });
+
+    expect(transport.open).toHaveBeenCalledOnce();
+    expect(transport.send).not.toHaveBeenCalled();
+    expect(
+      agentComposerDraftQuotes(rendered.result.current.draftContent)
+    ).toEqual([expect.objectContaining({ text: "Selected answer text" })]);
+    expect(rendered.result.current.focused).toBe(true);
+    expect(rendered.result.current.focusRequestSequence).toBe(1);
+
+    const submission = projectAgentComposerDraftSubmission({
+      draft: rendered.result.current.draftContent,
+      skills: []
+    });
+    act(() => {
+      rendered.result.current.submitSide(
+        submission.content,
+        submission.displayPrompt
+      );
+    });
+    await vi.waitFor(() => expect(transport.send).toHaveBeenCalledOnce());
+    expect(transport.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: [{ type: "text", text: "> Selected answer text" }],
+        displayPrompt: "> Selected answer text"
+      })
+    );
+
+    rendered.rerender({ sourceAgentSessionId: "source-2" });
+    expect(rendered.result.current.focused).toBe(false);
+    expect(rendered.result.current.canOpen).toBe(false);
+
+    rendered.unmount();
+    runtime.dispose();
+  });
+
   it("does not focus the main composer when no Side conversation is active", () => {
     const rendered = renderHook(() =>
       useAgentGUIDetailSideConversation({

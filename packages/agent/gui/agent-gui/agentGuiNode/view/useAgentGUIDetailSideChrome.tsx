@@ -12,7 +12,7 @@ import {
   AgentGUISideConversationPane,
   type AgentGUISideConversationPaneProps
 } from "./AgentGUISideConversationPane";
-import { appendAgentGUIComposerPrompt } from "../controller/useAgentGUIComposerAppendRequest";
+import { appendAgentComposerDraftQuote } from "../model/agentComposerDraft";
 
 const EMPTY_WORKSPACE_APP_ICONS: NonNullable<
   AgentComposerProps["workspaceAppIcons"]
@@ -54,12 +54,14 @@ export function useAgentGUIDetailSideChrome({
     draftContent,
     entryError,
     focused,
+    focusRequestSequence,
     interactionSubmitting,
     interactivePrompt,
     interrupt,
     setDraftContent,
     setFocused,
     sourceAgentSessionId,
+    stageSelection,
     submitInteraction,
     submitSide
   } = controller;
@@ -105,7 +107,11 @@ export function useAgentGUIDetailSideChrome({
   const addSelectionToConversation = useCallback(
     (text: string) => {
       baseComposerProps.onDraftContentChange(
-        appendAgentGUIComposerPrompt(baseComposerProps.draftContent, text)
+        appendAgentComposerDraftQuote(baseComposerProps.draftContent, {
+          type: "quote",
+          id: crypto.randomUUID(),
+          text
+        })
       );
       onRequestComposerFocus();
     },
@@ -113,9 +119,9 @@ export function useAgentGUIDetailSideChrome({
   );
   const askSelectionInSide = useCallback(
     (text: string) => {
-      void controller.open(text).catch(() => {});
+      void stageSelection(text).catch(() => {});
     },
-    [controller]
+    [stageSelection]
   );
   const selectionProps = useMemo(
     () => ({
@@ -164,6 +170,7 @@ export function useAgentGUIDetailSideChrome({
       activePrompt: interactivePrompt,
       activePromptKeyboardShortcutsEnabled:
         baseComposerProps.isActive && focused,
+      composerFocusRequestSequence: focusRequestSequence,
       promptTips: [],
       isInterrupting: false,
       isSendingTurn: Boolean(active.activeTurnId),
@@ -202,6 +209,7 @@ export function useAgentGUIDetailSideChrome({
     baseComposerProps,
     draftContent,
     focused,
+    focusRequestSequence,
     interactionSubmitting,
     interactivePrompt,
     interrupt,

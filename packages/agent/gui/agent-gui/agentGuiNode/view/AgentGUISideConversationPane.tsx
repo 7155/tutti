@@ -61,6 +61,12 @@ export function AgentGUISideConversationPane({
     "following"
   );
   const [widthPx, setWidthPx] = useState(440);
+  const sidePaneRef = useCallback(
+    (node: HTMLElement | null) => {
+      if (!node || !isVisible) onFocusChange(false);
+    },
+    [isVisible, onFocusChange]
+  );
 
   const resize = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -91,6 +97,7 @@ export function AgentGUISideConversationPane({
 
   return (
     <section
+      ref={sidePaneRef}
       className={styles.sidePane}
       style={{ "--agent-gui-side-pane-width": `${widthPx}px` } as CSSProperties}
       aria-label={t("agentHost.agentGui.sidePanelTitle")}

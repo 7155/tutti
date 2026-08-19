@@ -7,7 +7,10 @@ import {
 import type { AgentConversationPromptVM } from "../../../shared/agentConversation/contracts/agentConversationVM";
 import type { AgentComposerProps } from "../AgentComposer";
 import type { AgentComposerDraft } from "../model/agentGuiNodeTypes";
-import { emptyAgentComposerDraft } from "../model/agentComposerDraft";
+import {
+  appendAgentComposerDraftQuote,
+  emptyAgentComposerDraft
+} from "../model/agentComposerDraft";
 import { useTranslation } from "../../../i18n/index";
 import { projectAgentSideConversationViewState } from "../../../agentSideConversationViewProjection";
 import type { AgentPromptContentBlock } from "../../../shared/contracts/dto/agentSession";
@@ -97,7 +100,11 @@ export function useAgentGUIDetailSideConversation({
   >(null);
   const focused =
     activeSideAgentSessionId !== null &&
+    active?.sourceAgentSessionId === sourceAgentSessionId &&
     activeSideAgentSessionId === focusedSideAgentSessionId;
+  const [focusRequestSequence, setFocusRequestSequence] = useState<
+    number | null
+  >(null);
   const emptyDraft = useMemo(emptyAgentComposerDraft, [
     activeSideAgentSessionId
   ]);
@@ -267,6 +274,37 @@ export function useAgentGUIDetailSideConversation({
     [active, runtime, workspaceId]
   );
 
+  const stageSelection = useCallback(
+    async (text: string) => {
+      const normalizedText = text.trim();
+      if (!normalizedText || !enabled || !runtime || !sourceAgentSessionId) {
+        return;
+      }
+      const existing = runtime.getSnapshot(workspaceId).active;
+      if (existing && existing.sourceAgentSessionId !== sourceAgentSessionId) {
+        return;
+      }
+      const target = existing ?? (await open());
+      if (!target) return;
+      setDraftState((current) => ({
+        sideAgentSessionId: target.sideAgentSessionId,
+        content: appendAgentComposerDraftQuote(
+          current.sideAgentSessionId === target.sideAgentSessionId
+            ? current.content
+            : emptyAgentComposerDraft(),
+          {
+            type: "quote",
+            id: crypto.randomUUID(),
+            text: normalizedText
+          }
+        )
+      }));
+      setFocusedSideAgentSessionId(target.sideAgentSessionId);
+      setFocusRequestSequence((current) => (current ?? 0) + 1);
+    },
+    [enabled, open, runtime, sourceAgentSessionId, workspaceId]
+  );
+
   const commands = useMemo(() => {
     const commandsWithoutSide = availableCommands.filter(
       (command) => command.name.trim().toLowerCase() !== "side"
@@ -422,18 +460,25 @@ export function useAgentGUIDetailSideConversation({
 
   return {
     active,
-    canOpen: Boolean(runtime && sourceAgentSessionId && sideSupported),
+    canOpen: Boolean(
+      runtime &&
+      sourceAgentSessionId &&
+      sideSupported &&
+      (!active || active.sourceAgentSessionId === sourceAgentSessionId)
+    ),
     close,
     commands,
     draftContent,
     entryError,
     focused,
+    focusRequestSequence,
     interactionSubmitting,
     interactivePrompt,
     interrupt,
     open,
     setFocused,
     setDraftContent,
+    stageSelection,
     sourceAgentSessionId,
     submitMain,
     submitSide,

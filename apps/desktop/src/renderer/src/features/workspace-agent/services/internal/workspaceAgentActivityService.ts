@@ -21,6 +21,7 @@ import type {
   WorkspaceAgentProvider
 } from "@tutti-os/client-tuttid-ts";
 import type { DesktopHostFilesApi, DesktopRuntimeApi } from "@preload/types";
+import type { DesktopWorkspaceUiMode } from "@shared/preferences";
 import type { IReporterService } from "../../../analytics/services/reporterService.interface.ts";
 import {
   normalizeComposerSettings,
@@ -98,6 +99,7 @@ export interface WorkspaceAgentActivityServiceDependencies {
   ) => WorkspaceAgentProvider | null;
   workspaceUserProjectService?: IWorkspaceUserProjectService;
   sessionReplayEnabled?: boolean;
+  uiMode?: DesktopWorkspaceUiMode;
 }
 
 type WorkspaceAgentActivityEntry = WorkspaceAgentSessionEngineHost;
@@ -888,7 +890,9 @@ export class WorkspaceAgentActivityService
     agentTargetId: string;
     cwd?: string | null;
     force?: boolean;
+    waitForFreshModelCatalog?: boolean;
     provider?: string;
+    section?: "full" | "core" | "capabilities" | "connectors";
     signal?: AbortSignal;
     settings?: Parameters<typeof normalizeComposerSettings>[0] | null;
     workspaceId: string;
@@ -899,7 +903,11 @@ export class WorkspaceAgentActivityService
     return entry.engine.loadComposerOptions({
       cwd: input.cwd,
       force: input.force,
+      waitForFreshModelCatalog: input.waitForFreshModelCatalog,
       provider,
+      ...(input.section && input.section !== "full"
+        ? { section: input.section }
+        : {}),
       settings: normalizeComposerSettings(input.settings),
       signal: input.signal,
       targetKey: input.agentTargetId
@@ -1068,6 +1076,7 @@ export class WorkspaceAgentActivityService
       reconcileSession: (command, signal) =>
         this.executeSessionReconcileCommand(command, signal),
       runtimeApi: this.dependencies.runtimeApi,
+      uiMode: this.dependencies.uiMode,
       executeEngineSendInput: async (input, options) => {
         try {
           const result = await this.executeSendInputEffect(input, options);

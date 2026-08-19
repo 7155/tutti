@@ -45,8 +45,10 @@ import {
   type IWorkspaceAppCenterService
 } from "@renderer/features/workspace-app-center";
 import { useService } from "@tutti-os/infra/di";
-import { IConnectorMarketModule } from "@tutti-os/connector-market/services";
-import { openConnectorDialogFromComposer } from "../services/openConnectorDialogFromComposer.ts";
+import {
+  IConnectorMarketModule,
+  openConnectorMarketDialog
+} from "@tutti-os/connector-renderer/application";
 import { IWorkspaceFileManagerService } from "@renderer/features/workspace-file-manager";
 import { IWorkspaceFilePreviewSurfaceHost } from "@renderer/features/workspace-file-preview";
 import type {
@@ -519,6 +521,14 @@ export function StandaloneAgentWindow({
       agentGuiHostInput.createAgentGUIEngagementEventSink("standalone_agent"),
     [agentGuiHostInput]
   );
+  const agentSideConversationRuntime = useMemo(
+    () => agentGuiHostInput.createAgentSideConversationRuntime(),
+    [agentGuiHostInput]
+  );
+  useEffect(
+    () => () => agentSideConversationRuntime?.dispose?.(),
+    [agentSideConversationRuntime]
+  );
   const dockPreviewCache = useMemo(
     () => createStandaloneAgentDockPreviewCache(desktopApi.dockPreviewCache),
     [desktopApi.dockPreviewCache]
@@ -691,7 +701,7 @@ export function StandaloneAgentWindow({
           return;
         }
         if (target.action === "open") {
-          void openConnectorDialogFromComposer(
+          void openConnectorMarketDialog(
             connectorMarketModule.root,
             target.connectorKey
           ).catch(() => undefined);
@@ -860,6 +870,7 @@ export function StandaloneAgentWindow({
           >
             <DesktopAgentGUISurface
               agentActivityRuntime={agentGuiHostInput.agentActivityRuntime}
+              agentSideConversationRuntime={agentSideConversationRuntime}
               agentHostApi={agentGuiHostInput.agentHostApi}
               agentSessionReplayService={
                 agentGuiHostInput.agentSessionReplayService

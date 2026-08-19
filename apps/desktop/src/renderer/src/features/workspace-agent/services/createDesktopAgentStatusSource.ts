@@ -48,6 +48,7 @@ export function createDesktopAgentStatusSource(
 
       void request.workspaceAgentProbes
         .list({
+          agentTargetIds: [request.agent.agentTargetId],
           includeUsage: true,
           providers: [request.agent.provider],
           refresh: true,
@@ -75,7 +76,7 @@ export function createDesktopAgentStatusSource(
 }
 
 /**
- * Shares Provider probe work across AgentGUI surfaces without sharing their
+ * Shares exact Agent Target probe work across AgentGUI surfaces without sharing their
  * query, loading, or close state.
  */
 export function createDesktopWorkspaceAgentStatusSource(
@@ -87,15 +88,15 @@ export function createDesktopWorkspaceAgentStatusSource(
     options.retainedSnapshotMs ?? desktopStatusRetainedSnapshotMs;
   const forcedRefreshDebounceMs =
     options.forcedRefreshDebounceMs ?? desktopStatusForcedRefreshDebounceMs;
-  const retainedByProvider = new Map<
+  const retainedByTarget = new Map<
     string,
     { receivedAtUnixMs: number; snapshot: WorkspaceAgentProbeSnapshot }
   >();
-  const refreshByProvider = new Map<
+  const refreshByTarget = new Map<
     string,
     Promise<WorkspaceAgentProbeSnapshot>
   >();
-  const lastRefreshAtByProvider = new Map<string, number>();
+  const lastRefreshAtByTarget = new Map<string, number>();
 
   return {
     open(query, observer) {
@@ -110,13 +111,13 @@ export function createDesktopWorkspaceAgentStatusSource(
 
       const requestedAt = now();
       pruneDesktopAgentStatusCache({
-        lastRefreshAtByProvider,
-        retainedByProvider,
+        lastRefreshAtByTarget,
+        retainedByTarget,
         retainedSnapshotMs,
         requestedAt
       });
-      const provider = request.agent.provider;
-      const retained = retainedByProvider.get(provider);
+      const agentTargetId = request.agent.agentTargetId;
+      const retained = retainedByTarget.get(agentTargetId);
       if (retained) {
         observer.onFrame({
           kind: "snapshot",
@@ -124,8 +125,8 @@ export function createDesktopWorkspaceAgentStatusSource(
         });
       }
 
-      let refresh = refreshByProvider.get(provider);
-      const lastRefreshAt = lastRefreshAtByProvider.get(provider);
+      let refresh = refreshByTarget.get(agentTargetId);
+      const lastRefreshAt = lastRefreshAtByTarget.get(agentTargetId);
       if (
         !refresh &&
         lastRefreshAt !== undefined &&
@@ -142,29 +143,30 @@ export function createDesktopWorkspaceAgentStatusSource(
       }
 
       if (!refresh) {
-        lastRefreshAtByProvider.set(provider, requestedAt);
+        lastRefreshAtByTarget.set(agentTargetId, requestedAt);
         refresh = Promise.resolve().then(() =>
           request.workspaceAgentProbes.list({
+            agentTargetIds: [agentTargetId],
             includeUsage: true,
-            providers: [provider],
+            providers: [request.agent.provider],
             refresh: true,
             workspaceId: request.workspaceId
           })
         );
-        refreshByProvider.set(provider, refresh);
+        refreshByTarget.set(agentTargetId, refresh);
         void refresh.then(
           (snapshot) => {
-            retainedByProvider.set(provider, {
+            retainedByTarget.set(agentTargetId, {
               receivedAtUnixMs: now(),
               snapshot
             });
-            if (refreshByProvider.get(provider) === refresh) {
-              refreshByProvider.delete(provider);
+            if (refreshByTarget.get(agentTargetId) === refresh) {
+              refreshByTarget.delete(agentTargetId);
             }
           },
           () => {
-            if (refreshByProvider.get(provider) === refresh) {
-              refreshByProvider.delete(provider);
+            if (refreshByTarget.get(agentTargetId) === refresh) {
+              refreshByTarget.delete(agentTargetId);
             }
           }
         );
@@ -250,33 +252,36 @@ function statusValueFromDesktopProbeSnapshot(
 ): AgentStatusValue {
   return statusValueFromDesktopProbe(
     request.context,
+    request.agent.name,
     snapshot.providers.find(
-      (candidate) => candidate.provider === request.agent.provider
+      (candidate) =>
+        candidate.agentTargetId === request.agent.agentTargetId &&
+        candidate.provider === request.agent.provider
     ),
     snapshot.capturedAtUnixMs
   );
 }
 
 function pruneDesktopAgentStatusCache(input: {
-  lastRefreshAtByProvider: Map<string, number>;
-  retainedByProvider: Map<
+  lastRefreshAtByTarget: Map<string, number>;
+  retainedByTarget: Map<
     string,
     { receivedAtUnixMs: number; snapshot: WorkspaceAgentProbeSnapshot }
   >;
   retainedSnapshotMs: number;
   requestedAt: number;
 }): void {
-  for (const [provider, retained] of input.retainedByProvider) {
+  for (const [agentTargetId, retained] of input.retainedByTarget) {
     if (
       input.requestedAt - retained.receivedAtUnixMs >
       input.retainedSnapshotMs
     ) {
-      input.retainedByProvider.delete(provider);
+      input.retainedByTarget.delete(agentTargetId);
     }
   }
-  for (const [provider, refreshedAt] of input.lastRefreshAtByProvider) {
+  for (const [agentTargetId, refreshedAt] of input.lastRefreshAtByTarget) {
     if (input.requestedAt - refreshedAt > input.retainedSnapshotMs) {
-      input.lastRefreshAtByProvider.delete(provider);
+      input.lastRefreshAtByTarget.delete(agentTargetId);
     }
   }
 }
@@ -322,6 +327,7 @@ function statusValueFromDesktopProbe(
     AgentStatusValue,
     "agentSessionId" | "contextState" | "contextWindow"
   >,
+  agentName: string,
   probe:
     | Awaited<
         ReturnType<
@@ -332,16 +338,16 @@ function statusValueFromDesktopProbe(
   snapshotCapturedAtUnixMs: number
 ): AgentStatusValue {
   const usage = probe?.usage;
-  const isCodeBuddy =
-    probe?.provider === "acp:codebuddy" || probe?.provider === "codebuddy";
   const accountLabel =
     usage?.accountTier?.trim() ||
     (usage?.billingMode === "api"
       ? translate("workspace.agentEnv.apiUsageBilling")
-      : usage?.billingMode === "subscription" && isCodeBuddy
+      : usage?.billingMode === "coding_plan"
         ? translate("workspace.agentEnv.codingPlanBilling")
-        : usage?.billingMode === "provider_account" && isCodeBuddy
-          ? translate("workspace.agentEnv.codeBuddyAccountBilling")
+        : usage?.billingMode === "provider_account"
+          ? translate("workspace.agentEnv.providerAccountBilling", {
+              provider: agentName.trim()
+            })
           : "");
   const limitsErrorCode =
     probe?.lastError?.code === "unsupported"
@@ -354,7 +360,9 @@ function statusValueFromDesktopProbe(
     limitsState: limitsErrorCode
       ? "error"
       : usage
-        ? "available"
+        ? usage.quotaState === undefined || usage.quotaState === "complete"
+          ? "available"
+          : "unavailable"
         : "unavailable",
     ...(limitsErrorCode ? { limitsErrorCode } : {}),
     limitsCapturedAtUnixMs: usage

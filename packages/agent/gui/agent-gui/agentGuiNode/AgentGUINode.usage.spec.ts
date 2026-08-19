@@ -24,6 +24,40 @@ describe("resolveAgentGUIRailConfigProvider", () => {
       "agentHost.agentGui.slashStatusUsageParseFailed"
     );
   });
+
+  it("keeps provider-neutral time windows visible without a selected model", () => {
+    const limits = slashStatusLimitsFromQuotas(
+      [
+        { quotaType: "weekly", percentRemaining: 72 },
+        { quotaType: "session", percentRemaining: 25 }
+      ],
+      null,
+      (key) => key
+    );
+
+    expect(limits.map((limit) => limit.label)).toEqual([
+      "agentHost.agentGui.slashStatusWeeklyLimit",
+      "agentHost.agentGui.slashStatusFiveHourLimit"
+    ]);
+  });
+
+  it("shows only a stable model quota matching the selected model", () => {
+    const limits = slashStatusLimitsFromQuotas(
+      [
+        { quotaType: "model", percentRemaining: 80 },
+        {
+          quotaType: "model",
+          percentRemaining: 40,
+          modelName: "kimi-code/kimi-for-coding"
+        }
+      ],
+      "kimi-code/kimi-for-coding",
+      (key) => key
+    );
+
+    expect(limits).toHaveLength(1);
+    expect(limits[0]?.label).toBe("kimi-code/kimi-for-coding");
+  });
 });
 
 describe("slashStatusLimitsFromQuotas", () => {

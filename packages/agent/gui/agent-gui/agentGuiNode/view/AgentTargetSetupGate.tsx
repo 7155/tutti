@@ -20,6 +20,7 @@ import {
 } from "../../../shared/agentEnv/AgentSetupDialog.tsx";
 import { useAgentTargetSetupController } from "../../../shared/agentEnv/agentTargetSetupController.tsx";
 import { resolveAgentErrorPresentation } from "../../../shared/agentEnv/agentErrorPresentation.ts";
+import { useAgentVisibleErrorPresentation } from "../../../shared/visibleError/AgentVisibleErrorPresentationContext.tsx";
 import { useAgentHostApi } from "../../../agentActivityHost.tsx";
 import type { AgentHostAgentTargetSetupSnapshot } from "../../../host/agentHostApi.ts";
 import { useTranslation } from "../../../i18n/index.ts";
@@ -39,6 +40,7 @@ export function AgentTargetSetupGate({
   gateVisible = true
 }: AgentTargetSetupGateProps): React.JSX.Element {
   const controller = useAgentTargetSetupController();
+  const { scope } = useAgentVisibleErrorPresentation();
   const { terminalLogin } = useAgentHostApi();
   const { t } = useTranslation();
   const state = useExternalStoreSnapshot(controller);
@@ -77,7 +79,10 @@ export function AgentTargetSetupGate({
       ? (effectiveAuthMethod.terminalStartupAction ?? null)
       : null;
 
-  if (!enabled) {
+  // A shared caller can observe the Owner target's readiness, but must never
+  // be routed into this device's setup/login/install workflow. Shared hosts
+  // own their separate availability presentation and execution errors.
+  if (!enabled || scope === "shared_caller") {
     return <>{children}</>;
   }
 
@@ -156,6 +161,10 @@ export function AgentTargetSetupGate({
     account !== null ||
     snapshot?.status === "auth_required" ||
     snapshot?.status === "authenticating";
+  // Prefer setup projection over the local authenticate promise. OAuth can mark
+  // the account ready before the host login call settles.
+  const loginActionPending =
+    authenticatePending && snapshot?.status !== "ready";
 
   return (
     <>
@@ -295,10 +304,10 @@ export function AgentTargetSetupGate({
                       <Button
                         type="button"
                         size="sm"
-                        disabled={!effectiveAuthMethodId || authenticatePending}
+                        disabled={!effectiveAuthMethodId || loginActionPending}
                         onClick={() => void handleAuthenticate()}
                       >
-                        {authenticatePending
+                        {loginActionPending
                           ? t("agentHost.agentGui.targetSetupAuthStarting")
                           : snapshot?.status === "ready"
                             ? t("agentHost.agentGui.targetSetupReauthenticate")

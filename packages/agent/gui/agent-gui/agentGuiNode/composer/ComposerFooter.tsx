@@ -51,11 +51,9 @@ interface Props {
   showComposerAction: boolean;
   isGoalModeActive: boolean;
   isPlanModeActive: boolean;
-  isTuttiModeActive: boolean;
-  isTuttiModeUpdating: boolean;
-  tuttiModeSupported: boolean;
   connectorsVisible: boolean;
-  onTuttiModeChange?: (active: boolean) => void;
+  connectorsReadOnly?: boolean;
+  showConnectorViewMore?: boolean;
   composerAction: ReactNode;
   projectControl?: ReactNode;
   quickPromptControl?: ReactNode;
@@ -77,12 +75,14 @@ interface Props {
   onProviderSelect: AgentComposerProps["onProviderSelect"];
   onLinkAction: AgentComposerProps["onLinkAction"];
   availableSkills: AgentComposerProps["availableSkills"];
+  selectedConnectorKeys: readonly string[];
+  onConnectorSelected: (connectorKey: string, selected: boolean) => void;
+  onRetryComposerOptions?: AgentComposerProps["onRetryComposerOptions"];
   onCapabilitySettingsRequest: AgentComposerProps["onCapabilitySettingsRequest"];
   onRequestWorkspaceReferences: AgentComposerProps["onRequestWorkspaceReferences"];
   onWorkspaceReferencePicker: () => void;
   onMentionPaletteButton: () => void;
   onSettingsChange: AgentComposerProps["onSettingsChange"];
-  onRetryComposerOptions: AgentComposerProps["onRetryComposerOptions"];
   onSubmit: AgentComposerProps["onSubmit"];
   onClearGoalMode: () => void;
   draftPrompt: string;
@@ -106,11 +106,9 @@ export function ComposerFooter({
   showComposerAction,
   isGoalModeActive,
   isPlanModeActive,
-  isTuttiModeActive,
-  isTuttiModeUpdating,
-  tuttiModeSupported,
   connectorsVisible,
-  onTuttiModeChange,
+  connectorsReadOnly = false,
+  showConnectorViewMore = true,
   composerAction,
   projectControl,
   quickPromptControl,
@@ -132,12 +130,14 @@ export function ComposerFooter({
   onProviderSelect,
   onLinkAction,
   availableSkills,
+  onRetryComposerOptions,
+  selectedConnectorKeys,
+  onConnectorSelected,
   onCapabilitySettingsRequest,
   onRequestWorkspaceReferences,
   onWorkspaceReferencePicker: handleWorkspaceReferencePicker,
   onMentionPaletteButton: handleMentionPaletteButton,
   onSettingsChange,
-  onRetryComposerOptions,
   onSubmit,
   onClearGoalMode: clearGoalModeBadge,
   draftPrompt: _draftPrompt,
@@ -148,7 +148,7 @@ export function ComposerFooter({
     <>
       <div className={styles.composerFooter}>
         <div className={composerStyles.footerGroup}>
-          <div className="inline-flex shrink-0 items-center gap-1">
+          <div className="inline-flex shrink-0 items-center gap-2">
             <TooltipProvider delayDuration={120}>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -220,13 +220,15 @@ export function ComposerFooter({
           <ComposerPrimaryCapabilityControl
             availableSkills={availableSkills}
             connectorsVisible={connectorsVisible}
+            connectorsReadOnly={connectorsReadOnly}
             disabled={composerControlsHardDisabled}
-            isTuttiModeActive={isTuttiModeActive}
-            isTuttiModeUpdating={isTuttiModeUpdating}
             labels={labels}
+            loading={composerSettings.isConnectorOptionsLoading === true}
+            onRetryComposerOptions={onRetryComposerOptions}
             onCapabilitySettingsRequest={onCapabilitySettingsRequest}
-            onTuttiModeChange={onTuttiModeChange}
-            tuttiModeSupported={tuttiModeSupported}
+            onConnectorSelected={onConnectorSelected}
+            selectedConnectorKeys={selectedConnectorKeys}
+            showConnectorViewMore={showConnectorViewMore}
           />
           {showHandoffSelect ? (
             <AgentHandoffMenu
@@ -273,7 +275,7 @@ export function ComposerFooter({
                   "w-auto max-w-[180px]"
                 )}
               >
-                <span className="flex min-w-0 items-center gap-1.5">
+                <span className="flex min-w-0 items-center gap-1">
                   <img
                     alt=""
                     aria-hidden="true"
@@ -305,7 +307,7 @@ export function ComposerFooter({
                     value={target.targetId}
                     className={cn(styles.composerMenuItem, "gap-2")}
                   >
-                    <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="flex min-w-0 items-center gap-1">
                       <img
                         alt=""
                         aria-hidden="true"
@@ -367,7 +369,7 @@ export function ComposerFooter({
               )}
               onClick={onClearPlanMode}
             >
-              <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+              <span className="flex min-w-0 items-center gap-1 overflow-hidden">
                 <RemovableBadgeIcon
                   icon={<ListChecks className="size-3.5" />}
                 />
@@ -389,7 +391,7 @@ export function ComposerFooter({
               )}
               onClick={clearGoalModeBadge}
             >
-              <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+              <span className="flex min-w-0 items-center gap-1 overflow-hidden">
                 <span className="relative flex size-3.5 shrink-0 items-center justify-center">
                   <Target
                     aria-hidden

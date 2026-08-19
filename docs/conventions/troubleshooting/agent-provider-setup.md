@@ -1628,14 +1628,16 @@ invalid_grant`. Search `tuttid.log` for
   `accountUsage` capability and consumes a closed Provider-neutral snapshot.
   Ordinary API keys report `api` with quota state `not_applicable`; Coding Plan
   reports `coding_plan` with quota state `unavailable`; native authentication
-  reports `provider_account` with quota state `unavailable`. Until the Provider
-  publishes a contract that proves a complete snapshot, the companion emits no
-  exact Credits. It does not enumerate or read native session files, decode
-  JWTs, execute credential helpers, inspect local `expiresAt`, or call private
-  account endpoints. Runtime/ACP therefore remains the only login and refresh
-  authority. Tokens, account identifiers, paths, raw Provider responses, and
-  Provider messages never cross the daemon API or renderer IPC and never enter
-  logs.
+  reports `provider_account` with quota state `unavailable`. The UI renders API
+  `not_applicable` as `—`; Coding Plan and native accounts render the localized
+  account-quota-unavailable copy. Neither presentation claims a verified credit
+  balance. Until the Provider publishes a contract that proves a complete
+  snapshot, the companion emits no exact Credits. It does not enumerate or read
+  native session files, decode JWTs, execute credential helpers, inspect local
+  `expiresAt`, or call private account endpoints. Runtime/ACP therefore remains
+  the only login and refresh authority. Tokens, account identifiers, paths, raw
+  Provider responses, and Provider messages never cross the daemon API or
+  renderer IPC and never enter logs.
 - Validation:
   Cover ordinary API keys, Coding Plan keys, authentication tokens,
   `apiKeyHelper`, effective settings precedence, and stable errors. Prove that

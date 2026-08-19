@@ -360,7 +360,9 @@ function statusValueFromDesktopProbe(
     limitsState: limitsErrorCode
       ? "error"
       : usage
-        ? usage.quotaState === undefined || usage.quotaState === "complete"
+        ? usage.quotaState === undefined ||
+          usage.quotaState === "complete" ||
+          usage.quotaState === "not_applicable"
           ? "available"
           : "unavailable"
         : "unavailable",

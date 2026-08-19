@@ -150,7 +150,7 @@ test("desktop status treats an unsupported extension usage probe as unavailable"
   assert.deepEqual(observed.errors, []);
 });
 
-test("desktop status labels extension API billing without quota rows", async () => {
+test("desktop status resolves extension API billing without applicable quota rows", async () => {
   const extensionAgent = {
     agentTargetId: "extension:usage-fixture",
     name: "Usage Fixture",
@@ -191,7 +191,7 @@ test("desktop status labels extension API billing without quota rows", async () 
   await observed.completed;
 
   assert.equal(observed.frames[0]?.value.accountLabel, "API Usage Billing");
-  assert.equal(observed.frames[0]?.value.limitsState, "unavailable");
+  assert.equal(observed.frames[0]?.value.limitsState, "available");
   assert.deepEqual(observed.frames[0]?.value.quotas, []);
   assert.deepEqual(observed.errors, []);
 });

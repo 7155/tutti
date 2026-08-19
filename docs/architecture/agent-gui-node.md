@@ -524,11 +524,13 @@ schema and echoed Target/provider identity, then projects billing identity,
 quota completeness, and optional exact Provider-neutral amounts without
 changing ACP readiness. A complete quota set is distinct from a known account
 whose quota is unavailable and from API billing where quota is not applicable;
-only the complete state may carry rows. Missing profiles and older Extensions
-are `unsupported`; unknown schemas, enums, shapes, partial exact amounts, or a
-claimed complete result without quotas fail closed as `parse_failed`. No
-provider message, path, endpoint, response body, credential, account ID, or raw
-account record crosses the port or enters logs.
+only the complete state may carry rows. Presentation maps API `not_applicable`
+to a resolved empty limits row (`—`), while `unavailable` uses localized
+account-quota-unavailable copy; neither becomes a refresh failure. Missing
+profiles and older Extensions are `unsupported`; unknown schemas, enums,
+shapes, partial exact amounts, or a claimed complete result without quotas fail
+closed as `parse_failed`. No provider message, path, endpoint, response body,
+credential, account ID, or raw account record crosses the port or enters logs.
 
 A source emits at most one cached `snapshot` followed by at most one
 `refreshed` value, then completes. Backend probing may continue independently

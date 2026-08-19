@@ -109,7 +109,8 @@ export function createWorkspaceFileReferenceSource(input: {
       return {
         autoSelectFirst: true,
         entries: LOCAL_SIDEBAR_GROUPS.filter(
-          (group) => input.os !== "win32" || group.nodeId !== RECENT_GROUP_NODE_ID
+          (group) =>
+            input.os !== "win32" || group.nodeId !== RECENT_GROUP_NODE_ID
         ).map((group) => ({
           ref: { sourceId: WORKSPACE_FILE_SOURCE_ID, nodeId: group.nodeId },
           kind: "folder",

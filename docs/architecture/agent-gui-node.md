@@ -499,12 +499,31 @@ presentation data.
 
 Tutti Desktop creates one status source per workspace renderer and injects it
 into every AgentGUI surface in that workspace. The source shares the one-hour
-Provider snapshot, five-second refresh debounce, and in-flight Provider probe
-by provider, while each surface keeps its own controller and therefore its own
+Agent Target snapshot, five-second refresh debounce, and in-flight status probe
+by exact `agentTargetId`, while each surface keeps its own controller and therefore its own
 query, loading, close, and stale-response state. Sharing the controller itself
 is invalid because one surface could replace or close another surface's active
 request. Standalone renderer processes have their own source; the Electron main
-process remains the cross-window short-lived Provider cache.
+process remains the cross-window short-lived exact-target cache.
+
+Account-usage probing for an Agent Extension is an optional, versioned,
+target-scoped capability declared by the signed Extension. The provider-owned
+Helper owns provider config, credentials, trusted origins, private endpoints,
+and response parsing; `tuttid` runs only the exact companion script installed
+and fingerprinted in that Target's independent companion runtime through a
+separately verified Node interpreter. Companion availability never changes ACP
+readiness. A daemon-owned reconciler installs the companion outside setup
+actions, wakes after runtime or Extension activation, retries failures with
+bounded backoff, and rechecks persisted activation on restart. Account-usage
+requests are joined and cached for a short TTL by exact `agentTargetId`; the TTL
+starts when execution completes, and Node identity derivation is reused while
+the executable file identity is unchanged. The daemon returns the
+provider-neutral `tutti.agent.account-usage.v1` discriminated result. Desktop
+validates the schema and echoed Target/provider identity, then projects quotas
+without changing ACP readiness. Missing profiles and older Extensions are
+`unsupported`; unknown schemas, enums, shapes, or successful subscription
+results without a quota fail closed as `parse_failed`. No provider message,
+path, endpoint, response body, or credential crosses the port or enters logs.
 
 A source emits at most one cached `snapshot` followed by at most one
 `refreshed` value, then completes. Backend probing may continue independently

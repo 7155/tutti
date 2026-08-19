@@ -918,9 +918,20 @@ for the provider refresh before returning.
 Provider context-window and quota updates enter the daemon at the runtime
 adapter boundary, are split into typed durable session metadata, and reach
 Agent GUI through the protocol-v2 `usage` field. GUI projections must not read
-provider-private runtime context to render usage. Existing
-session control state is read from the daemon; pre-session edits remain in the
-engine-owned activation/draft record until the daemon confirms the session.
+provider-private runtime context to render usage. Legacy Desktop-owned account
+probes may enrich current account limits before or without a Session and keep
+their provider adapters in Electron main. Agent Extension account probes have a
+different ownership boundary: the signed Extension declares a provider-owned
+helper, `tuttid` executes its independently installed companion, and Electron
+main only validates and maps the provider-neutral result. Both paths project
+only provider-neutral billing mode, quota windows, and stable error codes.
+Credentials and raw provider responses must never enter AgentGUI, renderer IPC,
+or logs. A
+provider-owned access-token snapshot is not runtime authentication authority:
+an account probe may retry a newer credential, but an unchanged expiry or
+authorization rejection degrades only account limits. Existing session control
+state is read from the daemon; pre-session edits remain in the engine-owned
+activation/draft record until the daemon confirms the session.
 `AgentHostWorkspaceAgent*` types may only appear in compatibility or projection
 layers while the legacy Agent GUI internals are being migrated. Production read
 paths must not call `workspaceAgents.list`,

@@ -78,7 +78,7 @@ export const zhCN = {
     errorTitle: "无法检查更新",
     restartAction: "重启安装",
     retryAction: "重试",
-    releaseNotesAction: "更新内容",
+    releaseNotesAction: "更新日志",
     storeManaged: "更新由 Microsoft Store 管理"
   },
   desktop: {
@@ -1288,6 +1288,9 @@ export const zhCN = {
         previewAgentsDescription: "显示仍在 Tutti 中测试和验证的 Agent 集成",
         previewAgentsLabel: "抢先体验 Agent 集成",
         shortcutUnbound: "未绑定",
+        tuttiModeDescription:
+          "在 Agent 对话中显示 Tutti Mode 开关与 /tutti 命令",
+        tuttiModeLabel: "Tutti Mode",
         workbenchShortcutsDescription: "启用可配置的工作台快捷键操作",
         workbenchShortcutsLabel: "工作台快捷键",
         workbenchShortcutsManageLabel: "配置键盘快捷键"

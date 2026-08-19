@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ComposerDraftAttachments } from "./ComposerDraftAttachments";
 
 describe("ComposerDraftAttachments", () => {
-  it("renders selected transcript text as a removable annotation count", () => {
+  it("renders selected transcript text as a removable annotation with previews", async () => {
     const onRemoveQuotes = vi.fn();
     render(
       <ComposerDraftAttachments
@@ -27,7 +27,29 @@ describe("ComposerDraftAttachments", () => {
     expect(
       screen.getByTestId("agent-gui-composer-quote-drafts")
     ).toHaveTextContent("2 annotations");
-    fireEvent.click(screen.getByRole("button", { name: "Remove reference" }));
+    const previewTrigger = screen.getByRole("button", {
+      name: "2 annotations"
+    });
+    const removeButton = screen.getByRole("button", {
+      name: "Remove reference"
+    });
+    expect(previewTrigger).not.toContainElement(removeButton);
+    fireEvent.click(previewTrigger);
+    const preview = await screen.findByTestId(
+      "agent-gui-composer-quote-preview"
+    );
+    expect(preview).toHaveAttribute("data-slot", "popover-content");
+    expect(preview).toHaveAttribute("tabindex", "0");
+    expect(preview).toHaveClass("overflow-y-auto", "overscroll-contain");
+    expect(preview).toHaveTextContent("“First selection”“Second selection”");
+    fireEvent.keyDown(preview, { key: "Escape" });
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("agent-gui-composer-quote-preview")
+      ).toBeNull()
+    );
+    expect(previewTrigger).toHaveFocus();
+    fireEvent.click(removeButton);
     expect(onRemoveQuotes).toHaveBeenCalledOnce();
   });
 });

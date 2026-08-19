@@ -1,4 +1,9 @@
-import { Spinner } from "@tutti-os/ui-system";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  Spinner
+} from "@tutti-os/ui-system";
 import { FileText, MessageSquareText, X } from "lucide-react";
 import { cn } from "../../../app/renderer/lib/utils";
 import { translate } from "../../../i18n/index";
@@ -33,6 +38,12 @@ export function ComposerDraftAttachments({
   onRemoveQuotes
 }: Props) {
   const labels = { removeMention: removeLabel };
+  const quoteCountLabel = translate(
+    draftQuotes.length === 1
+      ? "agentHost.agentGui.selectionReferenceCountOne"
+      : "agentHost.agentGui.selectionReferenceCountMany",
+    { count: draftQuotes.length }
+  );
   return (
     <>
       {draftQuotes.length > 0 ? (
@@ -40,31 +51,46 @@ export function ComposerDraftAttachments({
           className="mb-2 flex max-w-full items-center"
           data-testid="agent-gui-composer-quote-drafts"
         >
-          <div className="group relative inline-flex max-w-full items-center gap-2 rounded-[10px] border border-[var(--line-1)] bg-[var(--background-fronted)] py-2 pl-3 pr-9 text-sm font-medium text-[var(--text-primary)]">
-            <MessageSquareText
-              aria-hidden
-              className="shrink-0 text-[var(--text-secondary)]"
-              size={16}
-              strokeWidth={2}
-            />
-            <span>
-              {translate(
-                draftQuotes.length === 1
-                  ? "agentHost.agentGui.selectionReferenceCountOne"
-                  : "agentHost.agentGui.selectionReferenceCountMany",
-                { count: draftQuotes.length }
-              )}
-            </span>
-            <button
-              type="button"
-              className="absolute right-1.5 top-1/2 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded-full text-[var(--text-secondary)] transition hover:bg-[var(--transparency-hover)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--text-primary)_34%,transparent)]"
-              aria-label={labels.removeMention}
-              title={labels.removeMention}
-              onClick={onRemoveQuotes}
+          <Popover>
+            <div className="group inline-flex max-w-full items-center rounded-[10px] border border-[var(--line-1)] bg-[var(--background-fronted)] text-sm font-medium text-[var(--text-primary)]">
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex min-w-0 items-center gap-2 rounded-l-[9px] py-2 pl-3 pr-2 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:color-mix(in_srgb,var(--text-primary)_34%,transparent)]"
+                  data-testid="agent-gui-composer-quote-trigger"
+                >
+                  <MessageSquareText
+                    aria-hidden
+                    className="shrink-0 text-[var(--text-secondary)]"
+                    size={16}
+                    strokeWidth={2}
+                  />
+                  <span className="truncate">{quoteCountLabel}</span>
+                </button>
+              </PopoverTrigger>
+              <button
+                type="button"
+                className="mr-1.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[var(--text-secondary)] transition hover:bg-[var(--transparency-hover)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--text-primary)_34%,transparent)]"
+                aria-label={labels.removeMention}
+                title={labels.removeMention}
+                onClick={onRemoveQuotes}
+              >
+                <X size={12} strokeWidth={2.4} aria-hidden />
+              </button>
+            </div>
+            <PopoverContent
+              side="top"
+              align="start"
+              aria-label={quoteCountLabel}
+              className="max-h-[min(320px,var(--radix-popover-content-available-height))] w-auto max-w-[min(520px,calc(100vw-32px))] gap-2 overflow-y-auto overscroll-contain text-left text-sm leading-5 whitespace-pre-wrap [overflow-wrap:anywhere]"
+              data-testid="agent-gui-composer-quote-preview"
+              tabIndex={0}
             >
-              <X size={12} strokeWidth={2.4} aria-hidden />
-            </button>
-          </div>
+              {draftQuotes.map((quote) => (
+                <p key={quote.id}>“{quote.text.trim()}”</p>
+              ))}
+            </PopoverContent>
+          </Popover>
         </div>
       ) : null}
       {draftImages.length > 0 ? (

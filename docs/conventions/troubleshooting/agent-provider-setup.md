@@ -1610,39 +1610,43 @@ invalid_grant`. Search `tuttid.log` for
   Plan credentials also have the same presentation.
 - Quick checks:
   Confirm the provider is `acp:codebuddy`. Inspect CodeBuddy's effective
-  `CODEBUDDY_API_KEY`, `CODEBUDDY_BASE_URL`, `CODEBUDDY_AUTH_TOKEN`, and native
-  login source without copying credential values into logs. Coding Plan keys
-  use the `sk-sp-` prefix or a Tencent endpoint whose path contains `coding`.
+  `CODEBUDDY_API_KEY`, `CODEBUDDY_BASE_URL`, `CODEBUDDY_AUTH_TOKEN`, and
+  `apiKeyHelper` presence without copying credential values into logs. Coding
+  Plan keys use the `sk-sp-` prefix or an endpoint whose path contains
+  `coding`.
 - Root cause:
   CodeBuddy's ACP `usage_update` reports context usage and per-request cost, but
-  the pinned runtime does not expose the account-level credit balance. The
-  signed-in CodeBuddy product uses its separate account resource API for that
-  balance. Tutti previously had no CodeBuddy account probe, so the native panel
-  treated the provider as unsupported and could not identify the billing mode
-  or aggregate the active credit packages.
+  the pinned runtime does not expose or document a complete account-level
+  credit-balance contract. Private product endpoints, filtered package queries,
+  and a single page of resource rows cannot prove a complete account balance.
+  Tutti previously had no CodeBuddy account probe, so the native panel treated
+  the provider as unsupported and could not identify the billing mode.
 - Fix:
   CodeBuddy's Extension declares a separately published Provider-owned account
-  usage companion. The companion owns CodeBuddy configuration, the exact native
-  authentication ID and platform session path, credential refresh races,
-  trusted usage origins, endpoint paths, and pagination. Tutti only executes
-  the generic `accountUsage` capability and consumes a closed Provider-neutral
-  snapshot. Ordinary API keys report `api` with quota state `not_applicable`,
-  Coding Plan reports `coding_plan` with quota state `unavailable`, and native
-  login reports `provider_account`. Exact Credits are emitted only when an
-  unfiltered package query has collected every page and the response's total
-  count proves completeness; otherwise the account remains identified but its
-  quota state is `unavailable`. Local `expiresAt` metadata is not login
-  authority. After 401/403, the companion reloads the exact session once and
-  retries only when the token changed. Tokens, account identifiers, paths, raw
-  package rows, Provider messages, and endpoints never cross the daemon API or
-  renderer IPC and never enter logs.
+  usage companion. The companion owns only CodeBuddy's effective configuration
+  precedence and billing-mode classification. Tutti executes the generic
+  `accountUsage` capability and consumes a closed Provider-neutral snapshot.
+  Ordinary API keys report `api` with quota state `not_applicable`; Coding Plan
+  reports `coding_plan` with quota state `unavailable`; native authentication
+  reports `provider_account` with quota state `unavailable`. Until the Provider
+  publishes a contract that proves a complete snapshot, the companion emits no
+  exact Credits. It does not enumerate or read native session files, decode
+  JWTs, execute credential helpers, inspect local `expiresAt`, or call private
+  account endpoints. Runtime/ACP therefore remains the only login and refresh
+  authority. Tokens, account identifiers, paths, raw Provider responses, and
+  Provider messages never cross the daemon API or renderer IPC and never enter
+  logs.
 - Validation:
-  Cover ordinary API keys, Coding Plan keys, the exact native session among
-  unrelated or expired files, a concurrent token refresh, unchanged 401/403,
-  unknown package codes, more than one page, missing or inconsistent totals,
-  concurrent probes, secret non-projection, generic renderer labels, and exact
-  Credits. Run the Extension's Linux and Windows companion checks plus Tutti's
-  daemon, Desktop, typecheck, i18n, and changed-aware push-ready gates.
+  Cover ordinary API keys, Coding Plan keys, authentication tokens,
+  `apiKeyHelper`, effective settings precedence, and stable errors. Prove that
+  simultaneous expired and valid session files are never read, Runtime token
+  refresh cannot affect the probe, private package endpoints are never called,
+  incomplete package pagination cannot be presented as exact Credits,
+  concurrent probes coalesce at the Tutti boundary, and credentials or raw
+  errors are never projected. Also cover generic renderer labels and exact
+  amount validation for future Providers with a complete contract. Run the
+  Extension's Linux and Windows companion checks plus Tutti's daemon, Desktop,
+  typecheck, i18n, and changed-aware push-ready gates.
 - References:
   [CodeBuddy Agent Extension](https://github.com/tutti-os/agent-extension-codebuddy)
   [account_usage.go](../../../services/tuttid/service/agentextension/account_usage.go)

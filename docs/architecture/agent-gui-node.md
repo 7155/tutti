@@ -517,13 +517,20 @@ actions, wakes after runtime or Extension activation, retries failures with
 bounded backoff, and rechecks persisted activation on restart. Account-usage
 requests are joined and cached for a short TTL by exact `agentTargetId`; the TTL
 starts when execution completes, and Node identity derivation is reused while
-the executable file identity is unchanged. The daemon returns the
-provider-neutral `tutti.agent.account-usage.v1` discriminated result. Desktop
-validates the schema and echoed Target/provider identity, then projects quotas
-without changing ACP readiness. Missing profiles and older Extensions are
-`unsupported`; unknown schemas, enums, shapes, or successful subscription
-results without a quota fail closed as `parse_failed`. No provider message,
-path, endpoint, response body, or credential crosses the port or enters logs.
+the executable file identity is unchanged. The daemon accepts existing v1
+helper output and returns the normalized provider-neutral
+`tutti.agent.account-usage.v2` discriminated result. Desktop validates the
+schema and echoed Target/provider identity, then projects billing identity,
+quota completeness, and optional exact Provider-neutral amounts without
+changing ACP readiness. A complete quota set is distinct from a known account
+whose quota is unavailable and from API billing where quota is not applicable;
+only the complete state may carry rows. Presentation maps API `not_applicable`
+to a resolved empty limits row (`—`), while `unavailable` uses localized
+account-quota-unavailable copy; neither becomes a refresh failure. Missing
+profiles and older Extensions are `unsupported`; unknown schemas, enums,
+shapes, partial exact amounts, or a claimed complete result without quotas fail
+closed as `parse_failed`. No provider message, path, endpoint, response body,
+credential, account ID, or raw account record crosses the port or enters logs.
 
 A source emits at most one cached `snapshot` followed by at most one
 `refreshed` value, then completes. Backend probing may continue independently
@@ -534,6 +541,13 @@ or transport diagnostics. The limits projection preserves stable codes such as
 `auth_required`, `session_expired`, and `subscription_required` through
 `AgentStatusValue.limitsErrorCode`; AgentGUI owns their localized presentation
 and maps unknown codes to one generic failure label.
+
+A provider quota may carry an optional exact provider-neutral amount and unit
+when a percentage alone would hide useful account information. The host owns
+the provider request, credential handling, package aggregation, and percentage
+normalization; AgentGUI only renders the projected amount and uses the optional
+percentage for progress presentation. Raw account and package records never
+cross this boundary.
 
 An explicit unsupported usage probe is a successful bounded read with no
 quotas and `limitsState: unavailable`; it must not become a refresh failure.

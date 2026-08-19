@@ -601,6 +601,15 @@ requiring those connectors to be selected in the current draft; draft selection
 continues to control only structured prompt content. Selecting “more” remains
 host navigation because settings/workbench location is product-owned.
 
+Connector access-policy editors reuse `ConnectorAccessSelectionPanel` from the
+same shared UI entrypoint. The controlled panel accepts only loading/error/ready
+state, neutral Connector items, selected keys, caller-localized labels, and
+semantic callbacks. It owns the Connector-specific loading, empty, error,
+selection, disabled, and busy presentation. The host retains authorization and
+sharing policy, selected-key normalization, persistence, navigation, and
+catalog projection; the panel imports no AgentGUI draft/store, Desktop global,
+or daemon client.
+
 Every renderer window mounts exactly one `ConnectorMarketDialogHost` alongside
 its other window-level panel hosts. Composer entries and catalog cards never
 mount their own dialog host. This keeps dialog identity and mutual exclusion in

@@ -19,6 +19,13 @@ export {
   type ConnectorComposerMenuProps
 } from "./composer/ConnectorComposerMenu.tsx";
 export {
+  ConnectorAccessSelectionPanel,
+  type ConnectorAccessSelectionItem,
+  type ConnectorAccessSelectionPanelLabels,
+  type ConnectorAccessSelectionPanelProps,
+  type ConnectorAccessSelectionState
+} from "./access/ConnectorAccessSelectionPanel.tsx";
+export {
   ConnectorSelectionList,
   type ConnectorSelectionItem,
   type ConnectorSelectionListProps

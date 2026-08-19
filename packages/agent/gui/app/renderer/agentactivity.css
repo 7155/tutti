@@ -8716,12 +8716,17 @@ button.agent-gui-node__conversation-section-toggle:hover
 }
 
 .agent-gui-node__composer[data-layout="dock"]
-  .agent-gui-node__composer-prompt-input-area[data-has-draft-images="true"] {
+  .agent-gui-node__composer-prompt-input-area[data-has-draft-attachments="true"] {
   grid-template-rows:
     minmax(0, var(--agent-gui-composer-attachment-height, 0px))
     minmax(40px, 1fr);
   align-items: end;
   padding: 12px;
+}
+
+.agent-gui-node__composer[data-layout="dock"]
+  [data-testid="agent-gui-composer-attachment-drafts"] {
+  margin-bottom: 0;
 }
 
 .agent-gui-node__composer[data-layout="dock"]
@@ -8753,7 +8758,7 @@ button.agent-gui-node__conversation-section-toggle:hover
 }
 
 .agent-gui-node__composer[data-layout="dock"]
-  .agent-gui-node__composer-prompt-input-area[data-has-draft-images="true"]
+  .agent-gui-node__composer-prompt-input-area[data-has-draft-attachments="true"]
   .agent-gui-node__composer-prompt-input-line {
   min-height: 40px;
   height: calc(var(--agent-gui-composer-text-height, 56px) - 2px);
@@ -9522,10 +9527,10 @@ html[data-theme="light"] [data-message-center-item-id].agent-gui-edge-glow {
 }
 
 .agent-gui-node__composer[data-layout="dock"]
-  .agent-gui-node__composer-prompt-input-area[data-has-draft-images="true"]
+  .agent-gui-node__composer-prompt-input-area[data-has-draft-attachments="true"]
   textarea,
 .agent-gui-node__composer[data-layout="dock"]
-  .agent-gui-node__composer-prompt-input-area[data-has-draft-images="true"]
+  .agent-gui-node__composer-prompt-input-area[data-has-draft-attachments="true"]
   .agent-gui-node__composer-textarea {
   max-height: var(--agent-gui-composer-text-viewport-height);
   padding-top: 0;

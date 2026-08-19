@@ -371,6 +371,13 @@ export function AgentComposerView(
                 data-has-draft-images={
                   draftImages.length > 0 ? "true" : undefined
                 }
+                data-has-draft-attachments={
+                  draftImages.length > 0 ||
+                  visibleDraftLargeTexts.length > 0 ||
+                  draftQuotes.length > 0
+                    ? "true"
+                    : undefined
+                }
                 style={promptInputAreaStyle}
               >
                 <ComposerDraftAttachments

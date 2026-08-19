@@ -42,6 +42,7 @@ import {
   agentComposerDraftFiles,
   agentComposerDraftImages,
   agentComposerDraftLargeTexts,
+  agentComposerDraftQuotes,
   agentComposerDraftHasContent,
   agentComposerDraftPrompt
 } from "./model/agentComposerDraft";
@@ -198,6 +199,7 @@ export function AgentComposer(props: AgentComposerProps): React.JSX.Element {
     presentationSubmitDisabled
   });
   const draftPrompt = agentComposerDraftPrompt(draftContent);
+  const draftQuoteCount = agentComposerDraftQuotes(draftContent).length;
   const goalDraftObjective = canGoalControl
     ? goalDraftObjectiveFromPrompt(draftPrompt)
     : null;
@@ -689,7 +691,8 @@ export function AgentComposer(props: AgentComposerProps): React.JSX.Element {
     dockComposerMetrics,
     setDockComposerMetrics,
     draftImages,
-    draftLargeTexts
+    draftLargeTexts,
+    draftQuoteCount
   });
   const { activePromptTip, promptTipStyle, rotatingPromptTips } = layout;
   const presentation = useComposerPresentation({

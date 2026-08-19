@@ -44,11 +44,19 @@ export function ComposerDraftAttachments({
       : "agentHost.agentGui.selectionReferenceCountMany",
     { count: draftQuotes.length }
   );
+  const hasAttachments =
+    draftQuotes.length > 0 ||
+    draftImages.length > 0 ||
+    visibleDraftLargeTexts.length > 0;
+  if (!hasAttachments) return null;
   return (
-    <>
+    <div
+      className="mb-2 flex min-h-0 max-w-full flex-col gap-2"
+      data-testid="agent-gui-composer-attachment-drafts"
+    >
       {draftQuotes.length > 0 ? (
         <div
-          className="mb-2 flex max-w-full items-center"
+          className="flex max-w-full items-center"
           data-testid="agent-gui-composer-quote-drafts"
         >
           <Popover>
@@ -95,7 +103,7 @@ export function ComposerDraftAttachments({
       ) : null}
       {draftImages.length > 0 ? (
         <div
-          className="mb-2 flex w-full max-w-full flex-wrap items-start gap-2"
+          className="flex w-full max-w-full flex-wrap items-start gap-2"
           data-testid="agent-gui-composer-image-drafts"
         >
           {draftImages.map((image) => (
@@ -110,7 +118,7 @@ export function ComposerDraftAttachments({
       ) : null}
       {visibleDraftLargeTexts.length > 0 ? (
         <div
-          className="mb-2 flex max-w-[520px] flex-wrap gap-2"
+          className="flex max-w-[520px] flex-wrap gap-2"
           data-testid="agent-gui-composer-file-drafts"
         >
           {visibleDraftLargeTexts.map((item, index) => {
@@ -183,6 +191,6 @@ export function ComposerDraftAttachments({
           })}
         </div>
       ) : null}
-    </>
+    </div>
   );
 }

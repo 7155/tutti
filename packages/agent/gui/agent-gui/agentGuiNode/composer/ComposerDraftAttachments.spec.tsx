@@ -6,6 +6,39 @@ import { describe, expect, it, vi } from "vitest";
 import { ComposerDraftAttachments } from "./ComposerDraftAttachments";
 
 describe("ComposerDraftAttachments", () => {
+  it("groups mixed attachment types into one measured row", () => {
+    render(
+      <ComposerDraftAttachments
+        draftImages={[
+          {
+            id: "image-1",
+            name: "selection.png",
+            mimeType: "image/png",
+            previewUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
+          }
+        ]}
+        draftLargeTexts={[]}
+        draftQuotes={[
+          { type: "quote", id: "quote-1", text: "First selection" }
+        ]}
+        removeLabel="Remove reference"
+        onRemoveImage={vi.fn()}
+        onRemoveLargeText={vi.fn()}
+        onExpandLargeText={vi.fn()}
+        onRemoveQuotes={vi.fn()}
+      />
+    );
+
+    const wrapper = screen.getByTestId("agent-gui-composer-attachment-drafts");
+    expect(wrapper.children).toHaveLength(2);
+    expect(wrapper).toContainElement(
+      screen.getByTestId("agent-gui-composer-quote-drafts")
+    );
+    expect(wrapper).toContainElement(
+      screen.getByTestId("agent-gui-composer-image-drafts")
+    );
+  });
+
   it("renders selected transcript text as a removable annotation with previews", async () => {
     const onRemoveQuotes = vi.fn();
     render(
@@ -26,9 +59,9 @@ describe("ComposerDraftAttachments", () => {
 
     expect(
       screen.getByTestId("agent-gui-composer-quote-drafts")
-    ).toHaveTextContent("2 annotations");
+    ).toHaveTextContent("2 selected file snippets");
     const previewTrigger = screen.getByRole("button", {
-      name: "2 annotations"
+      name: "2 selected file snippets"
     });
     const removeButton = screen.getByRole("button", {
       name: "Remove reference"

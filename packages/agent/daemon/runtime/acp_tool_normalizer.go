@@ -718,6 +718,9 @@ func canonicalACPStatusToken(status string) string {
 }
 
 func acpResolvedToolCallStatus(update map[string]any, fallback string) string {
+	if acpToolCallReportsError(update, acpToolCallRawOutput(update)) {
+		return messageStreamStateFailed
+	}
 	status := normalizedCallStatus(firstNonEmpty(asString(update["status"]), fallback))
 	if status != messageStreamStateStreaming {
 		return status
@@ -730,6 +733,23 @@ func acpResolvedToolCallStatus(update map[string]any, fallback string) string {
 		return inferred
 	}
 	return status
+}
+
+func acpToolCallReportsError(update map[string]any, rawOutput any) bool {
+	return acpValueReportsError(update) || acpValueReportsError(rawOutput)
+}
+
+func acpValueReportsError(value any) bool {
+	body, ok := value.(map[string]any)
+	if !ok {
+		return false
+	}
+	for _, key := range []string{"isError", "is_error"} {
+		if reported, ok := body[key].(bool); ok && reported {
+			return true
+		}
+	}
+	return false
 }
 
 func acpInferTerminalToolStatus(rawOutput any) string {

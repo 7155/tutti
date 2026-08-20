@@ -311,7 +311,7 @@ func TestAgentModelCatalogEnrichesOpenCodeModelsWithImageCapability(t *testing.T
 	}
 }
 
-func TestAgentModelCatalogDoesNotCacheOpenCodeModels(t *testing.T) {
+func TestAgentModelCatalogCachesOpenCodeModels(t *testing.T) {
 	lister := &fakeAgentModelLister{
 		models: []AgentModelOption{{ID: "opencode/big-pickle", DisplayName: "Big Pickle"}},
 	}
@@ -324,15 +324,35 @@ func TestAgentModelCatalogDoesNotCacheOpenCodeModels(t *testing.T) {
 	if _, err := catalog.ListModels(context.Background(), input); err != nil {
 		t.Fatalf("second ListModels returned error: %v", err)
 	}
-	if lister.calls != 2 {
-		t.Fatalf("lister calls = %d, want 2 uncached OpenCode fetches", lister.calls)
+	if lister.calls != 1 {
+		t.Fatalf("lister calls = %d, want one cached OpenCode fetch", lister.calls)
 	}
-	if _, ok := catalog.cache["opencode"]; ok {
-		t.Fatal("OpenCode result must not be stored in the model catalog cache")
+	spec := agentModelCatalogSpecs["opencode"]
+	if _, ok := catalog.cache[modelCatalogCacheKey("opencode", input, spec)]; !ok {
+		t.Fatal("OpenCode result must be stored in the model catalog cache")
 	}
 }
 
-func TestAgentModelCatalogDoesNotCacheOpenCodeErrors(t *testing.T) {
+func TestAgentModelCatalogScopesOpenCodeCacheByWorkingDirectory(t *testing.T) {
+	lister := &fakeAgentModelLister{
+		models: []AgentModelOption{{ID: "opencode/big-pickle", DisplayName: "Big Pickle"}},
+	}
+	catalog := &CachedAgentModelCatalog{OpenCode: lister}
+
+	for _, cwd := range []string{"/workspace/one", "/workspace/two", "/workspace/one"} {
+		if _, err := catalog.ListModels(context.Background(), AgentModelCatalogInput{
+			Provider: "opencode",
+			Cwd:      cwd,
+		}); err != nil {
+			t.Fatalf("ListModels(%s) returned error: %v", cwd, err)
+		}
+	}
+	if lister.calls != 2 {
+		t.Fatalf("lister calls = %d, want one fetch per working directory", lister.calls)
+	}
+}
+
+func TestAgentModelCatalogCachesOpenCodeErrors(t *testing.T) {
 	lister := &fakeAgentModelLister{err: errors.New("opencode unavailable")}
 	catalog := &CachedAgentModelCatalog{OpenCode: lister}
 	input := AgentModelCatalogInput{Provider: "opencode", Cwd: "/workspace"}
@@ -342,11 +362,12 @@ func TestAgentModelCatalogDoesNotCacheOpenCodeErrors(t *testing.T) {
 			t.Fatalf("ListModels attempt %d returned no error", attempt+1)
 		}
 	}
-	if lister.calls != 2 {
-		t.Fatalf("lister calls = %d, want 2 uncached OpenCode failures", lister.calls)
+	if lister.calls != 1 {
+		t.Fatalf("lister calls = %d, want one cached OpenCode failure", lister.calls)
 	}
-	if _, ok := catalog.cache["opencode"]; ok {
-		t.Fatal("OpenCode error must not be stored in the model catalog cache")
+	spec := agentModelCatalogSpecs["opencode"]
+	if _, ok := catalog.cache[modelCatalogCacheKey("opencode", input, spec)]; !ok {
+		t.Fatal("OpenCode error must be stored in the model catalog cache")
 	}
 }
 
@@ -356,7 +377,7 @@ func TestAgentModelCatalogCachePolicyAcrossProviders(t *testing.T) {
 		cached   bool
 	}{
 		{provider: "codex", cached: true},
-		{provider: "opencode", cached: false},
+		{provider: "opencode", cached: true},
 		{provider: "tutti-agent", cached: true},
 	}
 	if len(agentModelCatalogSpecs) != len(tests) {

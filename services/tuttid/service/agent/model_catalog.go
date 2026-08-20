@@ -73,10 +73,18 @@ type agentModelCatalogSpec struct {
 	// source labels the catalog origin surfaced to the GUI (e.g. "codex-cli").
 	source string
 	// ttl caches a successful, non-fallback list. Zero disables successful
-	// result caching for providers whose catalogs depend on request context.
+	// result caching; cacheKey may scope a non-zero ttl to request context.
 	ttl time.Duration
 	// errTTL caches a failed fetch (avoids hammering a broken CLI).
 	errTTL time.Duration
+	// fetchTimeout bounds the provider-specific CLI fetch. Most providers use
+	// the shared default; slow npm-shimmed CLIs may need a larger bounded
+	// window without relaxing every provider's status path.
+	fetchTimeout time.Duration
+	// cacheKey scopes in-memory results and singleflight calls when the model
+	// catalog depends on request context such as the working directory. Such
+	// context-scoped entries are intentionally memory-only.
+	cacheKey func(AgentModelCatalogInput) string
 	// fallbackTTL caches a fallback list when the lister flags one; zero
 	// means fallback results use the normal ttl.
 	fallbackTTL time.Duration
@@ -148,7 +156,13 @@ func agentModelCatalogSpecFromDescriptor(descriptor providerregistry.ProviderDes
 			)
 		}
 		return agentModelCatalogSpec{
-			source: string(descriptor.ComposerProfile.ModelCatalog),
+			source:       string(descriptor.ComposerProfile.ModelCatalog),
+			ttl:          opencodeModelCacheTTL,
+			errTTL:       opencodeModelErrorCacheTTL,
+			fetchTimeout: opencodeModelFetchTimeout,
+			cacheKey: func(input AgentModelCatalogInput) string {
+				return modelCatalogCacheKeyByCwd(descriptor.Identity.ID, input.Cwd)
+			},
 			lister: func(c *CachedAgentModelCatalog, input AgentModelCatalogInput) AgentModelLister {
 				if c.OpenCode != nil {
 					return c.OpenCode
@@ -284,8 +298,16 @@ func (c *CachedAgentModelCatalog) ensurePersistentCacheLoaded() {
 			c.generation = make(map[string]uint64)
 		}
 		for provider, entry := range persisted.Entries {
+			if strings.Contains(provider, "\x00") {
+				continue
+			}
 			provider = agentprovider.Normalize(provider)
 			if provider == "" || len(entry.Models) == 0 {
+				continue
+			}
+			if spec, ok := agentModelCatalogSpecs[provider]; ok && spec.cacheKey != nil {
+				// Ignore legacy provider-global entries for catalogs that are now
+				// scoped by request context, such as OpenCode's Cwd.
 				continue
 			}
 			if strings.TrimSpace(entry.Provider) == "" {
@@ -340,8 +362,9 @@ func (c *CachedAgentModelCatalog) ListModels(ctx context.Context, input AgentMod
 		return AgentModelCatalogResult{}, ErrInvalidArgument
 	}
 	now := c.now()
+	cacheKey := modelCatalogCacheKey(provider, input, spec)
 	if specCachesModelCatalog(spec) {
-		if cached := c.readCache(provider, now); cached != nil {
+		if cached := c.readCache(cacheKey, now); cached != nil {
 			if !c.cacheAuthMatches(provider, cached.authFingerprint) {
 				slog.Info("agent model catalog cache rejected for auth generation",
 					"event", "agent.model_catalog.cache_rejected",
@@ -376,13 +399,13 @@ func (c *CachedAgentModelCatalog) loadModels(
 	expectedGeneration uint64,
 ) (AgentModelCatalogResult, error) {
 	provider := agentprovider.Normalize(input.Provider)
-	key := provider
-	if !specCachesModelCatalog(spec) {
-		key += "\x00" + strings.TrimSpace(input.Cwd)
-	}
+	key := modelCatalogCacheKey(provider, input, spec)
 	startedAt := time.Now()
 	resultCh := c.loads.DoChan(key, func() (any, error) {
-		fetchContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), modelCatalogFetchTimeout)
+		fetchContext, cancel := context.WithTimeout(
+			context.WithoutCancel(ctx),
+			modelCatalogFetchTimeoutForSpec(spec),
+		)
 		defer cancel()
 		return c.fetchModels(fetchContext, input, spec, staleRefresh, expectedGeneration), nil
 	})
@@ -417,12 +440,12 @@ func (c *CachedAgentModelCatalog) startBackgroundRefresh(
 	expectedGeneration uint64,
 ) {
 	provider := agentprovider.Normalize(input.Provider)
-	key := provider
-	if !specCachesModelCatalog(spec) {
-		key += "\x00" + strings.TrimSpace(input.Cwd)
-	}
+	key := modelCatalogCacheKey(provider, input, spec)
 	resultCh := c.loads.DoChan(key, func() (any, error) {
-		fetchContext, cancel := context.WithTimeout(context.WithoutCancel(context.Background()), modelCatalogFetchTimeout)
+		fetchContext, cancel := context.WithTimeout(
+			context.WithoutCancel(context.Background()),
+			modelCatalogFetchTimeoutForSpec(spec),
+		)
 		defer cancel()
 		return c.fetchModels(fetchContext, input, spec, true, expectedGeneration), nil
 	})
@@ -455,7 +478,7 @@ func (c *CachedAgentModelCatalog) fetchModels(
 		FetchedAt: startedAt,
 		Models:    models,
 	}
-	accepted := c.writeCache(provider, spec, startedAt, result, listResult.IsFallback, err, expectedGeneration, staleRefresh)
+	accepted := c.writeCache(modelCatalogCacheKey(provider, input, spec), provider, spec, startedAt, result, listResult.IsFallback, err, expectedGeneration, staleRefresh)
 	if accepted && staleRefresh && err == nil && c.OnRefresh != nil {
 		c.OnRefresh(provider)
 	}
@@ -507,6 +530,39 @@ func diagnosticModelNames(models []AgentModelOption) []string {
 
 func specCachesModelCatalog(spec agentModelCatalogSpec) bool {
 	return spec.ttl > 0 || spec.errTTL > 0 || spec.fallbackTTL > 0
+}
+
+func modelCatalogCacheKey(provider string, input AgentModelCatalogInput, spec agentModelCatalogSpec) string {
+	if spec.cacheKey != nil {
+		if key := strings.TrimSpace(spec.cacheKey(input)); key != "" {
+			return key
+		}
+	}
+	return provider
+}
+
+func modelCatalogCacheKeyByCwd(provider, cwd string) string {
+	return provider + "\x00" + strings.TrimSpace(cwd)
+}
+
+func modelCatalogCacheKeyBelongsToProvider(cacheKey, provider string) bool {
+	return cacheKey == provider || strings.HasPrefix(cacheKey, provider+"\x00")
+}
+
+func modelCatalogCacheKeyIsPersistent(cacheKey string) bool {
+	if strings.Contains(cacheKey, "\x00") {
+		return false
+	}
+	provider := agentprovider.Normalize(cacheKey)
+	spec, ok := agentModelCatalogSpecs[provider]
+	return !ok || spec.cacheKey == nil
+}
+
+func modelCatalogFetchTimeoutForSpec(spec agentModelCatalogSpec) time.Duration {
+	if spec.fetchTimeout > 0 {
+		return spec.fetchTimeout
+	}
+	return modelCatalogFetchTimeout
 }
 
 func defaultTuttiAgentModelLister(provider string, providerCommands ProviderCommandResolver) CodexCLIModelLister {
@@ -606,7 +662,10 @@ func (c *CachedAgentModelCatalog) Invalidate(providers ...string) {
 			c.generation = make(map[string]uint64)
 		}
 		c.generation[normalized]++
-		if entry := c.cache[normalized]; entry != nil {
+		for cacheKey, entry := range c.cache {
+			if !modelCatalogCacheKeyBelongsToProvider(cacheKey, normalized) || entry == nil {
+				continue
+			}
 			entry.stale = true
 			entry.refreshRetryAtMS = 0
 			entry.generation = c.generation[normalized]
@@ -622,15 +681,15 @@ func (c *CachedAgentModelCatalog) Invalidate(providers ...string) {
 	}
 }
 
-func (c *CachedAgentModelCatalog) readCache(provider string, now time.Time) *agentModelCatalogCacheEntry {
+func (c *CachedAgentModelCatalog) readCache(cacheKey string, now time.Time) *agentModelCatalogCacheEntry {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	entry := c.cache[provider]
+	entry := c.cache[cacheKey]
 	if entry == nil {
 		return nil
 	}
 	if entry.err != nil && now.UnixMilli() > entry.expiresAtMS {
-		delete(c.cache, provider)
+		delete(c.cache, cacheKey)
 		return nil
 	}
 	if !entry.stale && entry.err == nil && now.UnixMilli() > entry.expiresAtMS {
@@ -649,6 +708,7 @@ func (c *CachedAgentModelCatalog) readCache(provider string, now time.Time) *age
 }
 
 func (c *CachedAgentModelCatalog) writeCache(
+	cacheKey string,
 	provider string,
 	spec agentModelCatalogSpec,
 	now time.Time,
@@ -682,13 +742,13 @@ func (c *CachedAgentModelCatalog) writeCache(
 		c.generation = make(map[string]uint64)
 	}
 	if err != nil && staleRefresh {
-		if entry := c.cache[provider]; entry != nil && entry.generation == expectedGeneration {
+		if entry := c.cache[cacheKey]; entry != nil && entry.generation == expectedGeneration {
 			entry.refreshRetryAtMS = now.Add(ttl).UnixMilli()
 		}
 		c.mu.Unlock()
 		return false
 	}
-	c.cache[provider] = &agentModelCatalogCacheEntry{
+	c.cache[cacheKey] = &agentModelCatalogCacheEntry{
 		result:          cloneAgentModelCatalogResult(result),
 		err:             err,
 		expiresAtMS:     now.Add(ttl).UnixMilli(),
@@ -709,11 +769,14 @@ func (c *CachedAgentModelCatalog) persistCache() {
 	}
 	persisted := persistedAgentModelCatalog{Version: 1, Entries: make(map[string]persistedAgentModelCatalogEntry)}
 	c.mu.Lock()
-	for provider, entry := range c.cache {
+	for cacheKey, entry := range c.cache {
 		if entry == nil || entry.err != nil || len(entry.result.Models) == 0 {
 			continue
 		}
-		persisted.Entries[provider] = persistedAgentModelCatalogEntry{
+		if !modelCatalogCacheKeyIsPersistent(cacheKey) {
+			continue
+		}
+		persisted.Entries[cacheKey] = persistedAgentModelCatalogEntry{
 			Provider:        entry.result.Provider,
 			Source:          entry.result.Source,
 			FetchedAt:       entry.result.FetchedAt,

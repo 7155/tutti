@@ -1853,17 +1853,21 @@ invalid_grant`. Search `tuttid.log` for
   identity remained the provider-qualified `provider/model` id.
 - Fix:
   Pass the composer workspace cwd through the daemon model-catalog request and
-  set it as the `opencode models --verbose` process directory. Do not cache
-  OpenCode model-list successes or failures. Keep one request-scoped catalog
-  projection so a composer-options request starts the CLI only once. Preserve
-  the auth/config invalidation event so an already-open composer refreshes when
-  global OpenCode credentials or config files change. Append a non-built-in
+  set it as the `opencode models --verbose` process directory. Cache a
+  successful catalog for five minutes and a failed fetch for 30 seconds, with
+  the cwd included in the in-memory key; never reuse one workspace's project
+  catalog in another workspace or persist these cwd-scoped entries. Keep one
+  request-scoped catalog projection so a composer-options request starts the
+  CLI only once. Preserve the auth/config invalidation event so an already-open
+  composer refreshes when global OpenCode credentials or config files change.
+  Append a non-built-in
   provider id to verbose model labels while preserving the exact
   provider-qualified id as the selection value. Keep the built-in `opencode`
   provider suffix hidden so ordinary catalog entries stay concise, and avoid
   renderer-side provider branches.
 - Validation:
-  Cover cwd propagation, repeated uncached OpenCode lookups, all provider/model
+  Cover cwd propagation, repeated same-cwd cached OpenCode lookups, separate
+  fetches for different cwds, failed-fetch throttling, all provider/model
   prefixes from verbose output, one catalog lookup per composer-options request,
   duplicate model names under different provider ids, and unchanged cache
   policies for Codex and Tutti Agent. Run

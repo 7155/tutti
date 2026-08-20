@@ -638,8 +638,15 @@ func TestStandardACPAdapterRetainsStartAndResumeFailuresWhenTransportCloseFails(
 		}
 		adapter := newKimiCodeExtensionTestAdapter(t, transport)
 		session := standardTestSession("acp:kimi-code")
-		if _, err := adapter.Start(context.Background(), session); err == nil {
+		_, err := adapter.Start(context.Background(), session)
+		if err == nil {
 			t.Fatal("Start error = nil, want session/new failure")
+		}
+		if got := AppErrorCode(err); got != AppErrorProviderSessionCreateFailed {
+			t.Fatalf("AppErrorCode = %q, want %q", got, AppErrorProviderSessionCreateFailed)
+		}
+		if debug := AppErrorDebugMessage(err); !strings.Contains(debug, "session/new") {
+			t.Fatalf("AppErrorDebugMessage = %q, want session/new phase", debug)
 		}
 		if !adapter.hasTrackedLiveSession(session) {
 			t.Fatal("session/new failed client was not retained")

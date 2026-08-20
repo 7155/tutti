@@ -7516,16 +7516,10 @@ button.agent-gui-node__conversation-section-toggle:hover
   min-height: 0;
   overflow: hidden;
   border-left: 1px solid var(--line-1, var(--tutti-line-1));
+  background: var(--agent-gui-session-sidepanel-background);
 }
 
 .agent-gui-node__side-surface {
-  /* A dock Composer normally sits on the main conversation-flow surface.
-     Side is hosted by the tool sidebar, so its dock/footer must remain on the
-     sidebar surface while the input itself keeps the raised-surface token. */
-  --agent-gui-session-flow-background: var(
-    --agent-gui-session-sidepanel-background
-  );
-
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -7665,6 +7659,16 @@ button.agent-gui-node__conversation-section-toggle:hover
 .agent-gui-node__side-composer > .agent-gui-node__composer {
   padding-right: 10px;
   padding-left: 10px;
+}
+
+/* Dock Composer defaults to the main conversation-flow surface. Side is an
+   adapter host for the shared Composer, so keep the dock padding and footer on
+   the tool-sidebar surface without changing the shared input-card surface. */
+.agent-gui-node__side-composer > .agent-gui-node__composer[data-layout="dock"],
+.agent-gui-node__side-composer
+  > .agent-gui-node__composer[data-layout="dock"]
+  .agent-gui-node__composer-footer {
+  background: var(--agent-gui-session-sidepanel-background);
 }
 
 @media (max-width: 860px) {

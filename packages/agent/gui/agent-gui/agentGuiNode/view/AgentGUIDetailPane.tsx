@@ -39,6 +39,7 @@ import { useAgentGUIDetailSideConversation } from "./useAgentGUIDetailSideConver
 import { useAgentGUIDetailSideChrome as useSideChrome } from "./useAgentGUIDetailSideChrome";
 import type { TimelineScrollAnchor } from "./agentGUIScrollMemory";
 import { useBottomDockInteractionSubmission } from "./useBottomDockInteractionSubmission";
+import type { AgentGUIPendingPrependScrollAnchor } from "./agentGUIDetailScrollTypes";
 export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
   shell,
   rail,
@@ -51,6 +52,7 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
   referenceProvenanceFilters = null,
   sessionInputHistoryEnabled = false,
   sideConversationEnabled = false,
+  sideConversationPresentation = null,
   sessionWorktreeEnabled = false,
   sessionLaunchModesByProjectSectionKey,
   onSessionLaunchModePreferenceChange,
@@ -99,13 +101,9 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
     readiness,
     operations
   };
-  // Keep refs here: React Compiler may cache a custom Hook's returned object.
   const bottomDockRef = useRef<HTMLDivElement | null>(null);
-  const pendingPrependScrollAnchorRef = useRef<{
-    conversationId: string;
-    scrollHeight: number;
-    scrollTop: number;
-  } | null>(null);
+  const pendingPrependScrollAnchorRef =
+    useRef<AgentGUIPendingPrependScrollAnchor | null>(null);
   const submittedPromptScrollConversationRef = useRef<string | null>(null);
   const timelineContentRef = useRef<HTMLDivElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
@@ -629,6 +627,7 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
     controller: sideConversation,
     conversationFlowLabels,
     isVisible,
+    presentation: sideConversationPresentation,
     textSelectionActionsEnabled: sideConversationEnabled,
     onRequestComposerFocus,
     renderComposerFooterAccessory

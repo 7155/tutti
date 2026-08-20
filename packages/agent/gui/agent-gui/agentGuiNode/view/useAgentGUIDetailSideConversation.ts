@@ -361,14 +361,12 @@ export function useAgentGUIDetailSideConversation({
       .catch(() => {});
   }, [active, runtime, workspaceId]);
 
-  const close = useCallback(() => {
+  const close = useCallback(async () => {
     if (!runtime || !active) return;
-    void runtime
-      .close({
-        workspaceId,
-        sideAgentSessionId: active.sideAgentSessionId
-      })
-      .catch(() => {});
+    await runtime.close({
+      workspaceId,
+      sideAgentSessionId: active.sideAgentSessionId
+    });
   }, [active, runtime, workspaceId]);
 
   const [interactionSubmitting, setInteractionSubmitting] = useState(false);

@@ -385,25 +385,32 @@ shared conversation projection. This reuse is projection-only: it does not
 load, retain, reconcile, or persist a workspace Session.
 
 The controller retains only the selected surface's active Side identity,
-ephemeral projection, pending Interaction, sequence, and error. Changing the
-selected source does not close the Side: the Side remains attached to its
-source identity and becomes visible again when that source is selected. The
-owning AgentGUI surface closes it only through the explicit Side close action
-or when the surface-owned runtime is destroyed. Its external-store subscription
-owns the transient event and connection subscriptions. Once the last surface
-subscriber is gone, those subscriptions are released. Disconnect,
+ephemeral projection, pending Interaction, sequence, and error. Embedded
+AgentGUI keeps Side attached to its source identity when the selected source
+changes and shows it again when that source is reselected. A host that injects
+the optional external Side presentation bridge opts into fail-closed source
+switching: changing the selected canonical Session closes the old Side. The
+owning AgentGUI surface otherwise closes it only through the explicit Side
+close action or when the surface-owned runtime is destroyed. Its external-store
+subscription owns the transient event and connection subscriptions. Once the
+last surface subscriber is gone, those subscriptions are released. Disconnect,
 source-identity mismatch, or a sequence gap expires local state and prevents
 further rendering; no canonical reconciliation fallback exists for this
 ephemeral lane.
 
-The Side UI is a docked sibling of the main detail surface, not an overlay and
-not a nested durable Session route. It creates a second instance of the shared
-conversation timeline and a second instance of the shared composer. Each
-instance owns its own draft, scroll-follow state, focus/shortcut scope, Turn
-gate, and interrupt action. The Side composer inherits the provider/model/cwd
-boundary captured at open time and presents those settings read-only. A normal
-main-composer submission always stays on the main Session; only the explicit
-`/side` command opens or targets the Side lane.
+The shared Side surface creates a second instance of the conversation timeline
+and composer. Embedded AgentGUI wraps it as a docked sibling of the main detail
+surface, not an overlay or nested durable Session route. Standalone AgentGUI
+publishes the exact surface projection through an optional presentation-only
+external store; Desktop maps that projection to a contextual `side` tab in the
+shared right tool sidebar and suppresses the inline wrapper. The bridge carries
+only exact source/Side identity, surface props, and the close intent. It owns no
+Side lifecycle or durable state. Each surface instance owns its own draft,
+scroll-follow state, focus/shortcut scope, Turn gate, and interrupt action. The
+Side composer inherits the provider/model/cwd boundary captured at open time
+and presents those settings read-only. A normal main-composer submission always
+stays on the main Session; only the explicit `/side` command opens or targets
+the Side lane.
 
 The transcript selection toolbar stages selected text as a removable quote in
 the target composer. **Add to conversation** updates only the main draft.
@@ -2907,6 +2914,14 @@ The reusable tool-sidebar contract lives in
 `packages/agent/gui/workbench/tool-sidebar`. Hosts provide the supported panel
 catalog and render adapters; the shared component owns tab selection, picker,
 sizing, toolbar mechanics, and a structured `AgentToolSidebarHeaderLayout`.
+Standalone Desktop registers Side only while the exact external projection
+exists, opens the matching source-Session tab, and uses the existing Side width
+bounds (`440px` default, `360px` minimum, `600px` maximum). Collapsing the
+sidebar retains the Side tab/runtime and releases Side focus; closing the exact
+tab invokes the projected close intent. Stream updates notify only the mounted
+Side panel, while the sidebar subscribes to a stable identity projection so it
+does not rerender for each delta. Other hosts keep explicit panel catalogs and
+do not receive Side implicitly.
 Hosts may hide the shared toolbar toggle through the explicit
 `showToggleButton` presentation input; omission preserves the standard visible
 entry. Hiding the entry does not duplicate or override sidebar behavior in the

@@ -281,13 +281,15 @@ function StandaloneAgentSideToolPanel({
     return null;
   }
   return (
-    <AgentGUISideConversationSurface
-      key={JSON.stringify([
-        projection.sourceAgentSessionId,
-        projection.sideAgentSessionId
-      ])}
-      {...projection.surfaceProps}
-      isVisible={active && projection.surfaceProps.isVisible}
-    />
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <AgentGUISideConversationSurface
+        key={JSON.stringify([
+          projection.sourceAgentSessionId,
+          projection.sideAgentSessionId
+        ])}
+        {...projection.surfaceProps}
+        isVisible={active && projection.surfaceProps.isVisible}
+      />
+    </div>
   );
 }

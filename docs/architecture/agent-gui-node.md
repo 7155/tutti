@@ -405,6 +405,16 @@ boundary captured at open time and presents those settings read-only. A normal
 main-composer submission always stays on the main Session; only the explicit
 `/side` command opens or targets the Side lane.
 
+The transcript selection toolbar stages selected text as a removable quote in
+the target composer. **Add to conversation** updates only the main draft.
+**Ask in Side** opens an empty Side when needed and updates only its draft; it
+never creates a Turn until the user explicitly submits that composer. Quote
+blocks are UI-local draft state and materialize as Markdown blockquote text at
+the existing submit boundary, so the Side transport remains text-only. Focus
+ownership follows the currently visible Side pane: an unmounted or
+source-mismatched Side cannot keep the main composer inactive, and pane cleanup
+must release its focus scope.
+
 Side capability is enabled only when the exact selected source runtime, after
 any required canonical-session resume, reports all mandatory facts: native
 support, active-source-Turn snapshot support, ephemeral lifetime, hidden

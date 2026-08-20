@@ -7,7 +7,10 @@ import {
 import type { AgentConversationPromptVM } from "../../../shared/agentConversation/contracts/agentConversationVM";
 import type { AgentComposerProps } from "../AgentComposer";
 import type { AgentComposerDraft } from "../model/agentGuiNodeTypes";
-import { emptyAgentComposerDraft } from "../model/agentComposerDraft";
+import {
+  appendAgentComposerDraftQuote,
+  emptyAgentComposerDraft
+} from "../model/agentComposerDraft";
 import { useTranslation } from "../../../i18n/index";
 import { projectAgentSideConversationViewState } from "../../../agentSideConversationViewProjection";
 import type { AgentPromptContentBlock } from "../../../shared/contracts/dto/agentSession";
@@ -52,6 +55,7 @@ interface UseAgentGUIDetailSideConversationInput {
   sourceAgentSessionId: string | null;
   provider: string;
   cwd: string | null;
+  capabilityRevision?: string;
   availableCommands: AgentComposerProps["availableCommands"];
   clearMainDraft: () => void;
   submitPrompt: NonNullable<AgentComposerProps["onSubmit"]>;
@@ -63,6 +67,7 @@ export function useAgentGUIDetailSideConversation({
   sourceAgentSessionId,
   provider,
   cwd,
+  capabilityRevision = "",
   availableCommands,
   clearMainDraft,
   submitPrompt
@@ -80,24 +85,41 @@ export function useAgentGUIDetailSideConversation({
     entryErrorState.runtime === runtime
       ? entryErrorState.code
       : null;
-  const sideSupported = useAgentSideConversationSupport({
-    workspaceId,
-    sourceAgentSessionId: enabled ? (sourceAgentSessionId ?? "") : "",
-    provider,
-    cwd
-  });
+  const sideSupported = useAgentSideConversationSupport(
+    {
+      workspaceId,
+      sourceAgentSessionId: enabled ? (sourceAgentSessionId ?? "") : "",
+      provider,
+      cwd
+    },
+    capabilityRevision
+  );
   const runtimeActive = useAgentSideConversationSnapshot(workspaceId).active;
   const active = useMemo(
     () => projectAgentSideConversationViewState(runtimeActive),
     [runtimeActive]
   );
   const activeSideAgentSessionId = active?.sideAgentSessionId ?? null;
+  const hasCurrentSourceSide =
+    active?.sourceAgentSessionId === sourceAgentSessionId &&
+    (active.status === "opening" ||
+      active.status === "idle" ||
+      active.status === "running");
+  const currentSourceSideUnavailable =
+    active?.sourceAgentSessionId === sourceAgentSessionId &&
+    !hasCurrentSourceSide;
+  const sideAvailable =
+    !currentSourceSideUnavailable && (sideSupported || hasCurrentSourceSide);
   const [focusedSideAgentSessionId, setFocusedSideAgentSessionId] = useState<
     string | null
   >(null);
   const focused =
     activeSideAgentSessionId !== null &&
+    active?.sourceAgentSessionId === sourceAgentSessionId &&
     activeSideAgentSessionId === focusedSideAgentSessionId;
+  const [focusRequestSequence, setFocusRequestSequence] = useState<
+    number | null
+  >(null);
   const emptyDraft = useMemo(emptyAgentComposerDraft, [
     activeSideAgentSessionId
   ]);
@@ -217,7 +239,7 @@ export function useAgentGUIDetailSideConversation({
         submitPrompt(content, displayPrompt, options);
         return;
       }
-      if (!sideSupported) {
+      if (!sideAvailable) {
         // /side is an isolation boundary, not an ordinary provider command.
         // Match Codex App's fail-closed behavior: if the exact live source
         // cannot open Side, never leak the intended Side prompt into main.
@@ -246,7 +268,7 @@ export function useAgentGUIDetailSideConversation({
       enabled,
       open,
       runtime,
-      sideSupported,
+      sideAvailable,
       submitPrompt
     ]
   );
@@ -267,6 +289,37 @@ export function useAgentGUIDetailSideConversation({
     [active, runtime, workspaceId]
   );
 
+  const stageSelection = useCallback(
+    async (text: string) => {
+      const normalizedText = text.trim();
+      if (!normalizedText || !enabled || !runtime || !sourceAgentSessionId) {
+        return;
+      }
+      const existing = runtime.getSnapshot(workspaceId).active;
+      if (existing && existing.sourceAgentSessionId !== sourceAgentSessionId) {
+        return;
+      }
+      const target = existing ?? (await open());
+      if (!target) return;
+      setDraftState((current) => ({
+        sideAgentSessionId: target.sideAgentSessionId,
+        content: appendAgentComposerDraftQuote(
+          current.sideAgentSessionId === target.sideAgentSessionId
+            ? current.content
+            : emptyAgentComposerDraft(),
+          {
+            type: "quote",
+            id: crypto.randomUUID(),
+            text: normalizedText
+          }
+        )
+      }));
+      setFocusedSideAgentSessionId(target.sideAgentSessionId);
+      setFocusRequestSequence((current) => (current ?? 0) + 1);
+    },
+    [enabled, open, runtime, sourceAgentSessionId, workspaceId]
+  );
+
   const commands = useMemo(() => {
     const commandsWithoutSide = availableCommands.filter(
       (command) => command.name.trim().toLowerCase() !== "side"
@@ -275,7 +328,7 @@ export function useAgentGUIDetailSideConversation({
       !runtime ||
       !enabled ||
       !sourceAgentSessionId ||
-      !sideSupported ||
+      !sideAvailable ||
       (active && active.sourceAgentSessionId !== sourceAgentSessionId)
     ) {
       return commandsWithoutSide;
@@ -292,7 +345,7 @@ export function useAgentGUIDetailSideConversation({
     availableCommands,
     enabled,
     runtime,
-    sideSupported,
+    sideAvailable,
     sourceAgentSessionId,
     t
   ]);
@@ -422,18 +475,25 @@ export function useAgentGUIDetailSideConversation({
 
   return {
     active,
-    canOpen: Boolean(runtime && sourceAgentSessionId && sideSupported),
+    canOpen: Boolean(
+      runtime &&
+      sourceAgentSessionId &&
+      sideAvailable &&
+      (!active || active.sourceAgentSessionId === sourceAgentSessionId)
+    ),
     close,
     commands,
     draftContent,
     entryError,
     focused,
+    focusRequestSequence,
     interactionSubmitting,
     interactivePrompt,
     interrupt,
     open,
     setFocused,
     setDraftContent,
+    stageSelection,
     sourceAgentSessionId,
     submitMain,
     submitSide,

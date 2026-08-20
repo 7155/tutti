@@ -39,13 +39,14 @@ import { useScopedProjectMissingState } from "./composer/useScopedProjectMissing
 import type { AgentComposerProps } from "./composer/AgentComposer.types";
 import { withAgentComposerTuttiModeSnapshot } from "./composer/agentComposerSubmitOptions";
 import {
-  agentComposerDraftAttachmentProjection,
   agentComposerDraftFiles,
   agentComposerDraftImages,
   agentComposerDraftLargeTexts,
+  agentComposerDraftQuotes,
   agentComposerDraftHasContent,
   agentComposerDraftPrompt
 } from "./model/agentComposerDraft";
+import { agentComposerDraftAttachmentProjection } from "./model/agentComposerDraftAttachmentProjection";
 import type { AgentGUIComposerContentType } from "./engagement/agentGUIEngagement.types";
 import { projectAgentGUIComposerGateControls } from "./model/agentGuiComposerGate";
 import {
@@ -198,6 +199,7 @@ export function AgentComposer(props: AgentComposerProps): React.JSX.Element {
     presentationSubmitDisabled
   });
   const draftPrompt = agentComposerDraftPrompt(draftContent);
+  const draftQuoteCount = agentComposerDraftQuotes(draftContent).length;
   const goalDraftObjective = canGoalControl
     ? goalDraftObjectiveFromPrompt(draftPrompt)
     : null;
@@ -689,7 +691,8 @@ export function AgentComposer(props: AgentComposerProps): React.JSX.Element {
     dockComposerMetrics,
     setDockComposerMetrics,
     draftImages,
-    draftLargeTexts
+    draftLargeTexts,
+    draftQuoteCount
   });
   const { activePromptTip, promptTipStyle, rotatingPromptTips } = layout;
   const presentation = useComposerPresentation({

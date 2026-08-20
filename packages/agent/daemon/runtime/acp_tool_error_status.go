@@ -1,4 +1,4 @@
-package runtime
+package agentruntime
 
 func acpResolvedToolCallStatus(update map[string]any, fallback string) string {
 	if acpToolCallReportsError(update, acpToolCallRawOutput(update)) {

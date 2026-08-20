@@ -182,7 +182,10 @@ export function useAgentGUIDetailSideChrome({
       isSubmittingPrompt: interactionSubmitting,
       projectMissingProbeEnabled: false,
       uiLanguage: baseComposerProps.uiLanguage,
-      isActive: baseComposerProps.isActive && focused,
+      // isActive controls whether the editor installs its focus and input
+      // behavior. It cannot depend on focus itself or the first click has no
+      // active editor with which to establish that focus.
+      isActive: baseComposerProps.isActive && isVisible,
       workspaceReferencePickerOpen: false,
       promptImagesSupported: false,
       canGoalControl: false,
@@ -218,6 +221,7 @@ export function useAgentGUIDetailSideChrome({
     interactionSubmitting,
     interactivePrompt,
     interrupt,
+    isVisible,
     setDraftContent,
     submitInteraction,
     submitSide,

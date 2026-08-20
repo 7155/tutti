@@ -153,7 +153,14 @@ describe("useAgentGUIDetailSideChrome", () => {
 
     expect(presentation.getSnapshot()).toMatchObject({
       sideAgentSessionId: "side-session",
-      sourceAgentSessionId: "main-session"
+      sourceAgentSessionId: "main-session",
+      surfaceProps: {
+        composerProps: {
+          // The editor must be active before its first focus event; focus is
+          // an outcome of clicking the editor, not a prerequisite for it.
+          isActive: true
+        }
+      }
     });
 
     rendered.rerender(

@@ -8,6 +8,7 @@ import type { AgentConversationPromptVM } from "../../../shared/agentConversatio
 import type { AgentComposerProps } from "../AgentComposer";
 import type { AgentComposerDraft } from "../model/agentGuiNodeTypes";
 import {
+  agentComposerDraftPrompt,
   appendAgentComposerDraftQuote,
   emptyAgentComposerDraft
 } from "../model/agentComposerDraft";
@@ -276,17 +277,23 @@ export function useAgentGUIDetailSideConversation({
   const submitSide = useCallback<NonNullable<AgentComposerProps["onSubmit"]>>(
     (content, displayPrompt) => {
       if (!runtime || !active || active.status !== "idle") return;
+      const draftPrompt = agentComposerDraftPrompt(draftContent);
       void runtime
         .send({
           workspaceId,
           sideAgentSessionId: active.sideAgentSessionId,
           content,
-          displayPrompt
+          // Quotes are provider context, not the user's visible message. The
+          // Composer's generic display prompt includes quote Markdown so main
+          // conversations can preserve their historical representation; Side
+          // keeps that full content on the wire while projecting only the
+          // typed question into its transient timeline.
+          displayPrompt: draftPrompt.trim() ? draftPrompt : displayPrompt
         })
         .then(() => setDraftContent(emptyAgentComposerDraft()))
         .catch(() => {});
     },
-    [active, runtime, workspaceId]
+    [active, draftContent, runtime, setDraftContent, workspaceId]
   );
 
   const stageSelection = useCallback(

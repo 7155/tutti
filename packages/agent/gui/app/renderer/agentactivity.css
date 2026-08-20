@@ -4958,7 +4958,8 @@ aside.workspace-agents-status-panel
   vertical-align: middle;
 }
 
-.agent-gui-node__shell {
+.agent-gui-node__shell,
+.agent-gui-node__side-surface {
   --agent-mention-file-icon-size: 16px;
   --agent-gui-text-primary: var(--text-primary);
   --agent-gui-text-secondary: var(--text-secondary);
@@ -5001,14 +5002,18 @@ aside.workspace-agents-status-panel
     rgb(244 245 247)
   );
   --agent-gui-detail-padding-x: 48px;
+  color: var(--agent-gui-text-primary);
+}
+
+.agent-gui-node__shell {
   width: 100%;
   height: 100%;
   container: agent-gui-node / inline-size;
   background: transparent;
-  color: var(--agent-gui-text-primary);
 }
 
-:root[data-theme="dark"] .agent-gui-node__shell {
+:root[data-theme="dark"]
+  :is(.agent-gui-node__shell, .agent-gui-node__side-surface) {
   --agent-gui-session-flow-background: var(
     --background-session-flow,
     rgb(24 24 24)
@@ -5020,7 +5025,8 @@ aside.workspace-agents-status-panel
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .agent-gui-node__shell {
+  :root:not([data-theme="light"])
+    :is(.agent-gui-node__shell, .agent-gui-node__side-surface) {
     --agent-gui-session-flow-background: var(
       --background-session-flow,
       rgb(24 24 24)

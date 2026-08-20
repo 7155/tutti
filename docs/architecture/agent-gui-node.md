@@ -417,7 +417,10 @@ the target composer. **Add to conversation** updates only the main draft.
 **Ask in Side** opens an empty Side when needed and updates only its draft; it
 never creates a Turn until the user explicitly submits that composer. Quote
 blocks are UI-local draft state and materialize as Markdown blockquote text at
-the existing submit boundary, so the Side transport remains text-only. Focus
+the existing submit boundary, so the Side transport remains text-only. When a
+typed question accompanies those quotes, Side keeps the blockquotes in provider
+content but projects only the typed question as the visible user message; a
+quote-only submission keeps the existing blockquote display fallback. Focus
 ownership follows the currently visible Side pane: an unmounted or
 source-mismatched Side cannot keep the main composer inactive, and pane cleanup
 must release its focus scope.

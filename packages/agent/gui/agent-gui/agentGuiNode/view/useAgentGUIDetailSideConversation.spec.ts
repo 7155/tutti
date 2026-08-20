@@ -18,7 +18,8 @@ import {
 } from "./useAgentGUIDetailSideConversation";
 import {
   agentComposerDraftQuotes,
-  projectAgentComposerDraftSubmission
+  projectAgentComposerDraftSubmission,
+  updateAgentComposerDraft
 } from "../model/agentComposerDraft";
 
 describe("parseAgentSideInvocation", () => {
@@ -119,6 +120,14 @@ describe("useAgentGUIDetailSideConversation lifecycle", () => {
     expect(rendered.result.current.focused).toBe(true);
     expect(rendered.result.current.focusRequestSequence).toBe(1);
 
+    act(() => {
+      rendered.result.current.setDraftContent(
+        updateAgentComposerDraft(rendered.result.current.draftContent, {
+          prompt: "What does this selection say?"
+        })
+      );
+    });
+
     const submission = projectAgentComposerDraftSubmission({
       draft: rendered.result.current.draftContent,
       skills: []
@@ -132,8 +141,17 @@ describe("useAgentGUIDetailSideConversation lifecycle", () => {
     await vi.waitFor(() => expect(transport.send).toHaveBeenCalledOnce());
     expect(transport.send).toHaveBeenCalledWith(
       expect.objectContaining({
-        content: [{ type: "text", text: "> Selected answer text" }],
-        displayPrompt: "> Selected answer text"
+        content: [
+          {
+            type: "text",
+            text: "What does this selection say?"
+          },
+          {
+            type: "text",
+            text: "> Selected answer text"
+          }
+        ],
+        displayPrompt: "What does this selection say?"
       })
     );
 

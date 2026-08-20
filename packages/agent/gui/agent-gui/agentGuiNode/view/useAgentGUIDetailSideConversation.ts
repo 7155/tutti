@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import type { AgentActivitySlashCommandPolicy } from "@tutti-os/agent-activity-core";
 import {
   useAgentSideConversationSnapshot,
   useAgentSideConversationSupport,
@@ -50,6 +51,29 @@ export function appendAgentSidePromptToDraft(
   ];
 }
 
+function projectAgentSideSlashCommandPolicy({
+  commands,
+  enabled,
+  policy
+}: {
+  commands: AgentComposerProps["availableCommands"];
+  enabled: boolean;
+  policy: AgentActivitySlashCommandPolicy | null | undefined;
+}): AgentActivitySlashCommandPolicy | null | undefined {
+  if (!enabled) return policy;
+  return {
+    ...(policy ?? {}),
+    fallbackCommands:
+      policy?.fallbackCommands ?? commands.map((command) => command.name),
+    commandEffects: [
+      ...(policy?.commandEffects ?? []).filter(
+        (entry) => entry.command.trim().toLowerCase() !== "side"
+      ),
+      { command: "side", effect: "submitImmediate" }
+    ]
+  };
+}
+
 interface UseAgentGUIDetailSideConversationInput {
   enabled?: boolean;
   workspaceId: string;
@@ -58,6 +82,7 @@ interface UseAgentGUIDetailSideConversationInput {
   cwd: string | null;
   capabilityRevision?: string;
   availableCommands: AgentComposerProps["availableCommands"];
+  slashCommandPolicy?: AgentActivitySlashCommandPolicy | null;
   clearMainDraft: () => void;
   submitPrompt: NonNullable<AgentComposerProps["onSubmit"]>;
 }
@@ -70,6 +95,7 @@ export function useAgentGUIDetailSideConversation({
   cwd,
   capabilityRevision = "",
   availableCommands,
+  slashCommandPolicy = null,
   clearMainDraft,
   submitPrompt
 }: UseAgentGUIDetailSideConversationInput) {
@@ -327,17 +353,18 @@ export function useAgentGUIDetailSideConversation({
     [enabled, open, runtime, sourceAgentSessionId, workspaceId]
   );
 
+  const sideCommandEnabled = Boolean(
+    runtime &&
+    enabled &&
+    sourceAgentSessionId &&
+    sideAvailable &&
+    (!active || active.sourceAgentSessionId === sourceAgentSessionId)
+  );
   const commands = useMemo(() => {
     const commandsWithoutSide = availableCommands.filter(
       (command) => command.name.trim().toLowerCase() !== "side"
     );
-    if (
-      !runtime ||
-      !enabled ||
-      !sourceAgentSessionId ||
-      !sideAvailable ||
-      (active && active.sourceAgentSessionId !== sourceAgentSessionId)
-    ) {
+    if (!sideCommandEnabled) {
       return commandsWithoutSide;
     }
     return [
@@ -347,15 +374,16 @@ export function useAgentGUIDetailSideConversation({
         description: t("agentHost.agentGui.sideCommandDescription")
       }
     ];
-  }, [
-    active,
-    availableCommands,
-    enabled,
-    runtime,
-    sideAvailable,
-    sourceAgentSessionId,
-    t
-  ]);
+  }, [availableCommands, sideCommandEnabled, t]);
+  const projectedSlashCommandPolicy = useMemo(
+    () =>
+      projectAgentSideSlashCommandPolicy({
+        commands,
+        enabled: sideCommandEnabled,
+        policy: slashCommandPolicy
+      }),
+    [commands, sideCommandEnabled, slashCommandPolicy]
+  );
 
   const interrupt = useCallback(() => {
     if (!runtime || !active?.activeTurnId) return;
@@ -498,6 +526,7 @@ export function useAgentGUIDetailSideConversation({
     open,
     setFocused,
     setDraftContent,
+    slashCommandPolicy: projectedSlashCommandPolicy,
     stageSelection,
     sourceAgentSessionId,
     submitMain,

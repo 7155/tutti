@@ -354,10 +354,11 @@ that preference as an explicit AgentGUI capability and omits the Side runtime
 while it is disabled; AgentGUI therefore does not resolve provider support,
 show the toolbar or slash entry, or intercept typed `/side` input. After the
 host opt-in, AgentGUI injects the provider-neutral `/side` entry into the slash
-command palette only when the exact source Session reports every required Side
-capability. Selecting the
-entry inserts `/side`; submitting it ensures the source runtime is available,
-then opens Side; `/side <prompt>` opens it and sends the prompt in one action.
+command palette with a local `submitImmediate` selection effect only when the
+exact source Session reports every required Side capability. Selecting the
+entry immediately submits the local `/side` intent, ensures the source runtime
+is available, and opens Side; typed `/side <prompt>` opens it and sends the
+prompt in one action.
 After capability discovery has enabled `/side`, submission creates the local
 `opening` projection immediately and renders the Side shell plus its empty
 temporary-conversation explanation before the provider fork finishes. It does

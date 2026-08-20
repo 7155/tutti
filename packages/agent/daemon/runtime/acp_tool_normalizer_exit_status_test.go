@@ -21,3 +21,47 @@ func TestACPInferTerminalToolStatusUsesProviderStatusBeforeExitCode(t *testing.T
 		})
 	}
 }
+
+func TestACPResolvedToolCallStatusHonorsStructuredErrorFlags(t *testing.T) {
+	tests := []struct {
+		name   string
+		update map[string]any
+		want   string
+	}{
+		{
+			name: "error flag on completed update",
+			update: map[string]any{
+				"status":  "completed",
+				"isError": true,
+			},
+			want: messageStreamStateFailed,
+		},
+		{
+			name: "snake case error flag in raw output",
+			update: map[string]any{
+				"status": "completed",
+				"output": map[string]any{
+					"is_error": true,
+				},
+			},
+			want: messageStreamStateFailed,
+		},
+		{
+			name: "false error flag preserves completed status",
+			update: map[string]any{
+				"status": "completed",
+				"output": map[string]any{
+					"isError": false,
+				},
+			},
+			want: messageStreamStateCompleted,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := acpResolvedToolCallStatus(test.update, messageStreamStateStreaming); got != test.want {
+				t.Fatalf("status = %q, want %q", got, test.want)
+			}
+		})
+	}
+}

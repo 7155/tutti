@@ -8,6 +8,7 @@ import {
   isPendingActivationViable,
   dispatchSessionForkThroughTurn,
   selectLatestActivationForSession,
+  selectEngineSession,
   type AgentSessionEngine
 } from "@tutti-os/agent-activity-core";
 import { areWorkspaceUserProjectPathsEqual } from "@tutti-os/workspace-user-project/core";
@@ -46,9 +47,7 @@ async function waitForCanonicalSession(
   agentSessionId: string
 ): Promise<boolean> {
   const hasCanonicalSession = (): boolean =>
-    Boolean(
-      sessionEngine.getSnapshot().sessionLifecycle.sessionsById[agentSessionId]
-    );
+    selectEngineSession(sessionEngine.getSnapshot(), agentSessionId) !== null;
   if (hasCanonicalSession()) {
     return true;
   }

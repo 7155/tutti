@@ -95,25 +95,25 @@ function sortTurnSequenceItems(
     sourceIndex,
     position: turnSequencePosition(item)
   }));
-  if (positioned.every((entry) => entry.position.seq > 0)) {
-    return positioned
-      .sort(
-        (left, right) =>
-          left.position.seq - right.position.seq ||
-          left.sourceIndex - right.sourceIndex
-      )
-      .map((entry) => entry.item);
-  }
-  if (positioned.every((entry) => entry.position.occurredAtUnixMs > 0)) {
-    return positioned
-      .sort(
-        (left, right) =>
-          left.position.occurredAtUnixMs - right.position.occurredAtUnixMs ||
-          left.sourceIndex - right.sourceIndex
-      )
-      .map((entry) => entry.item);
-  }
-  return [...sequence];
+  return positioned
+    .sort((left, right) => {
+      if (
+        left.position.seq > 0 &&
+        right.position.seq > 0 &&
+        left.position.seq !== right.position.seq
+      ) {
+        return left.position.seq - right.position.seq;
+      }
+      if (
+        left.position.occurredAtUnixMs > 0 &&
+        right.position.occurredAtUnixMs > 0 &&
+        left.position.occurredAtUnixMs !== right.position.occurredAtUnixMs
+      ) {
+        return left.position.occurredAtUnixMs - right.position.occurredAtUnixMs;
+      }
+      return left.sourceIndex - right.sourceIndex;
+    })
+    .map((entry) => entry.item);
 }
 
 function turnSequencePosition(item: AgentTurnSequenceItemVM): {

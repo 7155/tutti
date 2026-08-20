@@ -5,7 +5,9 @@ import {
   type SetStateAction
 } from "react";
 import {
+  isPendingActivationViable,
   dispatchSessionForkThroughTurn,
+  selectLatestActivationForSession,
   type AgentSessionEngine
 } from "@tutti-os/agent-activity-core";
 import { areWorkspaceUserProjectPathsEqual } from "@tutti-os/workspace-user-project/core";
@@ -37,6 +39,51 @@ export interface UseAgentGUIConversationMetadataActionsInput {
   sessionEngine: AgentSessionEngine;
   currentUserId: string | null | undefined;
   selectConversation?: (agentSessionId: string) => void;
+}
+
+async function waitForCanonicalSession(
+  sessionEngine: AgentSessionEngine,
+  agentSessionId: string
+): Promise<boolean> {
+  const hasCanonicalSession = (): boolean =>
+    Boolean(
+      sessionEngine.getSnapshot().sessionLifecycle.sessionsById[agentSessionId]
+    );
+  if (hasCanonicalSession()) {
+    return true;
+  }
+
+  const pendingActivation = selectLatestActivationForSession(
+    sessionEngine.getSnapshot(),
+    agentSessionId
+  );
+  if (!isPendingActivationViable(pendingActivation)) {
+    return false;
+  }
+
+  return new Promise((resolve) => {
+    let unsubscribe: (() => void) | null = null;
+    const finish = (ready: boolean): void => {
+      unsubscribe?.();
+      unsubscribe = null;
+      resolve(ready);
+    };
+    const check = (): void => {
+      if (hasCanonicalSession()) {
+        finish(true);
+        return;
+      }
+      const activation = selectLatestActivationForSession(
+        sessionEngine.getSnapshot(),
+        agentSessionId
+      );
+      if (!isPendingActivationViable(activation)) {
+        finish(false);
+      }
+    };
+    unsubscribe = sessionEngine.subscribe(check);
+    check();
+  });
 }
 
 export function useAgentGUIConversationMetadataActions(
@@ -205,8 +252,15 @@ export function useAgentGUIConversationMetadataActions(
       }
       setDetailError(null);
       try {
-        await agentActivityRuntime.renameSession({
-          workspaceId,
+        if (
+          !(await waitForCanonicalSession(
+            sessionEngine,
+            normalizedAgentSessionId
+          ))
+        ) {
+          return;
+        }
+        await sessionEngine.renameSession({
           agentSessionId: normalizedAgentSessionId,
           title: normalizedTitle
         });
@@ -225,7 +279,14 @@ export function useAgentGUIConversationMetadataActions(
         throw error;
       }
     },
-    [agentActivityRuntime, agentHostApi.toast, workspaceId]
+    [
+      agentActivityRuntime,
+      agentHostApi.toast,
+      dataRef,
+      sessionEngine,
+      setDetailError,
+      workspaceId
+    ]
   );
 
   const forkConversationThroughTurn = useCallback(

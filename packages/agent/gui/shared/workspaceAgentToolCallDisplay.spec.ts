@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { WorkspaceAgentActivityTimelineItem } from "./workspaceAgentTimelineTypes";
-import { resolveWorkspaceAgentToolName } from "./workspaceAgentToolCallDisplay";
+import {
+  buildWorkspaceAgentToolCallDisplay,
+  resolveWorkspaceAgentToolName
+} from "./workspaceAgentToolCallDisplay";
 
 describe("resolveWorkspaceAgentToolName", () => {
   it.each([
@@ -20,6 +23,30 @@ describe("resolveWorkspaceAgentToolName", () => {
       ).toBe(expected);
     }
   );
+});
+
+describe("buildWorkspaceAgentToolCallDisplay", () => {
+  it("marks nested provider errors as failed and keeps their detail", () => {
+    const display = buildWorkspaceAgentToolCallDisplay({
+      id: 2,
+      agentSessionId: "session-1",
+      eventId: "event-2",
+      actorType: "agent",
+      actorId: "cursor",
+      itemType: "call.completed",
+      callType: "tool",
+      name: "MCP request",
+      payload: {
+        toolName: "McpTool",
+        error: {
+          response: { detail: { message: "MCP request failed" } }
+        }
+      }
+    });
+
+    expect(display.statusKind).toBe("failed");
+    expect(display.detail).toBe("MCP request failed");
+  });
 });
 
 function legacyStandardACPCall(input: {

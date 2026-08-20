@@ -7519,6 +7519,13 @@ button.agent-gui-node__conversation-section-toggle:hover
 }
 
 .agent-gui-node__side-surface {
+  /* A dock Composer normally sits on the main conversation-flow surface.
+     Side is hosted by the tool sidebar, so its dock/footer must remain on the
+     sidebar surface while the input itself keeps the raised-surface token. */
+  --agent-gui-session-flow-background: var(
+    --agent-gui-session-sidepanel-background
+  );
+
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -7526,7 +7533,7 @@ button.agent-gui-node__conversation-section-toggle:hover
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: inherit;
+  background: var(--agent-gui-session-sidepanel-background);
 }
 
 .agent-gui-node__side-resize-handle {
@@ -7651,7 +7658,7 @@ button.agent-gui-node__conversation-section-toggle:hover
   background: linear-gradient(
     to bottom,
     transparent,
-    var(--background-fronted, var(--tutti-surface-1)) 18px
+    var(--agent-gui-session-sidepanel-background) 18px
   );
 }
 

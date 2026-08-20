@@ -303,7 +303,6 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
     submitInteractivePrompt,
     dismissBottomDockPrompt
   );
-  const isInteractionPending = activePromptResponsePending;
   const composerActivePromptDisabledReason =
     resolveAgentGUIComposerInteractionDisabledReason(
       composerActivePrompt?.kind,
@@ -475,7 +474,7 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
             }
           : null,
       isSendingTurn: isComposerSending,
-      isSubmittingPrompt: isInteractionPending,
+      isSubmittingPrompt: activePromptResponsePending,
       uiLanguage,
       labels: composerLabels,
       workspaceUserProjectI18n,
@@ -611,7 +610,7 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
       viewModel.composer.isTuttiModeUpdating,
       viewModel.composer.tuttiModeEffect,
       viewModel.composer.tuttiModeSpeed,
-      isInteractionPending,
+      activePromptResponsePending,
       viewModel.composer.promptImagesSupported,
       viewModel.composer.queueStatus,
       viewModel.composer.queuedPrompts,
@@ -653,7 +652,7 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
     viewModel.composer.queuedPrompts.map((prompt) => prompt.id).join(","),
     viewModel.composer.queueStatus,
     viewModel.composer.drainingQueuedPromptId ?? "",
-    isInteractionPending ? "1" : "0"
+    activePromptResponsePending ? "1" : "0"
   ].join("|");
   const {
     followEndMode,
@@ -692,7 +691,7 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
           : undefined
       }
       noticeChrome={homeNoticeChrome}
-      isRespondingApproval={isInteractionPending}
+      isRespondingApproval={activePromptResponsePending}
       onSubmitApprovalOption={submitApproval}
       onRetryActivation={retryActivation}
       onAuthLogin={authLogin}
@@ -771,7 +770,7 @@ export const AgentGUIDetailPane = memo(function AgentGUIDetailPane({
                 viewModel.interaction.interactivePromptDisabledReason
               }
               inlineNoticeChrome={inlineNoticeChrome}
-              isRespondingApproval={isInteractionPending}
+              isRespondingApproval={activePromptResponsePending}
               sessionChrome={sessionChrome}
               keyboardShortcutsEnabled={isActive && !sideComposerFocused}
               chromeLabels={chromeLabels}

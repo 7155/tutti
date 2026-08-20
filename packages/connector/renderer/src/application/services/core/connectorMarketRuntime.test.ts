@@ -202,8 +202,6 @@ test("a failed first install remains available for retry", async () => {
   });
 
   await module.activate(new InstantiationService());
-  assert.equal(module.root.view.dataStore.availableCount, 1);
-  assert.equal(module.root.view.dataStore.installedCount, 0);
   assert.equal(module.root.view.dataStore.cardsByKey.github?.action, "install");
   module.root.uiState.openConnector("github");
   assert.equal(module.root.view.dataStore.dialog?.kind, "installation");
@@ -228,7 +226,7 @@ function connector(key: string, overrides: Partial<Connector> = {}): Connector {
       manifest: {
         authorizationKind: "none",
         displayName: "GitHub",
-        iconUrl: "data:image/png;base64,iVBORw0KGgo=",
+        iconUrl: `https://cdn.example.test/tutti/connector-market/${key}/1.0.0/${key}-1.0.0-icon.svg`,
         implementation: {
           builtin: { cli: true, mcp: true, providerId: key },
           kind: "builtin"
@@ -276,6 +274,7 @@ function backendWith(
     installConnector: unsupported,
     refreshCatalog: unsupported,
     uninstallConnector: unsupported,
+    updateConnectorRuntime: unsupported,
     ...overrides
   };
 }

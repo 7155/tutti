@@ -119,44 +119,89 @@ func NewApplication(config ApplicationConfig) (*Application, error) {
 
 func (application *Application) Snapshot(ctx context.Context) (Snapshot, error) {
 	snapshot, err := application.config.Repository.Snapshot(ctx)
-	return publicSnapshot(snapshot, OperationScope{}), err
+	if err != nil {
+		return Snapshot{}, err
+	}
+	snapshot, err = application.projectConnectorRuntimes(ctx, snapshot, OperationScope{})
+	if err != nil {
+		return Snapshot{}, err
+	}
+	return publicSnapshot(snapshot, OperationScope{})
 }
 
 func (application *Application) SnapshotForScope(ctx context.Context, scope OperationScope) (Snapshot, error) {
 	if repository, ok := application.config.Repository.(ScopedSnapshotReader); ok {
 		snapshot, err := repository.SnapshotForScope(ctx, scope)
-		return publicSnapshot(snapshot, scope), err
+		if err != nil {
+			return Snapshot{}, err
+		}
+		snapshot, err = application.projectConnectorRuntimes(ctx, snapshot, scope)
+		if err != nil {
+			return Snapshot{}, err
+		}
+		return publicSnapshot(snapshot, scope)
 	}
 	snapshot, err := application.config.Repository.Snapshot(ctx)
-	if err != nil || strings.TrimSpace(scope.AccountID) == "" || application.config.AuthorizationProjections == nil {
-		return publicSnapshot(snapshot, scope), err
+	if err != nil {
+		return Snapshot{}, err
 	}
-	for index := range snapshot.Connectors {
-		projection, projectionErr := application.config.AuthorizationProjections.AuthorizationProjection(
-			ctx, scope.AccountID, snapshot.Connectors[index].Key,
-		)
-		if errors.Is(projectionErr, ErrNotFound) {
-			continue
-		}
-		if projectionErr != nil {
-			return Snapshot{}, projectionErr
-		}
-		snapshot.Connectors[index].Authorization = Authorization{
-			State: projection.State, FailureCode: projection.FailureCode,
+	if strings.TrimSpace(scope.AccountID) != "" && application.config.AuthorizationProjections != nil {
+		for index := range snapshot.Connectors {
+			projection, projectionErr := application.config.AuthorizationProjections.AuthorizationProjection(
+				ctx, scope.AccountID, snapshot.Connectors[index].Key,
+			)
+			if errors.Is(projectionErr, ErrNotFound) {
+				continue
+			}
+			if projectionErr != nil {
+				return Snapshot{}, projectionErr
+			}
+			snapshot.Connectors[index].Authorization = Authorization{
+				State: projection.State, FailureCode: projection.FailureCode,
+			}
 		}
 	}
-	return publicSnapshot(snapshot, scope), nil
+	snapshot, err = application.projectConnectorRuntimes(ctx, snapshot, scope)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	return publicSnapshot(snapshot, scope)
 }
 
-func publicSnapshot(snapshot Snapshot, scope OperationScope) Snapshot {
+func publicSnapshot(snapshot Snapshot, scope OperationScope) (Snapshot, error) {
+	visibleConnectorKeys := make(map[string]struct{}, len(snapshot.Connectors))
+	connectors := snapshot.Connectors[:0]
+	for _, connector := range snapshot.Connectors {
+		if connectorRemovedFromCatalog(connector) {
+			continue
+		}
+		// A single historical or malformed release must not remove the whole
+		// catalog from every reader. Hidden connectors also hide their
+		// operations below, exactly like delisted ones.
+		if err := ValidateReleaseShape(connector.Release); err != nil {
+			continue
+		}
+		visibleConnectorKeys[connector.Key] = struct{}{}
+		connectors = append(connectors, connector)
+	}
+	snapshot.Connectors = connectors
 	operations := snapshot.Operations[:0]
 	for _, operation := range snapshot.Operations {
+		if operation.ConnectorKey != "" {
+			if _, visible := visibleConnectorKeys[operation.ConnectorKey]; !visible {
+				continue
+			}
+		}
 		if OperationVisibleToScope(operation, scope) {
 			operations = append(operations, operation)
 		}
 	}
 	snapshot.Operations = operations
-	return snapshot
+	return snapshot, nil
+}
+
+func connectorRemovedFromCatalog(connector Connector) bool {
+	return connector.Compatibility.Reason == compatibilityReasonRemovedFromCatalog
 }
 
 func (application *Application) ListCatalogCategories(ctx context.Context) ([]CatalogCategory, error) {
@@ -323,6 +368,9 @@ func (application *Application) projectCatalogSourcePage(
 		if err != nil {
 			return CatalogPage{}, err
 		}
+		if connectorRemovedFromCatalog(connector) {
+			continue
+		}
 		result.Items = append(result.Items, CatalogListing{CategoryID: entry.CategoryID, Featured: entry.Featured, Connector: connector})
 	}
 	return result, nil
@@ -371,7 +419,17 @@ func (application *Application) GetConnector(
 	if strings.TrimSpace(connectorKey) == "" {
 		return Connector{}, invalidRequest("connectorKey is required")
 	}
-	return application.config.Repository.Connector(ctx, connectorKey)
+	connector, err := application.config.Repository.Connector(ctx, connectorKey)
+	if err != nil {
+		return Connector{}, err
+	}
+	if connectorRemovedFromCatalog(connector) {
+		return Connector{}, ErrNotFound
+	}
+	if err := ValidateReleaseShape(connector.Release); err != nil {
+		return Connector{}, fmt.Errorf("validate connector %q release: %w", connector.Key, err)
+	}
+	return connector, nil
 }
 
 func (application *Application) GetOperation(ctx context.Context, operationID string) (Operation, error) {
@@ -1540,7 +1598,7 @@ func verifyIdempotentOperation(operation Operation, kind OperationKind, connecto
 }
 
 func rejectActiveOperation(tx Transaction, connectorKey string) error {
-	active, err := tx.ActiveOperation(connectorKey)
+	active, err := tx.ActiveOperationInLane(connectorKey)
 	if err != nil {
 		return err
 	}

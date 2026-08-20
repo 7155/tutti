@@ -436,7 +436,7 @@ export interface AgentComposerProps {
   capabilityControlsReadOnly?: boolean;
   onCapabilitySettingsRequest?: (
     capability: AgentComposerCapabilitySettingsTarget
-  ) => void;
+  ) => void | Promise<void>;
   onSlashStatusOpen?: () => void;
   onSlashStatusClose?: () => void;
   onSlashStatusRefresh?: () => void;
@@ -453,8 +453,7 @@ export interface AgentComposerProps {
   onSubmitEmpty?: () => void;
   /**
    * Overrides the empty-draft send button copy while the empty-send override
-   * is active (e.g. plan review with a diverged intensity reads "Request
-   * changes" instead of "Accept plan"). Falls back to labels.sendAccept.
+   * is active. Falls back to labels.sendAccept.
    */
   emptySubmitLabel?: string;
   onSubmitGuidance?: (
@@ -491,7 +490,13 @@ export type AgentComposerCapabilitySettingsTarget =
   | {
       kind: "connector";
       connectorKey: string;
-      action?: "open";
+      action?: "install" | "open";
+    }
+  | {
+      kind: "connector";
+      connectorKey: string;
+      action: "set_runtime_enabled";
+      enabled: boolean;
     };
 
 export interface AgentComposerCapabilityMenuState {

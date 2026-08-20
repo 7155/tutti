@@ -177,6 +177,41 @@ paths:
           $ref: "#/components/responses/ConnectorMarketConflictError"
         "503":
           $ref: "#/components/responses/ConnectorMarketUnavailableError"
+  /v1/connector-market/connectors/{connectorKey}/runtime:
+    parameters:
+      - $ref: "#/components/parameters/ConnectorMarketConnectorKey"
+    put:
+      operationId: updateConnectorMarketConnectorRuntime
+      tags: [connector-market]
+      summary: Enable or disable an installed connector runtime
+      description: >-
+        Persists user activation independently from installation and account
+        authorization. Disabling retires runtime routes without removing local
+        files or authorization; enabling converges the installed release when
+        authorization is ready.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectorMarketRuntimeMutationRequest"
+      responses:
+        "202":
+          description: Runtime activation intent accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorMarketConnector"
+        "400":
+          $ref: "#/components/responses/ConnectorMarketInvalidRequestError"
+        "401":
+          $ref: "#/components/responses/ConnectorMarketUnauthorizedError"
+        "404":
+          $ref: "#/components/responses/ConnectorMarketNotFoundError"
+        "409":
+          $ref: "#/components/responses/ConnectorMarketConflictError"
+        "503":
+          $ref: "#/components/responses/ConnectorMarketUnavailableError"
   /v1/connector-market/connectors/{connectorKey}/authorization:start:
     parameters:
       - $ref: "#/components/parameters/ConnectorMarketConnectorKey"
@@ -466,6 +501,8 @@ components:
           $ref: "#/components/schemas/ConnectorMarketAuthorization"
         compatibility:
           $ref: "#/components/schemas/ConnectorMarketCompatibility"
+        runtime:
+          $ref: "#/components/schemas/ConnectorMarketRuntime"
         revision:
           type: integer
           format: int64
@@ -533,7 +570,9 @@ components:
           type: string
         iconUrl:
           type: string
-          pattern: "^data:image/(?:png|webp|svg\\+xml);base64,"
+          format: uri
+          maxLength: 2048
+          pattern: "^https://"
         description:
           type: string
         agentRouting:
@@ -625,6 +664,10 @@ components:
           $ref: "#/components/schemas/ConnectorMarketInstallationState"
         installedVersion:
           type: string
+        installedAtUnixMs:
+          type: integer
+          format: int64
+          minimum: 1
         installedReleaseId:
           type: string
         installedReleaseDigest:
@@ -649,6 +692,16 @@ components:
         state:
           $ref: "#/components/schemas/ConnectorMarketCompatibilityState"
         reason:
+          type: string
+    ConnectorMarketRuntime:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [started, starting, stopped, failed]
+        failureCode:
           type: string
     ConnectorMarketOperation:
       type: object
@@ -723,6 +776,24 @@ components:
           type: integer
           format: int64
           minimum: 0
+    ConnectorMarketRuntimeMutationRequest:
+      type: object
+      additionalProperties: false
+      required: [clientRequestId, expectedRevision, enabled]
+      properties:
+        clientRequestId:
+          type: string
+          minLength: 1
+        expectedRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        expectedConnectorRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        enabled:
+          type: boolean
     ConnectorMarketAuthorizationRequest:
       type: object
       additionalProperties: false

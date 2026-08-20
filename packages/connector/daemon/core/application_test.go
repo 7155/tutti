@@ -12,6 +12,133 @@ import (
 	"time"
 )
 
+func TestApplicationPublicReadsRejectObsoleteConnectorIcon(t *testing.T) {
+	connector := testConnector("github")
+	connector.Release.Manifest.IconURL = "data:image/png;base64,iVBORw0KGgo="
+	application := newTestApplication(
+		t,
+		newMemoryRepository(connector),
+		&memoryScheduler{},
+		&memoryInstallRuntime{},
+		CatalogSnapshot{},
+	)
+
+	snapshot, err := application.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("snapshot failed because of one invalid release: %v", err)
+	}
+	if len(snapshot.Connectors) != 0 {
+		t.Fatalf("snapshot connectors = %#v, want hidden", snapshot.Connectors)
+	}
+	scoped, err := application.SnapshotForScope(context.Background(), OperationScope{AccountID: "account-1"})
+	if err != nil {
+		t.Fatalf("scoped snapshot failed because of one invalid release: %v", err)
+	}
+	if len(scoped.Connectors) != 0 {
+		t.Fatalf("scoped snapshot connectors = %#v, want hidden", scoped.Connectors)
+	}
+	if _, err := application.GetConnector(context.Background(), connector.Key); err == nil || !strings.Contains(err.Error(), "iconUrl") {
+		t.Fatalf("GetConnector() error = %v, want iconUrl rejection", err)
+	}
+}
+
+func TestApplicationPublicReadsHideRemovedCatalogConnectorBeforeValidation(t *testing.T) {
+	removed := testConnector("removed")
+	removed.Installation = Installation{
+		State:                  InstallationStateInstalled,
+		InstalledVersion:       removed.Release.Version,
+		InstalledReleaseID:     removed.Release.ReleaseID,
+		InstalledReleaseDigest: removed.Release.ReleaseDigest,
+	}
+	removed.Compatibility = Compatibility{
+		State:  CompatibilityStateUnsupportedVersion,
+		Reason: compatibilityReasonRemovedFromCatalog,
+	}
+	// Delisted releases may retain an obsolete manifest solely as uninstall
+	// evidence. Public reads must filter them before validating visible data.
+	removed.Release.Manifest.IconURL = "data:image/png;base64,iVBORw0KGgo="
+	visible := testConnector("visible")
+	repository := newMemoryRepository(removed, visible)
+	repository.operations["removed-install"] = Operation{
+		OperationID: "removed-install", ClientRequestID: "removed-install",
+		ConnectorKey: removed.Key, Kind: OperationKindInstall,
+		State: OperationStateCompleted, Stage: OperationStageCompleted,
+		Scope: OperationScope{AccountID: "account-1"}, OwnerAccountID: "account-1",
+		Visibility: OperationVisibilityAccount,
+	}
+	application := newTestApplication(
+		t,
+		repository,
+		&memoryScheduler{},
+		&memoryInstallRuntime{},
+		CatalogSnapshot{},
+	)
+
+	for _, read := range []struct {
+		name string
+		load func() (Snapshot, error)
+	}{
+		{name: "snapshot", load: func() (Snapshot, error) {
+			return application.Snapshot(context.Background())
+		}},
+		{name: "scoped snapshot", load: func() (Snapshot, error) {
+			return application.SnapshotForScope(context.Background(), OperationScope{AccountID: "account-1"})
+		}},
+	} {
+		t.Run(read.name, func(t *testing.T) {
+			snapshot, err := read.load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(snapshot.Connectors) != 1 || snapshot.Connectors[0].Key != visible.Key {
+				t.Fatalf("public connectors = %#v", snapshot.Connectors)
+			}
+			for _, operation := range snapshot.Operations {
+				if operation.ConnectorKey == removed.Key {
+					t.Fatalf("removed connector operation was public: %#v", operation)
+				}
+			}
+		})
+	}
+
+	if _, err := application.GetConnector(context.Background(), removed.Key); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetConnector() error = %v, want not found", err)
+	}
+	if _, err := repository.Connector(context.Background(), removed.Key); err != nil {
+		t.Fatalf("removed connector durable evidence was deleted: %v", err)
+	}
+}
+
+func TestApplicationPublicReadsHideInvalidReleaseWithoutFailingSnapshot(t *testing.T) {
+	invalid := testConnector("invalid-icon")
+	invalid.Release.Manifest.IconURL = "data:image/png;base64,iVBORw0KGgo="
+	visible := testConnector("visible")
+	repository := newMemoryRepository(invalid, visible)
+	application := newTestApplication(t, repository, &memoryScheduler{}, &memoryInstallRuntime{}, CatalogSnapshot{})
+
+	for _, read := range []struct {
+		name string
+		load func() (Snapshot, error)
+	}{
+		{name: "snapshot", load: func() (Snapshot, error) {
+			return application.Snapshot(context.Background())
+		}},
+		{name: "scoped snapshot", load: func() (Snapshot, error) {
+			return application.SnapshotForScope(context.Background(), OperationScope{AccountID: "account-1"})
+		}},
+	} {
+		t.Run(read.name, func(t *testing.T) {
+			snapshot, err := read.load()
+			if err != nil {
+				t.Fatalf("snapshot failed because of one invalid release: %v", err)
+			}
+			if len(snapshot.Connectors) != 1 || snapshot.Connectors[0].Key != visible.Key {
+				t.Fatalf("connectors = %#v, want only the valid one", snapshot.Connectors)
+			}
+		})
+	}
+}
+
 func TestApplicationInstallIsDurableAndIdempotent(t *testing.T) {
 	repository := newMemoryRepository(testConnector("github"))
 	scheduler := &memoryScheduler{}
@@ -72,6 +199,50 @@ func TestApplicationConnectorRevisionFenceAllowsIndependentConcurrentCommands(t 
 	}
 	if first.Operation.OperationID == second.Operation.OperationID || len(scheduler.operationIDs) != 2 {
 		t.Fatalf("independent operations = %#v, %#v; scheduled = %#v", first.Operation, second.Operation, scheduler.operationIDs)
+	}
+}
+
+func TestApplicationCatalogRefreshDoesNotBlockConnectorAuthorization(t *testing.T) {
+	connector := testManagedAuthorizedConnector("google-sheets")
+	connector.Authorization = Authorization{State: AuthorizationStateDisconnected}
+	repository := newMemoryRepository(connector)
+	repository.operations["refresh-running"] = Operation{
+		OperationID: "refresh-running", ClientRequestID: "refresh-running", ConnectorKey: "",
+		Kind: OperationKindRefreshCatalog, State: OperationStateRunning, Stage: OperationStageRefreshing,
+	}
+	application := newTestApplication(t, repository, &memoryScheduler{}, &memoryInstallRuntime{}, CatalogSnapshot{})
+
+	result, err := application.BeginAuthorization(context.Background(), ConnectorMutation{
+		Mutation:     Mutation{ClientRequestID: "authorize-google-sheets"},
+		ConnectorKey: connector.Key,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Operation.ConnectorKey != connector.Key || result.Operation.Kind != OperationKindStartAuthorization {
+		t.Fatalf("authorization operation = %#v", result.Operation)
+	}
+	if active := repository.operations["refresh-running"]; active.State != OperationStateRunning {
+		t.Fatalf("catalog refresh operation = %#v", active)
+	}
+}
+
+func TestApplicationConnectorOperationDoesNotBlockCatalogRefresh(t *testing.T) {
+	repository := newMemoryRepository(testConnector("google-sheets"))
+	repository.operations["install-running"] = Operation{
+		OperationID: "install-running", ClientRequestID: "install-running", ConnectorKey: "google-sheets",
+		Kind: OperationKindInstall, State: OperationStateRunning, Stage: OperationStageInstalling,
+	}
+	application := newTestApplication(t, repository, &memoryScheduler{}, &memoryInstallRuntime{}, CatalogSnapshot{})
+
+	result, err := application.RefreshCatalog(context.Background(), Mutation{
+		ClientRequestID: "refresh-catalog", ExpectedRevision: repository.revision,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Operation.ConnectorKey != "" || result.Operation.Kind != OperationKindRefreshCatalog {
+		t.Fatalf("catalog refresh operation = %#v", result.Operation)
 	}
 }
 
@@ -208,6 +379,9 @@ func TestApplicationExecutesAcceptedInstall(t *testing.T) {
 	if installed.Installation.State != InstallationStateInstalled || installed.Installation.InstalledVersion != "1.0.0" {
 		t.Fatalf("installation = %#v", installed.Installation)
 	}
+	if installed.Installation.InstalledAtUnixMS != application.config.Now().UnixMilli() {
+		t.Fatalf("installed timestamp = %d, want %d", installed.Installation.InstalledAtUnixMS, application.config.Now().UnixMilli())
+	}
 	if operation.State != OperationStateCompleted || installationHost.prepares != 1 || installationHost.reconciles != 1 {
 		t.Fatalf("operation = %#v, prepares = %d, reconciles = %d", operation, installationHost.prepares, installationHost.reconciles)
 	}
@@ -220,6 +394,43 @@ func TestApplicationExecutesAcceptedInstall(t *testing.T) {
 		convergence.Observed.DesiredGeneration != convergence.Desired.Generation ||
 		convergence.Observed.BootEpoch != application.config.BootEpoch {
 		t.Fatalf("post-install runtime convergence = %#v", convergence)
+	}
+}
+
+func TestApplicationMarksPermanentInstallFailureNonRetryable(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		err       error
+		retryable bool
+	}{
+		{name: "transient", err: errors.New("network down"), retryable: true},
+		{name: "permanent", err: fmt.Errorf("%w: boom", ErrPermanentInstallFailure), retryable: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repository := newMemoryRepository(testConnector("github"))
+			application := newTestApplication(
+				t,
+				repository,
+				&memoryScheduler{},
+				&memoryInstallRuntime{installationErr: test.err},
+				CatalogSnapshot{},
+			)
+			accepted, err := application.Install(context.Background(), ConnectorMutation{
+				Mutation:     Mutation{ClientRequestID: "request-" + test.name, ExpectedRevision: 0},
+				ConnectorKey: "github",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = application.ExecuteOperation(context.Background(), accepted.Operation.OperationID)
+			var domainError *DomainError
+			if !errors.As(err, &domainError) || domainError.Code != ErrorCodeInstallFailed {
+				t.Fatalf("err = %v", err)
+			}
+			if domainError.Retryable != test.retryable {
+				t.Fatalf("retryable = %v, want %v", domainError.Retryable, test.retryable)
+			}
+		})
 	}
 }
 
@@ -1779,6 +1990,52 @@ func TestApplicationRefreshRejectsUnknownImplementation(t *testing.T) {
 	}
 }
 
+func TestApplicationRefreshRetainsRemovedUninstalledConnectorWithActiveOperation(t *testing.T) {
+	connector := testConnector("google-sheets")
+	repository := newMemoryRepository(connector)
+	repository.operations["authorization-running"] = Operation{
+		OperationID: "authorization-running", ClientRequestID: "authorization-running", ConnectorKey: connector.Key,
+		Kind: OperationKindStartAuthorization, State: OperationStateRunning, Stage: OperationStageAuthorizing,
+	}
+	application := newTestApplication(t, repository, &memoryScheduler{}, &memoryInstallRuntime{}, CatalogSnapshot{
+		SourceRevision: "catalog-without-google-sheets",
+	})
+
+	accepted, err := application.RefreshCatalog(context.Background(), Mutation{
+		ClientRequestID: "refresh-catalog", ExpectedRevision: repository.revision,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := application.ExecuteOperation(context.Background(), accepted.Operation.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := repository.Connector(context.Background(), connector.Key)
+	if err != nil {
+		t.Fatalf("connector with an active operation was deleted: %v", err)
+	}
+	if retained.Compatibility.State != CompatibilityStateUnsupportedVersion || retained.Compatibility.Reason != "removed_from_catalog" {
+		t.Fatalf("retained connector compatibility = %#v", retained.Compatibility)
+	}
+
+	authorization := repository.operations["authorization-running"]
+	authorization.State = OperationStateCompleted
+	authorization.Stage = OperationStageCompleted
+	repository.operations[authorization.OperationID] = authorization
+	next, err := application.RefreshCatalog(context.Background(), Mutation{
+		ClientRequestID: "refresh-catalog-again", ExpectedRevision: repository.revision,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := application.ExecuteOperation(context.Background(), next.Operation.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.Connector(context.Background(), connector.Key); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("connector remained after its active operation completed: %v", err)
+	}
+}
+
 func TestApplicationRejectsStaleRevisionBeforeMutation(t *testing.T) {
 	repository := newMemoryRepository(testConnector("github"))
 	repository.revision = 4
@@ -2100,6 +2357,27 @@ func testConnector(key string) Connector {
 	}
 }
 
+func testRemoteAuthorizedConnector(key string) Connector {
+	connector := testConnector(key)
+	connector.Release.Manifest.AuthorizationKind = "oauth2"
+	connector.Release.Manifest.RequiredCapabilities = []string{"tools"}
+	connector.Release.Manifest.Implementation = Implementation{
+		Kind: ImplementationKindRemoteStreamableHTTP,
+		RemoteStreamableHTTP: &RemoteStreamableHTTPImplementation{
+			ProtocolVersion:     "2026-07-28",
+			BindingRef:          key + ".primary",
+			ContractVersion:     1,
+			BindingContractHash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		},
+	}
+	connector.Authorization = Authorization{State: AuthorizationStateDisconnected}
+	connector.Installation = Installation{
+		State: InstallationStateInstalled, InstalledVersion: connector.Release.Version,
+		InstalledReleaseID: connector.Release.ReleaseID, InstalledReleaseDigest: connector.Release.ReleaseDigest,
+	}
+	return connector
+}
+
 func testManagedAuthorizedConnector(key string) Connector {
 	connector := testConnector(key)
 	connector.Release.Manifest.AuthorizationKind = "oauth2"
@@ -2222,7 +2500,9 @@ type memoryInstallRuntime struct {
 	installationResult      ReleaseInstallationObservation
 	installationInspectErr  error
 	installationCommitErr   error
+	installationErr         error
 	reconcileErrors         map[string]error
+	enabledReconcileErrors  map[string]error
 }
 
 func (host *memoryInstallRuntime) Reconcile(_ context.Context, request RuntimeReconcileRequest) (RuntimeReceipt, error) {
@@ -2230,6 +2510,11 @@ func (host *memoryInstallRuntime) Reconcile(_ context.Context, request RuntimeRe
 	host.reconcileRequests = append(host.reconcileRequests, request)
 	host.lastReconcile = request
 	host.lastCredentialGrant = string(request.CredentialBrokerGrant)
+	if request.Enabled {
+		if err := host.enabledReconcileErrors[request.Connector.Key]; err != nil {
+			return RuntimeReceipt{}, err
+		}
+	}
 	if err := host.reconcileErrors[request.Connector.Key]; err != nil {
 		return RuntimeReceipt{}, err
 	}
@@ -2297,6 +2582,9 @@ func (host *memoryInstallRuntime) InstallRelease(
 	ctx context.Context,
 	request InstallReleaseRequest,
 ) (ReleaseInstallationReceipt, error) {
+	if host.installationErr != nil {
+		return ReleaseInstallationReceipt{}, host.installationErr
+	}
 	prepared, err := host.Prepare(ctx, PrepareArtifactRequest(request))
 	if err != nil {
 		return ReleaseInstallationReceipt{}, err
@@ -3046,9 +3334,9 @@ func (transaction *memoryTransaction) OperationByClientRequestID(ownerAccountID,
 	return nil, nil
 }
 
-func (transaction *memoryTransaction) ActiveOperation(connectorKey string) (*Operation, error) {
+func (transaction *memoryTransaction) ActiveOperationInLane(connectorKey string) (*Operation, error) {
 	for _, operation := range transaction.operations {
-		if (connectorKey == "" || operation.ConnectorKey == "" || operation.ConnectorKey == connectorKey) &&
+		if operation.ConnectorKey == connectorKey &&
 			(operation.State == OperationStateAccepted || operation.State == OperationStateRunning) {
 			copy := operation
 			return &copy, nil

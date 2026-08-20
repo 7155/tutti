@@ -107,7 +107,10 @@ type Transaction interface {
 	Connector(connectorKey string) (Connector, error)
 	Operation(operationID string) (Operation, error)
 	OperationByClientRequestID(ownerAccountID, clientRequestID string) (*Operation, error)
-	ActiveOperation(connectorKey string) (*Operation, error)
+	// ActiveOperationInLane returns the active operation for exactly one
+	// scheduling lane. The empty lane is reserved for catalog refreshes; it is
+	// not a wildcard for connector-scoped operations.
+	ActiveOperationInLane(connectorKey string) (*Operation, error)
 	SaveCatalogRevision(sourceRevision string) error
 	SetCatalogState(state CatalogState) error
 	SaveConnector(Connector) error
@@ -274,6 +277,11 @@ type RuntimeReconcileRequest struct {
 	Connector    Connector
 	Enabled      bool
 	Generation   HostGeneration
+	// ConnectionVersion and ServerRevision identify the current account
+	// authorization generation for remote MCP route activation. They are not
+	// Agent-visible cache keys.
+	ConnectionVersion uint64
+	ServerRevision    uint64
 	// CredentialBrokerGrant is a one-shot authority passed directly to the
 	// runtime adapter. Implementations must not log or persist it.
 	CredentialBrokerGrant []byte
@@ -318,9 +326,14 @@ const (
 )
 
 type RuntimeBinding struct {
-	ConnectionID          string
-	Enabled               bool
-	AuthorizationState    AuthorizationState
+	ConnectionID       string
+	Enabled            bool
+	AuthorizationState AuthorizationState
+	// ConnectionVersion and ServerRevision are the account-authorization
+	// identity for one remote route. Runtime adapters may key in-process
+	// bootstrap evidence on them; they are not serialized into Desired.
+	ConnectionVersion     uint64
+	ServerRevision        uint64
 	CredentialBrokerGrant []byte
 }
 

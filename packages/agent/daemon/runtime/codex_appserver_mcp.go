@@ -3,17 +3,9 @@ package agentruntime
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	activityshared "github.com/tutti-os/tutti/packages/agent/daemon/activity/events"
 )
-
-// defaultCodexAppServerMCPFailureGraceWindow gives the app-server a short
-// chance to finish an in-flight lifecycle response after rmcp reports a fatal
-// MCP authentication failure. A broken MCP worker must not turn into the
-// generic 30-second thread/start or thread/resume timeout, while a response
-// already in flight still wins the race.
-const defaultCodexAppServerMCPFailureGraceWindow = time.Second
 
 type codexMCPServerStartupError struct {
 	Name          string
@@ -52,6 +44,18 @@ func codexMCPServerStartupFailureFromStderr(detail string) error {
 		Status:        "failed",
 		FailureReason: "reauthenticationRequired",
 		Detail:        truncateACPLogValue(detail, 1200),
+	}
+}
+
+func codexMCPServerStartupFailureFromStatus(status map[string]any) error {
+	if !strings.EqualFold(asString(status["status"]), "failed") {
+		return nil
+	}
+	return &codexMCPServerStartupError{
+		Name:          asString(status["name"]),
+		Status:        asString(status["status"]),
+		FailureReason: asString(status["failureReason"]),
+		Detail:        truncateACPLogValue(strings.TrimSpace(asString(status["error"])), 1200),
 	}
 }
 
@@ -98,10 +102,21 @@ func codexMCPServerStartupWarningEvent(
 	detail = limitVisibleErrorDetail(cleanVisibleErrorText(detail))
 
 	title := fmt.Sprintf("MCP server %s startup failed", name)
+	messageID := "mcp-startup-warning:" + strings.TrimSpace(session.AgentSessionID) + ":" + name
 	metadata := map[string]any{
-		"messageId": "mcp-startup-warning:" + strings.TrimSpace(session.AgentSessionID) + ":" + name,
+		"messageId": messageID,
 		"code":      "mcp_server_startup_failed",
 		"retryable": false,
+	}
+	if strings.TrimSpace(turnID) == "" {
+		metadata["kind"] = "agent_system_notice"
+		metadata["noticeKind"] = "warning"
+		metadata["severity"] = "warning"
+		metadata["title"] = title
+		if detail != "" {
+			metadata["detail"] = detail
+		}
+		return newSessionAuditEventWithID(session, messageID, RoleAssistant, title, metadata)
 	}
 	return appServerSystemNoticeEvent(session, turnID, "warning", title, detail, metadata)
 }

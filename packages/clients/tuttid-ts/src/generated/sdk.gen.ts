@@ -553,6 +553,9 @@ import type {
   ProbeAgentProviderData,
   ProbeAgentProviderErrors,
   ProbeAgentProviderResponses,
+  ProbeAgentTargetAccountUsageData,
+  ProbeAgentTargetAccountUsageErrors,
+  ProbeAgentTargetAccountUsageResponses,
   PublishWorkspaceAppFactoryJobData,
   PublishWorkspaceAppFactoryJobErrors,
   PublishWorkspaceAppFactoryJobResponses,
@@ -739,6 +742,9 @@ import type {
   UpdateAutomationRuleData,
   UpdateAutomationRuleErrors,
   UpdateAutomationRuleResponses,
+  UpdateConnectorMarketConnectorRuntimeData,
+  UpdateConnectorMarketConnectorRuntimeErrors,
+  UpdateConnectorMarketConnectorRuntimeResponses,
   UpdateModelPlanData,
   UpdateModelPlanErrors,
   UpdateModelPlanResponses,
@@ -1395,6 +1401,27 @@ export const setSystemAgentTargetEnabled = <
       "Content-Type": "application/json",
       ...options.headers
     }
+  });
+
+/**
+ * Probe provider-owned account usage for one Agent Target
+ *
+ * Executes only a versioned account-usage capability declared by the exact verified Agent Extension installation. The daemon validates the companion executable under the Target-scoped managed runtime and returns a provider-neutral result containing stable error codes only. Account-usage availability never changes Agent runtime readiness.
+ *
+ */
+export const probeAgentTargetAccountUsage = <
+  ThrowOnError extends boolean = false
+>(
+  options: Options<ProbeAgentTargetAccountUsageData, ThrowOnError>
+) =>
+  (options.client ?? client).post<
+    ProbeAgentTargetAccountUsageResponses,
+    ProbeAgentTargetAccountUsageErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/v1/agent-targets/{agentTargetID}/account-usage",
+    ...options
   });
 
 /**
@@ -5708,6 +5735,30 @@ export const uninstallConnectorMarketConnector = <
   >({
     security: [{ scheme: "bearer", type: "http" }],
     url: "/v1/connector-market/connectors/{connectorKey}:uninstall",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers
+    }
+  });
+
+/**
+ * Enable or disable an installed connector runtime
+ *
+ * Persists user activation independently from installation and account authorization. Disabling retires runtime routes without removing local files or authorization; enabling converges the installed release when authorization is ready.
+ */
+export const updateConnectorMarketConnectorRuntime = <
+  ThrowOnError extends boolean = false
+>(
+  options: Options<UpdateConnectorMarketConnectorRuntimeData, ThrowOnError>
+) =>
+  (options.client ?? client).put<
+    UpdateConnectorMarketConnectorRuntimeResponses,
+    UpdateConnectorMarketConnectorRuntimeErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/v1/connector-market/connectors/{connectorKey}/runtime",
     ...options,
     headers: {
       "Content-Type": "application/json",

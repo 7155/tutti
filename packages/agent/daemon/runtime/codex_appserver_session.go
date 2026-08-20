@@ -18,7 +18,7 @@ func (a *CodexAppServerAdapter) Start(ctx context.Context, session Session) (eve
 	if err := a.admitCodexReplacementLocked(session.AgentSessionID); err != nil {
 		return nil, err
 	}
-	trace := newCodexAppServerStartupTrace(session)
+	trace := newCodexAppServerStartupTrace(session, a.startupSpanObserver, a.startupObserver)
 	defer func() {
 		trace.Finish(err)
 	}()
@@ -101,11 +101,12 @@ func (a *CodexAppServerAdapter) Start(ctx context.Context, session Session) (eve
 
 	threadParams := appServerThreadStartParams(session, a.sessionCWD(session))
 	trace.Log("thread.start.params", codexAppServerTraceThreadStartParams(session, threadParams, false))
+	callbackSession := session
 	threadResult, err := trace.TypedCall(acpStartCallTimeout, appServerMethodThreadStart, func() (json.RawMessage, error) {
 		return client.ThreadStart(ctx, acpStartCallTimeout, threadParams,
 			func(ctx context.Context, message acpMessage) error {
 				trace.LogMessage(message.Method, len(message.ID) > 0, len(message.Params))
-				_, err := a.handleAppServerMessage(ctx, client, session, "", message, nil, nil, nil)
+				_, err := a.handleAppServerMessage(ctx, client, callbackSession, "", message, nil, nil, nil)
 				return err
 			})
 	})
@@ -198,7 +199,7 @@ func (a *CodexAppServerAdapter) Resume(ctx context.Context, session Session) (er
 	// Start, the old client is kept alive until the replacement has resumed
 	// successfully (storeSession closes it on replace): if the new spawn or
 	// thread/resume fails, the previous session must remain usable.
-	trace := newCodexAppServerStartupTrace(session)
+	trace := newCodexAppServerStartupTrace(session, a.startupSpanObserver, a.startupObserver)
 	defer func() {
 		trace.Finish(err)
 	}()
@@ -323,6 +324,7 @@ func (a *CodexAppServerAdapter) Resume(ctx context.Context, session Session) (er
 	// usage here and fold it into the live state below.
 	var replayedUsage acpUsageState
 	replayedUsageKnown := false
+	callbackSession := session
 	threadResult, err := trace.TypedCall(acpStartCallTimeout, appServerMethodThreadResume, func() (json.RawMessage, error) {
 		return client.ThreadResume(ctx, acpStartCallTimeout, params,
 			func(ctx context.Context, message acpMessage) error {
@@ -336,7 +338,7 @@ func (a *CodexAppServerAdapter) Resume(ctx context.Context, session Session) (er
 						}
 					}
 				}
-				_, err := a.handleAppServerMessage(ctx, client, session, "", message, nil, nil, nil)
+				_, err := a.handleAppServerMessage(ctx, client, callbackSession, "", message, nil, nil, nil)
 				return err
 			})
 	})
@@ -551,6 +553,14 @@ func (a *CodexAppServerAdapter) closeLiveSession(agentSessionID string) error {
 	a.mu.Unlock()
 	if appSession != nil && appSession.client != nil {
 		if err := appSession.client.Close(); err != nil {
+			if codexSessionAlreadyGone(err) {
+				a.mu.Lock()
+				if a.sessions[agentSessionID] == appSession {
+					delete(a.sessions, agentSessionID)
+				}
+				a.mu.Unlock()
+				return nil
+			}
 			a.mu.Lock()
 			if a.sessions[agentSessionID] == appSession {
 				appSession.releasing = false
@@ -637,6 +647,7 @@ func (a *CodexAppServerAdapter) prepareInitializedClientLaunch(
 		spec.Env = withoutEnvironmentKey(spec.Env, tuttiAgentExtraSkillRootsEnv)
 		spec.Env = withoutEnvironmentKey(spec.Env, tuttiAgentStableSystemSkillsEnv)
 	}
+	spec.Env = withCodexAppServerLogging(spec.Env)
 	return spec, cleanup, nil
 }
 

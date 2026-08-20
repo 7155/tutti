@@ -259,6 +259,7 @@ type RemoteStreamableHTTPImplementation struct {
 
 type Installation struct {
 	State                  InstallationState `json:"state"`
+	InstalledAtUnixMS      int64             `json:"installedAtUnixMs,omitempty"`
 	InstalledVersion       string            `json:"installedVersion,omitempty"`
 	InstalledReleaseID     string            `json:"installedReleaseId,omitempty"`
 	InstalledReleaseDigest string            `json:"installedReleaseDigest,omitempty"`
@@ -278,13 +279,31 @@ type Compatibility struct {
 	Reason string             `json:"reason,omitempty"`
 }
 
+type ConnectorRuntimeState string
+
+const (
+	ConnectorRuntimeStateStarted  ConnectorRuntimeState = "started"
+	ConnectorRuntimeStateStarting ConnectorRuntimeState = "starting"
+	ConnectorRuntimeStateStopped  ConnectorRuntimeState = "stopped"
+	ConnectorRuntimeStateFailed   ConnectorRuntimeState = "failed"
+)
+
+// ConnectorRuntime is a public, credential-free projection of the current
+// runtime convergence. It is derived while reading a scoped snapshot and is
+// never the source of capability publication truth.
+type ConnectorRuntime struct {
+	State       ConnectorRuntimeState `json:"state"`
+	FailureCode string                `json:"failureCode,omitempty"`
+}
+
 type Connector struct {
-	Key           string        `json:"key"`
-	Release       Release       `json:"release"`
-	Installation  Installation  `json:"installation"`
-	Authorization Authorization `json:"authorization"`
-	Compatibility Compatibility `json:"compatibility"`
-	Revision      uint64        `json:"revision"`
+	Key           string            `json:"key"`
+	Release       Release           `json:"release"`
+	Installation  Installation      `json:"installation"`
+	Authorization Authorization     `json:"authorization"`
+	Compatibility Compatibility     `json:"compatibility"`
+	Runtime       *ConnectorRuntime `json:"runtime,omitempty"`
+	Revision      uint64            `json:"revision"`
 }
 
 type Operation struct {
@@ -479,9 +498,12 @@ type RuntimeReadiness struct {
 // account scope and Connector. Generation belongs to this convergence stream;
 // it must not reuse the catalog or public event revision.
 type RuntimeDesired struct {
-	Scope              OperationScope     `json:"scope,omitempty"`
-	ConnectorKey       string             `json:"connectorKey"`
-	Generation         uint64             `json:"generation"`
+	Scope        OperationScope `json:"scope,omitempty"`
+	ConnectorKey string         `json:"connectorKey"`
+	Generation   uint64         `json:"generation"`
+	// ActivationEnabled is the durable user intent for an installed Connector.
+	// Nil preserves the pre-activation-control behavior and therefore means on.
+	ActivationEnabled  *bool              `json:"activationEnabled,omitempty"`
 	Enabled            bool               `json:"enabled"`
 	ConnectionID       string             `json:"connectionId"`
 	ReleaseDigest      string             `json:"releaseDigest"`

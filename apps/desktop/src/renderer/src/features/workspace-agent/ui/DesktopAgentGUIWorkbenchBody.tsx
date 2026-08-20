@@ -72,6 +72,7 @@ import { resolveDesktopAgentGUIEmbeddedDesktopSize } from "./desktopAgentGUIEmbe
 import { scheduleDesktopAgentGUIWorkbenchHydration } from "./desktopAgentGUIWorkbenchHydration.ts";
 import { resolveDesktopAgentGUIWorkbenchBodyVisibility } from "./desktopAgentGUIWorkbenchVisibility.ts";
 import { useDesktopAgentConfigCommerce } from "./useDesktopAgentConfigCommerce.tsx";
+import { DesktopAgentConfigSystemActions } from "./DesktopAgentConfigSystemActions.tsx";
 import { hasDesktopLocalTuttiAgent } from "./desktopAgentConfigCommerceContext.ts";
 import { useDesktopAgentGUIComposerFooterAccessory } from "./useDesktopAgentGUIComposerFooterAccessory.tsx";
 import { useDesktopAgentGUIOpenSessionComposerRequest } from "./useDesktopAgentGUIOpenSessionComposerRequest.ts";
@@ -91,12 +92,17 @@ import {
   isFeatureEnabled,
   LAB_AGENT_SIDE_CONVERSATION_FLAG,
   LAB_CODEX_SAVER_MODE_FLAG,
-  LAB_CONNECTORS_FLAG
+  LAB_CONNECTORS_FLAG,
+  LAB_TUTTI_MODE_FLAG
 } from "../../../../../shared/featureFlags/catalog.ts";
 
 const EMPTY_AGENT_SESSION_LAUNCH_MODES_BY_PROJECT_SECTION_KEY: Readonly<
   Record<string, AgentGUISessionLaunchMode>
 > = Object.freeze({});
+
+const renderDesktopAgentConfigSystemActions: NonNullable<
+  AgentGUIProps["renderSlots"]["agentConfigSystemActions"]
+> = () => <DesktopAgentConfigSystemActions />;
 
 const AgentSessionReplayNodeReadiness = lazy(() =>
   import("../../agent-session-replay/ui/AgentSessionReplayNodeReadiness.tsx").then(
@@ -570,7 +576,7 @@ function DesktopAgentGUISurfaceImpl({
         enabled: isFeatureEnabled(featureFlags, LAB_CONNECTORS_FLAG)
       },
       tuttiMode: {
-        enabled: true
+        enabled: isFeatureEnabled(featureFlags, LAB_TUTTI_MODE_FLAG)
       }
     };
   }, [
@@ -707,6 +713,7 @@ function DesktopAgentGUISurfaceImpl({
     },
     renderSlots: {
       agentConfigAccount: renderAgentConfigAccount,
+      agentConfigSystemActions: renderDesktopAgentConfigSystemActions,
       composerFooterAccessory: renderComposerFooterAccessory,
       sidebarFooter: renderSidebarFooter
     }

@@ -89,6 +89,9 @@ type ServerInterface interface {
 	// List daemon-owned Agent Targets
 	// (GET /v1/agent-targets)
 	ListAgentTargets(w http.ResponseWriter, r *http.Request)
+	// Probe provider-owned account usage for one Agent Target
+	// (POST /v1/agent-targets/{agentTargetID}/account-usage)
+	ProbeAgentTargetAccountUsage(w http.ResponseWriter, r *http.Request, agentTargetID string)
 	// Enable or disable one daemon-owned system Agent Target
 	// (PATCH /v1/agent-targets/{agentTargetID}/enabled)
 	SetSystemAgentTargetEnabled(w http.ResponseWriter, r *http.Request, agentTargetID string)
@@ -119,6 +122,9 @@ type ServerInterface interface {
 	// Start or replace connector authorization
 	// (POST /v1/connector-market/connectors/{connectorKey}/authorization:start)
 	StartConnectorMarketAuthorization(w http.ResponseWriter, r *http.Request, connectorKey ConnectorMarketConnectorKey)
+	// Enable or disable an installed connector runtime
+	// (PUT /v1/connector-market/connectors/{connectorKey}/runtime)
+	UpdateConnectorMarketConnectorRuntime(w http.ResponseWriter, r *http.Request, connectorKey ConnectorMarketConnectorKey)
 	// Install or update one connector
 	// (POST /v1/connector-market/connectors/{connectorKey}:install)
 	InstallConnectorMarketConnector(w http.ResponseWriter, r *http.Request, connectorKey ConnectorMarketConnectorKey)
@@ -1517,6 +1523,38 @@ func (siw *ServerInterfaceWrapper) ListAgentTargets(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// ProbeAgentTargetAccountUsage operation middleware
+func (siw *ServerInterfaceWrapper) ProbeAgentTargetAccountUsage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "agentTargetID" -------------
+	var agentTargetID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "agentTargetID", r.PathValue("agentTargetID"), &agentTargetID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "agentTargetID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ProbeAgentTargetAccountUsage(w, r, agentTargetID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // SetSystemAgentTargetEnabled operation middleware
 func (siw *ServerInterfaceWrapper) SetSystemAgentTargetEnabled(w http.ResponseWriter, r *http.Request) {
 
@@ -1896,6 +1934,38 @@ func (siw *ServerInterfaceWrapper) StartConnectorMarketAuthorization(w http.Resp
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.StartConnectorMarketAuthorization(w, r, connectorKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateConnectorMarketConnectorRuntime operation middleware
+func (siw *ServerInterfaceWrapper) UpdateConnectorMarketConnectorRuntime(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "connectorKey" -------------
+	var connectorKey ConnectorMarketConnectorKey
+
+	err = runtime.BindStyledParameterWithOptions("simple", "connectorKey", r.PathValue("connectorKey"), &connectorKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "connectorKey", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateConnectorMarketConnectorRuntime(w, r, connectorKey)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -11700,6 +11770,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/agent-session-replay/cassettes/{cassetteID}/transport/playback", wrapper.UpdateAgentSessionReplayTransportPlayback)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/agent-session-replay/cassettes/{cassetteID}/transport/verify", wrapper.VerifyAgentSessionReplayTransport)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/agent-targets", wrapper.ListAgentTargets)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/agent-targets/{agentTargetID}/account-usage", wrapper.ProbeAgentTargetAccountUsage)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/agent-targets/{agentTargetID}/enabled", wrapper.SetSystemAgentTargetEnabled)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/cli/capabilities", wrapper.ListCliCapabilities)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/cli/commands/{commandID}/invoke", wrapper.InvokeCliCommand)
@@ -11710,6 +11781,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/connector-market/connectors/{connectorKey}/authorization:cancel", wrapper.CancelConnectorMarketAuthorization)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/connector-market/connectors/{connectorKey}/authorization:disconnect", wrapper.DisconnectConnectorMarketAuthorization)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/connector-market/connectors/{connectorKey}/authorization:start", wrapper.StartConnectorMarketAuthorization)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/connector-market/connectors/{connectorKey}/runtime", wrapper.UpdateConnectorMarketConnectorRuntime)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/connector-market/connectors/{connectorKey}:install", wrapper.InstallConnectorMarketConnector)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/connector-market/connectors/{connectorKey}:uninstall", wrapper.UninstallConnectorMarketConnector)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/connector-market/operations/{operationID}", wrapper.GetConnectorMarketOperation)
@@ -13951,6 +14023,114 @@ func (response ListAgentTargets503JSONResponse) VisitListAgentTargetsResponse(w 
 	return err
 }
 
+type ProbeAgentTargetAccountUsageRequestObject struct {
+	AgentTargetID string `json:"agentTargetID"`
+}
+
+type ProbeAgentTargetAccountUsageResponseObject interface {
+	VisitProbeAgentTargetAccountUsageResponse(w http.ResponseWriter) error
+}
+
+type ProbeAgentTargetAccountUsage200JSONResponse AgentTargetAccountUsageProbeResult
+
+func (t ProbeAgentTargetAccountUsage200JSONResponse) MarshalJSON() ([]byte, error) {
+	return AgentTargetAccountUsageProbeResult(t).MarshalJSON()
+}
+
+func (t *ProbeAgentTargetAccountUsage200JSONResponse) UnmarshalJSON(b []byte) error {
+	return (*AgentTargetAccountUsageProbeResult)(t).UnmarshalJSON(b)
+}
+
+func (response ProbeAgentTargetAccountUsage200JSONResponse) VisitProbeAgentTargetAccountUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProbeAgentTargetAccountUsage400JSONResponse struct {
+	InvalidRequestErrorJSONResponse
+}
+
+func (response ProbeAgentTargetAccountUsage400JSONResponse) VisitProbeAgentTargetAccountUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProbeAgentTargetAccountUsage401JSONResponse struct{ UnauthorizedErrorJSONResponse }
+
+func (response ProbeAgentTargetAccountUsage401JSONResponse) VisitProbeAgentTargetAccountUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProbeAgentTargetAccountUsage404JSONResponse struct {
+	AgentTargetNotFoundErrorJSONResponse
+}
+
+func (response ProbeAgentTargetAccountUsage404JSONResponse) VisitProbeAgentTargetAccountUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProbeAgentTargetAccountUsage405JSONResponse struct {
+	MethodNotAllowedErrorJSONResponse
+}
+
+func (response ProbeAgentTargetAccountUsage405JSONResponse) VisitProbeAgentTargetAccountUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(405)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProbeAgentTargetAccountUsage503JSONResponse struct {
+	ServiceUnavailableErrorJSONResponse
+}
+
+func (response ProbeAgentTargetAccountUsage503JSONResponse) VisitProbeAgentTargetAccountUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type SetSystemAgentTargetEnabledRequestObject struct {
 	AgentTargetID string `json:"agentTargetID"`
 	Body          *SetSystemAgentTargetEnabledJSONRequestBody
@@ -14772,6 +14952,109 @@ type StartConnectorMarketAuthorization503JSONResponse struct {
 }
 
 func (response StartConnectorMarketAuthorization503JSONResponse) VisitStartConnectorMarketAuthorizationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateConnectorMarketConnectorRuntimeRequestObject struct {
+	ConnectorKey ConnectorMarketConnectorKey `json:"connectorKey"`
+	Body         *UpdateConnectorMarketConnectorRuntimeJSONRequestBody
+}
+
+type UpdateConnectorMarketConnectorRuntimeResponseObject interface {
+	VisitUpdateConnectorMarketConnectorRuntimeResponse(w http.ResponseWriter) error
+}
+
+type UpdateConnectorMarketConnectorRuntime202JSONResponse ConnectorMarketConnector
+
+func (response UpdateConnectorMarketConnectorRuntime202JSONResponse) VisitUpdateConnectorMarketConnectorRuntimeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateConnectorMarketConnectorRuntime400JSONResponse struct {
+	ConnectorMarketInvalidRequestErrorJSONResponse
+}
+
+func (response UpdateConnectorMarketConnectorRuntime400JSONResponse) VisitUpdateConnectorMarketConnectorRuntimeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateConnectorMarketConnectorRuntime401JSONResponse struct {
+	ConnectorMarketUnauthorizedErrorJSONResponse
+}
+
+func (response UpdateConnectorMarketConnectorRuntime401JSONResponse) VisitUpdateConnectorMarketConnectorRuntimeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateConnectorMarketConnectorRuntime404JSONResponse struct {
+	ConnectorMarketNotFoundErrorJSONResponse
+}
+
+func (response UpdateConnectorMarketConnectorRuntime404JSONResponse) VisitUpdateConnectorMarketConnectorRuntimeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateConnectorMarketConnectorRuntime409JSONResponse struct {
+	ConnectorMarketConflictErrorJSONResponse
+}
+
+func (response UpdateConnectorMarketConnectorRuntime409JSONResponse) VisitUpdateConnectorMarketConnectorRuntimeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateConnectorMarketConnectorRuntime503JSONResponse struct {
+	ConnectorMarketUnavailableErrorJSONResponse
+}
+
+func (response UpdateConnectorMarketConnectorRuntime503JSONResponse) VisitUpdateConnectorMarketConnectorRuntimeResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -40658,6 +40941,9 @@ type StrictServerInterface interface {
 	// List daemon-owned Agent Targets
 	// (GET /v1/agent-targets)
 	ListAgentTargets(ctx context.Context, request ListAgentTargetsRequestObject) (ListAgentTargetsResponseObject, error)
+	// Probe provider-owned account usage for one Agent Target
+	// (POST /v1/agent-targets/{agentTargetID}/account-usage)
+	ProbeAgentTargetAccountUsage(ctx context.Context, request ProbeAgentTargetAccountUsageRequestObject) (ProbeAgentTargetAccountUsageResponseObject, error)
 	// Enable or disable one daemon-owned system Agent Target
 	// (PATCH /v1/agent-targets/{agentTargetID}/enabled)
 	SetSystemAgentTargetEnabled(ctx context.Context, request SetSystemAgentTargetEnabledRequestObject) (SetSystemAgentTargetEnabledResponseObject, error)
@@ -40688,6 +40974,9 @@ type StrictServerInterface interface {
 	// Start or replace connector authorization
 	// (POST /v1/connector-market/connectors/{connectorKey}/authorization:start)
 	StartConnectorMarketAuthorization(ctx context.Context, request StartConnectorMarketAuthorizationRequestObject) (StartConnectorMarketAuthorizationResponseObject, error)
+	// Enable or disable an installed connector runtime
+	// (PUT /v1/connector-market/connectors/{connectorKey}/runtime)
+	UpdateConnectorMarketConnectorRuntime(ctx context.Context, request UpdateConnectorMarketConnectorRuntimeRequestObject) (UpdateConnectorMarketConnectorRuntimeResponseObject, error)
 	// Install or update one connector
 	// (POST /v1/connector-market/connectors/{connectorKey}:install)
 	InstallConnectorMarketConnector(ctx context.Context, request InstallConnectorMarketConnectorRequestObject) (InstallConnectorMarketConnectorResponseObject, error)
@@ -42061,6 +42350,32 @@ func (sh *strictHandler) ListAgentTargets(w http.ResponseWriter, r *http.Request
 	}
 }
 
+// ProbeAgentTargetAccountUsage operation middleware
+func (sh *strictHandler) ProbeAgentTargetAccountUsage(w http.ResponseWriter, r *http.Request, agentTargetID string) {
+	var request ProbeAgentTargetAccountUsageRequestObject
+
+	request.AgentTargetID = agentTargetID
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ProbeAgentTargetAccountUsage(ctx, request.(ProbeAgentTargetAccountUsageRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ProbeAgentTargetAccountUsage")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ProbeAgentTargetAccountUsageResponseObject); ok {
+		if err := validResponse.VisitProbeAgentTargetAccountUsageResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // SetSystemAgentTargetEnabled operation middleware
 func (sh *strictHandler) SetSystemAgentTargetEnabled(w http.ResponseWriter, r *http.Request, agentTargetID string) {
 	var request SetSystemAgentTargetEnabledRequestObject
@@ -42346,6 +42661,41 @@ func (sh *strictHandler) StartConnectorMarketAuthorization(w http.ResponseWriter
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(StartConnectorMarketAuthorizationResponseObject); ok {
 		if err := validResponse.VisitStartConnectorMarketAuthorizationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateConnectorMarketConnectorRuntime operation middleware
+func (sh *strictHandler) UpdateConnectorMarketConnectorRuntime(w http.ResponseWriter, r *http.Request, connectorKey ConnectorMarketConnectorKey) {
+	var request UpdateConnectorMarketConnectorRuntimeRequestObject
+
+	request.ConnectorKey = connectorKey
+
+	var body UpdateConnectorMarketConnectorRuntimeJSONRequestBody
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateConnectorMarketConnectorRuntime(ctx, request.(UpdateConnectorMarketConnectorRuntimeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateConnectorMarketConnectorRuntime")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateConnectorMarketConnectorRuntimeResponseObject); ok {
+		if err := validResponse.VisitUpdateConnectorMarketConnectorRuntimeResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

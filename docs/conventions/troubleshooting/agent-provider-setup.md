@@ -148,6 +148,38 @@ provider-status-focus-refresh --all-process-time-profile` on macOS when a
   [manager.go](../../../services/tuttid/service/agentextension/manager.go)
   [runtime_version_cache.go](../../../services/tuttid/service/agentextension/runtime_version_cache.go)
 
+### A managed Extension runtime cannot be reused after an update on Windows
+
+- Symptom:
+  The first managed Extension install reaches `ready`, but after Extension
+  metadata changes the same compatible runtime falls back to `not_installed`
+  only on Windows. Logs or focused tests report that renaming the legacy runtime
+  directory failed because it is being used by another process.
+- Quick checks:
+  Confirm the package version, discovery profile, and runtime identity are still
+  compatible. Then inspect the adoption path around the legacy-directory rename;
+  if the source `managedRuntimeDirectory` is still open, the failure is a Windows
+  sharing violation rather than a package incompatibility.
+- Root cause:
+  POSIX permits renaming a directory while the process retains an open directory
+  handle. Windows does not. Keeping the verified candidate handle open across
+  `rename` made the portability test pass on macOS while the native Windows lane
+  rejected the same adoption.
+- Fix:
+  Verify and fingerprint the candidate, write the new activation, close the
+  source directory handle, rename it, then reopen the promoted directory and
+  repeat the integrity check. Rollback must close the promoted handle before
+  renaming it back and restoring the previous activation.
+- Validation:
+  On native Windows, install a managed npm runtime, move it to a legacy identity,
+  update the Extension without changing its runtime contract, and assert the
+  runtime is adopted without reinstalling. Keep the batch-launcher execution and
+  companion reconciliation assertions in the same Windows workflow.
+- References:
+  [windows-platform-support.md](../../architecture/windows-platform-support.md)
+  [managed_runtime.go](../../../services/tuttid/service/agentextension/managed_runtime.go)
+  [setup_test.go](../../../services/tuttid/service/agentextension/setup_test.go)
+
 ### Workspace Apps repeatedly probe extension authentication
 
 - Symptom:
@@ -1542,40 +1574,128 @@ invalid_grant`. Search `tuttid.log` for
   `session/prompt` then returns `stopReason: "end_turn"` without an assistant
   chunk or tool call, treat it as a hidden provider failure rather than a
   successful empty answer. Check that the signed Kimi Extension routes
-  `/status` and `/usage` to the runtime with the shared `submitImmediate`
-  effect. Those commands must remain runtime-owned: Tutti Desktop should
-  report its account-usage probe as `unsupported` for `acp:kimi-code` and must
-  not parse Kimi configuration or credentials itself.
+  `/status` to the native status panel with `showStatus` and `/usage` to the
+  runtime with `submitImmediate`.
 - Root cause:
   Kimi Code can create an ACP session while no model is configured. Its ACP
   adapter maps some underlying model, authentication, plan, and balance
   failures to a normal `end_turn` with no output because ACP has no failed stop
   reason. The setup guard previously recognized only the top-level `models`
-  shape. A provider-specific Desktop usage probe would also duplicate Kimi's
-  configuration, credential, endpoint, and quota semantics outside the signed
-  Extension/runtime boundary.
+  shape.
 - Fix:
   Reject both empty ACP model shapes during generic setup. A normal ACP
   terminal with neither assistant output nor tool activity must settle as
   `provider_empty_response`, producing a visible conversation error card that
   points users back to model and account setup. Turns with only thinking or a
   system notice remain valid because they produced observable assistant
-  output. Keep Kimi's `/status` and `/usage` behavior declarative in the signed
-  Extension and execute it through the Kimi ACP runtime, which remains the
-  owner of provider configuration, credentials, account APIs, and quota
-  interpretation.
+  output. Keep Kimi's slash-command behavior declarative in the signed
+  Extension.
 - Validation:
   Cover empty and populated `models`/`configOptions` selectors, thinking-only
   and notice-only ACP turns, and an otherwise normal empty ACP `end_turn`.
-  Assert that an explicit Kimi Desktop usage probe stays `unsupported`, and
-  validate in the Extension repository that `/status` and `/usage` both use
-  `submitImmediate` against the pinned real runtime.
+  Validate in the Extension repository that `/status` uses `showStatus` and
+  `/usage` uses `submitImmediate` against the pinned real runtime.
 - References:
   [standard_acp_setup.go](../../../packages/agent/daemon/runtime/standard_acp_setup.go)
   [standard_acp_turn.go](../../../packages/agent/daemon/runtime/standard_acp_turn.go)
   [createDesktopAgentStatusSource.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/createDesktopAgentStatusSource.ts)
   [Agent Extensions](../../architecture/agent-extensions.md)
   [Kimi Code Agent Extension](https://github.com/tutti-os/agent-extension-kimi-code)
+
+### CodeBuddy account panel does not distinguish API billing from Coding Plan
+
+- Symptom:
+  CodeBuddy `/status` opens the native account panel, but its limits row says
+  the current Agent does not provide quota limits. Ordinary API keys and Coding
+  Plan credentials also have the same presentation.
+- Quick checks:
+  Confirm the provider is `acp:codebuddy`. Inspect CodeBuddy's effective
+  `CODEBUDDY_API_KEY`, `CODEBUDDY_BASE_URL`, `CODEBUDDY_AUTH_TOKEN`, and
+  `apiKeyHelper` presence without copying credential values into logs. Coding
+  Plan keys use the `sk-sp-` prefix or an endpoint whose path contains
+  `coding`.
+- Root cause:
+  CodeBuddy's ACP `usage_update` reports context usage and per-request cost, but
+  the pinned runtime does not expose or document a complete account-level
+  credit-balance contract. Private product endpoints, filtered package queries,
+  and a single page of resource rows cannot prove a complete account balance.
+  Tutti previously had no CodeBuddy account probe, so the native panel treated
+  the provider as unsupported and could not identify the billing mode.
+- Fix:
+  CodeBuddy's Extension declares a separately published Provider-owned account
+  usage companion. The companion owns only CodeBuddy's effective configuration
+  precedence and billing-mode classification. Tutti executes the generic
+  `accountUsage` capability and consumes a closed Provider-neutral snapshot.
+  Ordinary API keys report `api` with quota state `not_applicable`; Coding Plan
+  reports `coding_plan` with quota state `unavailable`; native authentication
+  reports `provider_account` with quota state `unavailable`. The UI renders API
+  `not_applicable` as `—`; Coding Plan and native accounts render the localized
+  account-quota-unavailable copy. Neither presentation claims a verified credit
+  balance. Until the Provider publishes a contract that proves a complete
+  snapshot, the companion emits no exact Credits. It does not enumerate or read
+  native session files, decode JWTs, execute credential helpers, inspect local
+  `expiresAt`, or call private account endpoints. Runtime/ACP therefore remains
+  the only login and refresh authority. Tokens, account identifiers, paths, raw
+  Provider responses, and Provider messages never cross the daemon API or
+  renderer IPC and never enter logs.
+- Validation:
+  Cover ordinary API keys, Coding Plan keys, authentication tokens,
+  `apiKeyHelper`, effective settings precedence, and stable errors. Prove that
+  simultaneous expired and valid session files are never read, Runtime token
+  refresh cannot affect the probe, private package endpoints are never called,
+  incomplete package pagination cannot be presented as exact Credits,
+  concurrent probes coalesce at the Tutti boundary, and credentials or raw
+  errors are never projected. Also cover generic renderer labels and exact
+  amount validation for future Providers with a complete contract. Run the
+  Extension's Linux and Windows companion checks plus Tutti's daemon, Desktop,
+  typecheck, i18n, and changed-aware push-ready gates.
+- References:
+  [CodeBuddy Agent Extension](https://github.com/tutti-os/agent-extension-codebuddy)
+  [account_usage.go](../../../services/tuttid/service/agentextension/account_usage.go)
+  [agentTargetAccountUsageProbe.ts](../../../apps/desktop/src/main/agentTargetAccountUsageProbe.ts)
+
+### Kimi Code account panel says the Agent provides no quota limits
+
+- Symptom:
+  Kimi Code `/status` opens the native account panel, but its limits row says
+  the current Agent does not provide quota limits even though the selected
+  account uses Coding Plan.
+- Quick checks:
+  Confirm the provider is `acp:kimi-code`, the active model in
+  `$KIMI_CODE_HOME/config.toml` (or `~/.kimi-code/config.toml`) resolves to
+  `managed:kimi-code`, and the matching OAuth credential exists under the
+  Kimi-owned `credentials/` directory. Search Desktop logs for
+  `agent.usage_probe.result`; logs contain only strategy/error metadata and
+  must never contain credentials or raw responses.
+- Root cause:
+  Kimi Code 0.28 exposes session/context usage through ACP, but it does not
+  expose Coding Plan account windows as structured ACP data. The native panel
+  therefore had no account-level source and treated the extension provider as
+  unsupported.
+- Fix:
+  Kimi's Extension declares a separately published Provider-owned account usage
+  companion. It resolves the selected model's provider and Kimi credentials,
+  while Tutti executes the generic `accountUsage` capability and consumes only
+  Provider-neutral billing/quota fields. API-key providers return `api` with no
+  quota rows. The managed provider requests Coding Plan `/usages` and emits
+  normalized quota percentages/reset times. Kimi owns OAuth refresh, so the
+  companion does not treat point-in-time `expires_at` or an authorization
+  rejection as Agent login authority. It reloads the credential once after
+  401/403 and retries only when the token changed. Tokens, API keys, paths, raw
+  responses, and Provider messages never cross the daemon API or renderer IPC.
+- Validation:
+  Cover managed inline/nested OAuth configuration, Coding Plan summary/window
+  mapping, API billing without an account request, a concurrent credential
+  refresh, an unchanged unauthorized token that does not become
+  `session_expired`, and the renderer's localized API billing label. Run the
+  Desktop tests, typecheck, i18n check, build, and changed-aware push-ready
+  gate.
+- References:
+  [Kimi Code Agent Extension](https://github.com/tutti-os/agent-extension-kimi-code)
+  [account_usage.go](../../../services/tuttid/service/agentextension/account_usage.go)
+  [agentTargetAccountUsageProbe.ts](../../../apps/desktop/src/main/agentTargetAccountUsageProbe.ts)
+  [agentProviderUsageProbe.ts](../../../apps/desktop/src/main/agentProviderUsageProbe.ts)
+  [createDesktopAgentStatusSource.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/createDesktopAgentStatusSource.ts)
 
 ### Claude Code sessions fail with `effectiveSource: "none"` when CC-Switch or similar proxy tools are used
 

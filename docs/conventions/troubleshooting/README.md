@@ -23,8 +23,9 @@ Use the focused runtime index or open one area directly:
   Also covers Kimi Code ACP sessions that advertise no model or hide provider
   failures behind an empty `end_turn`.
   Also covers focus-driven provider CLI scans, repeated Extension Target version
-  probes, optional Provider absence misclassified as an environment failure,
-  extension release refresh delaying daemon startup, and CPU spikes.
+  probes, Windows managed-runtime adoption sharing violations, optional Provider
+  absence misclassified as an environment failure, extension release refresh
+  delaying daemon startup, and CPU spikes.
 - [Agent Sessions And Lifecycle](./agent-session-lifecycle.md): Turn state, activation, planning-mode classification, capability snapshots, Tutti workflow response contracts, loading, cancel, goal controls, restore, file-change undo, rail projection, realtime completion provenance, event updates, imports, and performance.
   Includes shared-device recovery that looks terminal while the host is still retrying.
   Also covers new or derived conversations that silently fail or lose
@@ -74,6 +75,7 @@ Electron startup, daemon supervision, macOS packaging, updates, and performance 
 - [Packaged Tutti starts but external shells cannot find `tutti`](./desktop-release.md#packaged-tutti-starts-but-external-shells-cannot-find-tutti)
 - [Desktop stable release alias disappears or is not first on Releases](./desktop-release.md#desktop-stable-release-alias-disappears-or-is-not-first-on-releases)
 - [Desktop release notes exceed GitHub's body limit](./desktop-release.md#desktop-release-notes-exceed-githubs-body-limit)
+- [Desktop release stalls after all packages finish building](./desktop-release.md#desktop-release-stalls-after-all-packages-finish-building)
 - [Desktop dev GUI exits before opening](./desktop-release.md#desktop-dev-gui-exits-before-opening)
 - [Running a development tuttid breaks the production Agent session](./desktop-release.md#running-a-development-tuttid-breaks-the-production-agent-session)
 - [macOS updates fail from a mounted DMG](./desktop-release.md#macos-updates-fail-from-a-mounted-dmg)
@@ -140,8 +142,9 @@ App Center, workspace-app lifecycle, App Factory, file references, and File Mana
 
 Connector catalog, installation, account authorization, and runtime convergence.
 
-- [OAuth opens once, then the desktop stays disconnected or a second attempt supersedes the first](./connector-market.md#oauth-opens-once-then-the-desktop-stays-disconnected-or-a-second-attempt-supersedes-the-first)
+- [A second authorize click starts another OAuth session](./connector-market.md#a-second-authorize-click-starts-another-oauth-session)
 - [OAuth finishes in the browser but does not return to the initiating desktop build](./connector-market.md#oauth-finishes-in-the-browser-but-does-not-return-to-the-initiating-desktop-build)
+- [Composer install stays spinning on an OAuth remote connector](./connector-market.md#composer-install-stays-spinning-on-an-oauth-remote-connector)
 
 ## [Toolchain, Browser, And Terminal](./toolchain-browser-terminal.md)
 

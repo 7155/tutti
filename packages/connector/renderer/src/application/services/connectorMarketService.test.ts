@@ -32,7 +32,7 @@ function connector(key: string, revision: number): Connector {
       manifest: {
         schemaVersion: "1",
         displayName: key,
-        iconUrl: "data:image/png;base64,iVBORw0KGgo=",
+        iconUrl: `https://cdn.example.test/tutti/connector-market/${key}/1.0.0/${key}-1.0.0-icon.svg`,
         permissions: [],
         implementation: {
           kind: "builtin",
@@ -84,6 +84,7 @@ function backendWith(
     refreshCatalog: unsupported,
     installConnector: unsupported,
     uninstallConnector: unsupported,
+    updateConnectorRuntime: unsupported,
     beginAuthorization: unsupported,
     cancelAuthorization: unsupported,
     disconnectAuthorization: unsupported,
@@ -102,6 +103,48 @@ test("exposes commands directly on a class service and state through dataStore",
 
   assert.deepEqual(service.dataStore.connectorKeys, ["github"]);
   assert.equal(service.dataStore.loadState, "ready");
+  service.dispose();
+});
+
+test("persists runtime activation and applies the accepted connector projection", async () => {
+  const installed = connector("github", 1);
+  installed.installation = {
+    state: "installed",
+    installedReleaseDigest: installed.release.releaseDigest
+  };
+  installed.runtime = { state: "started" };
+  let received:
+    | Parameters<ConnectorMarketBackend["updateConnectorRuntime"]>[0]
+    | undefined;
+  const service = new ConnectorMarketService({
+    backend: backendWith({
+      getSnapshot: async () => snapshot(1, [installed]),
+      updateConnectorRuntime: async (input) => {
+        received = input;
+        return {
+          ...installed,
+          revision: 2,
+          runtime: { state: "stopped" }
+        };
+      }
+    }),
+    createRequestId: () => "runtime-request-1"
+  });
+
+  await service.ensureLoaded();
+  await service.setRuntimeEnabled("github", false);
+
+  assert.deepEqual(received, {
+    clientRequestId: "runtime-request-1",
+    connectorKey: "github",
+    enabled: false,
+    expectedConnectorRevision: 1,
+    expectedRevision: 1
+  });
+  assert.equal(
+    service.dataStore.connectorsByKey.github?.runtime?.state,
+    "stopped"
+  );
   service.dispose();
 });
 
@@ -160,8 +203,49 @@ test("loads server categories and appends cursor pages", async () => {
   ]);
   assert.equal(service.dataStore.catalogSections[0]?.nextPageToken, undefined);
   assert.deepEqual(pageTokens, [undefined, "page-2"]);
-  assert.deepEqual(installationFilters, ["not_installed", "not_installed"]);
+  assert.deepEqual(installationFilters, [undefined, undefined]);
   assert.equal(service.dataStore.revision, 2);
+  service.dispose();
+});
+
+test("keeps installed connectors in catalog pages after removing the install split", async () => {
+  const github = connector("github", 1);
+  github.installation = {
+    installedReleaseDigest: github.release.releaseDigest,
+    state: "installed"
+  };
+  const service = new ConnectorMarketService({
+    backend: backendWith({
+      getSnapshot: async () => snapshot(1, [github]),
+      listCategories: async () => [
+        {
+          categoryId: "developer-tools",
+          kind: "category",
+          sortOrder: 40,
+          itemCount: 1
+        }
+      ],
+      listCatalogPage: async ({ installation }) => ({
+        sectionId: "developer-tools",
+        items:
+          installation === "not_installed"
+            ? []
+            : [
+                {
+                  categoryId: "developer-tools",
+                  featured: false,
+                  connector: github
+                }
+              ],
+        revision: 1
+      })
+    })
+  });
+
+  await service.ensureLoaded();
+  assert.deepEqual(service.dataStore.catalogSections[0]?.connectorKeys, [
+    "github"
+  ]);
   service.dispose();
 });
 
@@ -1160,12 +1244,8 @@ test("forwards a user-provided secret only to the authorization mutation", async
   service.dispose();
 });
 
-test("a new authorization command supersedes the previous caller", async () => {
+test("a second authorization command joins the in-flight attempt", async () => {
   const firstAuthorization =
-    deferred<
-      Awaited<ReturnType<ConnectorMarketBackend["beginAuthorization"]>>
-    >();
-  const secondAuthorization =
     deferred<
       Awaited<ReturnType<ConnectorMarketBackend["beginAuthorization"]>>
     >();
@@ -1180,9 +1260,7 @@ test("a new authorization command supersedes the previous caller", async () => {
       beginAuthorization: async (request) => {
         requests.push(request);
         authorizationAttempts += 1;
-        return authorizationAttempts === 1
-          ? firstAuthorization.promise
-          : secondAuthorization.promise;
+        return firstAuthorization.promise;
       }
     }),
     createRequestId: () => `authorization-${++requestIds}`
@@ -1191,8 +1269,77 @@ test("a new authorization command supersedes the previous caller", async () => {
 
   const first = service.beginAuthorization("notion");
   const second = service.beginAuthorization("notion");
+  assert.equal(second, first);
   const connected = connector("notion", 2);
   connected.authorization = { state: "connected" };
+  firstAuthorization.resolve({
+    connector: connected,
+    operation: {
+      ...operation("start_authorization", 2),
+      connectorKey: "notion",
+      state: "completed"
+    },
+    revision: 2
+  });
+  await first;
+  await second;
+
+  assert.equal(authorizationAttempts, 1);
+  assert.equal(requestIds, 1);
+  assert.deepEqual(
+    requests.map(({ clientRequestId, replacementPolicy }) => ({
+      clientRequestId,
+      replacementPolicy
+    })),
+    [
+      {
+        clientRequestId: "authorization-1",
+        replacementPolicy: "replace_active"
+      }
+    ]
+  );
+  assert.deepEqual(service.dataStore.authorizingConnectorKeys, {});
+  service.dispose();
+});
+
+test("a new authorization command starts only after the user cancels", async () => {
+  const firstAuthorization =
+    deferred<
+      Awaited<ReturnType<ConnectorMarketBackend["beginAuthorization"]>>
+    >();
+  const secondAuthorization =
+    deferred<
+      Awaited<ReturnType<ConnectorMarketBackend["beginAuthorization"]>>
+    >();
+  let authorizationAttempts = 0;
+  let requestIds = 0;
+  const requests: ConnectorAuthorizationInput[] = [];
+  const initial = connector("notion", 1);
+  initial.authorization = { state: "disconnected" };
+  const connected = connector("notion", 2);
+  connected.authorization = { state: "connected" };
+  const service = new ConnectorMarketService({
+    backend: backendWith({
+      getSnapshot: async () => snapshot(1, [initial]),
+      beginAuthorization: async (request) => {
+        requests.push(request);
+        authorizationAttempts += 1;
+        return authorizationAttempts === 1
+          ? firstAuthorization.promise
+          : secondAuthorization.promise;
+      },
+      cancelAuthorization: async () => undefined
+    }),
+    createRequestId: () => `authorization-${++requestIds}`
+  });
+  await service.ensureLoaded();
+
+  const first = service.beginAuthorization("notion");
+  await waitFor(() => authorizationAttempts === 1);
+  await service.cancelAuthorization("notion");
+  const second = service.beginAuthorization("notion");
+  assert.notEqual(second, first);
+  await waitFor(() => authorizationAttempts === 2);
   secondAuthorization.resolve({
     connector: connected,
     operation: {

@@ -14,6 +14,7 @@ import {
   agentPromptContentToComposerDraft,
   buildAgentComposerDraft,
   appendAgentComposerDraftQuote,
+  agentComposerDraftPreservingConnectors,
   emptyAgentComposerDraft,
   extractPastedTextArchivePaths,
   linkifyPastedTextReferences,
@@ -321,6 +322,32 @@ describe("agentComposerDraft", () => {
         text: "before[@report.pdf](/runtime/report.pdf)after"
       }
     ]);
+  });
+
+  it("keeps only connector blocks when preserving a submitted draft", () => {
+    const draft = buildAgentComposerDraft({
+      prompt: "list events",
+      images: [
+        {
+          id: "image-1",
+          name: "screen.png",
+          mimeType: "image/png",
+          previewUrl: "blob:image-1"
+        }
+      ],
+      files: [{ id: "file-1", name: "notes.md" }],
+      connectors: [{ connectorKey: "lark-cli" }, { connectorKey: "github" }]
+    });
+
+    expect(agentComposerDraftPreservingConnectors(draft)).toEqual(
+      buildAgentComposerDraft({
+        prompt: "",
+        connectors: [{ connectorKey: "lark-cli" }, { connectorKey: "github" }]
+      })
+    );
+    expect(agentComposerDraftPreservingConnectors(undefined)).toEqual(
+      emptyAgentComposerDraft()
+    );
   });
 
   it("normalizes empty drafts", () => {

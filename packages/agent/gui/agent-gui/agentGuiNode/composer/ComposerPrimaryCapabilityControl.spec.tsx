@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentComposerProps } from "./AgentComposer.types";
 import { ComposerPrimaryCapabilityControl } from "./ComposerPrimaryCapabilityControl";
@@ -17,42 +17,68 @@ const labels = {
   tuttiModeLabel: "Tutti Mode"
 } as AgentComposerProps["labels"];
 
+function renderControl(
+  overrides: Partial<
+    Parameters<typeof ComposerPrimaryCapabilityControl>[0]
+  > = {}
+) {
+  return render(
+    <ComposerPrimaryCapabilityControl
+      availableSkills={[]}
+      connectorsVisible={false}
+      disabled={false}
+      isTuttiModeActive={false}
+      isTuttiModeUpdating={false}
+      labels={labels}
+      loading={false}
+      onCapabilitySettingsRequest={vi.fn()}
+      onConnectorSelected={vi.fn()}
+      onTuttiModeChange={vi.fn()}
+      selectedConnectorKeys={[]}
+      tuttiModeSupported={false}
+      {...overrides}
+    />
+  );
+}
+
 describe("ComposerPrimaryCapabilityControl", () => {
-  it("hides the capability slot when connectors are disabled", () => {
-    const { container } = render(
-      <ComposerPrimaryCapabilityControl
-        availableSkills={[]}
-        connectorsVisible={false}
-        disabled={false}
-        labels={labels}
-        loading={false}
-        onCapabilitySettingsRequest={vi.fn()}
-        onConnectorSelected={vi.fn()}
-        selectedConnectorKeys={[]}
-      />
-    );
+  it("hides every Tutti entry point when its host gate is off", () => {
+    const { container } = renderControl();
 
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("shows only connectors when connectors are enabled", () => {
-    const onRetryComposerOptions = vi.fn();
-    render(
-      <ComposerPrimaryCapabilityControl
-        availableSkills={[]}
-        connectorsVisible
-        disabled={false}
-        labels={labels}
-        loading
-        onRetryComposerOptions={onRetryComposerOptions}
-        onCapabilitySettingsRequest={vi.fn()}
-        onConnectorSelected={vi.fn()}
-        selectedConnectorKeys={[]}
-      />
+  it("shows the Tutti switch and routes activation when its host gate is on", () => {
+    const onTuttiModeChange = vi.fn();
+    renderControl({ onTuttiModeChange, tuttiModeSupported: true });
+
+    expect(
+      screen.getByTestId("agent-gui-composer-tutti-mode-toggle")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("connector-market-composer-trigger")
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByTestId("agent-gui-composer-tutti-mode-toggle-switch")
     );
+    expect(onTuttiModeChange).toHaveBeenCalledWith(true);
+  });
+
+  it("shows the Tutti switch alongside connectors when both gates are on", () => {
+    const onRetryComposerOptions = vi.fn();
+    renderControl({
+      connectorsVisible: true,
+      loading: true,
+      onRetryComposerOptions,
+      tuttiModeSupported: true
+    });
 
     expect(
       screen.getByTestId("connector-market-composer-trigger")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("agent-gui-composer-tutti-mode-toggle")
     ).toBeInTheDocument();
     fireEvent.pointerDown(
       screen.getByTestId("connector-market-composer-trigger"),
@@ -66,33 +92,123 @@ describe("ComposerPrimaryCapabilityControl", () => {
     ).toHaveTextContent("Loading connectors…");
   });
 
-  it("keeps a shared connector catalog inspectable without mutation or management actions", () => {
+  it("routes the runtime switch to the host instead of draft selection", () => {
     const onCapabilitySettingsRequest = vi.fn();
     const onConnectorSelected = vi.fn();
+    renderControl({
+      availableSkills: [
+        {
+          connectorKey: "github",
+          kind: "connector",
+          name: "GitHub",
+          sourceKind: "connector",
+          status: "available",
+          trigger: "/github"
+        }
+      ],
+      connectorsVisible: true,
+      onCapabilitySettingsRequest,
+      onConnectorSelected
+    });
+
+    fireEvent.pointerDown(
+      screen.getByTestId("connector-market-composer-trigger"),
+      { button: 0, ctrlKey: false, pointerType: "mouse" }
+    );
+    fireEvent.pointerDown(
+      screen.getByTestId("connector-market-composer-status-github"),
+      { button: 0, ctrlKey: false, pointerType: "mouse" }
+    );
+
+    expect(onCapabilitySettingsRequest).toHaveBeenCalledWith({
+      kind: "connector",
+      connectorKey: "github",
+      action: "set_runtime_enabled",
+      enabled: false
+    });
+    expect(onConnectorSelected).not.toHaveBeenCalled();
+  });
+
+  it("routes setup-required connectors directly to installation", async () => {
+    let completeInstall!: () => void;
+    const onCapabilitySettingsRequest = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          completeInstall = resolve;
+        })
+    );
+    const onRetryComposerOptions = vi.fn();
     render(
       <ComposerPrimaryCapabilityControl
         availableSkills={[
           {
-            connectorKey: "github",
-            description: "Authorization required on the owner device.",
+            connectorKey: "canva",
             kind: "connector",
-            name: "GitHub",
+            name: "Canva",
             sourceKind: "connector",
-            status: "authRequired",
-            trigger: "/github"
+            status: "setupRequired",
+            trigger: "/canva"
           }
         ]}
-        connectorsReadOnly
         connectorsVisible
         disabled={false}
+        isTuttiModeActive={false}
+        isTuttiModeUpdating={false}
         labels={labels}
         loading={false}
         onCapabilitySettingsRequest={onCapabilitySettingsRequest}
-        onConnectorSelected={onConnectorSelected}
+        onConnectorSelected={vi.fn()}
+        onRetryComposerOptions={onRetryComposerOptions}
         selectedConnectorKeys={[]}
-        showConnectorViewMore={false}
+        tuttiModeSupported={false}
       />
     );
+
+    fireEvent.pointerDown(
+      screen.getByTestId("connector-market-composer-trigger"),
+      { button: 0, ctrlKey: false, pointerType: "mouse" }
+    );
+    const item = screen.getByTestId("connector-market-composer-item-canva");
+    fireEvent.pointerDown(item, {
+      button: 0,
+      ctrlKey: false,
+      pointerType: "mouse"
+    });
+
+    expect(onCapabilitySettingsRequest).toHaveBeenCalledWith({
+      kind: "connector",
+      connectorKey: "canva",
+      action: "install"
+    });
+    expect(item).toHaveAttribute("aria-busy", "true");
+
+    await act(async () => completeInstall());
+    expect(onRetryComposerOptions).toHaveBeenCalledWith({
+      section: "connectors"
+    });
+  });
+
+  it("keeps a shared connector catalog inspectable without mutation or management actions", () => {
+    const onCapabilitySettingsRequest = vi.fn();
+    const onConnectorSelected = vi.fn();
+    renderControl({
+      availableSkills: [
+        {
+          connectorKey: "github",
+          description: "Authorization required on the owner device.",
+          kind: "connector",
+          name: "GitHub",
+          sourceKind: "connector",
+          status: "authRequired",
+          trigger: "/github"
+        }
+      ],
+      connectorsReadOnly: true,
+      connectorsVisible: true,
+      onCapabilitySettingsRequest,
+      onConnectorSelected,
+      showConnectorViewMore: false
+    });
 
     fireEvent.pointerDown(
       screen.getByTestId("connector-market-composer-trigger"),

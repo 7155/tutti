@@ -382,6 +382,60 @@ export class ConnectorMarketService implements IConnectorMarketService {
     return result.operation;
   }
 
+  async setRuntimeEnabled(
+    connectorKey: string,
+    enabled: boolean
+  ): Promise<void> {
+    if (this.disposed || !this.canRequest()) {
+      throw new ConnectorMarketRequestUnavailableError();
+    }
+    const token = this.acquireConnectorMutation(connectorKey);
+    const generation = this.dataGeneration;
+    const update = () =>
+      this.dependencies.backend.updateConnectorRuntime({
+        connectorKey,
+        enabled,
+        clientRequestId: this.createRequestId(),
+        expectedRevision: this.dataStore.revision,
+        ...this.connectorRevisionFence(connectorKey)
+      });
+    try {
+      let connector: Awaited<ReturnType<typeof update>>;
+      try {
+        connector = await update();
+      } catch (error) {
+        if (
+          normalizeConnectorMarketError(error).code !==
+            "connector_market_revision_conflict" ||
+          !this.isCurrentMutation(connectorKey, token, generation)
+        ) {
+          throw error;
+        }
+        const next = await this.dependencies.backend.getSnapshot();
+        if (!this.isCurrentMutation(connectorKey, token, generation)) {
+          return;
+        }
+        applyConnectorMarketSnapshot(this.dataStore, next);
+        connector = await update();
+      }
+      if (this.isCurrentMutation(connectorKey, token, generation)) {
+        applyConnector(this.dataStore, connector);
+        this.dataStore.revision = Math.max(
+          this.dataStore.revision,
+          connector.revision
+        );
+        this.dataStore.lastError = null;
+      }
+    } catch (error) {
+      if (this.isCurrentMutation(connectorKey, token, generation)) {
+        this.recordError(error);
+      }
+      throw error;
+    } finally {
+      this.releaseConnectorMutation(connectorKey, token);
+    }
+  }
+
   dismissUninstallNotification(operationId: string): void {
     if (!this.disposed) {
       delete this.dataStore.pendingUninstallNotificationsByOperationId[
@@ -394,9 +448,10 @@ export class ConnectorMarketService implements IConnectorMarketService {
     if (this.disposed || !this.canRequest()) {
       return Promise.resolve();
     }
-    const previousAttempt = this.authorizationAttempts.get(connectorKey);
-    if (previousAttempt) {
-      previousAttempt.canceled = true;
+    const inFlight = this.authorizationInFlight.get(connectorKey);
+    const currentAttempt = this.authorizationAttempts.get(connectorKey);
+    if (inFlight && currentAttempt && !currentAttempt.canceled) {
+      return inFlight;
     }
     let authorization!: Promise<void>;
     authorization = this.runAuthorization(connectorKey, secret).finally(() => {
@@ -699,7 +754,6 @@ export class ConnectorMarketService implements IConnectorMarketService {
       const pageResults = await Promise.allSettled(
         requestedCategories.map((category) =>
           this.dependencies.backend.listCatalogPage({
-            installation: "not_installed",
             sectionId: category.categoryId,
             pageSize: 20
           })
@@ -801,7 +855,6 @@ export class ConnectorMarketService implements IConnectorMarketService {
     markConnectorMarketSectionLoading(this.dataStore, sectionId);
     try {
       const page = await this.dependencies.backend.listCatalogPage({
-        installation: "not_installed",
         sectionId,
         pageSize: 20,
         pageToken

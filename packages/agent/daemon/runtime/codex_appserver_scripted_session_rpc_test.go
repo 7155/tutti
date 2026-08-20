@@ -6,36 +6,45 @@ import (
 )
 
 type scriptedSessionState struct {
-	modelList                      []any
-	userAgent                      string
-	forkChildThreadID              string
-	forkedFromThreadID             string
-	omitForkedFromThreadID         bool
-	emptyForkedFromThreadID        bool
-	forkResponseLastTurnID         string
-	forkResponseTurnIDs            []string
-	forkNotificationBeforeResponse bool
-	forkResponseDelay              time.Duration
-	threadReadTurnIDs              []string
-	forkRPCError                   bool
-	requiresAuth                   bool
-	collaborationModeUnsupported   bool
-	accountReadError               bool
-	accountReadErrorCode           int
-	accountReadErrorMessage        string
-	rateLimitsReadError            bool
-	rateLimitsReadErrorCode        int
-	rateLimitsReadErrorMessage     string
-	childNicknames                 map[string]string
-	historyTurns                   []any
-	rollbackHistoryTurns           []any
-	rollbackUnsupported            bool
-	threadName                     string
-	replayTokenUsageOnResume       bool
-	threadResumeError              bool
-	mcpAuthStderrOnResume          bool
-	mcpAuthStderrResumeResponse    bool
-	extraRootsError                bool
+	modelList                       []any
+	userAgent                       string
+	forkChildThreadID               string
+	forkedFromThreadID              string
+	omitForkedFromThreadID          bool
+	emptyForkedFromThreadID         bool
+	forkResponseLastTurnID          string
+	forkResponseTurnIDs             []string
+	forkNotificationBeforeResponse  bool
+	forkResponseDelay               time.Duration
+	threadReadTurnIDs               []string
+	forkRPCError                    bool
+	requiresAuth                    bool
+	collaborationModeUnsupported    bool
+	accountReadError                bool
+	accountReadErrorCode            int
+	accountReadErrorMessage         string
+	rateLimitsReadError             bool
+	rateLimitsReadErrorCode         int
+	rateLimitsReadErrorMessage      string
+	childNicknames                  map[string]string
+	historyTurns                    []any
+	rollbackHistoryTurns            []any
+	rollbackUnsupported             bool
+	threadName                      string
+	replayTokenUsageOnResume        bool
+	threadResumeError               bool
+	mcpAuthStderrOnStart            bool
+	mcpAuthStderrOnResume           bool
+	mcpAuthStderrStartResponse      bool
+	mcpAuthStderrResumeResponse     bool
+	mcpFailureResponseDelay         time.Duration
+	mcpStartupStatusFailedOnStart   bool
+	mcpStartupStatusFailedOnResume  bool
+	mcpStartupStatusFailureResponse bool
+	threadStartedOnStart            bool
+	threadStartedOnResume           bool
+	threadStartedResponse           bool
+	extraRootsError                 bool
 }
 
 func (s *fakeCodexAppServer) handleSessionRPC(message scriptedAppServerMessage) bool {
@@ -199,13 +208,37 @@ func (s *fakeCodexAppServer) handleSessionRPC(message scriptedAppServerMessage) 
 	case appServerMethodThreadStart, appServerMethodThreadResume:
 		s.mu.Lock()
 		threadResumeError := s.threadResumeError && message.Method == appServerMethodThreadResume
+		mcpAuthStderrOnStart := s.mcpAuthStderrOnStart && message.Method == appServerMethodThreadStart
 		mcpAuthStderrOnResume := s.mcpAuthStderrOnResume && message.Method == appServerMethodThreadResume
+		mcpAuthStderrStartResponse := s.mcpAuthStderrStartResponse && message.Method == appServerMethodThreadStart
 		mcpAuthStderrResumeResponse := s.mcpAuthStderrResumeResponse && message.Method == appServerMethodThreadResume
+		mcpFailureResponseDelay := s.mcpFailureResponseDelay
+		mcpStartupStatusFailed := (s.mcpStartupStatusFailedOnStart && message.Method == appServerMethodThreadStart) ||
+			(s.mcpStartupStatusFailedOnResume && message.Method == appServerMethodThreadResume)
+		mcpStartupStatusFailureResponse := s.mcpStartupStatusFailureResponse
+		threadStarted := (s.threadStartedOnStart && message.Method == appServerMethodThreadStart) ||
+			(s.threadStartedOnResume && message.Method == appServerMethodThreadResume)
+		threadStartedResponse := s.threadStartedResponse
 		replayTokenUsage := s.replayTokenUsageOnResume && message.Method == appServerMethodThreadResume
 		s.mu.Unlock()
-		if mcpAuthStderrOnResume {
+		mcpAuthStderr := mcpAuthStderrOnStart || mcpAuthStderrOnResume
+		mcpAuthStderrResponse := (mcpAuthStderrOnStart && mcpAuthStderrStartResponse) ||
+			(mcpAuthStderrOnResume && mcpAuthStderrResumeResponse)
+		if mcpAuthStderr {
 			s.sendStderr([]byte(`rmcp::transport::worker: worker quit with fatal: Transport channel closed, when AuthRequired(AuthRequiredError { www_authenticate_header: "Bearer resource_metadata=\"https://mcp.figma.com/.well-known/oauth-protected-resource\",scope=\"mcp:connect\"" })`))
-			if !mcpAuthStderrResumeResponse {
+			if !mcpAuthStderrResponse {
+				return true
+			}
+		}
+		if mcpStartupStatusFailed {
+			s.notify(appServerNotifyMCPServerStartupStatusUpdated, map[string]any{
+				"threadId":      "codex-thread-1",
+				"name":          "figma",
+				"status":        "failed",
+				"failureReason": "reauthenticationRequired",
+				"error":         "MCP server requires authentication",
+			})
+			if !mcpStartupStatusFailureResponse {
 				return true
 			}
 		}
@@ -216,9 +249,14 @@ func (s *fakeCodexAppServer) handleSessionRPC(message scriptedAppServerMessage) 
 			})
 			return true
 		}
-		s.notify(appServerNotifyThreadStarted, map[string]any{
-			"thread": map[string]any{"id": "codex-thread-1"},
-		})
+		if threadStarted {
+			s.notify(appServerNotifyThreadStarted, map[string]any{
+				"thread": map[string]any{"id": "codex-thread-1"},
+			})
+			if !threadStartedResponse {
+				return true
+			}
+		}
 		if replayTokenUsage {
 			// Real codex 0.140.0 replays thread/tokenUsage/updated during
 			// thread/resume so the GUI can show context fill before a new
@@ -231,7 +269,7 @@ func (s *fakeCodexAppServer) handleSessionRPC(message scriptedAppServerMessage) 
 				},
 			})
 		}
-		s.sendJSON(map[string]any{
+		response := map[string]any{
 			"id": message.ID,
 			"result": map[string]any{
 				"thread":          map[string]any{"id": "codex-thread-1"},
@@ -242,7 +280,20 @@ func (s *fakeCodexAppServer) handleSessionRPC(message scriptedAppServerMessage) 
 				"sandbox":         map[string]any{"type": "workspaceWrite"},
 				"modelProvider":   "openai",
 			},
-		})
+		}
+		if (mcpAuthStderr || mcpStartupStatusFailed) && mcpFailureResponseDelay > 0 {
+			go func() {
+				time.Sleep(mcpFailureResponseDelay)
+				s.sendJSON(response)
+			}()
+			return true
+		}
+		s.sendJSON(response)
+		if !threadStarted {
+			s.notify(appServerNotifyThreadStarted, map[string]any{
+				"thread": map[string]any{"id": "codex-thread-1"},
+			})
+		}
 	case appServerMethodThreadFork:
 		if s.forkRPCError {
 			s.sendJSON(map[string]any{

@@ -156,6 +156,7 @@ export interface ConnectorRelease {
 
 export interface ConnectorInstallation {
   state: ConnectorInstallationState;
+  installedAtUnixMs?: number;
   installedVersion?: string;
   installedReleaseId?: string;
   installedReleaseDigest?: string;
@@ -172,12 +173,18 @@ export interface ConnectorCompatibility {
   reason?: string;
 }
 
+export interface ConnectorRuntime {
+  state: "started" | "starting" | "stopped" | "failed";
+  failureCode?: string;
+}
+
 export interface Connector {
   key: string;
   release: ConnectorRelease;
   installation: ConnectorInstallation;
   authorization: ConnectorAuthorization;
   compatibility: ConnectorCompatibility;
+  runtime?: ConnectorRuntime;
   revision: number;
 }
 
@@ -244,6 +251,10 @@ export interface ConnectorMarketMutationInput {
 export interface ConnectorMutationInput extends ConnectorMarketMutationInput {
   connectorKey: string;
   expectedConnectorRevision?: number;
+}
+
+export interface ConnectorRuntimeMutationInput extends ConnectorMutationInput {
+  enabled: boolean;
 }
 
 export interface ConnectorAuthorizationInput extends ConnectorMutationInput {

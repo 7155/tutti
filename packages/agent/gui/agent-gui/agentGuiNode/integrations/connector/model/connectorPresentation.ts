@@ -36,14 +36,17 @@ export function projectConnectorComposerItems(
       connectorKey,
       description: option.description,
       iconUrl: option.iconUrl,
+      installedAtUnixMs: option.installedAtUnixMs,
       name: option.name,
       selected: selectedKeys.has(connectorKey),
       status:
         option.status === "available"
           ? "connected"
-          : option.status === "authRequired"
-            ? "authorization_required"
-            : "setup_required"
+          : option.status === "disabled"
+            ? "disabled"
+            : option.status === "authRequired"
+              ? "authorization_required"
+              : "setup_required"
     });
   }
   return items;

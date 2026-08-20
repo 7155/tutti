@@ -28,8 +28,8 @@ type codexAppServerClient struct {
 	// parsedNotificationMethods tracks notification methods already run
 	// through the typed schema parse (telemetry only).
 	parsedNotificationMethods sync.Map
-	stderrMu                  sync.Mutex
-	mcpFailureScheduled       bool
+	mcpFailureMu              sync.Mutex
+	mcpFailureObserved        bool
 }
 
 type codexAppServerCaller struct {
@@ -101,31 +101,50 @@ func (c *codexAppServerClient) observeMCPStderr(chunk []byte) {
 	diagnostics := c.raw.Diagnostics()
 	detail := diagnostics.StderrTail
 	failure := codexMCPServerStartupFailureFromStderr(detail)
-	if failure == nil {
-		return
-	}
-	c.stderrMu.Lock()
-	if c.mcpFailureScheduled {
-		c.stderrMu.Unlock()
-		return
-	}
-	c.mcpFailureScheduled = true
-	c.stderrMu.Unlock()
-	slog.Warn("agent session Codex MCP server startup failed",
-		"event", "agent_session.codex.mcp.startup_failed",
-		"error", failure.Error(),
-		"grace_ms", defaultCodexAppServerMCPFailureGraceWindow.Milliseconds(),
-	)
-	time.AfterFunc(defaultCodexAppServerMCPFailureGraceWindow, func() {
-		c.failActiveCall(failure)
-	})
+	c.observeMCPFailure(failure, "stderr")
 }
 
-func (c *codexAppServerClient) failActiveCall(err error) {
-	if c == nil || c.raw == nil {
+func (c *codexAppServerClient) observeMCPStartupStatus(status map[string]any) {
+	c.observeMCPFailure(codexMCPServerStartupFailureFromStatus(status), "notification")
+}
+
+func (c *codexAppServerClient) completeThreadLifecycleFromNotification(thread map[string]any) {
+	if c == nil || c.raw == nil || len(thread) == 0 {
 		return
 	}
-	c.raw.failActiveHandler(err)
+	threadID := strings.TrimSpace(asString(thread["id"]))
+	if threadID == "" {
+		return
+	}
+	result, err := json.Marshal(map[string]any{"thread": clonePayload(thread)})
+	if err != nil {
+		return
+	}
+	c.raw.completeActiveHandler(appServerMethodThreadStart, result)
+	c.raw.completeActiveHandler(appServerMethodThreadResume, result)
+}
+
+// observeMCPFailure records provider-owned MCP state without changing the
+// lifecycle result of an unrelated app-server RPC. Codex treats MCP servers
+// as optional unless its own lifecycle response says otherwise; stderr and
+// startup-status notifications do not carry enough authority to close the
+// Codex session.
+func (c *codexAppServerClient) observeMCPFailure(failure error, source string) {
+	if c == nil || failure == nil {
+		return
+	}
+	c.mcpFailureMu.Lock()
+	if c.mcpFailureObserved {
+		c.mcpFailureMu.Unlock()
+		return
+	}
+	c.mcpFailureObserved = true
+	c.mcpFailureMu.Unlock()
+	slog.Warn("agent session Codex MCP server startup failed",
+		"event", "agent_session.codex.mcp.startup_failed",
+		"source", source,
+		"error", failure.Error(),
+	)
 }
 
 func (c *codexAppServerClient) Close() error {

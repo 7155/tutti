@@ -1882,6 +1882,77 @@ invalid_grant`. Search `tuttid.log` for
   `low` / `medium` / `high` / `max` variants, remembered-setting sanitization,
   and runtime rejection before any ACP call for an unadvertised value.
 
+### Codex or Tutti Agent model/capability catalog times out on cold start
+
+- Symptom:
+  The provider status is ready, but the composer model or capability catalog
+  temporarily falls back, reports `model/list timed out`, or records an
+  app-server capability discovery timeout after the daemon has been idle.
+- Quick checks:
+  Search the daemon log for `agent.model_catalog.fetch_settled` and inspect
+  `provider`, `durationMs`, `stage`, and `error`. A provider-process timeout
+  near 8 seconds points to the old cold-start boundary. Also inspect the
+  provider stderr for `codex_models_manager` refresh failures and distinguish
+  those from Tutti's own `context deadline exceeded`.
+- Root cause:
+  Codex and Tutti Agent both launch a Codex app-server. On Windows the `.cmd`
+  shim, managed Node startup, and the provider's own model metadata refresh
+  can make the first `model/list` or capability request slower than the
+  previous 8-second process bound, even though a later request succeeds and
+  status detection remains ready. `codex_runtime_selection_stale` and a
+  provider-owned child-process refresh timeout are separate runtime-selection
+  failures; increasing Tutti's request bound does not mask them.
+- Fix:
+  Keep the app-server process/request bound at 30 seconds for model and
+  capability catalogs, and give Codex/Tutti Agent's outer model-catalog fetch
+  a 35-second bound. Keep these values provider-specific; do not widen Claude,
+  Cursor, generic ACP, or interactive session timeouts without corresponding
+  boundary evidence.
+- Validation:
+  Confirm a cold catalog fetch either returns a non-empty model/capability
+  list or reports the provider-owned error after the bounded window. Verify
+  subsequent persistent/cache-backed requests succeed, and that status
+  detection and interactive session timeout values remain unchanged. Run
+  `cd services/tuttid && go test ./service/agent` and `pnpm check:changed`.
+- References:
+  [codex_model_catalog.go](../../../services/tuttid/service/agent/codex_model_catalog.go)
+  [codex_capability_catalog.go](../../../services/tuttid/service/agent/codex_capability_catalog.go)
+  [model_catalog.go](../../../services/tuttid/service/agent/model_catalog.go)
+
+### Windows Agent process remains after ACP startup timeout
+
+- Symptom:
+  A Codex, Cursor, Kimi, Claude SDK, or other local process Agent times out,
+  and a later retry reports cleanup pending, `process did not exit after kill`,
+  or an apparently missing provider. The same provider may work again after a
+  daemon restart.
+- Quick checks:
+  Search the daemon log for `agent_session.live_resource_cleanup.failed`,
+  `agent_session.live_release.failed`, and
+  `agent_session.process_start.group_attach_failed`. On Windows, inspect the
+  provider's `.cmd`/`.bat` wrapper and its Node or Python descendants rather
+  than checking only the wrapper PID.
+- Root cause:
+  A Windows command shim can exit while a descendant keeps the ACP stdout or
+  stderr pipe open. A later `taskkill` by the exited root PID cannot reliably
+  reach that descendant, so the transport close remains pending and the
+  adapter retains ownership to prevent an unsafe replacement.
+- Fix:
+  Local process launches attach their process tree to a Windows Job Object with
+  `KILL_ON_JOB_CLOSE`. Graceful `taskkill` remains the first close attempt;
+  the owned Job Object is the fallback when the shim PID has already exited.
+  Hosts that reject nested Job Object assignment retain the existing taskkill
+  fallback and emit `agent_session.process_start.group_attach_failed`.
+- Validation:
+  Reproduce a `.cmd` launch whose child outlives the shim, close the transport,
+  and verify that the child is gone or signaled as exited. Repeat with startup
+  timeout, cancellation, replacement, daemon shutdown, and direct `.exe`
+  providers. No `live_resource_cleanup.failed` should remain after successful
+  cleanup.
+- References:
+  [process_transport.go](../../../packages/agent/daemon/runtime/process_transport.go)
+  [process_command_windows.go](../../../packages/agent/daemon/runtime/process_command_windows.go)
+
 ### OpenCode model picker has fewer models than the terminal
 
 - Symptom:
@@ -1906,17 +1977,21 @@ invalid_grant`. Search `tuttid.log` for
   identity remained the provider-qualified `provider/model` id.
 - Fix:
   Pass the composer workspace cwd through the daemon model-catalog request and
-  set it as the `opencode models --verbose` process directory. Do not cache
-  OpenCode model-list successes or failures. Keep one request-scoped catalog
-  projection so a composer-options request starts the CLI only once. Preserve
-  the auth/config invalidation event so an already-open composer refreshes when
-  global OpenCode credentials or config files change. Append a non-built-in
+  set it as the `opencode models --verbose` process directory. Cache a
+  successful catalog for five minutes and a failed fetch for 30 seconds, with
+  the cwd included in the in-memory key; never reuse one workspace's project
+  catalog in another workspace or persist these cwd-scoped entries. Keep one
+  request-scoped catalog projection so a composer-options request starts the
+  CLI only once. Preserve the auth/config invalidation event so an already-open
+  composer refreshes when global OpenCode credentials or config files change.
+  Append a non-built-in
   provider id to verbose model labels while preserving the exact
   provider-qualified id as the selection value. Keep the built-in `opencode`
   provider suffix hidden so ordinary catalog entries stay concise, and avoid
   renderer-side provider branches.
 - Validation:
-  Cover cwd propagation, repeated uncached OpenCode lookups, all provider/model
+  Cover cwd propagation, repeated same-cwd cached OpenCode lookups, separate
+  fetches for different cwds, failed-fetch throttling, all provider/model
   prefixes from verbose output, one catalog lookup per composer-options request,
   duplicate model names under different provider ids, and unchanged cache
   policies for Codex and Tutti Agent. Run

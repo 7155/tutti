@@ -29,10 +29,26 @@ func TestACPResolvedToolCallStatusHonorsStructuredErrorFlags(t *testing.T) {
 		want   string
 	}{
 		{
+			name: "raw output isError overrides completed status",
+			update: map[string]any{
+				"status": "completed",
+				"output": map[string]any{"isError": true},
+			},
+			want: messageStreamStateFailed,
+		},
+		{
 			name: "error flag on completed update",
 			update: map[string]any{
 				"status":  "completed",
 				"isError": true,
+			},
+			want: messageStreamStateFailed,
+		},
+		{
+			name: "top level is_error overrides completed status",
+			update: map[string]any{
+				"status":   "completed",
+				"is_error": true,
 			},
 			want: messageStreamStateFailed,
 		},

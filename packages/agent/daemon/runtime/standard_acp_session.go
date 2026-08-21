@@ -117,7 +117,12 @@ func (a *standardACPAdapter) Start(ctx context.Context, session Session) ([]acti
 		if errors.As(err, &callErr) && callErr.AuthRequired() {
 			return nil, fmt.Errorf("%s: %w", a.config.authRequiredMessage, err)
 		}
-		return nil, err
+		return nil, &AppError{
+			Code:         AppErrorProviderSessionCreateFailed,
+			Message:      err.Error(),
+			DebugMessage: "provider session/new failed: " + err.Error(),
+			Cause:        err,
+		}
 	}
 	providerSessionID, err := acpSessionID(newSessionResult)
 	if err != nil {

@@ -1,5 +1,5 @@
 import { Fragment, useCallback, type JSX, type ReactNode } from "react";
-import { Avatar, toast } from "@tutti-os/ui-system";
+import { toast } from "@tutti-os/ui-system";
 import { AgentPlanCard } from "./AgentPlanCard";
 import { AgentCollaborationRow } from "./AgentCollaborationRow";
 import { translate } from "../../../i18n/index";
@@ -21,10 +21,8 @@ import type {
   AgentMessageContentVM,
   AgentMessageRowVM
 } from "../contracts/agentMessageRowVM";
-import type {
-  AgentConversationParticipantIdentity,
-  AgentConversationParticipantPresentation
-} from "../contracts/agentConversationParticipantPresentation";
+import type { AgentConversationParticipantPresentation } from "../contracts/agentConversationParticipantPresentation";
+import { AgentConversationParticipantHeader } from "./AgentConversationParticipant";
 import { AgentMessageDetailsDisclosure } from "./AgentMessageDetailsDisclosure";
 import agentSystemNoticeStyles from "./agentSystemNoticeStyles";
 import { AgentToolGroupRow } from "./AgentToolGroupRow";
@@ -444,88 +442,6 @@ export function AgentMessageBlock({
         messageContent
       )}
     </div>
-  );
-}
-
-function AgentConversationParticipantHeader({
-  presentation,
-  speaker
-}: {
-  presentation: Extract<
-    AgentConversationParticipantPresentation,
-    { enabled: true }
-  >;
-  speaker: AgentMessageRowVM["speaker"];
-}): JSX.Element {
-  const participant: AgentConversationParticipantIdentity | null =
-    presentation.status === "loading"
-      ? null
-      : speaker === "user"
-        ? presentation.user
-        : presentation.agent;
-  const nameContent = participant ? (
-    <span className={styles.participantName}>{participant.name}</span>
-  ) : null;
-  const avatarContent = (
-    <AgentConversationParticipantAvatar
-      presentation={presentation}
-      speaker={speaker}
-    />
-  );
-  return (
-    <div
-      className={styles.participantMessageHeader}
-      data-agent-conversation-participant-header={speaker}
-    >
-      {speaker === "user" ? (
-        <>
-          {nameContent}
-          {avatarContent}
-        </>
-      ) : (
-        <>
-          {avatarContent}
-          {nameContent}
-        </>
-      )}
-    </div>
-  );
-}
-
-function AgentConversationParticipantAvatar({
-  presentation,
-  speaker
-}: {
-  presentation: Extract<
-    AgentConversationParticipantPresentation,
-    { enabled: true }
-  >;
-  speaker: AgentMessageRowVM["speaker"];
-}): JSX.Element {
-  if (presentation.status === "loading") {
-    return (
-      <Avatar
-        aria-hidden="true"
-        className={styles.participantAvatar}
-        data-agent-conversation-participant-avatar={speaker}
-        label=""
-        loading
-        size={28}
-      />
-    );
-  }
-
-  const participant: AgentConversationParticipantIdentity =
-    speaker === "user" ? presentation.user : presentation.agent;
-  return (
-    <Avatar
-      aria-label={participant.name}
-      className={styles.participantAvatar}
-      data-agent-conversation-participant-avatar={speaker}
-      label={participant.name}
-      size={28}
-      src={participant.avatarUrl}
-    />
   );
 }
 

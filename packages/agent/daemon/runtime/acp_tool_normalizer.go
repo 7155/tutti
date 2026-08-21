@@ -1,10 +1,8 @@
 package agentruntime
 
 import (
-	"encoding/json"
 	"log/slog"
 	"os"
-	"strconv"
 	"strings"
 
 	activityshared "github.com/tutti-os/tutti/packages/agent/daemon/activity/events"
@@ -735,23 +733,6 @@ func acpResolvedToolCallStatus(update map[string]any, fallback string) string {
 	return status
 }
 
-func acpToolCallReportsError(update map[string]any, rawOutput any) bool {
-	return acpValueReportsError(update) || acpValueReportsError(rawOutput)
-}
-
-func acpValueReportsError(value any) bool {
-	body, ok := value.(map[string]any)
-	if !ok {
-		return false
-	}
-	for _, key := range []string{"isError", "is_error"} {
-		if reported, ok := body[key].(bool); ok && reported {
-			return true
-		}
-	}
-	return false
-}
-
 func acpInferTerminalToolStatus(rawOutput any) string {
 	body := acpMapFromValue(rawOutput, "output")
 	if len(body) == 0 {
@@ -829,43 +810,4 @@ func acpToolCallLooksLikeImageGeneration(update map[string]any) bool {
 		}
 	}
 	return false
-}
-
-func acpIntFromValue(value any) (int, bool) {
-	switch typed := value.(type) {
-	case int:
-		return typed, true
-	case int32:
-		return int(typed), true
-	case int64:
-		return int(typed), true
-	case float64:
-		return int(typed), true
-	case json.Number:
-		n, err := typed.Int64()
-		if err != nil {
-			return 0, false
-		}
-		return int(n), true
-	case string:
-		n, err := strconv.Atoi(strings.TrimSpace(typed))
-		if err != nil {
-			return 0, false
-		}
-		return n, true
-	default:
-		return 0, false
-	}
-}
-
-func acpExitCodeFromText(value any) (int, bool) {
-	text := strings.TrimSpace(asString(value))
-	if text == "" {
-		return 0, false
-	}
-	lower := strings.ToLower(text)
-	if !strings.HasPrefix(lower, "exit code ") {
-		return 0, false
-	}
-	return acpIntFromValue(strings.TrimSpace(text[len("Exit code "):]))
 }

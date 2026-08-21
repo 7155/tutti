@@ -47,7 +47,7 @@ export const generatedDefaults = {
       },
       {
         key: "codebuddy",
-        pinnedVersion: "2.0.3",
+        pinnedVersion: "2.0.5",
         releaseIndexUrl:
           "https://d1x7gb6wqsqmnm.cloudfront.net/tutti-agent-releases/agents/codebuddy/versions.json",
         signingKeyId: "tutti-codebuddy-release-v1",

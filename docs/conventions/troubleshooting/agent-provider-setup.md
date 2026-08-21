@@ -1866,6 +1866,40 @@ invalid_grant`. Search `tuttid.log` for
   [codex_capability_catalog.go](../../../services/tuttid/service/agent/codex_capability_catalog.go)
   [model_catalog.go](../../../services/tuttid/service/agent/model_catalog.go)
 
+### Windows Agent process remains after ACP startup timeout
+
+- Symptom:
+  A Codex, Cursor, Kimi, Claude SDK, or other local process Agent times out,
+  and a later retry reports cleanup pending, `process did not exit after kill`,
+  or an apparently missing provider. The same provider may work again after a
+  daemon restart.
+- Quick checks:
+  Search the daemon log for `agent_session.live_resource_cleanup.failed`,
+  `agent_session.live_release.failed`, and
+  `agent_session.process_start.group_attach_failed`. On Windows, inspect the
+  provider's `.cmd`/`.bat` wrapper and its Node or Python descendants rather
+  than checking only the wrapper PID.
+- Root cause:
+  A Windows command shim can exit while a descendant keeps the ACP stdout or
+  stderr pipe open. A later `taskkill` by the exited root PID cannot reliably
+  reach that descendant, so the transport close remains pending and the
+  adapter retains ownership to prevent an unsafe replacement.
+- Fix:
+  Local process launches attach their process tree to a Windows Job Object with
+  `KILL_ON_JOB_CLOSE`. Graceful `taskkill` remains the first close attempt;
+  the owned Job Object is the fallback when the shim PID has already exited.
+  Hosts that reject nested Job Object assignment retain the existing taskkill
+  fallback and emit `agent_session.process_start.group_attach_failed`.
+- Validation:
+  Reproduce a `.cmd` launch whose child outlives the shim, close the transport,
+  and verify that the child is gone or signaled as exited. Repeat with startup
+  timeout, cancellation, replacement, daemon shutdown, and direct `.exe`
+  providers. No `live_resource_cleanup.failed` should remain after successful
+  cleanup.
+- References:
+  [process_transport.go](../../../packages/agent/daemon/runtime/process_transport.go)
+  [process_command_windows.go](../../../packages/agent/daemon/runtime/process_command_windows.go)
+
 ### OpenCode model picker has fewer models than the terminal
 
 - Symptom:

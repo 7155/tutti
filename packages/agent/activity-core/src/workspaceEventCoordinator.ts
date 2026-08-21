@@ -274,13 +274,7 @@ export function createAgentActivityWorkspaceEventCoordinator({
 
       const prioritySet = new Set(prioritySessionIds);
       const canonical = readCanonicalSnapshot();
-      const cachedMessageSessionIds = Object.entries(
-        canonical.sessionMessagesById
-      ).flatMap(([agentSessionId, messages]) =>
-        messages.length > 0 ? [agentSessionId] : []
-      );
       for (const agentSessionId of normalizedSessionIds([
-        ...cachedMessageSessionIds,
         ...overlaySessionIds
       ])) {
         if (prioritySet.has(agentSessionId)) continue;

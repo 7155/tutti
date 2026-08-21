@@ -733,7 +733,7 @@ test("preserves unrelated Session message projections during an optimistic delta
   harness.engine.dispose();
 });
 
-test("reconnect hydrates the workspace, priority session, and cached messages", () => {
+test("reconnect hydrates only the workspace, priority sessions, and optimistic messages", () => {
   const harness = createHarness();
   harness.engine.dispatch({
     messages: [
@@ -796,13 +796,13 @@ test("reconnect hydrates the workspace, priority session, and cached messages", 
         command.scope === "state_and_messages"
     )
   );
-  assert.ok(
+  assert.equal(
     harness.commands.some(
       (command) =>
         command.type === "session/reconcile" &&
-        command.agentSessionId === "session-cached" &&
-        command.scope === "state_and_messages"
-    )
+        command.agentSessionId === "session-cached"
+    ),
+    false
   );
   assert.ok(
     harness.commands.some(

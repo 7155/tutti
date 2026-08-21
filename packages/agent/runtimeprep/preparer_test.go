@@ -2039,6 +2039,7 @@ func TestDefaultPreparerCursorUsesRuntimePluginDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tuttiCLIPolicy() error = %v", err)
 	}
+	expectedPolicy = cursorPromptPolicy(expectedPolicy)
 	if !strings.HasPrefix(string(promptContext), strings.TrimSpace(expectedPolicy)+"\n\n## Available Skills\n") {
 		t.Fatalf("cursor prompt context does not start with resolved policy: %s", string(promptContext))
 	}

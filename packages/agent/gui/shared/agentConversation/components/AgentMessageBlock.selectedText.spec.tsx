@@ -42,7 +42,9 @@ describe("AgentMessageBlock selected text", () => {
 
     const chip = screen.getByTestId("agent-selected-text-chip");
     expect(chip.getAttribute("data-selected-text-count")).toBe("1");
-    expect(chip).toHaveTextContent("1 selected text fragment");
+    expect(chip).toHaveTextContent("1 selected file snippet");
+    expect(chip).toHaveClass("rounded-[10px]");
+    expect(chip).toHaveClass("bg-[var(--background-fronted)]");
     expect(screen.queryByText("Selected source text")).toBeNull();
   });
 

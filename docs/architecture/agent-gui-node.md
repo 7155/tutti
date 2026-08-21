@@ -1219,6 +1219,11 @@ only before that canonical Session projection exists.
   aggregate reads, but do not belong in high-frequency AgentGUI render paths.
   Event callbacks that need current canonical data read the engine snapshot at
   event time instead of retaining a whole-workspace render snapshot
+- optimistic `message_delta` invalidations are coalesced on the host-injected
+  scheduler; the Desktop bridge queues matching session-message events and
+  flushes them at the same boundary so the rendered snapshot and event fan-out
+  cannot observe different prefixes. The external-store `subscribe` and
+  `getSnapshot` callbacks must remain referentially stable across renders
 - lifecycle writes use semantic Engine operations or typed intents/commands
 - composer-option reads use `engine.loadComposerOptions`; the Engine owns
   request identity, signature-aware cache reuse, identical in-flight joining,

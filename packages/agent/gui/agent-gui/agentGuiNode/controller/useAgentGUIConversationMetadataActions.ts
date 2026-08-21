@@ -42,14 +42,18 @@ export interface UseAgentGUIConversationMetadataActionsInput {
   selectConversation?: (agentSessionId: string) => void;
 }
 
+const CANONICAL_SESSION_WAIT_TIMEOUT_MS = 30_000;
+
+type CanonicalSessionWaitResult = "ready" | "unavailable" | "timed_out";
+
 async function waitForCanonicalSession(
   sessionEngine: AgentSessionEngine,
   agentSessionId: string
-): Promise<boolean> {
+): Promise<CanonicalSessionWaitResult> {
   const hasCanonicalSession = (): boolean =>
     selectEngineSession(sessionEngine.getSnapshot(), agentSessionId) !== null;
   if (hasCanonicalSession()) {
-    return true;
+    return "ready";
   }
 
   const pendingActivation = selectLatestActivationForSession(
@@ -57,19 +61,28 @@ async function waitForCanonicalSession(
     agentSessionId
   );
   if (!isPendingActivationViable(pendingActivation)) {
-    return false;
+    return "unavailable";
   }
 
   return new Promise((resolve) => {
     let unsubscribe: (() => void) | null = null;
-    const finish = (ready: boolean): void => {
+    let active = true;
+    const timeoutSignal = AbortSignal.timeout(
+      CANONICAL_SESSION_WAIT_TIMEOUT_MS
+    );
+    const finish = (result: CanonicalSessionWaitResult): void => {
+      if (!active) {
+        return;
+      }
+      active = false;
+      timeoutSignal.removeEventListener("abort", onTimeout);
       unsubscribe?.();
       unsubscribe = null;
-      resolve(ready);
+      resolve(result);
     };
     const check = (): void => {
       if (hasCanonicalSession()) {
-        finish(true);
+        finish("ready");
         return;
       }
       const activation = selectLatestActivationForSession(
@@ -77,10 +90,19 @@ async function waitForCanonicalSession(
         agentSessionId
       );
       if (!isPendingActivationViable(activation)) {
-        finish(false);
+        finish("unavailable");
       }
     };
-    unsubscribe = sessionEngine.subscribe(check);
+    function onTimeout(): void {
+      finish("timed_out");
+    }
+    timeoutSignal.addEventListener("abort", onTimeout, { once: true });
+    const registeredUnsubscribe = sessionEngine.subscribe(check);
+    if (active) {
+      unsubscribe = registeredUnsubscribe;
+    } else {
+      registeredUnsubscribe();
+    }
     check();
   });
 }
@@ -251,13 +273,17 @@ export function useAgentGUIConversationMetadataActions(
       }
       setDetailError(null);
       try {
-        if (
-          !(await waitForCanonicalSession(
-            sessionEngine,
-            normalizedAgentSessionId
-          ))
-        ) {
-          return;
+        const canonicalSessionWait = await waitForCanonicalSession(
+          sessionEngine,
+          normalizedAgentSessionId
+        );
+        if (canonicalSessionWait !== "ready") {
+          throw Object.assign(
+            new Error(translate("agentHost.agentGui.sessionActionUnavailable")),
+            {
+              reason: `agent_gui_rename_session_${canonicalSessionWait}`
+            }
+          );
         }
         await sessionEngine.renameSession({
           agentSessionId: normalizedAgentSessionId,

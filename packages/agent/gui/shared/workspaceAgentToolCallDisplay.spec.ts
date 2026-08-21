@@ -26,14 +26,14 @@ describe("resolveWorkspaceAgentToolName", () => {
 });
 
 describe("buildWorkspaceAgentToolCallDisplay", () => {
-  it("marks nested provider errors as failed and keeps their detail", () => {
+  it("marks a structured provider error as failed when no terminal status exists", () => {
     const display = buildWorkspaceAgentToolCallDisplay({
       id: 2,
       agentSessionId: "session-1",
       eventId: "event-2",
       actorType: "agent",
       actorId: "cursor",
-      itemType: "call.completed",
+      itemType: "call",
       callType: "tool",
       name: "MCP request",
       payload: {
@@ -46,6 +46,30 @@ describe("buildWorkspaceAgentToolCallDisplay", () => {
 
     expect(display.statusKind).toBe("failed");
     expect(display.detail).toBe("MCP request failed");
+  });
+
+  it("keeps a canonical completed status while preserving diagnostic detail", () => {
+    const display = buildWorkspaceAgentToolCallDisplay({
+      id: 3,
+      agentSessionId: "session-1",
+      eventId: "event-3",
+      actorType: "agent",
+      actorId: "cursor",
+      itemType: "call.completed",
+      callType: "tool",
+      name: "MCP request",
+      payload: {
+        toolName: "McpTool",
+        error: {
+          stderr: "provider emitted a diagnostic after completion"
+        }
+      }
+    });
+
+    expect(display.statusKind).toBe("completed");
+    expect(display.detail).toBe(
+      "provider emitted a diagnostic after completion"
+    );
   });
 });
 

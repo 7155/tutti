@@ -47,11 +47,35 @@ func TestACPResolvedToolCallStatusHonorsStructuredErrorFlags(t *testing.T) {
 			want: messageStreamStateFailed,
 		},
 		{
+			name: "nested error flag in structured raw output",
+			update: map[string]any{
+				"status": "completed",
+				"output": map[string]any{
+					"structuredContent": map[string]any{
+						"error": map[string]any{
+							"is_error": true,
+						},
+					},
+				},
+			},
+			want: messageStreamStateFailed,
+		},
+		{
 			name: "false error flag preserves completed status",
 			update: map[string]any{
 				"status": "completed",
 				"output": map[string]any{
 					"isError": false,
+				},
+			},
+			want: messageStreamStateCompleted,
+		},
+		{
+			name: "input field named isError does not change status",
+			update: map[string]any{
+				"status": "completed",
+				"input": map[string]any{
+					"isError": true,
 				},
 			},
 			want: messageStreamStateCompleted,

@@ -805,6 +805,9 @@ overwritten by a late provider title or by a stale turn-completion snapshot,
 and neither the stream projection nor the durable report may carry a stale
 provider title over an established user title. On resume the runtime fails
 closed and treats a persisted title as user-established.
+Metadata commands issued while a new Session is still activating wait for the
+canonical Session; an activation failure or bounded wait timeout is an
+explicit user-visible error and never a silent no-op.
 
 A Session does not copy Turn phase/outcome, own pending Interactions, or persist lifecycle inferred from transcript.
 

@@ -382,15 +382,10 @@ function toolCallStatus(item: WorkspaceAgentActivityTimelineItem): {
 } {
   const payload = item.payload;
   const metadata = recordValue(payload, "metadata");
-  if (
+  const hasStructuredError = Boolean(
     structuredToolText(recordValue(payload, "error")) ||
     structuredToolText(recordValue(metadata, "error"))
-  ) {
-    return {
-      status: translate("agentHost.agentTool.statusFailed"),
-      statusKind: "failed"
-    };
-  }
+  );
   const payloadStatus = firstPresentString(
     item.status,
     stringRecordValue(payload, "status"),
@@ -436,7 +431,12 @@ function toolCallStatus(item: WorkspaceAgentActivityTimelineItem): {
         statusKind: "waiting"
       };
     default:
-      return { status: null, statusKind: null };
+      return hasStructuredError
+        ? {
+            status: translate("agentHost.agentTool.statusFailed"),
+            statusKind: "failed"
+          }
+        : { status: null, statusKind: null };
   }
 }
 

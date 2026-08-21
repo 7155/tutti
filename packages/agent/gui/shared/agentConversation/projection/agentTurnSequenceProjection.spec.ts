@@ -83,4 +83,44 @@ describe("buildAgentTurnSequenceItems", () => {
       "tool-1"
     );
   });
+
+  it("keeps a transitive order when sequence and timestamp metadata are mixed", () => {
+    const sequence = buildAgentTurnSequenceItems({
+      ...makeTurn(),
+      agentItems: [
+        toolGroup("seq-1", 1, 300),
+        toolGroup("timestamp-only", 0, 200),
+        toolGroup("seq-2", 2, 100)
+      ]
+    });
+
+    expect(
+      sequence.map((item) =>
+        item.kind === "tool-call" ? item.call.id : "unexpected"
+      )
+    ).toEqual(["seq-1", "seq-2", "timestamp-only"]);
+  });
 });
+
+function toolGroup(id: string, seq: number, occurredAtUnixMs: number) {
+  return {
+    kind: "tool-calls" as const,
+    id: `group-${id}`,
+    toolCallCount: 1,
+    hasFailedToolCall: false,
+    toolCalls: [
+      {
+        id,
+        name: "Bash",
+        toolName: "bash",
+        callType: "tool" as const,
+        status: "completed" as const,
+        statusKind: "completed" as const,
+        summary: "",
+        payload: null,
+        occurredAtUnixMs,
+        sourceTimelineItems: [timelineItem(id.length, seq, occurredAtUnixMs)]
+      }
+    ]
+  };
+}

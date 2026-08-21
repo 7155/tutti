@@ -97,16 +97,16 @@ function sortTurnSequenceItems(
   }));
   return positioned
     .sort((left, right) => {
-      if (
-        left.position.seq > 0 &&
-        right.position.seq > 0 &&
-        left.position.seq !== right.position.seq
-      ) {
+      const leftRank = turnSequencePositionRank(left.position);
+      const rightRank = turnSequencePositionRank(right.position);
+      if (leftRank !== rightRank) {
+        return leftRank - rightRank;
+      }
+      if (leftRank === 0 && left.position.seq !== right.position.seq) {
         return left.position.seq - right.position.seq;
       }
       if (
-        left.position.occurredAtUnixMs > 0 &&
-        right.position.occurredAtUnixMs > 0 &&
+        leftRank === 1 &&
         left.position.occurredAtUnixMs !== right.position.occurredAtUnixMs
       ) {
         return left.position.occurredAtUnixMs - right.position.occurredAtUnixMs;
@@ -114,6 +114,19 @@ function sortTurnSequenceItems(
       return left.sourceIndex - right.sourceIndex;
     })
     .map((entry) => entry.item);
+}
+
+function turnSequencePositionRank(position: {
+  seq: number;
+  occurredAtUnixMs: number;
+}): 0 | 1 | 2 {
+  if (position.seq > 0) {
+    return 0;
+  }
+  if (position.occurredAtUnixMs > 0) {
+    return 1;
+  }
+  return 2;
 }
 
 function turnSequencePosition(item: AgentTurnSequenceItemVM): {

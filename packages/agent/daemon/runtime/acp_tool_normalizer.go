@@ -717,21 +717,6 @@ func canonicalACPStatusToken(status string) string {
 	}
 }
 
-func acpResolvedToolCallStatus(update map[string]any, fallback string) string {
-	status := normalizedCallStatus(firstNonEmpty(asString(update["status"]), fallback))
-	if status != messageStreamStateStreaming {
-		return status
-	}
-	rawOutput := acpToolCallRawOutput(update)
-	if inferred := acpInferTerminalToolStatus(rawOutput); inferred != "" {
-		return inferred
-	}
-	if inferred := acpInferImageGenerationTerminalStatus(update, rawOutput); inferred != "" {
-		return inferred
-	}
-	return status
-}
-
 func acpInferTerminalToolStatus(rawOutput any) string {
 	body := acpMapFromValue(rawOutput, "output")
 	if len(body) == 0 {

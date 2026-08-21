@@ -99,7 +99,8 @@ func TestApplyACPConfigOptionsResultPreservesDescriptionWithoutDeclaredMetadataF
 			"options":[{
 				"value":"ordinary-provider",
 				"name":"Ordinary Provider",
-				"description":"Frontier model · x0.71 credits"
+				"description":"Frontier model · x0.71 credits",
+				"consumptionMultiplier":"9.99"
 			}]
 		}]
 	}`), "model", "")

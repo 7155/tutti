@@ -123,20 +123,23 @@ func normalizeACPModelConfigOptionDescriptions(
 	metadataFormat string,
 ) {
 	modelConfigOptionID = strings.TrimSpace(modelConfigOptionID)
-	if modelConfigOptionID == "" || strings.TrimSpace(metadataFormat) == "" {
-		return
-	}
 	for _, descriptor := range descriptors {
-		if strings.TrimSpace(asString(descriptor["id"])) != modelConfigOptionID {
-			continue
-		}
 		options, ok := descriptor["options"].([]any)
 		if !ok {
-			return
+			continue
 		}
 		for _, rawOption := range options {
 			option, ok := rawOption.(map[string]any)
 			if !ok {
+				continue
+			}
+			// This field is an extension-owned semantic. Never allow a raw ACP
+			// provider payload to smuggle it through the shared runtime context;
+			// it may only be re-added below after the declared adapter format has
+			// parsed the description.
+			delete(option, "consumptionMultiplier")
+			if strings.TrimSpace(asString(descriptor["id"])) != modelConfigOptionID ||
+				strings.TrimSpace(metadataFormat) != StandardACPModelDescriptionMetadataFormatCreditConsumptionMultiplierV1 {
 				continue
 			}
 			description, consumptionMultiplier := normalizeACPModelDescription(
@@ -152,7 +155,6 @@ func normalizeACPModelConfigOptionDescriptions(
 				option["consumptionMultiplier"] = consumptionMultiplier
 			}
 		}
-		return
 	}
 }
 

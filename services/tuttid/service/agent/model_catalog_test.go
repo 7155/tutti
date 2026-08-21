@@ -373,12 +373,13 @@ func TestAgentModelCatalogCachesOpenCodeErrors(t *testing.T) {
 
 func TestAgentModelCatalogCachePolicyAcrossProviders(t *testing.T) {
 	tests := []struct {
-		provider string
-		cached   bool
+		provider     string
+		cached       bool
+		fetchTimeout time.Duration
 	}{
-		{provider: "codex", cached: true},
-		{provider: "opencode", cached: true},
-		{provider: "tutti-agent", cached: true},
+		{provider: "codex", cached: true, fetchTimeout: 35 * time.Second},
+		{provider: "opencode", cached: true, fetchTimeout: 35 * time.Second},
+		{provider: "tutti-agent", cached: true, fetchTimeout: 35 * time.Second},
 	}
 	if len(agentModelCatalogSpecs) != len(tests) {
 		t.Fatalf("model catalog specs = %d, want reviewed cache policy for %d providers", len(agentModelCatalogSpecs), len(tests))
@@ -390,6 +391,9 @@ func TestAgentModelCatalogCachePolicyAcrossProviders(t *testing.T) {
 		}
 		if got := specCachesModelCatalog(spec); got != test.cached {
 			t.Fatalf("provider %s cached = %v, want %v", test.provider, got, test.cached)
+		}
+		if got := modelCatalogFetchTimeoutForSpec(spec); got != test.fetchTimeout {
+			t.Fatalf("provider %s fetch timeout = %s, want %s", test.provider, got, test.fetchTimeout)
 		}
 	}
 }

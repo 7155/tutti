@@ -1829,6 +1829,43 @@ invalid_grant`. Search `tuttid.log` for
   `low` / `medium` / `high` / `max` variants, remembered-setting sanitization,
   and runtime rejection before any ACP call for an unadvertised value.
 
+### Codex or Tutti Agent model/capability catalog times out on cold start
+
+- Symptom:
+  The provider status is ready, but the composer model or capability catalog
+  temporarily falls back, reports `model/list timed out`, or records an
+  app-server capability discovery timeout after the daemon has been idle.
+- Quick checks:
+  Search the daemon log for `agent.model_catalog.fetch_settled` and inspect
+  `provider`, `durationMs`, `stage`, and `error`. A provider-process timeout
+  near 8 seconds points to the old cold-start boundary. Also inspect the
+  provider stderr for `codex_models_manager` refresh failures and distinguish
+  those from Tutti's own `context deadline exceeded`.
+- Root cause:
+  Codex and Tutti Agent both launch a Codex app-server. On Windows the `.cmd`
+  shim, managed Node startup, and the provider's own model metadata refresh
+  can make the first `model/list` or capability request slower than the
+  previous 8-second process bound, even though a later request succeeds and
+  status detection remains ready. `codex_runtime_selection_stale` and a
+  provider-owned child-process refresh timeout are separate runtime-selection
+  failures; increasing Tutti's request bound does not mask them.
+- Fix:
+  Keep the app-server process/request bound at 30 seconds for model and
+  capability catalogs, and give Codex/Tutti Agent's outer model-catalog fetch
+  a 35-second bound. Keep these values provider-specific; do not widen Claude,
+  Cursor, generic ACP, or interactive session timeouts without corresponding
+  boundary evidence.
+- Validation:
+  Confirm a cold catalog fetch either returns a non-empty model/capability
+  list or reports the provider-owned error after the bounded window. Verify
+  subsequent persistent/cache-backed requests succeed, and that status
+  detection and interactive session timeout values remain unchanged. Run
+  `cd services/tuttid && go test ./service/agent` and `pnpm check:changed`.
+- References:
+  [codex_model_catalog.go](../../../services/tuttid/service/agent/codex_model_catalog.go)
+  [codex_capability_catalog.go](../../../services/tuttid/service/agent/codex_capability_catalog.go)
+  [model_catalog.go](../../../services/tuttid/service/agent/model_catalog.go)
+
 ### OpenCode model picker has fewer models than the terminal
 
 - Symptom:

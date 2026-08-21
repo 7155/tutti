@@ -226,6 +226,17 @@ Claude-native credential and endpoint values pass through unchanged. Logs may
 record only their presence, storage source, expiry metadata, and non-reversible
 fingerprints; they must never record values, account names, or personal paths.
 
+Codex and Tutti Agent use the Codex app-server protocol for their model and
+dynamic capability catalogs. Their model-list operation has a 30-second
+provider-process bound and a 35-second outer catalog-fetch bound; the
+capability-list operation has the same 30-second provider-process bound. These
+provider-specific windows cover a cold Windows npm shim and the provider's
+own model-metadata refresh without widening unrelated status or interactive
+session timeouts. The persistent model catalog cache still uses its existing
+five-minute success and short failed-fetch windows. A timeout from Codex's own
+`codex_models_manager` or a stale runtime-selection error is provider-owned
+and is not converted into success by these Tutti bounds.
+
 OpenCode provider availability checks the `opencode` CLI directly and launches
 sessions through the official `opencode acp` command. Do not add model,
 agent, or auto-mode CLI flags to that ACP command. Session model selection must

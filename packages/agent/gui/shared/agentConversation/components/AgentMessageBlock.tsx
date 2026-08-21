@@ -45,8 +45,7 @@ import {
 import { useAgentUserMessageEditRetry } from "./useAgentUserMessageEditRetry";
 import { AgentCopyableMessageGroup } from "./AgentMessageActions";
 
-const DEFAULT_TOOL_CALLS_LABEL = (count: number): string =>
-  `${count} tool calls`;
+const DEFAULT_TOOL_CALLS_LABEL = (count: number) => `${count} tool calls`;
 const TRANSPORT_RETRY_PROGRESS_PATTERN =
   /\b(reconnect(?:ing)?(?:\s*(?:\.\.\.|…|[.。]+|:|-))?\s*\(?\d+\s*\/\s*\d+\)?)/i;
 interface AgentMessageBlockProps {
@@ -592,11 +591,8 @@ function isContextCompactionInterruptedNotice(
   );
 }
 
-function isContextHandoffRequiredNotice(
-  message: AgentMessageContentVM
-): boolean {
-  return message.systemNotice?.semanticKind === "context-handoff-required";
-}
+const isContextHandoffRequiredNotice = (message: AgentMessageContentVM) =>
+  message.systemNotice?.semanticKind === "context-handoff-required";
 
 function ContextCompactionDivider({
   text,

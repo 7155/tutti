@@ -693,9 +693,10 @@ export abstract class WorkspaceAgentActivityReconcileBridge {
         this.canonicalActivitySnapshot(normalizedWorkspaceId),
       workspaceId: normalizedWorkspaceId
     });
-    // The coordinator already batches optimistic overlay notifications on its
-    // host-injected scheduler. Flush the matching host events from that same
-    // boundary instead of maintaining a second renderer timer.
+    // The coordinator batches optimistic overlay notifications on the
+    // host-injected scheduler. Flush matching host events from that same
+    // boundary so the UI observes one coherent snapshot without a second
+    // renderer timer.
     coordinator.subscribe(() =>
       this.flushPendingOptimisticSessionEvents(normalizedWorkspaceId)
     );

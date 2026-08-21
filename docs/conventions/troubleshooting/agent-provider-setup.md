@@ -849,6 +849,59 @@ file or directory`. A failed `codex app-server` probe is diagnostic evidence,
   [acp_provider_cursor.go](../../../packages/agent/daemon/runtime/acp_provider_cursor.go)
   [skill_options.go](../../../services/tuttid/service/agent/skill_options.go)
 
+### Cursor ACP Glob/Grep fails for absolute Windows search roots
+
+- Symptom:
+  A Cursor ACP session on Windows reports that Glob or Grep failed for an
+  absolute path such as `C:/Users/...`. The underlying provider output may be
+  `rg: : IO error for operation on` with an empty operand and `The system
+cannot find the path specified`, while the same repository is searchable
+  with no explicit path, a relative path, or a native terminal command.
+- Quick checks:
+  Compare the `cwd` in `agent_session.acp.session_new.start` with the
+  `cwd`/`protocol_cwd` in `agent_session.acp.process_start.start`. Tutti must
+  pass the native Windows workspace path through unchanged. Run the Cursor
+  version's bundled `rg.exe` directly against the same absolute path; if it
+  succeeds, the filesystem and Windows `rg` receiver are healthy. Set
+  `TUTTI_ACP_TOOL_DEBUG=1` before starting the daemon when the raw and
+  normalized ACP tool inputs are needed; treat paths in that diagnostic as
+  sensitive.
+- Root cause:
+  Tutti owns the ACP process working directory and the `session/new` payload,
+  but Cursor owns the built-in Glob/Grep implementation and constructs its
+  internal `rg` invocation from the provider tool call. In the incident, the
+  provider's error names an empty `rg` operand even though the requested
+  directory was absolute, so the path was lost inside Cursor after Tutti had
+  already passed the native cwd. The ACP event normalizer only projects the
+  provider's completed call; changing its display fields cannot repair the
+  provider's search request. A separate Tutti defect also used POSIX `/` as
+  the generic ACP protocol cwd when no cwd was supplied; Windows now falls
+  back to the process's native cwd instead.
+- Fix:
+  Cursor's Windows-only prepared prompt context requires workspace-relative
+  roots for its built-in Glob/Grep tools, uses `.` for the workspace root,
+  and routes workspace-external or uncertain absolute paths through native
+  `rg`/PowerShell. If a provider search still fails, the agent must retry via
+  that route and report the retry's actual output; it must not turn the failed
+  call into a successful result.
+- Validation:
+  Run the runtime preparation and standard ACP tests on Windows. With a real
+  Cursor ACP session, search for a known file using (1) a relative workspace
+  root and (2) an absolute path outside the workspace. Verify that the first
+  uses the provider search successfully and the second uses native terminal
+  search with returned file content. Inspect the ACP diagnostic input if the
+  provider still emits an empty `rg` operand.
+- Limitation:
+  The Cursor provider owns the failing internal path conversion. Tutti's
+  prompt policy prevents the known trigger for model-driven searches, but it
+  cannot guarantee behavior when Cursor ignores that policy. Do not call this
+  provider defect fixed based only on an error card becoming visible; update
+  or report the Cursor runtime if the raw tool input still loses the path.
+- References:
+  [standard_acp_session.go](../../../packages/agent/daemon/runtime/standard_acp_session.go),
+  [cursor.go](../../../packages/agent/runtimeprep/cursor.go),
+  [acp_tool_normalizer.go](../../../packages/agent/daemon/runtime/acp_tool_normalizer.go)
+
 ### Cursor read-only mode still creates files without approval
 
 - Symptom:

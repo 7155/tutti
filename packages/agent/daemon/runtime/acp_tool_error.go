@@ -6,23 +6,6 @@ import (
 	"strings"
 )
 
-func acpToolCallReportsError(update map[string]any, rawOutput any) bool {
-	return acpValueReportsError(update) || acpValueReportsError(rawOutput)
-}
-
-func acpValueReportsError(value any) bool {
-	body, ok := value.(map[string]any)
-	if !ok {
-		return false
-	}
-	for _, key := range []string{"isError", "is_error"} {
-		if reported, ok := body[key].(bool); ok && reported {
-			return true
-		}
-	}
-	return false
-}
-
 func acpIntFromValue(value any) (int, bool) {
 	switch typed := value.(type) {
 	case int:

@@ -818,6 +818,9 @@ overwritten by a late provider title or by a stale turn-completion snapshot,
 and neither the stream projection nor the durable report may carry a stale
 provider title over an established user title. On resume the runtime fails
 closed and treats a persisted title as user-established.
+Metadata commands issued while a new Session is still activating wait for the
+canonical Session; an activation failure or bounded wait timeout is an
+explicit user-visible error and never a silent no-op.
 
 A Session does not copy Turn phase/outcome, own pending Interactions, or persist lifecycle inferred from transcript.
 
@@ -1232,6 +1235,11 @@ only before that canonical Session projection exists.
   aggregate reads, but do not belong in high-frequency AgentGUI render paths.
   Event callbacks that need current canonical data read the engine snapshot at
   event time instead of retaining a whole-workspace render snapshot
+- optimistic `message_delta` invalidations are coalesced on the host-injected
+  scheduler; the Desktop bridge queues matching session-message events and
+  flushes them at the same boundary so the rendered snapshot and event fan-out
+  cannot observe different prefixes. The external-store `subscribe` and
+  `getSnapshot` callbacks must remain referentially stable across renders
 - lifecycle writes use semantic Engine operations or typed intents/commands
 - composer-option reads use `engine.loadComposerOptions`; the Engine owns
   request identity, signature-aware cache reuse, identical in-flight joining,

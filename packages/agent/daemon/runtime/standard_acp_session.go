@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -87,7 +89,7 @@ func (a *standardACPAdapter) Start(ctx context.Context, session Session) ([]acti
 	a.storeSession(session.AgentSessionID, acpSession)
 
 	newSessionParams := map[string]any{
-		"cwd":        firstNonEmpty(session.CWD, "/"),
+		"cwd":        standardACPProtocolCWD(session.CWD),
 		"mcpServers": mcpServers,
 	}
 	if err := a.applyProviderSessionMeta(newSessionParams, session); err != nil {
@@ -97,7 +99,7 @@ func (a *standardACPAdapter) Start(ctx context.Context, session Session) ([]acti
 	a.logStandardACPStartupDiagnostics("session_new.start", map[string]any{
 		"room_id":          session.RoomID,
 		"agent_session_id": session.AgentSessionID,
-		"cwd":              firstNonEmpty(session.CWD, "/"),
+		"cwd":              standardACPProtocolCWD(session.CWD),
 		"timeout_ms":       a.startupCallTimeout().Milliseconds(),
 	})
 	newSessionResult, err := client.CallWithTimeout(ctx, a.startupCallTimeout(), acpMethodNewSession, newSessionParams, func(ctx context.Context, message acpMessage) error {
@@ -194,6 +196,25 @@ func (a *standardACPAdapter) Start(ctx context.Context, session Session) ([]acti
 		"agent":            acpAgentInfo(initializeResult),
 		"permissionModeId": session.PermissionModeID,
 	})}, nil
+}
+
+// standardACPProtocolCWD keeps the provider protocol's working directory
+// aligned with the process working directory when the caller did not supply
+// one. A POSIX root is not a valid Windows workspace fallback: sending "/"
+// makes a Windows provider resolve searches against a path that cannot exist.
+func standardACPProtocolCWD(cwd string) string {
+	if strings.TrimSpace(cwd) != "" {
+		return cwd
+	}
+	if runtime.GOOS == "windows" {
+		if processCWD, err := os.Getwd(); err == nil && strings.TrimSpace(processCWD) != "" {
+			return processCWD
+		}
+		// Keep the provider anchored to the child process's native cwd even if
+		// the host cannot materialize an absolute spelling for it.
+		return "."
+	}
+	return "/"
 }
 
 func (a *standardACPAdapter) Resume(ctx context.Context, session Session) error {
@@ -296,7 +317,7 @@ func (a *standardACPAdapter) resumeLocked(ctx context.Context, session Session) 
 	}
 	resumeParams := map[string]any{
 		"sessionId":  session.ProviderSessionID,
-		"cwd":        firstNonEmpty(session.CWD, "/"),
+		"cwd":        standardACPProtocolCWD(session.CWD),
 		"mcpServers": mcpServers,
 	}
 	if err := a.applyProviderSessionMeta(resumeParams, session); err != nil {
@@ -478,7 +499,7 @@ func (a *standardACPAdapter) startClient(
 		RootAgentSessionID: session.RootAgentSessionID,
 		RoomID:             session.RoomID,
 		CWD:                session.CWD,
-		ProtocolCWD:        firstNonEmpty(session.CWD, "/"),
+		ProtocolCWD:        standardACPProtocolCWD(session.CWD),
 		Command:            command,
 		Env:                env,
 		DirectStart:        false,
@@ -504,6 +525,7 @@ func (a *standardACPAdapter) startClient(
 		"room_id":          session.RoomID,
 		"agent_session_id": session.AgentSessionID,
 		"cwd":              spec.CWD,
+		"protocol_cwd":     spec.ProtocolCWD,
 		"command":          spec.Command,
 		"direct_start":     spec.DirectStart,
 	})

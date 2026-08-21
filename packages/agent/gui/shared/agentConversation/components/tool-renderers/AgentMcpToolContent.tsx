@@ -21,11 +21,7 @@ export function AgentMcpToolContent({
     payload.text,
     payload.inputSummary
   );
-  const errorText = dedupeToolSectionContent(
-    payload.errorText,
-    payload.inputSummary,
-    payload.text
-  );
+  const errorText = dedupeToolSectionContent(payload.errorText);
 
   return (
     <div className="workspace-agents-status-panel__detail-tool-body">

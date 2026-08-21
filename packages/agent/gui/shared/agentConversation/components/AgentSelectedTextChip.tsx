@@ -22,7 +22,6 @@ export function AgentSelectedTextChip({
     <div
       data-testid="agent-selected-text-chip"
       data-selected-text-count={count}
-      aria-label={label}
       className="group inline-flex max-w-full items-center rounded-[10px] border border-[var(--line-1)] bg-[var(--background-fronted)] text-sm font-medium text-[var(--text-primary)]"
     >
       <span className="inline-flex min-w-0 items-center gap-2 rounded-[9px] py-2 pl-3 pr-2">

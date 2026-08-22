@@ -47,12 +47,15 @@ closed on invalid or incompatible config instead of maintaining provider-specifi
 line parsers.
 
 Codex preparation keeps session state isolated under the run-scoped
-`CODEX_HOME`, while linking its writable `models_cache.json` to the provider
-user's process-default `~/.codex/models_cache.json`. The link may initially be
-dangling: the first Codex refresh creates the shared VM- or host-local cache,
-and later sessions reuse it. Hosts must therefore run preparation with `HOME`
-set to the provider user's stable local Home, never a session runtime directory
-or a remote filesystem projection.
+`CODEX_HOME`. Hosts whose provider state does not live under the operating
+system user Home pass its absolute provider-native root through
+`PrepareInput.ProviderStateHome`; runtimeprep uses that root for auth, config,
+models cache, plugins, Skills, and imported rollout validation. An empty value
+preserves the native `~/.codex` default for existing embedders, including its
+existing symlink behavior and the legacy tolerance for an unavailable user
+Home. Strict path and filesystem-shape validation applies only to an explicit
+value. VM-backed hosts must pass the explicit stable root and must not create a
+compatibility facade under the Linux login Home.
 
 Desktop composition also supplies the provider user's stable personal Skill
 root. Runtime preparation exposes that directory directly as

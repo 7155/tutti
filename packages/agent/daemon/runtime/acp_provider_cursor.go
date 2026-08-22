@@ -31,6 +31,7 @@ package agentruntime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -55,6 +56,23 @@ const (
 
 const cursorPluginDirEnv = "TUTTI_CURSOR_PLUGIN_DIR"
 const cursorPromptContextFileEnv = "TUTTI_CURSOR_PROMPT_CONTEXT_FILE"
+
+const cursorACPSessionNewRetryLimit = 1
+
+func cursorACPShouldRetrySessionNew(err error) bool {
+	var callErr *acpCallError
+	if !errors.As(err, &callErr) || callErr == nil || callErr.Method != acpMethodNewSession {
+		return false
+	}
+	if callErr.Err.Code != -32603 {
+		return false
+	}
+	detail := strings.ToLower(strings.Join([]string{
+		strings.TrimSpace(callErr.Err.Message),
+		strings.TrimSpace(string(callErr.Err.Data)),
+	}, " "))
+	return strings.Contains(detail, "failed to initialize session services")
+}
 
 // cursorACPModeID maps Tutti permission tiers onto Cursor's ACP session
 // modes (switched via session/set_mode). Approval strictness within "agent"
@@ -143,6 +161,8 @@ func newCursorAdapterFromProviderDescriptor(
 	adapter.config.initialPromptContext = cursorACPInitialPromptContext
 	adapter.config.automaticPermissionDecision = cursorAutoApprovePermissionDecision
 	adapter.config.autoContinueRetriableTurnError = true
+	adapter.config.retrySessionNewError = cursorACPShouldRetrySessionNew
+	adapter.config.sessionNewRetryLimit = cursorACPSessionNewRetryLimit
 	adapter.config.messageDiagnostics = &standardACPMessageDiagnostics{
 		method:         cursorACPMethodTask,
 		observeMessage: logCursorACPTaskExtension,

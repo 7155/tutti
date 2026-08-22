@@ -2720,3 +2720,42 @@ invalid_grant`. Search `tuttid.log` for
 - References:
   [standard_acp_setup.go](../../../packages/agent/daemon/runtime/standard_acp_setup.go)
   [desktopTerminalLoginReadinessMonitor.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/internal/desktopTerminalLoginReadinessMonitor.ts)
+
+### Cursor intermittently fails to start or reports a failed file read as completed
+
+- Symptom:
+  Cursor ACP sometimes reports `Cursor failed to start` even though
+  `initialize` succeeded. A file-read tool can also appear completed while its
+  result is `Error: Aborted` and the raw diagnostic reports a disconnected TLS
+  socket.
+- Quick checks:
+  Correlate the same `agent_session` in the daemon log. The startup signature is
+  `session/new` returning JSON-RPC `-32603` with
+  `Failed to initialize session services`. For the read signature, inspect the
+  ACP tool update's `result` and `rawErrorMessages`; do not rely only on
+  `isError`/`is_error`.
+- Root cause:
+  Cursor can transiently fail its session services after the ACP initialize
+  handshake. Standard ACP startup previously returned that first failure
+  immediately. Cursor can also return a successful-looking tool envelope with
+  the failure text in provider-specific fields, which the status and error
+  projection did not inspect or preserve.
+- Fix:
+  Retry only the matching Cursor `session/new` error once on the same
+  initialized connection, before a provider session id or user Turn exists.
+  Normalize known aborted/socket-disconnect markers in output/error envelopes
+  as `call.failed`, and promote both the result and raw transport diagnostics
+  into the failed payload. Do not automatically replay an arbitrary file tool
+  operation.
+- Validation:
+  Cover a transient Cursor session-service error followed by success, assert
+  one process and two `session/new` calls, and reject retries for authentication,
+  unrelated internal errors, and other methods. Cover aborted/TLS tool output,
+  preserve its diagnostic text, and keep normal output and input-side error
+  strings from changing the status. Run the native Windows runtime lane for
+  process/ACP behavior.
+- References:
+  [acp_provider_cursor.go](../../../packages/agent/daemon/runtime/acp_provider_cursor.go)
+  [standard_acp_session.go](../../../packages/agent/daemon/runtime/standard_acp_session.go)
+  [acp_tool_error_status.go](../../../packages/agent/daemon/runtime/acp_tool_error_status.go)
+  [acp_tool_normalizer.go](../../../packages/agent/daemon/runtime/acp_tool_normalizer.go)

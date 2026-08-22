@@ -2540,7 +2540,7 @@ func TestExposeCodexImportedRolloutFileSymlinksMatchingRelativePath(t *testing.T
 	writeSidecarTestFile(t, sourcePath, `{"type":"session_meta"}`)
 
 	codexHome := t.TempDir()
-	if err := exposeCodexImportedRolloutFile(codexHome, sourcePath); err != nil {
+	if err := exposeCodexImportedRolloutFile(codexHome, filepath.Join(home, ".codex"), sourcePath); err != nil {
 		t.Fatalf("exposeCodexImportedRolloutFile() error = %v", err)
 	}
 
@@ -2567,7 +2567,7 @@ func TestExposeCodexImportedRolloutFileNoopWhenSourcePathEmpty(t *testing.T) {
 	home := t.TempDir()
 	setTestHome(t, home)
 	codexHome := t.TempDir()
-	if err := exposeCodexImportedRolloutFile(codexHome, ""); err != nil {
+	if err := exposeCodexImportedRolloutFile(codexHome, filepath.Join(home, ".codex"), ""); err != nil {
 		t.Fatalf("exposeCodexImportedRolloutFile() error = %v", err)
 	}
 	entries, err := os.ReadDir(codexHome)
@@ -2585,7 +2585,7 @@ func TestExposeCodexImportedRolloutFileGracefulWhenSourceFileMissing(t *testing.
 	sourcePath := filepath.Join(home, ".codex", "sessions", "2026", "07", "04", "rollout-gone.jsonl")
 
 	codexHome := t.TempDir()
-	if err := exposeCodexImportedRolloutFile(codexHome, sourcePath); err != nil {
+	if err := exposeCodexImportedRolloutFile(codexHome, filepath.Join(home, ".codex"), sourcePath); err != nil {
 		t.Fatalf("exposeCodexImportedRolloutFile() error = %v, want graceful nil when source is gone", err)
 	}
 	if _, err := os.Lstat(filepath.Join(codexHome, "sessions", "2026", "07", "04", "rollout-gone.jsonl")); !os.IsNotExist(err) {
@@ -2600,7 +2600,7 @@ func TestExposeCodexImportedRolloutFileGracefulWhenSourceOutsideRealCodexHome(t 
 	writeSidecarTestFile(t, outsidePath, `{"type":"session_meta"}`)
 
 	codexHome := t.TempDir()
-	if err := exposeCodexImportedRolloutFile(codexHome, outsidePath); err != nil {
+	if err := exposeCodexImportedRolloutFile(codexHome, filepath.Join(home, ".codex"), outsidePath); err != nil {
 		t.Fatalf("exposeCodexImportedRolloutFile() error = %v, want graceful nil for a path outside ~/.codex", err)
 	}
 	entries, err := os.ReadDir(codexHome)

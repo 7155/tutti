@@ -96,6 +96,41 @@ func TestACPResolvedToolCallStatusHonorsStructuredErrorFlags(t *testing.T) {
 			},
 			want: messageStreamStateCompleted,
 		},
+		{
+			name: "aborted result overrides completed status",
+			update: map[string]any{
+				"status": "completed",
+				"output": map[string]any{"result": "Error: Aborted"},
+			},
+			want: messageStreamStateFailed,
+		},
+		{
+			name: "raw cursor transport error overrides completed status",
+			update: map[string]any{
+				"status": "completed",
+				"output": map[string]any{
+					"result":           "Error: Aborted",
+					"rawErrorMessages": []any{"[aborted] Client network socket disconnected before secure TLS connection was established"},
+				},
+			},
+			want: messageStreamStateFailed,
+		},
+		{
+			name: "normal result remains completed",
+			update: map[string]any{
+				"status": "completed",
+				"output": map[string]any{"result": "file contents"},
+			},
+			want: messageStreamStateCompleted,
+		},
+		{
+			name: "input result does not change status",
+			update: map[string]any{
+				"status": "completed",
+				"input":  map[string]any{"result": "Error: Aborted"},
+			},
+			want: messageStreamStateCompleted,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -76,6 +76,80 @@ func TestCursorAdapterStartUsesInjectedProviderCommand(t *testing.T) {
 	}
 }
 
+func TestCursorAdapterRetriesTransientSessionNewInitializationFailure(t *testing.T) {
+	t.Parallel()
+
+	transport := newStandardACPTransport("Cursor Agent", "cursor-session-retry")
+	transport.conn.newSessionErrors = []*acpError{{
+		Code:    -32603,
+		Message: "Internal error",
+		Data:    json.RawMessage(`{"message":"Failed to initialize session services"}`),
+	}}
+	adapter := newCursorAdapterWithHostMetadata(transport, LegacyHostMetadata(), nil)
+
+	if _, err := adapter.Start(context.Background(), standardTestSession(ProviderCursor)); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	transport.conn.mu.Lock()
+	newSessionCalls := transport.conn.newSessionCallCount
+	transport.conn.mu.Unlock()
+	if newSessionCalls != 2 {
+		t.Fatalf("session/new calls = %d, want one bounded retry", newSessionCalls)
+	}
+	if len(transport.specs) != 1 {
+		t.Fatalf("process starts = %d, want one initialized process", len(transport.specs))
+	}
+}
+
+func TestCursorACPShouldRetrySessionNewOnlyForTransientInitializationFailure(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "matching internal initialization failure",
+			err: &acpCallError{Method: acpMethodNewSession, Err: acpError{
+				Code:    -32603,
+				Message: "Internal error",
+				Data:    json.RawMessage(`{"message":"Failed to initialize session services"}`),
+			}},
+			want: true,
+		},
+		{
+			name: "different method",
+			err: &acpCallError{Method: acpMethodLoadSession, Err: acpError{
+				Code: -32603, Message: "Failed to initialize session services",
+			}},
+			want: false,
+		},
+		{
+			name: "different internal error",
+			err: &acpCallError{Method: acpMethodNewSession, Err: acpError{
+				Code: -32603, Message: "Invalid session settings",
+			}},
+			want: false,
+		},
+		{
+			name: "authentication error",
+			err: &acpCallError{Method: acpMethodNewSession, Err: acpError{
+				Code: -32000, Message: "authentication required",
+			}},
+			want: false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := cursorACPShouldRetrySessionNew(test.err); got != test.want {
+				t.Fatalf("cursorACPShouldRetrySessionNew() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
 func TestCursorAdapterStartUsesPluginDirWithInjectedProviderCommand(t *testing.T) {
 	t.Parallel()
 

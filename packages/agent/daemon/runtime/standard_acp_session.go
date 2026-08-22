@@ -102,7 +102,7 @@ func (a *standardACPAdapter) Start(ctx context.Context, session Session) ([]acti
 		"cwd":              standardACPProtocolCWD(session.CWD),
 		"timeout_ms":       a.startupCallTimeout().Milliseconds(),
 	})
-	newSessionResult, err := client.CallWithTimeout(ctx, a.startupCallTimeout(), acpMethodNewSession, newSessionParams, func(ctx context.Context, message acpMessage) error {
+	newSessionResult, err := a.callSessionNewWithRetry(ctx, client, session, newSessionParams, func(ctx context.Context, message acpMessage) error {
 		_, err := a.handleACPMessage(ctx, client, session, "", message, nil, nil, nil)
 		return err
 	})
@@ -196,6 +196,32 @@ func (a *standardACPAdapter) Start(ctx context.Context, session Session) ([]acti
 		"agent":            acpAgentInfo(initializeResult),
 		"permissionModeId": session.PermissionModeID,
 	})}, nil
+}
+
+func (a *standardACPAdapter) callSessionNewWithRetry(
+	ctx context.Context,
+	client *acpClient,
+	session Session,
+	params map[string]any,
+	handler acpMessageHandler,
+) (json.RawMessage, error) {
+	limit := 0
+	if a != nil && a.config.retrySessionNewError != nil && a.config.sessionNewRetryLimit > 0 {
+		limit = a.config.sessionNewRetryLimit
+	}
+	for attempt := 0; ; attempt++ {
+		result, err := client.CallWithTimeout(ctx, a.startupCallTimeout(), acpMethodNewSession, params, handler)
+		if err == nil || attempt >= limit || a.config.retrySessionNewError == nil || !a.config.retrySessionNewError(err) {
+			return result, err
+		}
+		a.logStandardACPStartupDiagnostics("session_new.retry", map[string]any{
+			"room_id":          session.RoomID,
+			"agent_session_id": session.AgentSessionID,
+			"attempt":          attempt + 1,
+			"max_retries":      limit,
+			"error":            err.Error(),
+		})
+	}
 }
 
 // standardACPProtocolCWD keeps the provider protocol's working directory

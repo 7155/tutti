@@ -38,6 +38,12 @@ type standardACPConfig struct {
 	env                func(Session) []string
 	commandResolver    ProviderCommandResolver
 	beforeNewSession   func(context.Context, *acpClient, Session, json.RawMessage) error
+	// retrySessionNewError permits a provider-specific, bounded retry for a
+	// session/new failure that is known to be transient. The retry happens on
+	// the already initialized connection, before a provider session id or user
+	// turn exists, so it cannot duplicate user work.
+	retrySessionNewError func(error) bool
+	sessionNewRetryLimit int
 	// validateNewSessionResult, when set, inspects the raw session/new response
 	// right after it succeeds and may reject the start (setup probes use it to
 	// catch agents that create a session they cannot actually serve).

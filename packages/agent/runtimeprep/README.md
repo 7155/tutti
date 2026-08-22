@@ -66,6 +66,14 @@ Session Skills remain under the run root and are registered through
 `skills/extraRoots/set`; they are never written into the personal root. Hosts
 that do not explicitly supply a personal root keep the isolated layout.
 
+When an embedder supplies both `ProviderStateHome` and a distinct Codex
+`PersonalSkillRoot`, the provider-native `skills/` directory remains an
+explicit app-server Skill root while the personal root is the writable
+`CODEX_HOME/skills` projection. Claude Code can likewise receive a distinct
+`PersonalSkillRoot`; runtimeprep exposes it through a session-scoped SDK
+additional directory whose `.claude/skills` entry points at the stable root.
+Empty personal roots preserve the native Host behavior for both providers.
+
 `TuttiAgentPreparer.ResolveAuthSource` lets a host expose one explicit absolute
 credential authority into the session-scoped `TUTTI_AGENT_HOME`. When omitted,
 the Tutti desktop keeps its existing `~/.tutti-agent/auth.json` behavior. An

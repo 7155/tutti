@@ -1,11 +1,61 @@
 package runtimeprep
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestCodexPrepareExposesStableProviderAndPersonalSkillRoots(t *testing.T) {
+	providerStateHome := filepath.Join(t.TempDir(), "codex-state")
+	personalSkillRoot := filepath.Join(t.TempDir(), "personal-skills")
+	writeSidecarTestFile(t, filepath.Join(providerStateHome, "skills", "provider-skill", "SKILL.md"), "---\nname: provider-skill\n---\nprovider\n")
+	writeSidecarTestFile(t, filepath.Join(personalSkillRoot, "personal-skill", "SKILL.md"), "---\nname: personal-skill\n---\npersonal\n")
+
+	preparer := newTestPreparer(t.TempDir())
+	preparer.RegisterProvider(CodexPreparer{PersonalSkillRoot: personalSkillRoot})
+	prepared, err := preparer.Prepare(t.Context(), PrepareInput{
+		WorkspaceID:       "workspace-1",
+		AgentSessionID:    "session-1",
+		AgentTargetID:     "local:codex",
+		Provider:          "codex",
+		ProviderStateHome: providerStateHome,
+		Cwd:               t.TempDir(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runHome := envValue(prepared.Env, "CODEX_HOME")
+	for _, path := range []string{
+		filepath.Join(runHome, "skills", "personal-skill", "SKILL.md"),
+		filepath.Join(providerStateHome, "skills", "provider-skill", "SKILL.md"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("prepared Skill %s is unavailable: %v", path, err)
+		}
+	}
+	var extraRoots []string
+	if err := json.Unmarshal([]byte(envValue(prepared.Env, tuttiAgentExtraSkillRootsEnv)), &extraRoots); err != nil {
+		t.Fatalf("decode Codex extra skill roots: %v", err)
+	}
+	wantProviderRoot := filepath.Join(providerStateHome, "skills")
+	foundProviderRoot := false
+	for _, root := range extraRoots {
+		foundProviderRoot = foundProviderRoot || root == wantProviderRoot
+	}
+	if !foundProviderRoot {
+		t.Fatalf("Codex extra skill roots = %#v, want stable provider root %q", extraRoots, wantProviderRoot)
+	}
+	cacheTarget, err := os.Readlink(filepath.Join(runHome, "models_cache.json"))
+	if err != nil {
+		t.Fatalf("read run-scoped models cache link: %v", err)
+	}
+	if want := filepath.Join(providerStateHome, "models_cache.json"); cacheTarget != want {
+		t.Fatalf("models cache link = %q, want %q", cacheTarget, want)
+	}
+}
 
 func TestCodexPrepareUsesExplicitProviderStateHome(t *testing.T) {
 	hostHome := t.TempDir()

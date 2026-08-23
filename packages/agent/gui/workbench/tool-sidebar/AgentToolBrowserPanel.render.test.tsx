@@ -19,7 +19,7 @@ const browserNodeMocks = vi.hoisted(() => ({
 vi.mock("@tutti-os/browser-node/react", () => ({
   BrowserNode: (props: BrowserNodeProps) => {
     browserNodeMocks.nodeProps = props;
-    return <div data-browser-node-body="true" />;
+    return <div data-browser-node-body="true" data-testid="browser-node-body" />;
   },
   BrowserNodeWorkbenchHeader: (props: BrowserNodeWorkbenchHeaderProps) => {
     browserNodeMocks.headerProps = props;
@@ -108,6 +108,7 @@ describe("AgentToolBrowserPanel header composition", () => {
 
     await vi.dynamicImportSettled();
     await screen.findByLabelText("Browser drag handle");
+    await screen.findByTestId("browser-node-body");
     expect(browserNodeMocks.nodeProps?.renderError).toBe(renderError);
   });
 });

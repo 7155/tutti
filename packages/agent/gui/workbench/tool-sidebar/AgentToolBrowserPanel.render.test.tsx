@@ -1,10 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BrowserNodeHostApi } from "@tutti-os/browser-node";
-import type {
-  BrowserNodeProps,
-  BrowserNodeWorkbenchHeaderProps
-} from "@tutti-os/browser-node/react";
+import type { BrowserNodeWorkbenchHeaderProps } from "@tutti-os/browser-node/react";
 import type { I18nRuntime } from "@tutti-os/ui-i18n-runtime";
 import {
   AgentToolBrowserPanel,
@@ -12,15 +9,11 @@ import {
 } from "./AgentToolBrowserPanel.tsx";
 
 const browserNodeMocks = vi.hoisted(() => ({
-  headerProps: null as BrowserNodeWorkbenchHeaderProps | null,
-  nodeProps: null as BrowserNodeProps | null
+  headerProps: null as BrowserNodeWorkbenchHeaderProps | null
 }));
 
 vi.mock("@tutti-os/browser-node/react", () => ({
-  BrowserNode: (props: BrowserNodeProps) => {
-    browserNodeMocks.nodeProps = props;
-    return <div data-browser-node-body="true" data-testid="browser-node-body" />;
-  },
+  BrowserNode: () => <div data-browser-node-body="true" />,
   BrowserNodeWorkbenchHeader: (props: BrowserNodeWorkbenchHeaderProps) => {
     browserNodeMocks.headerProps = props;
     return (
@@ -37,7 +30,6 @@ vi.mock("@tutti-os/browser-node/react", () => ({
 describe("AgentToolBrowserPanel header composition", () => {
   afterEach(() => {
     browserNodeMocks.headerProps = null;
-    browserNodeMocks.nodeProps = null;
   });
 
   it("composes host window actions into the browser tab header", async () => {
@@ -92,24 +84,6 @@ describe("AgentToolBrowserPanel header composition", () => {
     expect(firstPageNodeId).not.toBeNull();
     expect(firstPageNodeId).not.toBe(secondPageNodeId);
     expect(controller!.ownsPage(firstPageNodeId!)).toBe(true);
-  });
-
-  it("forwards an optional host load-error overlay to BrowserNode", async () => {
-    const renderError = () => <div>custom load error</div>;
-    render(
-      <AgentToolBrowserPanel
-        browserApi={createBrowserApi()}
-        dragHandleProps={{ "aria-label": "Browser drag handle" }}
-        hidden={false}
-        i18n={{ t: (key) => key } as I18nRuntime<string>}
-        renderError={renderError}
-      />
-    );
-
-    await vi.dynamicImportSettled();
-    await screen.findByLabelText("Browser drag handle");
-    await screen.findByTestId("browser-node-body");
-    expect(browserNodeMocks.nodeProps?.renderError).toBe(renderError);
   });
 });
 

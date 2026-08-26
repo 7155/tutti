@@ -279,6 +279,22 @@ daemon validates them against current product policy and resolved provider
 capability before runtime preparation; an active Session cannot reinterpret
 them through an in-place settings update.
 
+RTK saver mode follows this launch-only path for every resolved Agent provider.
+The remembered composer value is only an opt-in; provider-neutral runtime
+preparation resolves the pinned Tutti-bundled or managed-runtime `rtk`
+executable, copies it and the canonical `RTK.md` into the exact Session runtime,
+injects the RTK rule through
+the provider's existing instruction channel, and prepend only that private
+binary directory to the Session environment. Tutti never runs an RTK package
+manager or global installer. RTK usage data, tee output, and telemetry policy
+are also Session-scoped, so enabling the mode cannot change another Agent's
+instructions, executable search path, or tracking state. The independent
+`rtkSaverMode` property carries this provider-neutral setting, while the
+existing `codexSaverMode` property remains Codex-only and continues to control
+the Luna subagent workflow. Tutti terminals receive the bundled
+RTK directory in their child PATH for explicit use, while the user-global PATH
+and external Agent processes remain unchanged.
+
 ### 2.4 Ownership map
 
 | Layer                           | Owns                                                                                          | Must not own                                      |

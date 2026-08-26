@@ -588,7 +588,14 @@ export type DesktopWorkbenchWindowSnappingShortcutPreset =
   | "commandShiftArrows";
 
 export type DesktopAgentComposerDefaults = {
+  /**
+   * Enables the Codex-specific saver subagent mode
+   */
   codexSaverMode?: boolean;
+  /**
+   * Enables provider-neutral RTK saver mode
+   */
+  rtkSaverMode?: boolean;
   model?: string;
   permissionModeId?: string;
   reasoningEffort?: string;
@@ -1991,7 +1998,14 @@ export type WorkspaceAgentSource = "user" | "legacy_binding";
 export type WorkspaceAgentProvider = string;
 
 export type AgentSessionComposerSettings = {
+  /**
+   * Enables the Codex-specific saver subagent mode
+   */
   codexSaverMode?: boolean | null;
+  /**
+   * Enables provider-neutral RTK saver mode
+   */
+  rtkSaverMode?: boolean | null;
   model?: string | null;
   permissionModeId?: string | null;
   planMode?: boolean | null;
@@ -2085,9 +2099,13 @@ export type GetWorkspaceAppFactoryAgentTargetComposerOptionsRequest = {
 
 export type AgentProviderComposerOptionsResponse = {
   /**
-   * Whether this resolved provider target supports the Codex Luna subagent saver mode; product entry policy is reported separately by the host
+   * Whether this resolved provider target supports the Codex-specific saver subagent mode
    */
   codexSaverModeSupported?: boolean;
+  /**
+   * Whether this resolved provider target supports provider-neutral, session-scoped RTK saver mode
+   */
+  rtkSaverModeSupported?: boolean;
   provider: WorkspaceAgentProvider;
   modelConfig: AgentProviderComposerConfig;
   permissionConfig: PermissionConfig;
@@ -3392,9 +3410,13 @@ export type WorkspaceAgentInitialGoalControl = {
 
 export type CreateWorkspaceAgentSessionRequest = {
   /**
-   * Enables the Codex Luna subagent saver mode for this session without changing the main model
+   * Enables the Codex-specific saver subagent mode for this Agent Session
    */
   codexSaverMode?: boolean | null;
+  /**
+   * Enables provider-neutral, session-scoped RTK executable and RTK.md injection for this Agent Session without changing the selected model
+   */
+  rtkSaverMode?: boolean | null;
   agentSessionId: string;
   /**
    * Required target-first session launch authority. The daemon derives provider and providerTargetRef from the stored agent target launchRef and rejects mismatched provider values.

@@ -8709,6 +8709,10 @@ components:
       properties:
         codexSaverMode:
           type: boolean
+          description: Enables the Codex-specific saver subagent mode
+        rtkSaverMode:
+          type: boolean
+          description: Enables provider-neutral RTK saver mode
         model:
           type: string
         permissionModeId:
@@ -12038,6 +12042,11 @@ components:
         codexSaverMode:
           type: boolean
           nullable: true
+          description: Enables the Codex-specific saver subagent mode
+        rtkSaverMode:
+          type: boolean
+          nullable: true
+          description: Enables provider-neutral RTK saver mode
         model:
           type: string
           nullable: true
@@ -12235,7 +12244,10 @@ components:
       properties:
         codexSaverModeSupported:
           type: boolean
-          description: Whether this resolved provider target supports the Codex Luna subagent saver mode; product entry policy is reported separately by the host
+          description: Whether this resolved provider target supports the Codex-specific saver subagent mode
+        rtkSaverModeSupported:
+          type: boolean
+          description: Whether this resolved provider target supports provider-neutral, session-scoped RTK saver mode
         provider:
           $ref: "#/components/schemas/WorkspaceAgentProvider"
         modelConfig:
@@ -15197,7 +15209,11 @@ components:
         codexSaverMode:
           type: boolean
           nullable: true
-          description: Enables the Codex Luna subagent saver mode for this session without changing the main model
+          description: Enables the Codex-specific saver subagent mode for this Agent Session
+        rtkSaverMode:
+          type: boolean
+          nullable: true
+          description: Enables provider-neutral, session-scoped RTK executable and RTK.md injection for this Agent Session without changing the selected model
         agentSessionId:
           type: string
           format: uuid

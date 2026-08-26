@@ -44,11 +44,7 @@ function patchChangeToUnifiedDiff(
     );
   }
   if (change.oldString != null && change.newString != null) {
-    return modifiedFilePatch(
-      path,
-      change.oldString,
-      change.newString
-    );
+    return modifiedFilePatch(path, change.oldString, change.newString);
   }
   return "";
 }

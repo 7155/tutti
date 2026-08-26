@@ -3073,6 +3073,52 @@ inline data URL instead`. Claude or standard ACP may instead receive no
   [claude_sdk_fork.go](../../../packages/agent/daemon/runtime/claude_sdk_fork.go)
   [session_fork.go](../../../packages/agent/host/session_fork.go)
 
+### A provider-accepted Session Fork prevents Tutti from starting
+
+- Symptom:
+  Tutti exits during cold startup with `materialize accepted session fork` and
+  a provider-owned binding count that differs from the frozen canonical
+  provider-bound Turn count. The source Session and its history still exist,
+  while the operation remains `provider_accepted`.
+- Root cause:
+  Claude transcripts represent tool results as top-level `user` messages even
+  though they continue the current canonical Turn. Treating every top-level
+  Claude `user` message as a root Turn creates extra provider bindings. More
+  generally, after any provider accepts a Fork, recovery correctly refuses to
+  dispatch it again. Canonical materialization also correctly refuses to invent
+  missing provider Turn bindings, but the deterministic mismatch was returned
+  as an ordinary recovery error. One unrecoverable operation therefore poisoned
+  Host recovery and daemon construction on every restart.
+- Fix:
+  Keep Claude `tool_result` messages inside the preceding root Turn checkpoint
+  instead of creating independent bindings. As a separate final safety net,
+  classify only deterministic provider-owned materialization evidence
+  mismatches as permanent. Atomically fail that accepted operation, retain its
+  provider acceptance evidence and the complete source history, remove any
+  incomplete target, and release its reservation and boundary barrier. Do not
+  re-dispatch the provider. Keep transient SQLite errors and failures to persist
+  the quarantine startup-fatal. After quarantine persists, emit a content-free
+  `agent_session.fork.materialization_quarantined` warning to `tuttid.log` with
+  operation identities, driver kind, returned binding count, and the mismatch.
+- Validation:
+  Feed the Claude Fork adapter a real transcript shape containing root prompts,
+  assistant tool calls, and top-level tool-result messages. Require one binding
+  per root prompt and require the tool result to extend the preceding Turn's
+  checkpoint. Separately, seed a real temporary SQLite database with 29
+  provider-bound canonical Turns, three returned bindings, and a
+  `provider_accepted` operation. Recover through
+  `Host.Recover`, verify the source still has 29 Turns, the target is absent,
+  provider evidence remains, isolation rows are gone, no provider Fork call was
+  made, and a later valid operation commits. Inject quarantine persistence
+  failure as the negative control. Start the real `tuttidd` binary from a
+  poisoned state directory and require listener publication plus healthy
+  `/v1/health`.
+- References:
+  [session_fork.go](../../../packages/agent/host/session_fork.go)
+  [session_fork_operations.go](../../../packages/agent/store-sqlite/session_fork_operations.go)
+  [session_fork_conformance_test.go](../../../packages/agent/host/session_fork_conformance_test.go)
+  [blackbox_test.go](../../../services/tuttid/integration/blackbox_test.go)
+
 ### Fork reports only `agent_session_fork_conflict`
 
 - Symptom:

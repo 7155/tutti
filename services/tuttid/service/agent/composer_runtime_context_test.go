@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"context"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/tutti-os/tutti/packages/agent/daemon/providerregistry"
 	"github.com/tutti-os/tutti/packages/agent/store-sqlite/canonical"
@@ -65,6 +67,169 @@ func TestComposerRuntimeContextProjectsExactPersistedCapabilities(t *testing.T) 
 	context := service.composerRuntimeContextFromSession(scope)
 	if got := stringSliceFromAny(context["capabilities"]); !slices.Equal(got, []string{"imageInput", "interrupt"}) {
 		t.Fatalf("persisted capabilities = %#v, want typed capabilities projected", got)
+	}
+}
+
+func TestComposerRuntimeContextProjectsExactLiveCapabilities(t *testing.T) {
+	project := t.TempDir()
+	settings := ComposerSettings{ReasoningEffort: "high"}
+	ref := map[string]any{"kind": "agent_extension", "extensionInstallationId": "example@1.0.0"}
+	scope := newComposerLiveModelScopeForInput(ComposerOptionsInput{
+		Provider:          "acp:example",
+		WorkspaceID:       "workspace-1",
+		Cwd:               project,
+		AgentTargetID:     "extension:example",
+		providerTargetRef: ref,
+	}, settings)
+	runtime := newFakeRuntime()
+	runtime.sessions["workspace-1:exact"] = ProviderRuntimeSession{
+		ID: "exact", WorkspaceID: "workspace-1", Provider: "acp:example", AgentTargetID: "extension:example",
+		Capabilities: canonical.NewCapabilitySnapshot([]string{"imageInput", "interrupt"}),
+		RuntimeContext: stampAgentExtensionComposerScope(
+			map[string]any{},
+			ref,
+			project,
+			settings,
+		),
+		UpdatedAtUnixMS: 100,
+	}
+
+	context := newIsolatedAgentService(runtime).composerRuntimeContextFromSession(scope)
+	if got := stringSliceFromAny(context["capabilities"]); !slices.Equal(got, []string{"imageInput", "interrupt"}) {
+		t.Fatalf("live capabilities = %#v, want typed capabilities projected", got)
+	}
+}
+
+func TestLiveCapabilitySnapshotOverridesStaleRuntimeContextCapabilities(t *testing.T) {
+	session := ProviderRuntimeSession{
+		Capabilities: canonical.NewCapabilitySnapshot(nil),
+		RuntimeContext: map[string]any{
+			"capabilities": []any{"imageInput"},
+		},
+	}
+
+	context := composerRuntimeContextFromProviderSession(session)
+	if got := stringSliceFromAny(context["capabilities"]); len(got) != 0 {
+		t.Fatalf("live capabilities = %#v, want explicit empty typed snapshot to override stale context", got)
+	}
+}
+
+func TestEmptyLiveCapabilitySnapshotOverridesCachedCapabilities(t *testing.T) {
+	project := t.TempDir()
+	settings := ComposerSettings{ReasoningEffort: "high"}
+	ref := map[string]any{"kind": "agent_extension", "extensionInstallationId": "example@1.0.0"}
+	scope := newComposerLiveModelScopeForInput(ComposerOptionsInput{
+		Provider:          "acp:example",
+		WorkspaceID:       "workspace-1",
+		Cwd:               project,
+		AgentTargetID:     "extension:example",
+		providerTargetRef: ref,
+	}, settings)
+	runtime := newFakeRuntime()
+	runtime.sessions["workspace-1:live"] = ProviderRuntimeSession{
+		ID: "live", WorkspaceID: "workspace-1", Provider: "acp:example", AgentTargetID: "extension:example",
+		Capabilities: canonical.NewCapabilitySnapshot(nil),
+		RuntimeContext: stampAgentExtensionComposerScope(
+			map[string]any{},
+			ref,
+			project,
+			settings,
+		),
+		UpdatedAtUnixMS: 100,
+	}
+	service := newIsolatedAgentService(runtime)
+	service.setComposerRuntimeContextForScope(scope, time.Now().UTC(), stampAgentExtensionComposerScope(
+		map[string]any{"capabilities": []any{"imageInput"}},
+		ref,
+		project,
+		settings,
+	))
+
+	runtimeContext := service.composerRuntimeContextFromSession(scope)
+	if got := stringSliceFromAny(runtimeContext["capabilities"]); len(got) != 0 {
+		t.Fatalf("live capabilities = %#v, want explicit empty snapshot to override cache", got)
+	}
+}
+
+func TestEmptyPersistedCapabilitySnapshotOverridesStaleRuntimeContext(t *testing.T) {
+	project := t.TempDir()
+	settings := ComposerSettings{ReasoningEffort: "high"}
+	ref := map[string]any{"kind": "agent_extension", "extensionInstallationId": "example@1.0.0"}
+	scope := newComposerLiveModelScopeForInput(ComposerOptionsInput{
+		Provider:          "acp:example",
+		WorkspaceID:       "workspace-1",
+		Cwd:               project,
+		AgentTargetID:     "extension:example",
+		providerTargetRef: ref,
+	}, settings)
+	service := newIsolatedAgentService(newFakeRuntime())
+	service.SessionReader = fakeSessionReader{sessions: map[string]PersistedSession{
+		"workspace-1:persisted": {
+			ID: "persisted", WorkspaceID: "workspace-1", Provider: "acp:example", AgentTargetID: "extension:example",
+			Capabilities: canonical.NewCapabilitySnapshot(nil),
+			InternalRuntimeContext: stampAgentExtensionComposerScope(
+				map[string]any{"capabilities": []any{"imageInput"}},
+				ref,
+				project,
+				settings,
+			),
+			UpdatedAtUnixMS: 100,
+		},
+	}}
+
+	runtimeContext := service.composerRuntimeContextFromSession(scope)
+	if got := stringSliceFromAny(runtimeContext["capabilities"]); len(got) != 0 {
+		t.Fatalf("persisted capabilities = %#v, want explicit empty snapshot to clear stale context", got)
+	}
+}
+
+func TestPollComposerModelOptionsReturnsTypedLiveCapabilities(t *testing.T) {
+	session := ProviderRuntimeSession{
+		ID:           "live",
+		Capabilities: canonical.NewCapabilitySnapshot([]string{"imageInput"}),
+		RuntimeContext: map[string]any{
+			"hiddenLiveModelDiscovery": true,
+		},
+	}
+
+	_, context, err := newIsolatedAgentService(newFakeRuntime()).pollComposerModelOptions(
+		t.Context(),
+		"workspace-1",
+		session,
+		true,
+		"model",
+	)
+	if err != nil {
+		t.Fatalf("pollComposerModelOptions error = %v", err)
+	}
+	if got := stringSliceFromAny(context["capabilities"]); !slices.Equal(got, []string{"imageInput"}) {
+		t.Fatalf("cached capabilities = %#v, want typed live capabilities", got)
+	}
+}
+
+func TestPollComposerModelOptionsTreatsEmptyCapabilitySnapshotAsReady(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	session := ProviderRuntimeSession{
+		ID:           "live-empty",
+		Capabilities: canonical.NewCapabilitySnapshot(nil),
+		RuntimeContext: map[string]any{
+			"hiddenLiveModelDiscovery": true,
+		},
+	}
+
+	_, runtimeContext, err := newIsolatedAgentService(newFakeRuntime()).pollComposerModelOptions(
+		ctx,
+		"workspace-1",
+		session,
+		true,
+		"model",
+	)
+	if err != nil {
+		t.Fatalf("pollComposerModelOptions error = %v, want empty snapshot accepted before polling", err)
+	}
+	if got := stringSliceFromAny(runtimeContext["capabilities"]); len(got) != 0 {
+		t.Fatalf("capabilities = %#v, want explicit empty snapshot", got)
 	}
 }
 

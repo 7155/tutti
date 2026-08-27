@@ -124,8 +124,9 @@ func (s *Service) composerRuntimeContextFromSession(
 		if !scope.matchesExtensionRuntimeContext(session.RuntimeContext) {
 			continue
 		}
-		if composerRuntimeContextHasComposerData(session.RuntimeContext) {
-			return clonePayload(session.RuntimeContext)
+		runtimeContext := composerRuntimeContextFromProviderSession(session)
+		if session.Capabilities != nil || composerRuntimeContextHasComposerData(runtimeContext) {
+			return runtimeContext
 		}
 	}
 	if cached, ok := s.getComposerRuntimeContextForScope(scope, time.Now().UTC()); ok {
@@ -152,15 +153,16 @@ func (s *Service) composerRuntimeContextFromSession(
 			continue
 		}
 		runtimeContext := clonePayload(session.InternalRuntimeContext)
-		if session.Capabilities != nil && len(session.Capabilities.Values) > 0 {
+		if session.Capabilities != nil {
 			// Capabilities remain typed persistence state. Project them into
-			// composer evidence only after the exact runtime identity matches.
+			// composer evidence only after the exact runtime identity matches. An
+			// explicit empty snapshot is authoritative and must clear stale values.
 			if runtimeContext == nil {
 				runtimeContext = map[string]any{}
 			}
 			runtimeContext["capabilities"] = append([]string(nil), session.Capabilities.Values...)
 		}
-		if !composerRuntimeContextHasComposerData(runtimeContext) {
+		if session.Capabilities == nil && !composerRuntimeContextHasComposerData(runtimeContext) {
 			continue
 		}
 		updatedAt := firstNonZeroInt64(session.UpdatedAtUnixMS, session.CreatedAtUnixMS)
@@ -172,6 +174,22 @@ func (s *Service) composerRuntimeContextFromSession(
 		selectedID = session.ID
 	}
 	return selected
+}
+
+// composerRuntimeContextFromProviderSession combines the provider's untyped
+// composer metadata with the canonical capability snapshot negotiated for the
+// same live session. The typed snapshot is authoritative, including when it is
+// explicitly empty, so stale capabilities cannot leak from RuntimeContext.
+func composerRuntimeContextFromProviderSession(session ProviderRuntimeSession) map[string]any {
+	runtimeContext := clonePayload(session.RuntimeContext)
+	if session.Capabilities == nil {
+		return runtimeContext
+	}
+	if runtimeContext == nil {
+		runtimeContext = map[string]any{}
+	}
+	runtimeContext["capabilities"] = append([]string(nil), session.Capabilities.Values...)
+	return runtimeContext
 }
 
 func composerRuntimeContextHasComposerData(runtimeContext map[string]any) bool {

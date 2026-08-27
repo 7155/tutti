@@ -14,15 +14,6 @@ func (c *standardACPConnection) Send(data []byte) error {
 		}
 		_ = json.Unmarshal([]byte(line), &message)
 		switch message.Method {
-		case acpMethodCancel:
-			var request struct {
-				Params map[string]any `json:"params"`
-			}
-			_ = json.Unmarshal([]byte(line), &request)
-			c.mu.Lock()
-			c.cancelCalls++
-			c.lastCancelParams = maps.Clone(request.Params)
-			c.mu.Unlock()
 		case acpMethodInitialize:
 			var request struct {
 				Params map[string]any `json:"params"`
@@ -63,6 +54,9 @@ func (c *standardACPConnection) Send(data []byte) error {
 				result["sessionCapabilities"] = sessionCapabilities
 			}
 			agentCapabilities := map[string]any{}
+			if c.promptImage {
+				agentCapabilities["promptCapabilities"] = map[string]any{"image": true}
+			}
 			if c.supportsAgentLoadSession {
 				agentCapabilities["loadSession"] = true
 			}
@@ -336,7 +330,21 @@ func (c *standardACPConnection) Send(data []byte) error {
 			}
 			c.promptCallCount++
 			promptCall := c.promptCallCount
+			deferUntilCancel := c.deferFirstPromptUntilCancel && promptCall == 1
+			if deferUntilCancel {
+				c.pendingPromptID = append(json.RawMessage(nil), message.ID...)
+			}
+			promptStarted := c.promptStarted
 			c.mu.Unlock()
+			if promptStarted != nil {
+				select {
+				case promptStarted <- struct{}{}:
+				default:
+				}
+			}
+			if deferUntilCancel {
+				continue
+			}
 			if c.promptKind != "" {
 				c.mu.Lock()
 				c.pendingPermissionCallID = append(json.RawMessage(nil), message.ID...)
@@ -486,6 +494,45 @@ func (c *standardACPConnection) Send(data []byte) error {
 				return nil
 			}
 			c.streamPromptResult(message.ID)
+		case acpMethodCancel:
+			var request struct {
+				Params map[string]any `json:"params"`
+			}
+			_ = json.Unmarshal([]byte(line), &request)
+			c.mu.Lock()
+			c.cancelCalls++
+			c.lastCancelParams = maps.Clone(request.Params)
+			pendingPromptID := append(json.RawMessage(nil), c.pendingPromptID...)
+			c.pendingPromptID = nil
+			returnRetriableTail := c.canceledDeferredPromptRetriableTail
+			c.mu.Unlock()
+			if len(pendingPromptID) > 0 {
+				if returnRetriableTail {
+					c.sendJSON(map[string]any{
+						"jsonrpc": "2.0",
+						"method":  acpMethodUpdate,
+						"params": map[string]any{
+							"sessionId": c.sessionID,
+							"update": map[string]any{
+								"sessionUpdate": "agent_message_chunk",
+								"content": map[string]any{
+									"type": "text",
+									"text": "\n\nError: RetriableError: [canceled] cancel raced with provider completion",
+								},
+							},
+						},
+					})
+				}
+				stopReason := "canceled"
+				if returnRetriableTail {
+					stopReason = "end_turn"
+				}
+				c.sendJSON(map[string]any{
+					"jsonrpc": "2.0",
+					"id":      pendingPromptID,
+					"result":  map[string]any{"stopReason": stopReason},
+				})
+			}
 		default:
 			if (c.promptPermission || c.promptKind != "") &&
 				(acpRequestID(message.ID) == "cursor-ask-1" || acpRequestID(message.ID) == "cursor-plan-1") {

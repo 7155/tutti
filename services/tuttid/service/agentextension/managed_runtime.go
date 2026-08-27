@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -24,6 +25,31 @@ type managedRuntimeActivation struct {
 	ExecutableRelativePath  string                       `json:"executableRelativePath"`
 	ExecutableFingerprint   runtimeExecutableFingerprint `json:"executableFingerprint"`
 	InstalledAt             time.Time                    `json:"installedAt"`
+}
+
+// installedManagedRuntimeRoot resolves the install root of the agent's managed
+// runtime without requiring the runtime to already be installed. It is the
+// same identity computation used by resolveInstalledManagedRuntime.
+func (m *Manager) installedManagedRuntimeRoot(installation Installation) (string, error) {
+	if strings.TrimSpace(m.RuntimeInstallDir) == "" {
+		return "", errors.New("managed runtime install directory is not configured")
+	}
+	var profile DiscoveryProfile
+	if err := readJSON(filepath.Join(installation.PackageDir, filepath.FromSlash(installation.Manifest.Profiles.Discovery)), &profile); err != nil {
+		return "", err
+	}
+	if profile.SchemaVersion != "tutti.agent.discovery.v1" {
+		return "", errors.New("unsupported discovery profile schema")
+	}
+	packageName, packageVersion, _, err := runtimeInstallIdentity(installation.Manifest, runtimePlatform())
+	if err != nil {
+		return "", err
+	}
+	runtimeIdentity, err := managedRuntimeIdentity(installation, profile, packageName, packageVersion, runtimePlatform())
+	if err != nil {
+		return "", err
+	}
+	return managedRuntimeRoot(m.RuntimeInstallDir, installation.AgentKey, runtimeIdentity), nil
 }
 
 func (m *Manager) resolveInstalledManagedRuntime(
@@ -278,9 +304,14 @@ func (m *Manager) adoptCompatibleManagedRuntime(
 				rollback()
 				return err
 			}
-			if err := publishManagedRuntimeEntry(runtimeEntry); err != nil {
+			published, err := publishManagedRuntimeEntry(runtimeEntry)
+			if err != nil {
 				rollback()
 				return err
+			}
+			if !published {
+				slog.Warn("agent extension user command publication skipped; a user-owned command with the same name is preserved",
+					"userPath", runtimeEntry.UserPath)
 			}
 		}
 		promoted.Close()

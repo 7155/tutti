@@ -4,6 +4,88 @@
 
 Provider discovery, installation, authentication, models, configuration, and runtime reachability.
 
+### A cold Agent Extension handoff fails at `acp session/new timed out after 30s`
+
+- Symptom:
+  A handoff from another Agent reaches an enabled Agent Extension, but the
+  destination conversation fails before its first Turn with
+  `acp session/new timed out after 30s`. This was observed with Hermes on a
+  busy Windows machine even though the same installation starts successfully
+  on a later attempt.
+- Quick checks:
+  Correlate the destination session with any hidden live-model discovery
+  session for the same provider. If `initialize` succeeds, `session/new` is
+  written, provider stderr continues showing cold-start work, and there is no
+  JSON-RPC response before the exact 30-second boundary, treat it as a startup
+  budget failure rather than a malformed handoff payload. Check separately for
+  authentication, runtime exit, and invalid-path errors.
+- Root cause:
+  Interactive Agent Extension sessions inherited the generic standard-ACP
+  30-second initialize/session-new bound. A cold managed runtime can still be
+  loading provider configuration and discovering models at that boundary,
+  especially when model discovery and other Agent sessions contend for host
+  resources. The handoff only exposed that slow cold start; it did not corrupt
+  the destination prompt.
+- Fix:
+  Give adapters resolved through the Agent Extension boundary a bounded
+  60-second initialize/session-new budget. Keep generic ACP providers on their
+  existing default, keep foreground composer discovery bounded independently,
+  and do not retry a timed-out `session/new`: the provider may have created a
+  session even when its response was not observed. Apply the policy to Agent
+  Extensions declaratively rather than checking a Hermes provider ID.
+- Validation:
+  Verify the Agent Extension resolver projects the larger startup budget, then
+  repeat a cold handoff on Windows and confirm the destination session reaches
+  its first Turn without a 30-second timeout. Confirm unrelated standard ACP
+  adapters retain their default and no duplicate `session/new` is sent.
+- References:
+  [runtime_resolver.go](../../../services/tuttid/service/agentextension/runtime_resolver.go)
+  [standard_acp_session.go](../../../packages/agent/daemon/runtime/standard_acp_session.go)
+
+### A fresh Hermes session waits on its first terminal or browser command
+
+- Symptom:
+  Hermes starts normally, but the first terminal-backed capability in each new
+  macOS session appears stuck for tens of seconds or minutes. A comparable
+  Claude Code command opens the browser immediately, and Windows Hermes does
+  not show the delay.
+- Quick checks:
+  In the daemon's captured ACP stderr, find `tools.tirith_security: tirith not
+found` and compare it with `tirith installed` or `tirith download failed`.
+  Attribute only that interval to the helper download; separately measure the
+  following `tutti browser open` command. Check the session's effective
+  `HERMES_HOME`, because a binary under another session home is not reusable.
+- Root cause:
+  Hermes enables its Tirith pre-execution scanner on supported macOS/Linux
+  targets and downloads the helper into `$HERMES_HOME/bin`. Windows currently
+  has no Tirith build and Hermes skips that download. Tutti intentionally gives
+  each Agent Extension session an isolated home; without an explicit shared
+  directory declaration, every fresh Hermes home repeats the download. This can
+  look like a browser regression when GitHub Release delivery becomes slow even
+  though the actual browser command remains fast. Merely creating an empty
+  stable `$HERMES_HOME/bin` is insufficient: previously downloaded helpers may
+  still exist only in older session homes.
+- Fix:
+  Keep the session home, config, credentials, skills, and state isolated. Let
+  the signed extension declare `runtimePrep.home.sharedDirs: ["bin"]`; the
+  provider-neutral preparer projects that directory from the stable source home
+  into every session. If the stable directory is empty, seed it from the newest
+  same-provider legacy session whose manifest owns the declared extension home;
+  never overwrite an existing stable entry. Do not hardcode Hermes, Tirith, a
+  version, a download URL, or a session ID in Tutti, and do not disable the
+  upstream security scanner merely to hide latency.
+- Validation:
+  Start with an empty stable directory and a manifest-owned legacy session cache;
+  verify the next preparation seeds and projects that cache. Then create two
+  fresh Hermes sessions on macOS and verify both session `bin` paths resolve to
+  the stable source-home `bin`, neither first terminal command logs a Tirith
+  download, and deleting either session does not remove the helper. On Windows,
+  verify directory projection succeeds through a symlink or junction and Hermes
+  continues using its upstream unsupported-platform fallback without a download.
+- References:
+  [agent-runtime-preparation.md](../../architecture/agent-runtime-preparation.md)
+  [extension_runtime.go](../../../packages/agent/runtimeprep/extension_runtime.go)
+
 ### Hermes is ready but a new Windows session reports Agent failed to start
 
 - Symptom:
@@ -1041,6 +1123,31 @@ cannot find the path specified`, while the same repository is searchable
   [cursor_acp_question_mcp.go](../../../packages/agent/daemon/runtime/cursor_acp_question_mcp.go)
   [cursor_acp_interactive.go](../../../packages/agent/daemon/runtime/cursor_acp_interactive.go)
   [standard_acp_session.go](../../../packages/agent/daemon/runtime/standard_acp_session.go)
+
+### Codex is installed but Tutti keeps asking to connect or install it
+
+- Symptom:
+  Tutti shows the Codex setup surface even though the Codex executable exists.
+  Provider diagnostics report `no_ready_candidate`, and an install action may
+  start repairing the existing npm package.
+- Quick checks:
+  Correlate `agent_session.acp.request.sent method=initialize` with a later
+  `agent_session.acp.response.unmatched` for the same request ID. A response
+  arriving after the former three- or five-second probe window proves a slow
+  cold start rather than a missing CLI.
+- Root cause:
+  Codex app-server startup may take longer than the generic fast health-probe
+  budget. Runtime and authentication probes could expire before a valid
+  initialize response, causing the discovered executable to be classified as
+  unavailable and routed into installation.
+- Fix:
+  Give only Codex runtime and authentication probes a ten-second cold-start
+  budget. Other providers retain their existing bounds, and a faster Codex
+  response still returns immediately.
+- Validation:
+  Cover the Codex-specific timeout policy, its descriptor-projected auth
+  timeout, and preservation of a longer explicit test/operator timeout. Run
+  `cd services/tuttid && go test ./service/agentstatus`.
 
 ### Codex provider appears logged in with an empty auth.json
 

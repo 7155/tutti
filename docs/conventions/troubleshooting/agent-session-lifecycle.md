@@ -2,6 +2,31 @@
 
 [Agent runtime index](./agent-runtime.md) · [All troubleshooting](./README.md)
 
+### A newly opened Agent window shows processing but no transcript
+
+- **Symptom:** A Session is already running, but opening it in another window
+  shows only the processing status and omits the submitted user message. The
+  original window may still show the complete conversation.
+- **Quick checks:** Correlate the new renderer's selected Session with its first
+  canonical detail and message reads. If the message read fails or times out
+  while the Session projection still reports active work, the transcript is
+  temporarily unhydrated rather than deleted.
+- **Root cause:** The focused Session reconcile reached a terminal transport
+  failure, but the synchronization lease did not observe that failure or
+  request recovery. The new window therefore retained only the live processing
+  projection.
+- **Fix:** Preserve timeout as an explicit reconcile failure. While the Session
+  remains focused, report the failure and perform one bounded state-and-message
+  retry. Stop focus-owned recovery when the window releases the synchronization
+  lease.
+- **Validation:** Make the first focused message hydration fail, then return a
+  canonical user message on the retry. Assert exactly two reads, one reported
+  initial failure, and a restored transcript. Separately cover the reducer's
+  timeout outcome so it remains observable.
+- **References:**
+  [sessionReconcile.reducer.ts](../../../packages/agent/activity-core/src/engine/sessionReconcile.reducer.ts),
+  [workspaceAgentActivityReconcileBridge.ts](../../../apps/desktop/src/renderer/src/features/workspace-agent/services/internal/workspaceAgentActivityReconcileBridge.ts)
+
 ### Claude cancellation reaches `context deadline exceeded`
 
 - **Symptom:** Canceling a Claude Code Turn, closing its Session, or leaving a
@@ -1335,6 +1360,102 @@ catalog revision mismatch`, fully restart `dev:desktop`; renderer HMR cannot
   [controller.go](../../../packages/agent/daemon/runtime/controller.go)
   [service_send_input.go](../../../services/tuttid/service/agent/service_send_input.go)
 
+### New extension conversation renders a pasted image as a file
+
+- Symptom:
+  A new Agent Extension conversation renders a pasted PNG, JPEG, or WebP as a
+  file mention instead of an image preview, while an existing conversation may
+  render the same image correctly. Direct ACP initialization still advertises
+  image prompt support, but target-scoped Composer Options returns
+  `imageInput = false`.
+- Quick checks:
+  Compare the ACP `initialize` response, the daemon runtime
+  `SessionStateSnapshot.Capabilities`, the service-facing Session, and the exact
+  target-scoped Composer Options response. If ACP advertises
+  `promptCapabilities.image = true` but the service-facing Session has an
+  unknown capability snapshot, inspect the daemon-to-service runtime adapter
+  before changing the renderer paste path.
+- Root cause:
+  ACP negotiation correctly stored capabilities in the daemon runtime's typed
+  Session state, but the tuttid runtime adapter copied settings and untyped
+  runtime context without copying `Capabilities`. New extension conversations
+  use that adapter result for hidden Composer discovery, so image support was
+  lost before the signed extension capability intersection. Existing
+  conversations could appear healthy because their persisted activity
+  projection supplied the typed snapshot through a different path.
+- Fix:
+  Preserve the daemon runtime's typed capability snapshot at the tuttid runtime
+  adapter boundary, then project the exact live Session snapshot into Composer
+  runtime evidence before reading or caching it. Treat a non-nil snapshot as
+  authoritative even when empty: an explicit empty live or persisted snapshot
+  must stop cache fallback, and an empty discovery snapshot is already a ready
+  result rather than a reason to poll until timeout. Retain exact Target,
+  installation, project, and settings matching and the signed-profile
+  intersection.
+- Validation:
+  Cover adapter preservation, live and persisted capability projection,
+  explicit empty live and persisted snapshots overriding stale untyped/cache
+  values, empty discovery returning without polling, and mismatched extension
+  identities remaining fail-closed. Confirm repeated `core`,
+  `capabilities`, and `full` target-scoped Composer Options requests return
+  `imageInput = true` for both Kimi Code and Hermes when their ACP runtimes and
+  signed profiles advertise it.
+- References:
+  [agent_runtime_adapter.go](../../../services/tuttid/agent_runtime_adapter.go)
+  [composer_runtime_context.go](../../../services/tuttid/service/agent/composer_runtime_context.go)
+  [composer_live_model_discovery.go](../../../services/tuttid/service/agent/composer_live_model_discovery.go)
+
+### Historical Standard ACP session cannot send after its process was released
+
+- Symptom:
+  Continuing an idle historical Session fails before a new Turn starts. An
+  image submission may report `agent prompt image input is unsupported` even
+  though the same Session previously advertised image input. A text submission
+  may reconnect but then fail a redundant settings RPC, or the following prompt
+  may end without assistant, thought, or tool output.
+- Quick checks:
+  Confirm the canonical Session still has a provider Session ID while the
+  adapter has no live process. For images, look for validation failure without
+  a preceding provider process start. For text, inspect `initialize`: an ACP
+  agent may advertise legacy `agentCapabilities.loadSession: true` together
+  with object-form `sessionCapabilities.resume: {}` (some agents place that
+  object under `agentCapabilities.sessionCapabilities`). If Tutti then calls
+  `session/load`, historical updates are replayed even though Tutti already has
+  the transcript. Also check whether an unchanged persisted permission/Plan
+  selection is followed by `session/set_mode`.
+- Root cause:
+  Image capability is negotiated by the live ACP handshake, but preflight used
+  the released adapter state before reconnecting. Separately, the ACP
+  capability parser only recognized boolean/string values. ACP declares newer
+  session capabilities by object presence, so `{}` was treated as unsupported
+  and the legacy `session/load` path won over `session/resume`. Kimi's current
+  response uses the nested placement, which is accepted by the compatibility
+  parser. Load replays
+  history; resume reattaches without replay. Resume also reasserted an unchanged
+  mode even though the provider Session owns restored state, which fails for
+  non-idempotent mode implementations.
+- Fix:
+  Reconnect a released Standard ACP process before image capability preflight,
+  so unsupported images are still rejected before attachment persistence using
+  the fresh handshake. Recognize object-form session capabilities and prefer
+  `session/resume` when advertised. Use Tutti's persisted permission and Plan
+  selection to avoid reasserting the same mode after reattachment, while still
+  sending a setting changed while detached. Keep the behavior provider- and
+  platform-neutral; do not match a provider ID or error string.
+- Validation:
+  Release a resumable Standard ACP Session and prove that image preflight starts
+  one replacement process before validation. Given an initialize response with
+  both legacy load support and `sessionCapabilities.resume: {}` in standard and
+  nested placement, prove Tutti selects `session/resume`. Prove the persisted unchanged mode is not reasserted
+  but an actual offline permission or Plan change is. Use a native Windows-shaped
+  CWD in the image case and cross-compile the runtime test package for Windows in
+  addition to executing the focused tests on POSIX.
+- References:
+  [controller_live_sessions.go](../../../packages/agent/daemon/runtime/controller_live_sessions.go)
+  [acp_update_events.go](../../../packages/agent/daemon/runtime/acp_update_events.go)
+  [standard_acp_settings.go](../../../packages/agent/daemon/runtime/standard_acp_settings.go)
+  [standard_acp_session.go](../../../packages/agent/daemon/runtime/standard_acp_session.go)
+
 ### Remote Agent image reaches the provider as an unsupported URL
 
 - Symptom:
@@ -1714,6 +1835,46 @@ inline data URL instead`. Claude or standard ACP may instead receive no
   [standard_acp_turn.go](../../../packages/agent/daemon/runtime/standard_acp_turn.go)
   [standard_acp_stream.go](../../../packages/agent/daemon/runtime/standard_acp_stream.go)
   [provider-native subagents](../../specs/2026-07-15-provider-native-subagents.md)
+
+### Standard ACP prompts stay queued after a canceled turn
+
+- Symptom:
+  A Standard ACP Agent finishes or cancels a visible turn, but every later
+  message reports that it was queued for the next turn and is never consumed.
+  The provider process remains alive and may still report its previous prompt
+  as running even though Tutti already presents the Session as idle.
+- Quick checks:
+  Correlate Tutti's `session/cancel` notification, the outstanding
+  `session/prompt` response, and the next `session/prompt` request. If the next
+  request is dispatched before the canceled prompt returns, the provider may
+  queue it behind state that no worker will drain. Distinguish this provider
+  queue from AgentGUI's local queue by confirming that the later request
+  crossed the ACP transport.
+- Root cause:
+  `session/cancel` is only cancellation delivery; it is not proof that the
+  outstanding `session/prompt` call has settled. Releasing Tutti's local turn
+  fence immediately after writing the notification lets another prompt enter
+  the same provider process while its internal running state is still true.
+- Fix:
+  Keep a per-Session active-prompt drain barrier. Capture the exact active
+  prompt, deliver `session/cancel`, and mark that same prompt canceled only
+  after delivery succeeds; a failed notification must leave the prompt's
+  eventual result authoritative. Once cancellation is accepted, check it
+  before any retriable-error auto-continue branch and wait for the outstanding
+  prompt result before accepting another turn. If the provider does not settle
+  within the bounded drain window, close only the transport and let the next
+  command resume the provider Session in a fresh process. Do not call
+  destructive `session/close` during this recovery.
+- Validation:
+  Use a deterministic ACP transport fixture whose first prompt returns only
+  after `session/cancel`. Assert that `Cancel` cannot return before that prompt
+  drains, that the first turn settles as canceled, and that a second prompt on
+  the Session completes. Also inject notification failure and prove the active
+  prompt remains uncanceled; race cancellation with a retriable tail and prove
+  no second prompt is sent. Run the focused test under Go's race detector.
+- References:
+  [standard_acp_turn.go](../../../packages/agent/daemon/runtime/standard_acp_turn.go)
+  [standard_acp_turn_test.go](../../../packages/agent/daemon/runtime/standard_acp_turn_test.go)
 
 ### Codex goal stops after a turn while the goal remains active
 

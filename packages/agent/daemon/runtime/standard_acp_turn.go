@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	activityshared "github.com/tutti-os/tutti/packages/agent/daemon/activity/events"
 )
@@ -135,6 +136,8 @@ func (a *standardACPAdapter) Exec(
 
 	promptParams := acpPromptContent
 	autoContinueAttempts := 0
+	activePrompt := a.beginStandardACPPrompt(acpSession)
+	defer a.finishStandardACPPrompt(acpSession, activePrompt)
 execLoop:
 	for {
 		result, err := acpSession.client.Call(ctx, acpMethodPrompt, map[string]any{
@@ -176,6 +179,7 @@ execLoop:
 			}
 			return nil
 		})
+		cancelRequested := a.standardACPPromptCancelRequested(acpSession, activePrompt)
 		if err != nil {
 			emittedEvents := snapshotEvents()
 			slog.Warn("agent session ACP exec call failed",
@@ -190,7 +194,7 @@ execLoop:
 				"emitted_event_type_counts", activityEventTypeCounts(emittedEvents),
 				"error", err.Error(),
 			)
-			if errors.Is(err, context.Canceled) || errors.Is(err, errPermissionRequestCanceled) {
+			if cancelRequested || errors.Is(err, context.Canceled) || errors.Is(err, errPermissionRequestCanceled) {
 				terminalEvents := normalizer.FinishInterrupted(session, turnID, "interrupted")
 				terminalEvents = append(terminalEvents, standardACPRootProviderTurnCompletedEvent(session, turnID, activityshared.TurnOutcomeCanceled, map[string]any{
 					"error": err.Error(),
@@ -252,6 +256,14 @@ execLoop:
 			"emitted_event_count", len(emittedEvents),
 			"emitted_event_type_counts", activityEventTypeCounts(emittedEvents),
 		)
+		if cancelRequested {
+			terminalEvents := normalizer.FinishInterrupted(session, turnID, "canceled")
+			terminalEvents = append(terminalEvents, standardACPRootProviderTurnCompletedEvent(session, turnID, activityshared.TurnOutcomeCanceled, map[string]any{
+				"stopReason": firstNonEmpty(stopReason, "canceled"),
+			}))
+			emitEvents(terminalEvents)
+			break execLoop
+		}
 		if a.config.autoContinueRetriableTurnError && acpStopReasonEndsTurnNormally(stopReason) {
 			assistantText := normalizer.CurrentAssistantText()
 			if errLine, ok := acpRetriableTurnTailError(assistantText); ok {
@@ -364,13 +376,151 @@ func (a *standardACPAdapter) Cancel(ctx context.Context, session Session, _ stri
 	if acpSession == nil || acpSession.client == nil {
 		return nil, ErrSessionNoActiveTurn
 	}
+	activePrompt := a.beginStandardACPPromptCancelDelivery(acpSession)
 	if err := acpSession.client.Notify(ctx, acpMethodCancel, map[string]any{
 		"sessionId": acpSession.providerSessionID,
 	}); err != nil {
+		a.finishStandardACPPromptCancelDelivery(acpSession, activePrompt, false)
 		return nil, err
 	}
+	a.finishStandardACPPromptCancelDelivery(acpSession, activePrompt, true)
 	a.rejectPendingApprovals(session.AgentSessionID, errPermissionRequestCanceled)
+	if activePrompt == nil {
+		return nil, nil
+	}
+	if a.waitForStandardACPPromptDrain(ctx, activePrompt, standardACPCancelDrainTimeout) {
+		return nil, nil
+	}
+
+	// A provider that acknowledges session/cancel without settling the active
+	// session/prompt must not receive another prompt on the same process. Drop
+	// only the transport (never session/close, which could destroy resumable
+	// history); the next Host command will restore the provider session on a
+	// fresh process.
+	if err := a.releaseCanceledStandardACPSession(session, acpSession); err != nil {
+		return nil, err
+	}
+	_ = a.waitForStandardACPPromptDrain(context.Background(), activePrompt, acpCloseGraceTimeout)
 	return nil, nil
+}
+
+func (a *standardACPAdapter) beginStandardACPPrompt(session *standardACPSession) *standardACPActivePrompt {
+	active := &standardACPActivePrompt{done: make(chan struct{})}
+	a.mu.Lock()
+	if session != nil {
+		session.activePrompt = active
+	}
+	a.mu.Unlock()
+	return active
+}
+
+func (a *standardACPAdapter) finishStandardACPPrompt(session *standardACPSession, active *standardACPActivePrompt) {
+	if active == nil {
+		return
+	}
+	a.mu.Lock()
+	if session != nil && session.activePrompt == active {
+		session.activePrompt = nil
+	}
+	close(active.done)
+	a.mu.Unlock()
+}
+
+func (a *standardACPAdapter) beginStandardACPPromptCancelDelivery(session *standardACPSession) *standardACPActivePrompt {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if session == nil || session.activePrompt == nil {
+		return nil
+	}
+	active := session.activePrompt
+	if active.cancelDeliveryDone == nil {
+		active.cancelDeliveryDone = make(chan struct{})
+	}
+	return active
+}
+
+func (a *standardACPAdapter) finishStandardACPPromptCancelDelivery(
+	session *standardACPSession,
+	active *standardACPActivePrompt,
+	accepted bool,
+) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if session == nil || active == nil || session.activePrompt != active {
+		return
+	}
+	active.cancelRequested = accepted
+	if active.cancelDeliveryDone != nil {
+		close(active.cancelDeliveryDone)
+		active.cancelDeliveryDone = nil
+	}
+}
+
+func (a *standardACPAdapter) standardACPPromptCancelRequested(session *standardACPSession, active *standardACPActivePrompt) bool {
+	for {
+		a.mu.Lock()
+		if session == nil || session.activePrompt != active || active == nil {
+			a.mu.Unlock()
+			return false
+		}
+		deliveryDone := active.cancelDeliveryDone
+		cancelRequested := active.cancelRequested
+		a.mu.Unlock()
+		if deliveryDone == nil {
+			return cancelRequested
+		}
+		<-deliveryDone
+	}
+}
+
+func (*standardACPAdapter) waitForStandardACPPromptDrain(ctx context.Context, active *standardACPActivePrompt, timeout time.Duration) bool {
+	if active == nil {
+		return true
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-active.done:
+		return true
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return false
+	}
+}
+
+func (a *standardACPAdapter) releaseCanceledStandardACPSession(session Session, acpSession *standardACPSession) error {
+	if acpSession == nil || acpSession.client == nil {
+		return nil
+	}
+	agentSessionID := strings.TrimSpace(session.AgentSessionID)
+	a.mu.Lock()
+	if a.sessions[agentSessionID] != acpSession {
+		a.mu.Unlock()
+		return nil
+	}
+	acpSession.releasing = true
+	acpSession.client.SetMessageHandler(nil)
+	a.mu.Unlock()
+
+	if err := acpSession.client.Close(); err != nil {
+		a.mu.Lock()
+		if a.sessions[agentSessionID] == acpSession {
+			acpSession.releasing = false
+			acpSession.releaseFailed = true
+		}
+		a.mu.Unlock()
+		a.logACPCloseDiagnostics("cancel_drain.transport_close.failed", session, acpSession, err)
+		return err
+	}
+	acpSession.releaseLocalTools()
+	a.mu.Lock()
+	if a.sessions[agentSessionID] == acpSession {
+		delete(a.sessions, agentSessionID)
+	}
+	a.mu.Unlock()
+	a.logACPCloseDiagnostics("cancel_drain.transport_close.succeeded", session, acpSession, nil)
+	return nil
 }
 
 func standardACPRootProviderTurnStartedEvent(session Session, rootTurnID string) activityshared.Event {
